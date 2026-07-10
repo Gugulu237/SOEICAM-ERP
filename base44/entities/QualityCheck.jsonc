@@ -1,0 +1,96 @@
+{
+  "name": "QualityCheck",
+  "type": "object",
+  "properties": {
+    "production_order_id": {
+      "type": "string"
+    },
+    "batch_number": {
+      "type": "string"
+    },
+    "check_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "inspector_id": {
+      "type": "string"
+    },
+    "inspector_name": {
+      "type": "string"
+    },
+    "temperature": {
+      "type": "number"
+    },
+    "ph_level": {
+      "type": "number"
+    },
+    "taste": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "acceptable"
+      ]
+    },
+    "texture": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "acceptable"
+      ]
+    },
+    "appearance": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "acceptable"
+      ]
+    },
+    "smell": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "acceptable"
+      ]
+    },
+    "seal_quality": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "acceptable"
+      ]
+    },
+    "packaging_integrity": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "acceptable"
+      ]
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "approved_with_deviation",
+        "quarantined",
+        "rework",
+        "rejected",
+        "destroyed"
+      ],
+      "default": "pending"
+    },
+    "comments": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "production_order_id",
+    "check_date"
+  ]
+}

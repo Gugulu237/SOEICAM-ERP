@@ -1,0 +1,87 @@
+{
+  "name": "Employee",
+  "type": "object",
+  "properties": {
+    "employee_number": {
+      "type": "string"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "job_title": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "contract_type": {
+      "type": "string",
+      "enum": [
+        "permanent",
+        "temporary",
+        "daily",
+        "intern",
+        "contractor"
+      ],
+      "default": "permanent"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "on_leave",
+        "suspended",
+        "terminated"
+      ],
+      "default": "active"
+    },
+    "base_salary": {
+      "type": "number",
+      "default": 0
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "bank_transfer",
+        "mobile_money",
+        "cash"
+      ],
+      "default": "bank_transfer"
+    },
+    "bank_name": {
+      "type": "string"
+    },
+    "bank_account": {
+      "type": "string"
+    },
+    "mobile_money_number": {
+      "type": "string"
+    },
+    "bonus_plan": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "full_name",
+    "job_title"
+  ]
+}

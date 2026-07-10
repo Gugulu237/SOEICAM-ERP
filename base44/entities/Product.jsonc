@@ -1,0 +1,127 @@
+{
+  "name": "Product",
+  "type": "object",
+  "properties": {
+    "sku": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "inventory_type": {
+      "type": "string",
+      "enum": [
+        "raw_material",
+        "packaging",
+        "wip",
+        "finished_product",
+        "consumable",
+        "cleaning",
+        "spare_part",
+        "promotional",
+        "returned",
+        "damaged",
+        "expired"
+      ]
+    },
+    "purchase_unit": {
+      "type": "string"
+    },
+    "storage_unit": {
+      "type": "string"
+    },
+    "production_unit": {
+      "type": "string"
+    },
+    "sales_unit": {
+      "type": "string"
+    },
+    "purchase_to_storage_factor": {
+      "type": "number",
+      "default": 1
+    },
+    "storage_to_production_factor": {
+      "type": "number",
+      "default": 1
+    },
+    "storage_to_sales_factor": {
+      "type": "number",
+      "default": 1
+    },
+    "costing_method": {
+      "type": "string",
+      "enum": [
+        "average",
+        "fifo",
+        "standard"
+      ],
+      "default": "average"
+    },
+    "current_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "standard_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "selling_price": {
+      "type": "number",
+      "default": 0
+    },
+    "reorder_level": {
+      "type": "number",
+      "default": 0
+    },
+    "min_stock": {
+      "type": "number",
+      "default": 0
+    },
+    "max_stock": {
+      "type": "number",
+      "default": 0
+    },
+    "preferred_supplier_id": {
+      "type": "string"
+    },
+    "lot_tracking": {
+      "type": "boolean",
+      "default": false
+    },
+    "expiry_tracking": {
+      "type": "boolean",
+      "default": false
+    },
+    "shelf_life_days": {
+      "type": "number"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "tax_rate": {
+      "type": "number",
+      "default": 0
+    },
+    "inventory_account_id": {
+      "type": "string"
+    },
+    "cogs_account_id": {
+      "type": "string"
+    },
+    "revenue_account_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sku",
+    "name",
+    "inventory_type"
+  ]
+}

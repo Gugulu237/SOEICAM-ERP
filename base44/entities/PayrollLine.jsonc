@@ -1,0 +1,72 @@
+{
+  "name": "PayrollLine",
+  "type": "object",
+  "properties": {
+    "payroll_id": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "base_salary": {
+      "type": "number",
+      "default": 0
+    },
+    "allowances": {
+      "type": "number",
+      "default": 0
+    },
+    "overtime": {
+      "type": "number",
+      "default": 0
+    },
+    "bonus": {
+      "type": "number",
+      "default": 0
+    },
+    "commission": {
+      "type": "number",
+      "default": 0
+    },
+    "gross_pay": {
+      "type": "number",
+      "default": 0
+    },
+    "statutory_deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "other_deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "loan_repayment": {
+      "type": "number",
+      "default": 0
+    },
+    "salary_advance": {
+      "type": "number",
+      "default": 0
+    },
+    "net_pay": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "calculated",
+        "approved",
+        "paid"
+      ],
+      "default": "calculated"
+    }
+  },
+  "required": [
+    "payroll_id",
+    "employee_id"
+  ]
+}

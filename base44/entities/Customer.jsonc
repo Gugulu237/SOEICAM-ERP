@@ -1,0 +1,102 @@
+{
+  "name": "Customer",
+  "type": "object",
+  "properties": {
+    "customer_number": {
+      "type": "string"
+    },
+    "business_name": {
+      "type": "string"
+    },
+    "contact_person": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "whatsapp": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "tax_id": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "supermarket",
+        "minimarket",
+        "wholesaler",
+        "shop",
+        "cash_customer",
+        "institutional"
+      ],
+      "default": "shop"
+    },
+    "address": {
+      "type": "string"
+    },
+    "town": {
+      "type": "string"
+    },
+    "neighbourhood": {
+      "type": "string"
+    },
+    "gps_lat": {
+      "type": "number"
+    },
+    "gps_lng": {
+      "type": "number"
+    },
+    "salesperson_id": {
+      "type": "string"
+    },
+    "route_id": {
+      "type": "string"
+    },
+    "delivery_days": {
+      "type": "string"
+    },
+    "credit_limit": {
+      "type": "number",
+      "default": 0
+    },
+    "max_overdue_days": {
+      "type": "number",
+      "default": 30
+    },
+    "payment_terms_days": {
+      "type": "number",
+      "default": 0
+    },
+    "price_list": {
+      "type": "string"
+    },
+    "balance": {
+      "type": "number",
+      "default": 0
+    },
+    "credit_status": {
+      "type": "string",
+      "enum": [
+        "good",
+        "warning",
+        "hold",
+        "blocked"
+      ],
+      "default": "good"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "business_name"
+  ]
+}

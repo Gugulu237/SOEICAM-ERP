@@ -1,0 +1,18 @@
+import React from "react";
+import { Link } from "react-router-dom";
+
+export default function KPICard({ title, value, subtitle, icon: Icon, to, color = "text-slate-600" }) {
+  const Wrapper = to ? Link : "div";
+  return (
+    <Wrapper to={to} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{title}</p>
+          <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+          {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+        </div>
+        {Icon && <div className="p-2 rounded-lg bg-slate-50"><Icon size={20} className="text-slate-400" /></div>}
+      </div>
+    </Wrapper>
+  );
+}

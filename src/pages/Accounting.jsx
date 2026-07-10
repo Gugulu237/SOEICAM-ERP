@@ -1,0 +1,87 @@
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useNavigate } from "react-router-dom";
+import { formatXAF, formatDate } from "@/lib/formatters";
+import PageHeader from "@/components/shared/PageHeader";
+import DataTable from "@/components/shared/DataTable";
+import StatusBadge from "@/components/shared/StatusBadge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+
+export default function Accounting() {
+  const [accounts, setAccounts] = useState([]);
+  const [journals, setJournals] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    Promise.all([
+      base44.entities.Account.filter({}),
+      base44.entities.JournalEntry.list("-created_date", 50),
+      base44.entities.Payment.list("-created_date", 50),
+    ]).then(([a, j, p]) => { setAccounts(a); setJournals(j); setPayments(p); }).finally(() => setLoading(false));
+  }, []);
+
+  const accountCols = [
+    { key: "account_number", label: "Account #" },
+    { key: "name", label: "Account Name" },
+    { key: "account_type", label: "Type", render: v => <StatusBadge status={v} /> },
+    { key: "normal_balance", label: "Normal Bal" },
+    { key: "balance", label: "Balance", render: v => formatXAF(v), className: "text-right" },
+    { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
+  ];
+
+  const journalCols = [
+    { key: "journal_number", label: "Journal #" },
+    { key: "entry_date", label: "Date", render: v => formatDate(v) },
+    { key: "description", label: "Description" },
+    { key: "source_module", label: "Source" },
+    { key: "total_debit", label: "Debit", render: v => formatXAF(v), className: "text-right" },
+    { key: "total_credit", label: "Credit", render: v => formatXAF(v), className: "text-right" },
+    { key: "status", label: "Status", render: v => <StatusBadge status={v} /> },
+  ];
+
+  const paymentCols = [
+    { key: "payment_number", label: "Payment #" },
+    { key: "payment_date", label: "Date", render: v => formatDate(v) },
+    { key: "party_name", label: "Party" },
+    { key: "payment_type", label: "Type" },
+    { key: "amount", label: "Amount", render: v => formatXAF(v), className: "text-right" },
+    { key: "payment_method", label: "Method" },
+    { key: "status", label: "Status", render: v => <StatusBadge status={v} /> },
+  ];
+
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+
+  return (
+    <div>
+      <PageHeader
+        title="Accounting"
+        subtitle="Chart of Accounts · Journals · Payments"
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/accounting/payments/new")}><Plus size={16} className="mr-1" /> Record Payment</Button>
+          </div>
+        }
+      />
+      <Tabs defaultValue="accounts">
+        <TabsList>
+          <TabsTrigger value="accounts">Chart of Accounts</TabsTrigger>
+          <TabsTrigger value="journals">Journal Entries</TabsTrigger>
+          <TabsTrigger value="payments">Payments</TabsTrigger>
+        </TabsList>
+        <TabsContent value="accounts" className="mt-4">
+          <DataTable columns={accountCols} data={accounts.sort((a, b) => a.account_number.localeCompare(b.account_number))} searchFields={["account_number", "name"]} />
+        </TabsContent>
+        <TabsContent value="journals" className="mt-4">
+          <DataTable columns={journalCols} data={journals} searchFields={["journal_number", "description", "source_module"]} onRowClick={row => navigate(`/accounting/journals/${row.id}`)} />
+        </TabsContent>
+        <TabsContent value="payments" className="mt-4">
+          <DataTable columns={paymentCols} data={payments} searchFields={["payment_number", "party_name"]} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

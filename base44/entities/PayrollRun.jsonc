@@ -1,0 +1,63 @@
+{
+  "name": "PayrollRun",
+  "type": "object",
+  "properties": {
+    "period_name": {
+      "type": "string"
+    },
+    "month": {
+      "type": "number"
+    },
+    "year": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "calculated",
+        "under_review",
+        "approved",
+        "posted",
+        "partially_paid",
+        "paid",
+        "closed",
+        "reversed"
+      ],
+      "default": "draft"
+    },
+    "total_gross": {
+      "type": "number",
+      "default": 0
+    },
+    "total_deductions": {
+      "type": "number",
+      "default": 0
+    },
+    "total_net": {
+      "type": "number",
+      "default": 0
+    },
+    "employee_count": {
+      "type": "number",
+      "default": 0
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "period_name",
+    "month",
+    "year"
+  ]
+}

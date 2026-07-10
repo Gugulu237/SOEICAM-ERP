@@ -1,0 +1,32 @@
+{
+  "name": "Route",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "default_vehicle_id": {
+      "type": "string"
+    },
+    "default_driver_id": {
+      "type": "string"
+    },
+    "default_salesperson_id": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "name",
+    "code"
+  ]
+}

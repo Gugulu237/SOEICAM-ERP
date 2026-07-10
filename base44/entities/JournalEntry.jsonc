@@ -1,0 +1,68 @@
+{
+  "name": "JournalEntry",
+  "type": "object",
+  "properties": {
+    "journal_number": {
+      "type": "string"
+    },
+    "entry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "description": {
+      "type": "string"
+    },
+    "source_module": {
+      "type": "string"
+    },
+    "source_document_type": {
+      "type": "string"
+    },
+    "source_document_id": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "posted",
+        "reversed"
+      ],
+      "default": "draft"
+    },
+    "total_debit": {
+      "type": "number",
+      "default": 0
+    },
+    "total_credit": {
+      "type": "number",
+      "default": 0
+    },
+    "posted_by": {
+      "type": "string"
+    },
+    "posted_at": {
+      "type": "string"
+    },
+    "reversal_of": {
+      "type": "string"
+    },
+    "reversed_by_journal": {
+      "type": "string"
+    },
+    "period_id": {
+      "type": "string"
+    },
+    "is_immutable": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "entry_date",
+    "description"
+  ]
+}

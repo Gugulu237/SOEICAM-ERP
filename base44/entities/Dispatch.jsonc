@@ -1,0 +1,77 @@
+{
+  "name": "Dispatch",
+  "type": "object",
+  "properties": {
+    "dispatch_number": {
+      "type": "string"
+    },
+    "dispatch_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "route_id": {
+      "type": "string"
+    },
+    "route_name": {
+      "type": "string"
+    },
+    "vehicle_id": {
+      "type": "string"
+    },
+    "vehicle_name": {
+      "type": "string"
+    },
+    "driver_id": {
+      "type": "string"
+    },
+    "driver_name": {
+      "type": "string"
+    },
+    "salesperson_id": {
+      "type": "string"
+    },
+    "warehouse_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "planned",
+        "loading",
+        "loaded",
+        "in_transit",
+        "delivering",
+        "returned",
+        "reconciling",
+        "reconciled",
+        "closed"
+      ],
+      "default": "draft"
+    },
+    "total_loaded_value": {
+      "type": "number",
+      "default": 0
+    },
+    "total_delivered_value": {
+      "type": "number",
+      "default": 0
+    },
+    "total_cash_collected": {
+      "type": "number",
+      "default": 0
+    },
+    "total_credit_sales": {
+      "type": "number",
+      "default": 0
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "dispatch_date",
+    "route_id",
+    "vehicle_id"
+  ]
+}

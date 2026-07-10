@@ -1,0 +1,57 @@
+{
+  "name": "GoodsReceiptLine",
+  "type": "object",
+  "properties": {
+    "receipt_id": {
+      "type": "string"
+    },
+    "po_line_id": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "ordered_quantity": {
+      "type": "number"
+    },
+    "received_quantity": {
+      "type": "number"
+    },
+    "rejected_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "damaged_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "unit_cost": {
+      "type": "number"
+    },
+    "lot_number": {
+      "type": "string"
+    },
+    "expiry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "quality_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "quarantined",
+        "rejected"
+      ],
+      "default": "approved"
+    }
+  },
+  "required": [
+    "receipt_id",
+    "product_id",
+    "received_quantity"
+  ]
+}

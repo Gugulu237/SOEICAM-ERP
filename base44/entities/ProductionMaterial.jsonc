@@ -1,0 +1,67 @@
+{
+  "name": "ProductionMaterial",
+  "type": "object",
+  "properties": {
+    "production_order_id": {
+      "type": "string"
+    },
+    "material_id": {
+      "type": "string"
+    },
+    "material_name": {
+      "type": "string"
+    },
+    "standard_quantity": {
+      "type": "number"
+    },
+    "issued_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "returned_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "consumed_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "wastage_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "unit": {
+      "type": "string"
+    },
+    "unit_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "total_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "lot_number": {
+      "type": "string"
+    },
+    "expiry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "is_substitute": {
+      "type": "boolean",
+      "default": false
+    },
+    "original_material_id": {
+      "type": "string"
+    },
+    "substitution_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "production_order_id",
+    "material_id",
+    "standard_quantity"
+  ]
+}

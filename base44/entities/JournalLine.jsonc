@@ -1,0 +1,45 @@
+{
+  "name": "JournalLine",
+  "type": "object",
+  "properties": {
+    "journal_id": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "account_number": {
+      "type": "string"
+    },
+    "account_name": {
+      "type": "string"
+    },
+    "debit": {
+      "type": "number",
+      "default": 0
+    },
+    "credit": {
+      "type": "number",
+      "default": 0
+    },
+    "description": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "party_type": {
+      "type": "string"
+    },
+    "party_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "journal_id",
+    "account_id"
+  ]
+}

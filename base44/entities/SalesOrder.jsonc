@@ -1,0 +1,94 @@
+{
+  "name": "SalesOrder",
+  "type": "object",
+  "properties": {
+    "order_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "warehouse_id": {
+      "type": "string"
+    },
+    "salesperson_id": {
+      "type": "string"
+    },
+    "salesperson_name": {
+      "type": "string"
+    },
+    "route_id": {
+      "type": "string"
+    },
+    "order_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "delivery_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "payment_type": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "credit"
+      ],
+      "default": "cash"
+    },
+    "payment_terms_days": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "confirmed",
+        "credit_hold",
+        "ready",
+        "dispatched",
+        "partially_delivered",
+        "delivered",
+        "invoiced",
+        "cancelled"
+      ],
+      "default": "draft"
+    },
+    "subtotal": {
+      "type": "number",
+      "default": 0
+    },
+    "discount_total": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_total": {
+      "type": "number",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "notes": {
+      "type": "string"
+    },
+    "credit_override_by": {
+      "type": "string"
+    },
+    "credit_override_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "customer_id",
+    "order_date"
+  ]
+}

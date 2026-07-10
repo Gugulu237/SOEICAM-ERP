@@ -1,0 +1,61 @@
+{
+  "name": "SalesOrderLine",
+  "type": "object",
+  "properties": {
+    "order_id": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "unit": {
+      "type": "string"
+    },
+    "unit_price": {
+      "type": "number"
+    },
+    "discount_pct": {
+      "type": "number",
+      "default": 0
+    },
+    "discount_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_rate": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "delivered_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "lot_number": {
+      "type": "string"
+    },
+    "unit_cost": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "order_id",
+    "product_id",
+    "quantity",
+    "unit_price"
+  ]
+}

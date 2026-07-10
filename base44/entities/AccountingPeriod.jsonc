@@ -1,0 +1,40 @@
+{
+  "name": "AccountingPeriod",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "fiscal_year": {
+      "type": "string"
+    },
+    "period_number": {
+      "type": "number"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "review",
+        "closed",
+        "locked"
+      ],
+      "default": "open"
+    }
+  },
+  "required": [
+    "name",
+    "fiscal_year",
+    "period_number",
+    "start_date",
+    "end_date"
+  ]
+}

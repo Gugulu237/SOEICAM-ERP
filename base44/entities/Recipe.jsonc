@@ -1,0 +1,69 @@
+{
+  "name": "Recipe",
+  "type": "object",
+  "properties": {
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "recipe_name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number",
+      "default": 1
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "expiry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "batch_output": {
+      "type": "number"
+    },
+    "output_unit": {
+      "type": "string"
+    },
+    "expected_yield_pct": {
+      "type": "number",
+      "default": 100
+    },
+    "wastage_limit_pct": {
+      "type": "number",
+      "default": 2
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending_approval",
+        "approved",
+        "superseded",
+        "archived"
+      ],
+      "default": "draft"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "change_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "product_id",
+    "recipe_name",
+    "batch_output"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "PurchaseOrderLine",
+  "type": "object",
+  "properties": {
+    "po_id": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "unit": {
+      "type": "string"
+    },
+    "unit_price": {
+      "type": "number"
+    },
+    "tax_rate": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "received_quantity": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "po_id",
+    "product_id",
+    "quantity",
+    "unit_price"
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "name": "Account",
+  "type": "object",
+  "properties": {
+    "account_number": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "account_type": {
+      "type": "string",
+      "enum": [
+        "asset",
+        "liability",
+        "equity",
+        "revenue",
+        "cogs",
+        "expense",
+        "other_income",
+        "other_expense"
+      ]
+    },
+    "parent_id": {
+      "type": "string"
+    },
+    "normal_balance": {
+      "type": "string",
+      "enum": [
+        "debit",
+        "credit"
+      ]
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "is_system": {
+      "type": "boolean",
+      "default": false
+    },
+    "description": {
+      "type": "string"
+    },
+    "balance": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "account_number",
+    "name",
+    "account_type",
+    "normal_balance"
+  ]
+}

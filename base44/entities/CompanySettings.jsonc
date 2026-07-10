@@ -1,0 +1,84 @@
+{
+  "name": "CompanySettings",
+  "type": "object",
+  "properties": {
+    "company_name": {
+      "type": "string"
+    },
+    "brand_name": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string",
+      "default": "XAF"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "Africa/Douala"
+    },
+    "fiscal_year_start_month": {
+      "type": "number",
+      "default": 1
+    },
+    "current_fiscal_year": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string",
+      "default": "Cameroon"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "tax_id": {
+      "type": "string"
+    },
+    "logo_url": {
+      "type": "string"
+    },
+    "default_language": {
+      "type": "string",
+      "enum": [
+        "en",
+        "fr"
+      ],
+      "default": "en"
+    },
+    "allow_negative_stock": {
+      "type": "boolean",
+      "default": false
+    },
+    "next_journal_number": {
+      "type": "number",
+      "default": 1
+    },
+    "next_invoice_number": {
+      "type": "number",
+      "default": 1
+    },
+    "next_po_number": {
+      "type": "number",
+      "default": 1
+    },
+    "next_production_number": {
+      "type": "number",
+      "default": 1
+    },
+    "next_delivery_number": {
+      "type": "number",
+      "default": 1
+    }
+  },
+  "required": [
+    "company_name"
+  ]
+}

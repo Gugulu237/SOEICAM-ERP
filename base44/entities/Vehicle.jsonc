@@ -1,0 +1,29 @@
+{
+  "name": "Vehicle",
+  "type": "object",
+  "properties": {
+    "registration": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "vehicle_type": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "warehouse_id": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "registration",
+    "name"
+  ]
+}

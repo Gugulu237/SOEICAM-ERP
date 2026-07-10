@@ -1,0 +1,41 @@
+{
+  "name": "Warehouse",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "warehouse_type": {
+      "type": "string",
+      "enum": [
+        "raw_material",
+        "packaging",
+        "wip",
+        "finished_goods",
+        "cold_room",
+        "quarantine",
+        "damaged",
+        "vehicle",
+        "general"
+      ]
+    },
+    "address": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "name",
+    "code",
+    "warehouse_type"
+  ]
+}

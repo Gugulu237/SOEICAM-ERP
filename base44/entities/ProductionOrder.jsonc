@@ -1,0 +1,88 @@
+{
+  "name": "ProductionOrder",
+  "type": "object",
+  "properties": {
+    "order_number": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "recipe_id": {
+      "type": "string"
+    },
+    "planned_output": {
+      "type": "number"
+    },
+    "actual_output": {
+      "type": "number",
+      "default": 0
+    },
+    "rejected_output": {
+      "type": "number",
+      "default": 0
+    },
+    "production_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "warehouse_id": {
+      "type": "string"
+    },
+    "batch_number": {
+      "type": "string"
+    },
+    "expiry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "awaiting_approval",
+        "approved",
+        "materials_reserved",
+        "materials_issued",
+        "in_production",
+        "awaiting_qc",
+        "completed",
+        "released",
+        "rejected",
+        "closed",
+        "cancelled"
+      ],
+      "default": "draft"
+    },
+    "standard_cost_per_unit": {
+      "type": "number",
+      "default": 0
+    },
+    "actual_cost_per_unit": {
+      "type": "number",
+      "default": 0
+    },
+    "total_material_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "notes": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "product_id",
+    "recipe_id",
+    "planned_output",
+    "production_date"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "name": "RecipeLine",
+  "type": "object",
+  "properties": {
+    "recipe_id": {
+      "type": "string"
+    },
+    "material_id": {
+      "type": "string"
+    },
+    "material_name": {
+      "type": "string"
+    },
+    "material_type": {
+      "type": "string",
+      "enum": [
+        "ingredient",
+        "primary_packaging",
+        "secondary_packaging",
+        "consumable"
+      ]
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "unit": {
+      "type": "string"
+    },
+    "expected_wastage_pct": {
+      "type": "number",
+      "default": 0
+    },
+    "allow_substitution": {
+      "type": "boolean",
+      "default": false
+    },
+    "substitute_material_id": {
+      "type": "string"
+    },
+    "sequence": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "recipe_id",
+    "material_id",
+    "quantity",
+    "unit"
+  ]
+}

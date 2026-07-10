@@ -1,0 +1,41 @@
+{
+  "name": "GoodsReceipt",
+  "type": "object",
+  "properties": {
+    "receipt_number": {
+      "type": "string"
+    },
+    "po_id": {
+      "type": "string"
+    },
+    "supplier_id": {
+      "type": "string"
+    },
+    "supplier_name": {
+      "type": "string"
+    },
+    "warehouse_id": {
+      "type": "string"
+    },
+    "receipt_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "confirmed",
+        "cancelled"
+      ],
+      "default": "draft"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "po_id",
+    "receipt_date"
+  ]
+}

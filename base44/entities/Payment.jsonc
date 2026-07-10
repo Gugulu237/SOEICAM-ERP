@@ -1,0 +1,79 @@
+{
+  "name": "Payment",
+  "type": "object",
+  "properties": {
+    "payment_number": {
+      "type": "string"
+    },
+    "payment_type": {
+      "type": "string",
+      "enum": [
+        "customer_payment",
+        "supplier_payment",
+        "salary_payment"
+      ]
+    },
+    "party_type": {
+      "type": "string",
+      "enum": [
+        "customer",
+        "supplier",
+        "employee"
+      ]
+    },
+    "party_id": {
+      "type": "string"
+    },
+    "party_name": {
+      "type": "string"
+    },
+    "payment_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "bank_transfer",
+        "mobile_money",
+        "cheque"
+      ],
+      "default": "cash"
+    },
+    "reference": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "confirmed",
+        "posted",
+        "cancelled"
+      ],
+      "default": "draft"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "allocated_to_invoices": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "payment_type",
+    "party_id",
+    "amount",
+    "payment_date"
+  ]
+}
