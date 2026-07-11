@@ -7,6 +7,8 @@ export const ROLES = {
   WAREHOUSE_MANAGER: 'warehouse_manager',
   CASHIER: 'cashier',
   PRODUCTION_MANAGER: 'production_manager',
+  DRIVER: 'driver',
+  CUSTOMER: 'customer',
   EMPLOYEE: 'employee',
 };
 
@@ -16,6 +18,8 @@ export const ROLE_LABELS = {
   warehouse_manager: 'Warehouse Manager',
   cashier: 'Cashier',
   production_manager: 'Production Manager',
+  driver: 'Driver',
+  customer: 'Customer',
   employee: 'Employee',
 };
 
@@ -78,4 +82,9 @@ export const NAV_ROLE_ACCESS = {
   '/reports': ['admin'],
   '/approvals': ['admin', 'procurement', 'production_manager'],
   '/admin': ['admin'],
+  '/driver': ['driver'],
+  '/customer': ['customer'],
+  '/staff-ops': ['employee', 'procurement', 'warehouse_manager', 'production_manager', 'cashier'],
+  '/support-tickets': ['admin'],
+  '/sales-requests': ['admin', 'employee'],
 };

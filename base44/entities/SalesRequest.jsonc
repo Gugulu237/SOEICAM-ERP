@@ -1,0 +1,49 @@
+{
+  "name": "SalesRequest",
+  "type": "object",
+  "properties": {
+    "request_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "items_json": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "requested_delivery_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "converted"
+      ],
+      "default": "pending"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "converted_sales_order_id": {
+      "type": "string"
+    },
+    "rejection_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "customer_id",
+    "items_json"
+  ]
+}

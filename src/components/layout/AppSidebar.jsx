@@ -3,7 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   ShieldCheck, Receipt, UserCheck, Truck, UserCog, Wallet, BarChart3,
-  CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote
+  CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
+  ShoppingBag, Zap, Headphones, ClipboardList
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -19,6 +20,11 @@ const navItems = [
   { label: "Sales", icon: Receipt, path: "/sales", roles: ["admin", "employee"] },
   { label: "Customers", icon: UserCheck, path: "/customers", roles: ["admin", "employee"] },
   { label: "Distribution", icon: Truck, path: "/distribution", roles: ["admin", "employee"] },
+  { label: "Driver Portal", icon: Truck, path: "/driver", roles: ["driver"] },
+  { label: "Customer Portal", icon: ShoppingBag, path: "/customer", roles: ["customer"] },
+  { label: "Staff Operations", icon: Zap, path: "/staff-ops", roles: ["employee", "procurement", "warehouse_manager", "production_manager", "cashier"] },
+  { label: "Sales Requests", icon: ClipboardList, path: "/sales-requests", roles: ["admin", "employee"] },
+  { label: "Support Tickets", icon: Headphones, path: "/support-tickets", roles: ["admin"] },
   { label: "Employees", icon: UserCog, path: "/employees", roles: ["admin"] },
   { label: "Payroll", icon: Wallet, path: "/payroll", roles: ["admin"] },
   { label: "Cashier", icon: Banknote, path: "/cashier", roles: ["admin", "cashier"] },
