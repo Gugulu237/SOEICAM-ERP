@@ -69,13 +69,12 @@ Deno.serve(async (req) => {
       return Response.json({ error: `Period ${period.name} is ${period.status}. Posting is not allowed.` }, { status: 400 });
     }
 
-    // --- Generate journal number (sequence + unique suffix to prevent concurrent collisions) ---
+    // --- Generate journal number ---
     const settings = await base44.entities.CompanySettings.filter({});
     const cs = settings[0];
     let seq = (cs && cs.next_journal_number) || 1;
     const year = entryDate.getUTCFullYear();
-    const suffix = Math.random().toString(36).slice(2, 6);
-    const journal_number = `JE-${year}-${String(seq).padStart(5, '0')}-${suffix}`;
+    const journal_number = `JE-${year}-${String(seq).padStart(5, '0')}`;
     if (cs) {
       await base44.entities.CompanySettings.update(cs.id, { next_journal_number: seq + 1 });
     }
