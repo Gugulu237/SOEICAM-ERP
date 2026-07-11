@@ -14,6 +14,25 @@
     "warehouse_id": {
       "type": "string"
     },
+    "requested_department_id": {
+      "type": "string"
+    },
+    "requested_department_name": {
+      "type": "string"
+    },
+    "requested_by_id": {
+      "type": "string"
+    },
+    "requested_by_name": {
+      "type": "string"
+    },
+    "requested_by_title": {
+      "type": "string"
+    },
+    "request_date": {
+      "type": "string",
+      "format": "date"
+    },
     "order_date": {
       "type": "string",
       "format": "date"

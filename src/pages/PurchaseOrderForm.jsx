@@ -20,9 +20,11 @@ export default function PurchaseOrderForm() {
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [requester, setRequester] = useState({ name: "", title: "", id: "" });
   const [form, setForm] = useState({
-    supplier_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
-    expected_date: "", notes: "", status: "draft"
+    supplier_id: "", warehouse_id: "", requested_department_id: "",
+    order_date: new Date().toISOString().split("T")[0], expected_date: "", notes: "", status: "draft"
   });
   const [lines, setLines] = useState([]);
   const [order, setOrder] = useState(null);
@@ -33,32 +35,53 @@ export default function PurchaseOrderForm() {
       base44.entities.Supplier.filter({ is_active: true }),
       base44.entities.Product.filter({ is_active: true }),
       base44.entities.Warehouse.filter({ is_active: true }),
-    ]).then(([s, p, w]) => { setSuppliers(s); setProducts(p); setWarehouses(w); });
+      base44.entities.Department.filter({ is_active: true }),
+      base44.auth.me(),
+    ]).then(async ([s, p, w, d, user]) => {
+      setSuppliers(s); setProducts(p); setWarehouses(w); setDepartments(d);
+      if (user) {
+        const emp = (await base44.entities.Employee.filter({ user_id: user.id }))[0];
+        setRequester({ name: emp?.full_name || user.full_name || user.email || "", title: emp?.job_title || "", id: user.id });
+      }
+    });
     if (isEdit) loadOrder();
   }, [id]);
 
   async function loadOrder() {
     const o = await base44.entities.PurchaseOrder.get(id);
     setOrder(o);
-    setForm({ supplier_id: o.supplier_id, warehouse_id: o.warehouse_id || "", order_date: o.order_date, expected_date: o.expected_date || "", notes: o.notes || "", status: o.status });
+    setForm({
+      supplier_id: o.supplier_id, warehouse_id: o.warehouse_id || "",
+      requested_department_id: o.requested_department_id || "",
+      order_date: o.order_date, expected_date: o.expected_date || "", notes: o.notes || "", status: o.status
+    });
     const ls = await base44.entities.PurchaseOrderLine.filter({ po_id: id });
     setLines(ls.map(l => ({ ...l, _saved: true })));
   }
 
   function addLine() {
-    setLines(l => [...l, { product_id: "", quantity: 0, unit: "kg", unit_price: 0, tax_rate: 0, tax_amount: 0, total: 0 }]);
+    const defaultSupplier = form.supplier_id || suppliers[0]?.id || "";
+    setLines(l => [...l, { supplier_id: defaultSupplier, product_id: "", quantity: 0, unit: "kg", unit_price: 0, tax_rate: 0, tax_amount: 0, total: 0 }]);
   }
 
   function updateLine(i, field, value) {
     setLines(prev => {
       const arr = [...prev];
       arr[i] = { ...arr[i], [field]: value };
+      if (field === "supplier_id") {
+        const sup = suppliers.find(s => s.id === value);
+        if (sup) arr[i].supplier_name = sup.name;
+      }
       if (field === "product_id") {
         const prod = products.find(p => p.id === value);
         if (prod) {
           arr[i].product_name = prod.name;
           arr[i].unit = prod.purchase_unit || "kg";
           arr[i].unit_price = prod.current_cost || 0;
+          if (prod.preferred_supplier_id && !arr[i].supplier_id) {
+            const pref = suppliers.find(s => s.id === prod.preferred_supplier_id);
+            if (pref) { arr[i].supplier_id = pref.id; arr[i].supplier_name = pref.name; }
+          }
         }
       }
       const qty = Number(arr[i].quantity) || 0;
@@ -76,15 +99,25 @@ export default function PurchaseOrderForm() {
   const totals = lines.reduce((acc, l) => ({ sub: acc.sub + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), tax: acc.tax + (l.tax_amount || 0), total: acc.total + (l.total || 0) }), { sub: 0, tax: 0, total: 0 });
 
   async function handleSave() {
-    if (!form.supplier_id || lines.length === 0) {
-      toast({ title: "Error", description: "Select a supplier and add at least one line", variant: "destructive" });
+    if (lines.length === 0) {
+      toast({ title: "Error", description: "Add at least one line", variant: "destructive" });
+      return;
+    }
+    const missingSupplier = lines.findIndex(l => !l.supplier_id);
+    if (missingSupplier >= 0) {
+      toast({ title: "Error", description: `Select a supplier for line ${missingSupplier + 1}`, variant: "destructive" });
       return;
     }
     setSaving(true);
     try {
-      const supplier = suppliers.find(s => s.id === form.supplier_id);
+      const primarySupplierId = form.supplier_id || lines[0].supplier_id;
+      const supplier = suppliers.find(s => s.id === primarySupplierId);
+      const dept = departments.find(d => d.id === form.requested_department_id);
       const poData = {
-        ...form, supplier_name: supplier?.name || "",
+        ...form, supplier_id: primarySupplierId, supplier_name: supplier?.name || lines[0].supplier_name || "",
+        requested_department_name: dept?.name || "",
+        requested_by_id: requester.id, requested_by_name: requester.name, requested_by_title: requester.title,
+        request_date: new Date().toISOString().split("T")[0],
         subtotal: Math.round(totals.sub), tax_total: Math.round(totals.tax), total: Math.round(totals.total)
       };
 
@@ -104,7 +137,8 @@ export default function PurchaseOrderForm() {
 
       for (const l of lines) {
         await base44.entities.PurchaseOrderLine.create({
-          po_id: poId, product_id: l.product_id, product_name: l.product_name || "",
+          po_id: poId, supplier_id: l.supplier_id, supplier_name: l.supplier_name || "",
+          product_id: l.product_id, product_name: l.product_name || "",
           quantity: Number(l.quantity), unit: l.unit, unit_price: Number(l.unit_price),
           tax_rate: Number(l.tax_rate) || 0, tax_amount: l.tax_amount || 0, total: l.total || 0
         });
@@ -147,17 +181,24 @@ export default function PurchaseOrderForm() {
       <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-5xl">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div>
-            <Label>Supplier *</Label>
-            <Select value={form.supplier_id} onValueChange={v => setForm(f => ({ ...f, supplier_id: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
-              <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+            <Label>Requesting Warehouse / Dept *</Label>
+            <Select value={form.requested_department_id} onValueChange={v => setForm(f => ({ ...f, requested_department_id: v }))}>
+              <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+              <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Warehouse</Label>
+            <Label>Delivery Warehouse</Label>
             <Select value={form.warehouse_id} onValueChange={v => setForm(f => ({ ...f, warehouse_id: v }))}>
               <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
               <SelectContent>{warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Primary Supplier (optional)</Label>
+            <Select value={form.supplier_id} onValueChange={v => setForm(f => ({ ...f, supplier_id: v }))}>
+              <SelectTrigger><SelectValue placeholder="Auto from lines" /></SelectTrigger>
+              <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div>
@@ -179,6 +220,7 @@ export default function PurchaseOrderForm() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-slate-600">
+                  <th className="pb-2 w-44">Supplier</th>
                   <th className="pb-2">Product</th>
                   <th className="pb-2 w-20">Qty</th>
                   <th className="pb-2 w-20">Unit</th>
@@ -191,6 +233,12 @@ export default function PurchaseOrderForm() {
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i} className="border-b border-slate-100">
+                    <td className="py-2 pr-2">
+                      <Select value={l.supplier_id} onValueChange={v => updateLine(i, "supplier_id", v)}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                        <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </td>
                     <td className="py-2 pr-2">
                       <Select value={l.product_id} onValueChange={v => updateLine(i, "product_id", v)}>
                         <SelectTrigger className="h-9"><SelectValue placeholder="Select" /></SelectTrigger>
@@ -218,6 +266,30 @@ export default function PurchaseOrderForm() {
         <div className="mb-4">
           <Label>Notes</Label>
           <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+        </div>
+
+        <div className="mb-4 border-t border-dashed border-slate-300 pt-4">
+          <h4 className="text-sm font-semibold text-slate-700 mb-3">Request Signature</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Label className="text-xs text-slate-500">Requested By</Label>
+              <div className="border-b border-slate-300 pb-1 mt-1 text-sm font-medium text-slate-900 min-h-[2rem]">
+                {requester.name || (isEdit && order ? order.requested_by_name : "—")}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Job Title</Label>
+              <div className="border-b border-slate-300 pb-1 mt-1 text-sm font-medium text-slate-900 min-h-[2rem]">
+                {requester.title || (isEdit && order ? order.requested_by_title : "—")}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Request Date</Label>
+              <div className="border-b border-slate-300 pb-1 mt-1 text-sm font-medium text-slate-900 min-h-[2rem]">
+                {(isEdit && order ? order.request_date : new Date().toISOString().split("T")[0]) || "—"}
+              </div>
+            </div>
+          </div>
         </div>
 
         {(!isEdit || order?.status === "draft") && (

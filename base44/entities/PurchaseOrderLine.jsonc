@@ -5,6 +5,12 @@
     "po_id": {
       "type": "string"
     },
+    "supplier_id": {
+      "type": "string"
+    },
+    "supplier_name": {
+      "type": "string"
+    },
     "product_id": {
       "type": "string"
     },
