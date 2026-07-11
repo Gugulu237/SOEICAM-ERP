@@ -68,7 +68,7 @@ export default function RecipeForm() {
     });
   }
 
-  async function handleSave() {
+  async function handleSave(createNewVersion = false, navigateAfter = true) {
     if (!form.product_id || !form.recipe_name || lines.length === 0) {
       toast({ title: "Error", description: "Fill required fields and add materials", variant: "destructive" });
       return;
@@ -78,8 +78,19 @@ export default function RecipeForm() {
       const prod = products.find(p => p.id === form.product_id);
       const data = { ...form, product_name: prod?.name || "", effective_date: new Date().toISOString().split("T")[0] };
 
+      // Editing an approved recipe creates a new version (old one gets superseded)
+      const isApprovedEdit = isEdit && (recipe?.status === "approved" || createNewVersion);
       let recipeId = id;
-      if (isEdit) {
+
+      if (isApprovedEdit) {
+        // Mark the old version as superseded
+        await base44.entities.Recipe.update(id, { status: "superseded" });
+        // Create new version with incremented version number
+        data.version = (recipe?.version || 1) + 1;
+        data.status = "draft";
+        const created = await base44.entities.Recipe.create(data);
+        recipeId = created.id;
+      } else if (isEdit) {
         await base44.entities.Recipe.update(id, data);
         const existing = await base44.entities.RecipeLine.filter({ recipe_id: id });
         for (const e of existing) await base44.entities.RecipeLine.delete(e.id);
@@ -96,8 +107,16 @@ export default function RecipeForm() {
         });
       }
 
-      toast({ title: "Saved" });
-      navigate("/manufacturing");
+      toast({ title: "Saved", description: isApprovedEdit ? `New version v${data.version} created` : "Recipe saved" });
+      if (navigateAfter) {
+        navigate("/manufacturing");
+      } else {
+        // Reset form for a new recipe
+        setForm({ product_id: "", recipe_name: "", version: 1, batch_output: 100, output_unit: "units", expected_yield_pct: 98, wastage_limit_pct: 2, notes: "" });
+        setLines([]);
+        setRecipe(null);
+        navigate("/manufacturing/recipes/new");
+      }
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
@@ -119,6 +138,7 @@ export default function RecipeForm() {
         title={isEdit ? `Recipe: ${recipe?.recipe_name || ""}` : "New Recipe / BOM"}
         actions={
           <div className="flex gap-2">
+            {isEdit && <Button variant="outline" onClick={() => navigate("/manufacturing/recipes/new")}><Plus size={16} className="mr-1" /> New Recipe</Button>}
             {isEdit && recipe?.status === "draft" && <Button variant="outline" onClick={handleApprove}><CheckCircle size={16} className="mr-1" /> Approve</Button>}
             <Button variant="outline" onClick={() => navigate("/manufacturing")}><ArrowLeft size={16} className="mr-1" /> Back</Button>
           </div>
@@ -206,10 +226,14 @@ export default function RecipeForm() {
           <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
         </div>
 
-        {(!isEdit || recipe?.status === "draft") && (
-          <div className="flex gap-3">
-            <Button onClick={handleSave} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : "Save Recipe"}</Button>
+        {(!isEdit || recipe?.status === "draft" || recipe?.status === "approved") && (
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => handleSave(false, true)} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : isEdit && recipe?.status === "approved" ? "Save as New Version" : "Save Recipe"}</Button>
+            <Button variant="outline" onClick={() => handleSave(false, false)} disabled={saving}><Save size={16} className="mr-1" /> Save & New</Button>
           </div>
+        )}
+        {isEdit && recipe?.status === "superseded" && (
+          <div className="text-sm text-slate-500 italic">This recipe version is superseded and cannot be edited.</div>
         )}
       </div>
     </div>
