@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatXAF, formatNumber } from "@/lib/formatters";
-import { Save, ArrowLeft, CheckCircle, Play, PackageCheck } from "lucide-react";
+import { Save, ArrowLeft, CheckCircle, Play, PackageCheck, Send } from "lucide-react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function ProductionOrderForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, canApproveProduction, canIssueMaterials } = useCurrentUser();
   const isEdit = !!id;
 
   const [recipes, setRecipes] = useState([]);
@@ -77,7 +79,7 @@ export default function ProductionOrderForm() {
   const standardCost = materials.reduce((s, m) => s + (m.standard_quantity || 0) * (m.unit_cost || 0), 0);
   const costPerUnit = form.planned_output > 0 ? standardCost / form.planned_output : 0;
 
-  async function handleSave() {
+  async function handleSave(submitStatus = "draft") {
     if (!form.recipe_id || form.planned_output <= 0) {
       toast({ title: "Error", description: "Select a recipe and enter planned output", variant: "destructive" });
       return;
@@ -86,7 +88,7 @@ export default function ProductionOrderForm() {
     try {
       const recipe = recipes.find(r => r.id === form.recipe_id);
       const data = {
-        ...form, product_id: recipe.product_id, product_name: recipe.product_name,
+        ...form, status: submitStatus, product_id: recipe.product_id, product_name: recipe.product_name,
         standard_cost_per_unit: Math.round(costPerUnit),
         total_material_cost: Math.round(standardCost)
       };
@@ -113,12 +115,25 @@ export default function ProductionOrderForm() {
         }
       }
 
-      toast({ title: "Saved" });
+      if (submitStatus === "awaiting_approval") {
+        await base44.entities.AuditLog.create({ action: "submit", module: "manufacturing", entity_type: "ProductionOrder", entity_id: orderId, user_id: user?.id || "", description: `Submitted production order for approval` });
+      }
+
+      toast({ title: submitStatus === "awaiting_approval" ? "Submitted" : "Saved", description: submitStatus === "awaiting_approval" ? "Production order submitted for GM approval" : "Production order saved as draft" });
       navigate("/manufacturing");
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
     setSaving(false);
+  }
+
+  async function handleApprove() {
+    try {
+      await base44.entities.ProductionOrder.update(id, { status: "approved", approved_by: user?.full_name || user?.email || "", approved_at: new Date().toISOString() });
+      await base44.entities.AuditLog.create({ action: "approve", module: "manufacturing", entity_type: "ProductionOrder", entity_id: id, user_id: user?.id || "", description: `Approved production order ${order.order_number}` });
+      toast({ title: "Approved", description: "Production order approved — warehouse can now issue materials" });
+      loadOrder();
+    } catch (e) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
 
   async function handleIssueMaterials() {
@@ -149,9 +164,9 @@ export default function ProductionOrderForm() {
         }
         await base44.entities.ProductionMaterial.update(m.id, { issued_quantity: m.standard_quantity, consumed_quantity: m.standard_quantity });
       }
-      await base44.entities.ProductionOrder.update(id, { status: "materials_issued" });
-      await base44.entities.AuditLog.create({ action: "issue_materials", module: "manufacturing", entity_type: "ProductionOrder", entity_id: id, description: `Materials issued for ${order.order_number}` });
-      toast({ title: "Materials issued" });
+      await base44.entities.ProductionOrder.update(id, { status: "materials_issued", materials_issued_by: user?.full_name || user?.email || "", materials_issued_at: new Date().toISOString() });
+      await base44.entities.AuditLog.create({ action: "issue_materials", module: "manufacturing", entity_type: "ProductionOrder", entity_id: id, user_id: user?.id || "", description: `Materials issued for ${order.order_number}` });
+      toast({ title: "Materials issued", description: "Materials moved to WIP warehouse" });
       loadOrder();
     } catch (e) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
@@ -251,8 +266,8 @@ export default function ProductionOrderForm() {
         subtitle={isEdit && order ? <StatusBadge status={order.status} /> : null}
         actions={
           <div className="flex gap-2">
-            {isEdit && order?.status === "draft" && <Button variant="outline" onClick={() => base44.entities.ProductionOrder.update(id, { status: "approved" }).then(loadOrder)}><CheckCircle size={16} className="mr-1" /> Approve</Button>}
-            {isEdit && order?.status === "approved" && <Button variant="outline" onClick={handleIssueMaterials}><Play size={16} className="mr-1" /> Issue Materials</Button>}
+            {isEdit && order?.status === "awaiting_approval" && canApproveProduction && <Button variant="outline" onClick={handleApprove}><CheckCircle size={16} className="mr-1" /> Approve</Button>}
+            {isEdit && order?.status === "approved" && canIssueMaterials && <Button variant="outline" onClick={handleIssueMaterials}><Play size={16} className="mr-1" /> Issue Materials</Button>}
             {isEdit && order?.status === "materials_issued" && <Button onClick={handleComplete}><PackageCheck size={16} className="mr-1" /> Complete Production</Button>}
             <Button variant="outline" onClick={() => navigate("/manufacturing")}><ArrowLeft size={16} className="mr-1" /> Back</Button>
           </div>
@@ -340,9 +355,16 @@ export default function ProductionOrderForm() {
           </div>
         )}
 
+        {isEdit && order?.status === "draft" && (
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => handleSave("draft")} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : "Save Draft"}</Button>
+            <Button onClick={() => handleSave("awaiting_approval")} disabled={saving}><Send size={16} className="mr-1" /> {saving ? "Submitting..." : "Submit for Approval"}</Button>
+          </div>
+        )}
         {!isEdit && (
           <div className="flex gap-3">
-            <Button onClick={handleSave} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : "Create Order"}</Button>
+            <Button variant="outline" onClick={() => handleSave("draft")} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : "Save Draft"}</Button>
+            <Button onClick={() => handleSave("awaiting_approval")} disabled={saving}><Send size={16} className="mr-1" /> {saving ? "Submitting..." : "Submit for Approval"}</Button>
           </div>
         )}
       </div>

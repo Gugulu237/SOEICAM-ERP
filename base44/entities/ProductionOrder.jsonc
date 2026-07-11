@@ -77,6 +77,12 @@
     },
     "approved_at": {
       "type": "string"
+    },
+    "materials_issued_by": {
+      "type": "string"
+    },
+    "materials_issued_at": {
+      "type": "string"
     }
   },
   "required": [
