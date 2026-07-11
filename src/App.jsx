@@ -19,15 +19,7 @@ import AppLayout from '@/components/layout/AppLayout';
 
 // Pages
 import Dashboard from '@/pages/Dashboard';
-import AccountingLayout from '@/pages/accounting/AccountingLayout';
-import FinancialCommandCentre from '@/pages/accounting/FinancialCommandCentre';
-import ChartOfAccounts from '@/pages/accounting/ChartOfAccounts';
-import JournalEntries from '@/pages/accounting/JournalEntries';
-import JournalEntryForm from '@/pages/accounting/JournalEntryForm';
-import JournalEntryDetail from '@/pages/accounting/JournalEntryDetail';
-import GeneralLedger from '@/pages/accounting/GeneralLedger';
-import TrialBalance from '@/pages/accounting/TrialBalance';
-import ExpenseForm from '@/pages/accounting/ExpenseForm';
+import Accounting from '@/pages/Accounting';
 import PaymentForm from '@/pages/PaymentForm';
 import Purchases from '@/pages/Purchases';
 import PurchaseOrderForm from '@/pages/PurchaseOrderForm';
@@ -84,17 +76,8 @@ const AuthenticatedApp = () => {
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/accounting" element={<AccountingLayout />}>
-            <Route index element={<FinancialCommandCentre />} />
-            <Route path="chart-of-accounts" element={<ChartOfAccounts />} />
-            <Route path="journals" element={<JournalEntries />} />
-            <Route path="journals/new" element={<JournalEntryForm />} />
-            <Route path="journals/:id" element={<JournalEntryDetail />} />
-            <Route path="general-ledger" element={<GeneralLedger />} />
-            <Route path="trial-balance" element={<TrialBalance />} />
-            <Route path="expenses/new" element={<ExpenseForm />} />
-            <Route path="payments/new" element={<PaymentForm />} />
-          </Route>
+          <Route path="/accounting" element={<Accounting />} />
+          <Route path="/accounting/payments/new" element={<PaymentForm />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<PurchaseOrderForm />} />
           <Route path="/purchases/:id" element={<PurchaseOrderForm />} />
