@@ -72,6 +72,18 @@
     "disbursed_at": {
       "type": "string"
     },
+    "cheque_gm_signed_by": {
+      "type": "string"
+    },
+    "cheque_gm_signed_at": {
+      "type": "string"
+    },
+    "cheque_pm_signed_by": {
+      "type": "string"
+    },
+    "cheque_pm_signed_at": {
+      "type": "string"
+    },
     "notes": {
       "type": "string"
     },

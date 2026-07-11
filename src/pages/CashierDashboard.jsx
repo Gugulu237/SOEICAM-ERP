@@ -14,9 +14,10 @@ import { useToast } from "@/components/ui/use-toast";
 import { Banknote, Clock, CheckCircle2, DollarSign } from "lucide-react";
 
 export default function CashierDashboard() {
-  const { user, canDisburse } = useCurrentUser();
+  const { user, canDisburse, canSignChequeGM, canSignChequePM } = useCurrentUser();
   const { toast } = useToast();
   const [approvedPOs, setApprovedPOs] = useState([]);
+  const [pendingCheques, setPendingCheques] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [disbursePO, setDisbursePO] = useState(null);
@@ -29,12 +30,14 @@ export default function CashierDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pos, pays] = await Promise.all([
+      const [pos, pays, cheques] = await Promise.all([
         base44.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment" }, "-created_date", 20),
+        base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "draft" }, "-created_date", 50),
       ]);
       setApprovedPOs(pos);
-      setPayments(pays);
+      setPendingCheques(cheques.filter(c => c.payment_method === "cheque"));
+      setPayments(pays.filter(p => p.status !== "draft"));
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
@@ -67,6 +70,7 @@ export default function CashierDashboard() {
     try {
       const settings = (await base44.entities.CompanySettings.filter({}))[0];
       const num = settings?.next_journal_number || 1;
+      const isCheque = payForm.payment_method === "cheque";
       await base44.entities.Payment.create({
         payment_number: `PAY-${String(num).padStart(5, "0")}`,
         payment_type: "supplier_payment",
@@ -77,25 +81,57 @@ export default function CashierDashboard() {
         amount: Number(payForm.amount),
         payment_method: payForm.payment_method,
         reference: payForm.reference || "",
-        status: "confirmed",
+        status: isCheque ? "draft" : "confirmed",
         po_id: disbursePO.id,
         disbursed_by: user?.id || "",
         disbursed_at: new Date().toISOString(),
         notes: payForm.notes || `Payment for ${disbursePO.po_number}`,
       });
-      await base44.entities.PurchaseOrder.update(disbursePO.id, { status: "billed" });
       if (settings) await base44.entities.CompanySettings.update(settings.id, { next_journal_number: num + 1 });
-      await base44.entities.AuditLog.create({
-        action: "disburse", module: "cashier", entity_type: "PurchaseOrder", entity_id: disbursePO.id,
-        user_id: user?.id || "", description: `Disbursed ${formatXAF(payForm.amount)} for ${disbursePO.po_number}`,
-      });
-      toast({ title: "Disbursed", description: `${formatXAF(payForm.amount)} paid to ${disbursePO.supplier_name}` });
+      if (isCheque) {
+        await base44.entities.AuditLog.create({
+          action: "prepare_cheque", module: "cashier", entity_type: "PurchaseOrder", entity_id: disbursePO.id,
+          user_id: user?.id || "", description: `Cheque prepared for ${disbursePO.po_number} — awaiting GM & Production Manager signatures`,
+        });
+        toast({ title: "Cheque prepared", description: `Cheque for ${disbursePO.supplier_name} awaiting GM & Production Manager signatures` });
+      } else {
+        await base44.entities.PurchaseOrder.update(disbursePO.id, { status: "billed" });
+        await base44.entities.AuditLog.create({
+          action: "disburse", module: "cashier", entity_type: "PurchaseOrder", entity_id: disbursePO.id,
+          user_id: user?.id || "", description: `Disbursed ${formatXAF(payForm.amount)} for ${disbursePO.po_number}`,
+        });
+        toast({ title: "Disbursed", description: `${formatXAF(payForm.amount)} paid to ${disbursePO.supplier_name}` });
+      }
       setDisbursePO(null);
       loadData();
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
     setSaving(false);
+  }
+
+  async function handleSignCheque(payment, signType) {
+    try {
+      const now = new Date().toISOString();
+      const signer = user?.full_name || user?.email || "";
+      const updates = signType === "gm"
+        ? { cheque_gm_signed_by: signer, cheque_gm_signed_at: now }
+        : { cheque_pm_signed_by: signer, cheque_pm_signed_at: now };
+      const gmSigned = signType === "gm" || !!payment.cheque_gm_signed_by;
+      const pmSigned = signType === "pm" || !!payment.cheque_pm_signed_by;
+      if (gmSigned && pmSigned) updates.status = "confirmed";
+      await base44.entities.Payment.update(payment.id, updates);
+      if (gmSigned && pmSigned && payment.po_id) {
+        await base44.entities.PurchaseOrder.update(payment.po_id, { status: "billed" });
+      }
+      await base44.entities.AuditLog.create({
+        action: "sign_cheque", module: "cashier", entity_type: "Payment", entity_id: payment.id,
+        user_id: user?.id || "",
+        description: `${signType === "gm" ? "General Manager" : "Production Manager"} signed cheque ${payment.payment_number}`,
+      });
+      toast({ title: "Signed", description: gmSigned && pmSigned ? "Both signatures complete — payment confirmed" : "Signature recorded — awaiting counter-signature" });
+      loadData();
+    } catch (e) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
@@ -144,6 +180,52 @@ export default function CashierDashboard() {
           </tbody>
         </table>
       </div>
+
+      {pendingCheques.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3">Pending Cheque Signatures (GM + Production Manager)</h3>
+          <div className="bg-amber-50 rounded-lg border border-amber-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-amber-100/60 border-b border-amber-200">
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Cheque #</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Supplier</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-600">Amount</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">GM Signature</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Prod. Manager</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-600">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingCheques.map(p => (
+                  <tr key={p.id} className="border-b border-amber-100 last:border-0">
+                    <td className="px-4 py-3 font-medium">{p.payment_number}</td>
+                    <td className="px-4 py-3">{p.party_name}</td>
+                    <td className="px-4 py-3 text-right font-medium">{formatXAF(p.amount)}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {p.cheque_gm_signed_by
+                        ? <span className="text-green-700">✓ {p.cheque_gm_signed_by}</span>
+                        : <span className="text-slate-400">Awaiting</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {p.cheque_pm_signed_by
+                        ? <span className="text-green-700">✓ {p.cheque_pm_signed_by}</span>
+                        : <span className="text-slate-400">Awaiting</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        {!p.cheque_gm_signed_by && canSignChequeGM && <Button size="sm" onClick={() => handleSignCheque(p, "gm")}>Sign (GM)</Button>}
+                        {!p.cheque_pm_signed_by && canSignChequePM && <Button size="sm" onClick={() => handleSignCheque(p, "pm")}>Sign (PM)</Button>}
+                        {!p.cheque_gm_signed_by && !p.cheque_pm_signed_by && !canSignChequeGM && !canSignChequePM && <span className="text-xs text-slate-400">View only</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <h3 className="text-sm font-semibold text-slate-700 mb-3">Recent Payments</h3>
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">

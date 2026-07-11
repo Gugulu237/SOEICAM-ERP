@@ -30,10 +30,12 @@ export function useCurrentUser() {
     isCashier: role === 'cashier',
     isWarehouseManager: role === 'warehouse_manager',
     isProductionManager: role === 'production_manager',
-    canApprovePO: ['admin', 'procurement'].includes(role),
+    canApprovePO: ['admin'].includes(role),
     canDisburse: ['admin', 'cashier'].includes(role),
     canViewAllPOs: ['admin', 'procurement', 'cashier'].includes(role),
     canIssueMaterials: ['admin', 'warehouse_manager'].includes(role),
     canApproveProduction: ['admin'].includes(role),
+    canSignChequeGM: ['admin'].includes(role),
+    canSignChequePM: ['production_manager'].includes(role),
   };
 }

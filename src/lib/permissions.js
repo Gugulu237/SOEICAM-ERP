@@ -19,16 +19,19 @@ export const ROLE_LABELS = {
   employee: 'Employee',
 };
 
-// Who can approve purchase orders
-export const PO_APPROVERS = ['admin', 'procurement'];
+// Who can approve purchase orders (GM only — procurement/production manager submit, GM approves)
+export const PO_APPROVERS = ['admin'];
 // Who can see all purchase orders (vs only their department's)
 export const PO_FULL_ACCESS = ['admin', 'procurement', 'cashier'];
 // Who can disburse payments
 export const PAYMENT_DISBURSERS = ['admin', 'cashier'];
-// Who can approve production orders
+// Who can approve production orders (GM only)
 export const PRODUCTION_APPROVERS = ['admin'];
 // Who can issue materials from warehouse
 export const WAREHOUSE_ISSUERS = ['admin', 'warehouse_manager'];
+// Who signs cheques (dual signature required: GM + Production Manager)
+export const CHEQUE_GM_SIGNERS = ['admin'];
+export const CHEQUE_PM_SIGNERS = ['production_manager'];
 
 // Determine effective role from user + employee records
 export function getEffectiveRole(user, employee) {
@@ -71,7 +74,7 @@ export const NAV_ROLE_ACCESS = {
   '/distribution': ['admin', 'employee'],
   '/employees': ['admin'],
   '/payroll': ['admin'],
-  '/cashier': ['admin', 'cashier'],
+  '/cashier': ['admin', 'cashier', 'production_manager'],
   '/reports': ['admin'],
   '/approvals': ['admin', 'procurement', 'production_manager'],
   '/admin': ['admin'],
