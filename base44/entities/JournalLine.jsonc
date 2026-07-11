@@ -31,42 +31,11 @@
     "department_id": {
       "type": "string"
     },
-    "cost_centre": {
-      "type": "string"
-    },
     "party_type": {
       "type": "string"
     },
     "party_id": {
       "type": "string"
-    },
-    "party_name": {
-      "type": "string"
-    },
-    "customer_id": {
-      "type": "string"
-    },
-    "supplier_id": {
-      "type": "string"
-    },
-    "employee_id": {
-      "type": "string"
-    },
-    "product_id": {
-      "type": "string"
-    },
-    "route_id": {
-      "type": "string"
-    },
-    "vehicle_id": {
-      "type": "string"
-    },
-    "tax_code": {
-      "type": "string"
-    },
-    "due_date": {
-      "type": "string",
-      "format": "date"
     }
   },
   "required": [

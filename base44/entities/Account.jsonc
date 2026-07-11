@@ -8,9 +8,6 @@
     "name": {
       "type": "string"
     },
-    "description": {
-      "type": "string"
-    },
     "account_type": {
       "type": "string",
       "enum": [
@@ -24,9 +21,6 @@
         "other_expense"
       ]
     },
-    "subtype": {
-      "type": "string"
-    },
     "parent_id": {
       "type": "string"
     },
@@ -37,10 +31,6 @@
         "credit"
       ]
     },
-    "is_posting": {
-      "type": "boolean",
-      "default": true
-    },
     "is_active": {
       "type": "boolean",
       "default": true
@@ -49,36 +39,7 @@
       "type": "boolean",
       "default": false
     },
-    "is_control_account": {
-      "type": "boolean",
-      "default": false
-    },
-    "reconciliation_required": {
-      "type": "boolean",
-      "default": false
-    },
-    "financial_statement": {
-      "type": "string",
-      "enum": [
-        "balance_sheet",
-        "income_statement",
-        "cash_flow",
-        "equity_statement"
-      ]
-    },
-    "cash_flow_category": {
-      "type": "string",
-      "enum": [
-        "operating",
-        "investing",
-        "financing",
-        "none"
-      ]
-    },
-    "currency_restriction": {
-      "type": "string"
-    },
-    "branch_restriction": {
+    "description": {
       "type": "string"
     },
     "balance": {

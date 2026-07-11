@@ -9,14 +9,7 @@
       "type": "string",
       "format": "date"
     },
-    "posting_date": {
-      "type": "string",
-      "format": "date"
-    },
     "description": {
-      "type": "string"
-    },
-    "reference": {
       "type": "string"
     },
     "source_module": {
@@ -28,27 +21,15 @@
     "source_document_id": {
       "type": "string"
     },
-    "posting_type": {
-      "type": "string"
-    },
-    "idempotency_key": {
-      "type": "string"
-    },
     "branch_id": {
-      "type": "string"
-    },
-    "period_id": {
       "type": "string"
     },
     "status": {
       "type": "string",
       "enum": [
         "draft",
-        "awaiting_review",
-        "approved",
         "posted",
-        "reversed",
-        "rejected"
+        "reversed"
       ],
       "default": "draft"
     },
@@ -60,23 +41,6 @@
       "type": "number",
       "default": 0
     },
-    "currency": {
-      "type": "string",
-      "default": "XAF"
-    },
-    "exchange_rate": {
-      "type": "number",
-      "default": 1
-    },
-    "created_by": {
-      "type": "string"
-    },
-    "reviewed_by": {
-      "type": "string"
-    },
-    "approved_by": {
-      "type": "string"
-    },
     "posted_by": {
       "type": "string"
     },
@@ -86,10 +50,10 @@
     "reversal_of": {
       "type": "string"
     },
-    "reversal_reason": {
+    "reversed_by_journal": {
       "type": "string"
     },
-    "reversed_by_journal": {
+    "period_id": {
       "type": "string"
     },
     "is_immutable": {
