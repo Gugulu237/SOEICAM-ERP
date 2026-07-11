@@ -3,32 +3,40 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   ShieldCheck, Receipt, UserCheck, Truck, UserCog, Wallet, BarChart3,
-  CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu
+  CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { label: "Accounting", icon: BookOpen, path: "/accounting" },
-  { label: "Purchases", icon: ShoppingCart, path: "/purchases" },
-  { label: "Suppliers", icon: Users, path: "/suppliers" },
-  { label: "Inventory", icon: Package, path: "/inventory" },
-  { label: "Manufacturing", icon: Factory, path: "/manufacturing" },
-  { label: "Quality Control", icon: ShieldCheck, path: "/quality" },
-  { label: "Sales", icon: Receipt, path: "/sales" },
-  { label: "Customers", icon: UserCheck, path: "/customers" },
-  { label: "Distribution", icon: Truck, path: "/distribution" },
-  { label: "Employees", icon: UserCog, path: "/employees" },
-  { label: "Payroll", icon: Wallet, path: "/payroll" },
-  { label: "Reports", icon: BarChart3, path: "/reports" },
-  { label: "Approvals", icon: CheckSquare, path: "/approvals" },
-  { label: "Administration", icon: Settings, path: "/admin" },
+  { label: "Dashboard", icon: LayoutDashboard, path: "/", roles: null },
+  { label: "Accounting", icon: BookOpen, path: "/accounting", roles: ["admin", "cashier"] },
+  { label: "Purchases", icon: ShoppingCart, path: "/purchases", roles: ["admin", "procurement", "production_manager", "warehouse_manager", "employee"] },
+  { label: "Suppliers", icon: Users, path: "/suppliers", roles: ["admin", "procurement"] },
+  { label: "Inventory", icon: Package, path: "/inventory", roles: ["admin", "warehouse_manager", "procurement"] },
+  { label: "Manufacturing", icon: Factory, path: "/manufacturing", roles: ["admin", "production_manager", "warehouse_manager"] },
+  { label: "Quality Control", icon: ShieldCheck, path: "/quality", roles: ["admin", "production_manager"] },
+  { label: "Sales", icon: Receipt, path: "/sales", roles: ["admin", "employee"] },
+  { label: "Customers", icon: UserCheck, path: "/customers", roles: ["admin", "employee"] },
+  { label: "Distribution", icon: Truck, path: "/distribution", roles: ["admin", "employee"] },
+  { label: "Employees", icon: UserCog, path: "/employees", roles: ["admin"] },
+  { label: "Payroll", icon: Wallet, path: "/payroll", roles: ["admin"] },
+  { label: "Cashier", icon: Banknote, path: "/cashier", roles: ["admin", "cashier"] },
+  { label: "Reports", icon: BarChart3, path: "/reports", roles: ["admin"] },
+  { label: "Approvals", icon: CheckSquare, path: "/approvals", roles: ["admin", "procurement", "production_manager"] },
+  { label: "Administration", icon: Settings, path: "/admin", roles: ["admin"] },
 ];
 
 export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { role } = useCurrentUser();
+
+  const visibleItems = navItems.filter(item => {
+    if (!role || role === 'admin') return true;
+    return !item.roles || item.roles.includes(role);
+  });
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";
@@ -49,7 +57,7 @@ export default function AppSidebar() {
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto py-2 space-y-0.5">
-        {navItems.map(item => (
+        {visibleItems.map(item => (
           <Link
             key={item.path}
             to={item.path}

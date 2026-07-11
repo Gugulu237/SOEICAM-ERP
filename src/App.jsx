@@ -41,6 +41,7 @@ import Payroll from '@/pages/Payroll';
 import Reports from '@/pages/Reports';
 import Approvals from '@/pages/Approvals';
 import Administration from '@/pages/Administration';
+import CashierDashboard from '@/pages/CashierDashboard';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -104,6 +105,7 @@ const AuthenticatedApp = () => {
           <Route path="/reports" element={<Reports />} />
           <Route path="/approvals" element={<Approvals />} />
           <Route path="/admin" element={<Administration />} />
+          <Route path="/cashier" element={<CashierDashboard />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

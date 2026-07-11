@@ -63,6 +63,15 @@
     "journal_id": {
       "type": "string"
     },
+    "po_id": {
+      "type": "string"
+    },
+    "disbursed_by": {
+      "type": "string"
+    },
+    "disbursed_at": {
+      "type": "string"
+    },
     "notes": {
       "type": "string"
     },

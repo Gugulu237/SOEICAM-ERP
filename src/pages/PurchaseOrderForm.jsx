@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatXAF } from "@/lib/formatters";
-import { Save, ArrowLeft, Plus, Trash2, CheckCircle, Package } from "lucide-react";
+import { Save, ArrowLeft, Plus, Trash2, CheckCircle, Package, Send } from "lucide-react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function PurchaseOrderForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, employee, canApprovePO } = useCurrentUser();
   const isEdit = !!id;
 
   const [suppliers, setSuppliers] = useState([]);
@@ -36,16 +38,21 @@ export default function PurchaseOrderForm() {
       base44.entities.Product.filter({ is_active: true }),
       base44.entities.Warehouse.filter({ is_active: true }),
       base44.entities.Department.filter({ is_active: true }),
-      base44.auth.me(),
-    ]).then(async ([s, p, w, d, user]) => {
+    ]).then(([s, p, w, d]) => {
       setSuppliers(s); setProducts(p); setWarehouses(w); setDepartments(d);
-      if (user) {
-        const emp = (await base44.entities.Employee.filter({ user_id: user.id }))[0];
-        setRequester({ name: emp?.full_name || user.full_name || user.email || "", title: emp?.job_title || "", id: user.id });
-      }
     });
     if (isEdit) loadOrder();
   }, [id]);
+
+  useEffect(() => {
+    if (user) {
+      setRequester({
+        name: employee?.full_name || user.full_name || user.email || "",
+        title: employee?.job_title || "",
+        id: user.id,
+      });
+    }
+  }, [user, employee]);
 
   async function loadOrder() {
     const o = await base44.entities.PurchaseOrder.get(id);
@@ -98,7 +105,7 @@ export default function PurchaseOrderForm() {
 
   const totals = lines.reduce((acc, l) => ({ sub: acc.sub + (Number(l.quantity) || 0) * (Number(l.unit_price) || 0), tax: acc.tax + (l.tax_amount || 0), total: acc.total + (l.total || 0) }), { sub: 0, tax: 0, total: 0 });
 
-  async function handleSave() {
+  async function handleSave(submitStatus = "draft") {
     if (lines.length === 0) {
       toast({ title: "Error", description: "Add at least one line", variant: "destructive" });
       return;
@@ -114,7 +121,7 @@ export default function PurchaseOrderForm() {
       const supplier = suppliers.find(s => s.id === primarySupplierId);
       const dept = departments.find(d => d.id === form.requested_department_id);
       const poData = {
-        ...form, supplier_id: primarySupplierId, supplier_name: supplier?.name || lines[0].supplier_name || "",
+        ...form, status: submitStatus, supplier_id: primarySupplierId, supplier_name: supplier?.name || lines[0].supplier_name || "",
         requested_department_name: dept?.name || "",
         requested_by_id: requester.id, requested_by_name: requester.name, requested_by_title: requester.title,
         request_date: new Date().toISOString().split("T")[0],
@@ -144,7 +151,7 @@ export default function PurchaseOrderForm() {
         });
       }
 
-      toast({ title: "Saved", description: "Purchase order saved" });
+      toast({ title: submitStatus === "pending_approval" ? "Submitted" : "Saved", description: submitStatus === "pending_approval" ? "Purchase order submitted for approval" : "Purchase order saved as draft" });
       navigate("/purchases");
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -154,9 +161,9 @@ export default function PurchaseOrderForm() {
 
   async function handleApprove() {
     try {
-      await base44.entities.PurchaseOrder.update(id, { status: "approved", approved_at: new Date().toISOString() });
-      await base44.entities.AuditLog.create({ action: "approve", module: "procurement", entity_type: "PurchaseOrder", entity_id: id, description: `Approved PO ${order.po_number}` });
-      toast({ title: "Approved" });
+      await base44.entities.PurchaseOrder.update(id, { status: "approved", approved_by: requester.name, approved_at: new Date().toISOString() });
+      await base44.entities.AuditLog.create({ action: "approve", module: "procurement", entity_type: "PurchaseOrder", entity_id: id, user_id: user?.id || "", description: `Approved PO ${order.po_number}` });
+      toast({ title: "Approved", description: "PO approved and ready for cashier disbursement" });
       loadOrder();
     } catch (e) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
@@ -172,7 +179,7 @@ export default function PurchaseOrderForm() {
         subtitle={isEdit && order ? <StatusBadge status={order.status} /> : null}
         actions={
           <div className="flex gap-2">
-            {isEdit && order?.status === "draft" && <Button variant="outline" onClick={handleApprove}><CheckCircle size={16} className="mr-1" /> Approve</Button>}
+            {isEdit && order?.status === "pending_approval" && canApprovePO && <Button variant="outline" onClick={handleApprove}><CheckCircle size={16} className="mr-1" /> Approve</Button>}
             {isEdit && (order?.status === "approved" || order?.status === "partially_received") && <Button variant="outline" onClick={handleReceive}><Package size={16} className="mr-1" /> Receive Goods</Button>}
             <Button variant="outline" onClick={() => navigate("/purchases")}><ArrowLeft size={16} className="mr-1" /> Back</Button>
           </div>
@@ -294,7 +301,8 @@ export default function PurchaseOrderForm() {
 
         {(!isEdit || order?.status === "draft") && (
           <div className="flex gap-3">
-            <Button onClick={handleSave} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : "Save"}</Button>
+            <Button variant="outline" onClick={() => handleSave("draft")} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Saving..." : "Save Draft"}</Button>
+            <Button onClick={() => handleSave("pending_approval")} disabled={saving}><Send size={16} className="mr-1" /> {saving ? "Submitting..." : "Submit for Approval"}</Button>
             <Button variant="outline" onClick={() => navigate("/purchases")}>Cancel</Button>
           </div>
         )}
