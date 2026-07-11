@@ -26,12 +26,6 @@
     "route_id": {
       "type": "string"
     },
-    "driver_id": {
-      "type": "string"
-    },
-    "driver_name": {
-      "type": "string"
-    },
     "order_date": {
       "type": "string",
       "format": "date"
@@ -80,22 +74,6 @@
       "default": 0
     },
     "total": {
-      "type": "number",
-      "default": 0
-    },
-    "delivered_at": {
-      "type": "string"
-    },
-    "delivered_by": {
-      "type": "string"
-    },
-    "delivery_confirmation_url": {
-      "type": "string"
-    },
-    "delivery_notes": {
-      "type": "string"
-    },
-    "cash_collected": {
       "type": "number",
       "default": 0
     },

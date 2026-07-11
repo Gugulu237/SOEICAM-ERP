@@ -42,11 +42,6 @@ import Reports from '@/pages/Reports';
 import Approvals from '@/pages/Approvals';
 import Administration from '@/pages/Administration';
 import CashierDashboard from '@/pages/CashierDashboard';
-import DriverPortal from '@/pages/DriverPortal';
-import CustomerPortal from '@/pages/CustomerPortal';
-import StaffOperations from '@/pages/StaffOperations';
-import SupportTickets from '@/pages/SupportTickets';
-import SalesRequests from '@/pages/SalesRequests';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -111,11 +106,6 @@ const AuthenticatedApp = () => {
           <Route path="/approvals" element={<Approvals />} />
           <Route path="/admin" element={<Administration />} />
           <Route path="/cashier" element={<CashierDashboard />} />
-          <Route path="/driver" element={<DriverPortal />} />
-          <Route path="/customer" element={<CustomerPortal />} />
-          <Route path="/staff-ops" element={<StaffOperations />} />
-          <Route path="/support-tickets" element={<SupportTickets />} />
-          <Route path="/sales-requests" element={<SalesRequests />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
