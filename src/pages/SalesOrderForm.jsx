@@ -202,54 +202,30 @@ export default function SalesOrderForm() {
         }
       }
 
-      // Accounting: Debit Receivable/Cash, Credit Revenue + Debit COGS, Credit FG Inventory
-      const accounts = await base44.entities.Account.filter({});
-      const arAccount = accounts.find(a => a.account_number === "1200");
-      const revenueAccount = accounts.find(a => a.account_number === "4100");
-      const cogsAccount = accounts.find(a => a.account_number === "5100");
-      const fgAccount = accounts.find(a => a.account_number === "1320");
-
-      const jNum = (settings?.next_journal_number || 1);
-      const journal = await base44.entities.JournalEntry.create({
-        journal_number: `JE-${String(jNum).padStart(5, "0")}`,
+      // Accounting via central posting engine (double-entry, idempotent, immutable)
+      const jeLines = [];
+      if (order.payment_type === "credit") {
+        jeLines.push({ account_key: "accounts_receivable", debit: order.total, credit: 0, description: `Receivable from ${order.customer_name}`, party_type: "customer", party_id: order.customer_id });
+      } else {
+        jeLines.push({ account_key: "cash_on_hand", debit: order.total, credit: 0, description: `Cash sale - ${order.customer_name}` });
+      }
+      jeLines.push({ account_key: "sales_revenue", debit: 0, credit: order.subtotal, description: "Sales revenue" });
+      if (order.tax_total > 0) {
+        jeLines.push({ account_key: "tax_payable", debit: 0, credit: order.tax_total, description: "Output tax payable" });
+      }
+      if (totalCogs > 0) {
+        jeLines.push({ account_key: "cogs_direct_material", debit: totalCogs, credit: 0, description: "Cost of goods sold - direct materials" });
+        jeLines.push({ account_key: "finished_goods_inventory", debit: 0, credit: totalCogs, description: "Finished goods delivered" });
+      }
+      const jeRes = await base44.functions.invoke("postJournal", {
+        source_module: "sales", source_document_type: "Invoice", source_document_id: invoice.id,
+        idempotency_key: `sales:Invoice:${invoice.id}`,
         entry_date: new Date().toISOString().split("T")[0],
         description: `Invoice ${invoice.invoice_number} - ${order.customer_name}`,
-        source_module: "sales", source_document_type: "Invoice",
-        source_document_id: invoice.id, status: "posted",
-        total_debit: order.total + totalCogs, total_credit: order.total + totalCogs,
-        is_immutable: true, posted_at: new Date().toISOString()
+        reference: invoice.invoice_number,
+        lines: jeLines
       });
-      await base44.entities.CompanySettings.update(settings.id, { next_journal_number: jNum + 1 });
-
-      if (order.payment_type === "credit" && arAccount) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: arAccount.id,
-          account_number: "1200", account_name: arAccount.name,
-          debit: order.total, credit: 0, description: `Receivable from ${order.customer_name}`,
-          party_type: "customer", party_id: order.customer_id
-        });
-      }
-      if (revenueAccount) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: revenueAccount.id,
-          account_number: "4100", account_name: revenueAccount.name,
-          debit: 0, credit: order.total, description: "Sales revenue"
-        });
-      }
-      if (cogsAccount && totalCogs > 0) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: cogsAccount.id,
-          account_number: "5100", account_name: cogsAccount.name,
-          debit: totalCogs, credit: 0, description: "Cost of goods sold - direct materials"
-        });
-      }
-      if (fgAccount && totalCogs > 0) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: fgAccount.id,
-          account_number: "1320", account_name: fgAccount.name,
-          debit: 0, credit: totalCogs, description: "Finished goods delivered"
-        });
-      }
+      await base44.entities.Invoice.update(invoice.id, { journal_id: jeRes.data.journal_id });
 
       // Update customer balance for credit sales
       if (order.payment_type === "credit" && cust) {

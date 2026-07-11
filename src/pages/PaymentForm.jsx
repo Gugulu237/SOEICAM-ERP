@@ -44,36 +44,22 @@ export default function PaymentForm() {
         });
       }
 
-      // Create accounting journal: Debit Cash/Bank, Credit Receivable
-      const accounts = await base44.entities.Account.filter({});
-      const cashAccount = accounts.find(a => a.account_number === "1100");
-      const arAccount = accounts.find(a => a.account_number === "1200");
-      if (cashAccount && arAccount) {
-        const settings = (await base44.entities.CompanySettings.filter({}))[0];
-        const jNum = settings?.next_journal_number || 1;
-        const journal = await base44.entities.JournalEntry.create({
-          journal_number: `JE-${String(jNum).padStart(5, "0")}`,
-          entry_date: form.payment_date,
-          description: `Customer payment from ${cust?.business_name || ""}`,
-          source_module: "payments", source_document_type: "Payment",
-          source_document_id: payment.id, status: "posted",
-          total_debit: form.amount, total_credit: form.amount,
-          is_immutable: true, posted_at: new Date().toISOString()
-        });
-        if (settings) await base44.entities.CompanySettings.update(settings.id, { next_journal_number: jNum + 1 });
-
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: cashAccount.id,
-          account_number: "1100", account_name: cashAccount.name,
-          debit: form.amount, credit: 0, description: `Payment received - ${form.payment_method}`
-        });
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: arAccount.id,
-          account_number: "1200", account_name: arAccount.name,
-          debit: 0, credit: form.amount, description: `Receivable cleared - ${cust?.business_name}`,
-          party_type: "customer", party_id: form.party_id
-        });
-      }
+      // Accounting via central posting engine: Debit Cash/Bank, Credit Receivable
+      const methodAccountKey = {
+        cash: "cash_on_hand", bank_transfer: "bank_operating",
+        mobile_money: "mtn_mobile_money", cheque: "bank_operating"
+      }[form.payment_method] || "cash_on_hand";
+      await base44.functions.invoke("postJournal", {
+        source_module: "payments", source_document_type: "Payment", source_document_id: payment.id,
+        idempotency_key: `payments:Payment:${payment.id}`,
+        entry_date: form.payment_date,
+        description: `Customer payment from ${cust?.business_name || ""}`,
+        reference: payment.payment_number,
+        lines: [
+          { account_key: methodAccountKey, debit: form.amount, credit: 0, description: `Payment received - ${form.payment_method}` },
+          { account_key: "accounts_receivable", debit: 0, credit: form.amount, description: `Receivable cleared - ${cust?.business_name}`, party_type: "customer", party_id: form.party_id }
+        ]
+      });
 
       // Auto-allocate to oldest invoices
       const openInvoices = (await base44.entities.Invoice.filter({ customer_id: form.party_id }))

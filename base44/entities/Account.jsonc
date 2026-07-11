@@ -8,6 +8,9 @@
     "name": {
       "type": "string"
     },
+    "description": {
+      "type": "string"
+    },
     "account_type": {
       "type": "string",
       "enum": [
@@ -21,6 +24,9 @@
         "other_expense"
       ]
     },
+    "subtype": {
+      "type": "string"
+    },
     "parent_id": {
       "type": "string"
     },
@@ -31,16 +37,54 @@
         "credit"
       ]
     },
-    "is_active": {
+    "is_posting": {
       "type": "boolean",
       "default": true
+    },
+    "is_control_account": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_treasury": {
+      "type": "boolean",
+      "default": false
     },
     "is_system": {
       "type": "boolean",
       "default": false
     },
-    "description": {
-      "type": "string"
+    "allow_manual_journal": {
+      "type": "boolean",
+      "default": true
+    },
+    "financial_statement": {
+      "type": "string",
+      "enum": [
+        "balance_sheet",
+        "income_statement",
+        "cash_flow",
+        "statement_of_equity",
+        "none"
+      ],
+      "default": "balance_sheet"
+    },
+    "cash_flow_category": {
+      "type": "string",
+      "enum": [
+        "operating",
+        "investing",
+        "financing",
+        "none"
+      ],
+      "default": "none"
+    },
+    "currency": {
+      "type": "string",
+      "default": "XAF"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
     },
     "balance": {
       "type": "number",

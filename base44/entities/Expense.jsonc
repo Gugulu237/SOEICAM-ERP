@@ -1,0 +1,138 @@
+{
+  "name": "Expense",
+  "type": "object",
+  "properties": {
+    "expense_number": {
+      "type": "string"
+    },
+    "expense_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "beneficiary": {
+      "type": "string"
+    },
+    "supplier_id": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "salaries",
+        "bonuses",
+        "rent",
+        "electricity",
+        "water",
+        "generator_fuel",
+        "vehicle_fuel",
+        "repairs",
+        "maintenance",
+        "marketing",
+        "advertising",
+        "internet",
+        "telephone",
+        "security",
+        "cleaning",
+        "office_supplies",
+        "professional_fees",
+        "bank_charges",
+        "mobile_money_fees",
+        "travel",
+        "transport",
+        "taxes",
+        "licences",
+        "insurance",
+        "miscellaneous"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number",
+      "default": 0
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "bank_transfer",
+        "mobile_money",
+        "cheque",
+        "credit"
+      ],
+      "default": "cash"
+    },
+    "paid_from_account_id": {
+      "type": "string"
+    },
+    "expense_account_id": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "cost_centre": {
+      "type": "string"
+    },
+    "vehicle_id": {
+      "type": "string"
+    },
+    "route_id": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string"
+    },
+    "receipt_url": {
+      "type": "string"
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "operating_expense",
+        "operating_repair",
+        "preventive_maintenance",
+        "major_repair",
+        "capital_improvement",
+        "new_fixed_asset"
+      ],
+      "default": "operating_expense"
+    },
+    "fixed_asset_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending_approval",
+        "approved",
+        "posted",
+        "rejected",
+        "cancelled"
+      ],
+      "default": "draft"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "expense_date",
+    "category",
+    "amount"
+  ]
+}

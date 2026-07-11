@@ -1,0 +1,28 @@
+{
+  "name": "AccountMapping",
+  "type": "object",
+  "properties": {
+    "mapping_key": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "account_number": {
+      "type": "string"
+    },
+    "account_name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapping_key",
+    "account_id"
+  ]
+}
