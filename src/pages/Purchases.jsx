@@ -1,25 +1,103 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import PageHeader from "@/components/shared/PageHeader";
 import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
+import KPICard from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Plus, Clock, CheckCircle2, Truck, DollarSign, AlertCircle } from "lucide-react";
+
+const STATUS_TABS = [
+  { key: "all", label: "All" },
+  { key: "draft", label: "Draft" },
+  { key: "pending_approval", label: "Pending Approval" },
+  { key: "approved", label: "Approved" },
+  { key: "partially_received", label: "Partial" },
+  { key: "received", label: "Received" },
+  { key: "billed", label: "Billed" },
+  { key: "cancelled", label: "Cancelled" },
+];
+
+const DATE_RANGES = [
+  { key: "all", label: "All Time" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "This Week" },
+  { key: "month", label: "This Month" },
+];
+
+const GROUP_OPTIONS = [
+  { key: "none", label: "No Grouping" },
+  { key: "status", label: "By Status" },
+  { key: "requested_department_name", label: "By Department" },
+  { key: "supplier_name", label: "By Supplier" },
+];
+
+function inRange(dateStr, range) {
+  if (!dateStr || range === "all") return true;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+  if (range === "today") return dateStr === todayStr;
+  if (range === "week") {
+    const day = now.getDay() || 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - day + 1);
+    monday.setHours(0, 0, 0, 0);
+    return d >= monday;
+  }
+  if (range === "month") {
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }
+  return true;
+}
 
 export default function Purchases() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateRange, setDateRange] = useState("all");
+  const [groupBy, setGroupBy] = useState("none");
   const navigate = useNavigate();
 
   useEffect(() => {
-    base44.entities.PurchaseOrder.list("-created_date", 50).then(setOrders).finally(() => setLoading(false));
+    base44.entities.PurchaseOrder.list("-created_date", 200).then(setOrders).finally(() => setLoading(false));
   }, []);
+
+  const stats = useMemo(() => {
+    const pending = orders.filter(o => o.status === "pending_approval").length;
+    const approved = orders.filter(o => o.status === "approved").length;
+    const partial = orders.filter(o => o.status === "partially_received").length;
+    const received = orders.filter(o => o.status === "received").length;
+    const totalValue = orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + (o.total || 0), 0);
+    return { pending, approved, partial, received, totalValue };
+  }, [orders]);
+
+  const filtered = useMemo(() => {
+    return orders.filter(o => {
+      if (statusFilter !== "all" && o.status !== statusFilter) return false;
+      if (!inRange(o.order_date, dateRange)) return false;
+      return true;
+    });
+  }, [orders, statusFilter, dateRange]);
+
+  const groups = useMemo(() => {
+    if (groupBy === "none") return [{ key: null, label: "", items: filtered }];
+    const map = {};
+    for (const o of filtered) {
+      const gk = o[groupBy] || "Unassigned";
+      if (!map[gk]) map[gk] = [];
+      map[gk].push(o);
+    }
+    return Object.entries(map).map(([key, items]) => ({ key, label: key, items }));
+  }, [filtered, groupBy]);
 
   const cols = [
     { key: "po_number", label: "PO #" },
     { key: "supplier_name", label: "Supplier" },
+    { key: "requested_department_name", label: "Department", render: v => v || "—" },
     { key: "order_date", label: "Date", render: v => formatDate(v) },
     { key: "expected_date", label: "Expected", render: v => formatDate(v) },
     { key: "total", label: "Total", render: v => formatXAF(v), className: "text-right" },
@@ -32,10 +110,80 @@ export default function Purchases() {
     <div>
       <PageHeader
         title="Purchase Orders"
-        subtitle={`${orders.length} orders`}
+        subtitle={`${orders.length} total orders`}
         actions={<Button onClick={() => navigate("/purchases/new")}><Plus size={16} className="mr-1" /> New Purchase Order</Button>}
       />
-      <DataTable columns={cols} data={orders} searchFields={["po_number", "supplier_name"]} onRowClick={row => navigate(`/purchases/${row.id}`)} />
+
+      {/* KPI Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <KPICard title="Pending Approval" value={stats.pending} icon={AlertCircle} color="text-amber-600" />
+        <KPICard title="Approved" value={stats.approved} icon={Clock} color="text-blue-600" />
+        <KPICard title="Partially Received" value={stats.partial} icon={Truck} color="text-orange-600" />
+        <KPICard title="Received" value={stats.received} icon={CheckCircle2} color="text-green-600" />
+        <KPICard title="Total Value" value={formatXAF(stats.totalValue)} icon={DollarSign} color="text-slate-700" />
+      </div>
+
+      {/* Status Tabs */}
+      <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1">
+        {STATUS_TABS.map(tab => {
+          const count = tab.key === "all" ? orders.length : orders.filter(o => o.status === tab.key).length;
+          const active = statusFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${active ? "bg-slate-900 text-white" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"}`}
+            >
+              {tab.label}
+              <span className={`text-xs px-1.5 py-0.5 rounded ${active ? "bg-white/20" : "bg-slate-100"}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filters Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500">Date:</span>
+          <Select value={dateRange} onValueChange={setDateRange}>
+            <SelectTrigger className="w-36 h-8"><SelectValue /></SelectTrigger>
+            <SelectContent>{DATE_RANGES.map(r => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500">Group:</span>
+          <Select value={groupBy} onValueChange={setGroupBy}>
+            <SelectTrigger className="w-44 h-8"><SelectValue /></SelectTrigger>
+            <SelectContent>{GROUP_OPTIONS.map(g => <SelectItem key={g.key} value={g.key}>{g.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <span className="text-sm text-slate-400 ml-auto">{filtered.length} shown</span>
+      </div>
+
+      {/* Grouped or Flat Table */}
+      <div className="space-y-6">
+        {groups.length === 0 ? (
+          <div className="bg-white rounded-lg border border-slate-200 py-12 text-center text-slate-400">No orders match the current filters</div>
+        ) : groups.map(group => (
+          <div key={group.key || "all"}>
+            {group.key !== null && (
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-slate-700">{group.label}</h3>
+                <span className="text-xs text-slate-400">{group.items.length} order{group.items.length !== 1 ? "s" : ""}</span>
+                <span className="text-xs text-slate-400">·</span>
+                <span className="text-xs text-slate-500">{formatXAF(group.items.reduce((s, o) => s + (o.total || 0), 0))}</span>
+              </div>
+            )}
+            <DataTable
+              columns={cols}
+              data={group.items}
+              searchFields={["po_number", "supplier_name", "requested_department_name"]}
+              onRowClick={row => navigate(`/purchases/${row.id}`)}
+              emptyMessage="No orders in this group"
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
