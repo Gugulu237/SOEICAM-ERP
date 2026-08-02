@@ -1,0 +1,32 @@
+{
+  "name": "PostingRule",
+  "type": "object",
+  "properties": {
+    "rule_key": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "account_number": {
+      "type": "string"
+    },
+    "account_name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "rule_key",
+    "account_id"
+  ]
+}

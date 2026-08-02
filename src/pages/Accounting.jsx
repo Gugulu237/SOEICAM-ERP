@@ -7,7 +7,9 @@ import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, BookOpen, Scale } from "lucide-react";
+import PeriodsManager from "@/components/accounting/PeriodsManager";
+import PostingRulesManager from "@/components/accounting/PostingRulesManager";
 
 export default function Accounting() {
   const [accounts, setAccounts] = useState([]);
@@ -59,10 +61,13 @@ export default function Accounting() {
     <div>
       <PageHeader
         title="Accounting"
-        subtitle="Chart of Accounts · Journals · Payments"
+        subtitle="Chart of Accounts · Journals · Ledger · Payments · Periods"
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => navigate("/accounting/ledger")}><BookOpen size={16} className="mr-1" /> General Ledger</Button>
+            <Button variant="outline" onClick={() => navigate("/accounting/trial-balance")}><Scale size={16} className="mr-1" /> Trial Balance</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/payments/new")}><Plus size={16} className="mr-1" /> Record Payment</Button>
+            <Button onClick={() => navigate("/accounting/journals/new")}><Plus size={16} className="mr-1" /> New Journal</Button>
           </div>
         }
       />
@@ -71,6 +76,8 @@ export default function Accounting() {
           <TabsTrigger value="accounts">Chart of Accounts</TabsTrigger>
           <TabsTrigger value="journals">Journal Entries</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
+          <TabsTrigger value="periods">Periods</TabsTrigger>
+          <TabsTrigger value="rules">Posting Rules</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts" className="mt-4">
           <DataTable columns={accountCols} data={accounts.sort((a, b) => a.account_number.localeCompare(b.account_number))} searchFields={["account_number", "name"]} />
@@ -80,6 +87,12 @@ export default function Accounting() {
         </TabsContent>
         <TabsContent value="payments" className="mt-4">
           <DataTable columns={paymentCols} data={payments} searchFields={["payment_number", "party_name"]} />
+        </TabsContent>
+        <TabsContent value="periods" className="mt-4">
+          <PeriodsManager />
+        </TabsContent>
+        <TabsContent value="rules" className="mt-4">
+          <PostingRulesManager />
         </TabsContent>
       </Tabs>
     </div>

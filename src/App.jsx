@@ -21,6 +21,10 @@ import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import Accounting from '@/pages/Accounting';
 import PaymentForm from '@/pages/PaymentForm';
+import JournalEntryForm from '@/pages/JournalEntryForm';
+import JournalDetail from '@/pages/JournalDetail';
+import GeneralLedger from '@/pages/GeneralLedger';
+import TrialBalance from '@/pages/TrialBalance';
 import Purchases from '@/pages/Purchases';
 import PurchaseOrderForm from '@/pages/PurchaseOrderForm';
 import GoodsReceiptForm from '@/pages/GoodsReceiptForm';
@@ -78,6 +82,10 @@ const AuthenticatedApp = () => {
           <Route path="/" element={<Dashboard />} />
           <Route path="/accounting" element={<Accounting />} />
           <Route path="/accounting/payments/new" element={<PaymentForm />} />
+          <Route path="/accounting/journals/new" element={<JournalEntryForm />} />
+          <Route path="/accounting/journals/:id" element={<JournalDetail />} />
+          <Route path="/accounting/ledger" element={<GeneralLedger />} />
+          <Route path="/accounting/trial-balance" element={<TrialBalance />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<PurchaseOrderForm />} />
           <Route path="/purchases/:id" element={<PurchaseOrderForm />} />
