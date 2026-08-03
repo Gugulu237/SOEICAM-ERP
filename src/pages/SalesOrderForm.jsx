@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatXAF } from "@/lib/formatters";
+import { postJournal } from "@/lib/posting";
+import { CASH_CLEARING_ACCOUNT_NUMBER } from "@/lib/cash-sales";
 import { Save, ArrowLeft, Plus, Trash2, FileText, AlertTriangle } from "lucide-react";
 
 export default function SalesOrderForm() {
@@ -162,7 +164,8 @@ export default function SalesOrderForm() {
         sales_order_id: id, invoice_date: new Date().toISOString().split("T")[0],
         due_date: dueDate.toISOString().split("T")[0],
         subtotal: order.subtotal, tax_total: order.tax_total, total: order.total,
-        balance: order.total, status: "posted"
+        balance: order.total, status: "posted",
+        payment_type: order.payment_type || "credit", cash_deposited: false
       });
       if (settings) await base44.entities.CompanySettings.update(settings.id, { next_invoice_number: invNum + 1 });
 
@@ -202,54 +205,45 @@ export default function SalesOrderForm() {
         }
       }
 
-      // Accounting: Debit Receivable/Cash, Credit Revenue + Debit COGS, Credit FG Inventory
+      // Accounting: cash sales debit the cash clearing account (banked later by the
+      // cashier), credit sales debit receivables. Plus COGS / finished-goods relief.
       const accounts = await base44.entities.Account.filter({});
       const arAccount = accounts.find(a => a.account_number === "1200");
+      const clearingAccount = accounts.find(a => a.account_number === CASH_CLEARING_ACCOUNT_NUMBER);
       const revenueAccount = accounts.find(a => a.account_number === "4100");
       const cogsAccount = accounts.find(a => a.account_number === "5100");
       const fgAccount = accounts.find(a => a.account_number === "1320");
+      const isCash = (order.payment_type || "credit") === "cash";
+      const debitAccount = isCash ? clearingAccount : arAccount;
+      if (!debitAccount) throw new Error(isCash ? "Cash clearing account 1050 is missing" : "Accounts Receivable 1200 is missing");
+      if (!revenueAccount) throw new Error("Revenue account 4100 is missing");
 
-      const jNum = (settings?.next_journal_number || 1);
-      const journal = await base44.entities.JournalEntry.create({
-        journal_number: `JE-${String(jNum).padStart(5, "0")}`,
-        entry_date: new Date().toISOString().split("T")[0],
-        description: `Invoice ${invoice.invoice_number} - ${order.customer_name}`,
-        source_module: "sales", source_document_type: "Invoice",
-        source_document_id: invoice.id, status: "posted",
-        total_debit: order.total + totalCogs, total_credit: order.total + totalCogs,
-        is_immutable: true, posted_at: new Date().toISOString()
-      });
-      await base44.entities.CompanySettings.update(settings.id, { next_journal_number: jNum + 1 });
-
-      if (order.payment_type === "credit" && arAccount) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: arAccount.id,
-          account_number: "1200", account_name: arAccount.name,
-          debit: order.total, credit: 0, description: `Receivable from ${order.customer_name}`,
+      const journalLines = [
+        {
+          account_id: debitAccount.id, account_number: debitAccount.account_number, account_name: debitAccount.name,
+          debit: order.total, credit: 0,
+          description: isCash ? `Cash sale awaiting deposit — ${order.customer_name}` : `Receivable from ${order.customer_name}`,
           party_type: "customer", party_id: order.customer_id
-        });
-      }
-      if (revenueAccount) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: revenueAccount.id,
-          account_number: "4100", account_name: revenueAccount.name,
+        },
+        {
+          account_id: revenueAccount.id, account_number: revenueAccount.account_number, account_name: revenueAccount.name,
           debit: 0, credit: order.total, description: "Sales revenue"
-        });
+        },
+      ];
+      if (totalCogs > 0 && cogsAccount && fgAccount) {
+        journalLines.push(
+          { account_id: cogsAccount.id, account_number: cogsAccount.account_number, account_name: cogsAccount.name, debit: totalCogs, credit: 0, description: "Cost of goods sold" },
+          { account_id: fgAccount.id, account_number: fgAccount.account_number, account_name: fgAccount.name, debit: 0, credit: totalCogs, description: "Finished goods delivered" },
+        );
       }
-      if (cogsAccount && totalCogs > 0) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: cogsAccount.id,
-          account_number: "5100", account_name: cogsAccount.name,
-          debit: totalCogs, credit: 0, description: "Cost of goods sold - direct materials"
-        });
-      }
-      if (fgAccount && totalCogs > 0) {
-        await base44.entities.JournalLine.create({
-          journal_id: journal.id, account_id: fgAccount.id,
-          account_number: "1320", account_name: fgAccount.name,
-          debit: 0, credit: totalCogs, description: "Finished goods delivered"
-        });
-      }
+
+      const journal = await postJournal({
+        entryDate: new Date().toISOString().split("T")[0],
+        description: `Invoice ${invoice.invoice_number} — ${order.customer_name}`,
+        sourceModule: "sales", sourceDocumentType: "Invoice", sourceDocumentId: invoice.id,
+        lines: journalLines,
+      });
+      await base44.entities.Invoice.update(invoice.id, { journal_id: journal.id });
 
       // Update customer balance for credit sales
       if (order.payment_type === "credit" && cust) {

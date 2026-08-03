@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { disburseCashForPO } from "@/lib/purchase-payments";
+import CashCollections from "@/components/cashier/CashCollections";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import PageHeader from "@/components/shared/PageHeader";
 import KPICard from "@/components/shared/KPICard";
@@ -19,6 +20,7 @@ export default function CashierDashboard() {
   const { toast } = useToast();
   const [approvedPOs, setApprovedPOs] = useState([]);
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
+  const [cashInvoices, setCashInvoices] = useState([]);
   const [pendingCheques, setPendingCheques] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,13 +34,15 @@ export default function CashierDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pos, pays, cheques, treasury] = await Promise.all([
+      const [pos, pays, cheques, treasury, invoices] = await Promise.all([
         base44.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment" }, "-created_date", 20),
         base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "draft" }, "-created_date", 50),
         base44.entities.TreasuryAccount.filter({ is_active: true }),
+        base44.entities.Invoice.filter({ payment_type: "cash", cash_deposited: false }, "-created_date", 50),
       ]);
       setTreasuryAccounts(treasury);
+      setCashInvoices(invoices.filter(i => (i.balance || 0) > 0 && i.status !== "cancelled"));
       setApprovedPOs(pos.filter(p => (p.payment_terms || "cash") === "cash" && !p.cash_disbursed));
       setPendingCheques(cheques.filter(c => c.payment_method === "cheque"));
       setPayments(pays.filter(p => p.status !== "draft"));
@@ -167,6 +171,14 @@ export default function CashierDashboard() {
         <KPICard title="Payments Today" value={stats.paidToday} icon={CheckCircle2} color="text-green-600" />
         <KPICard title="Total Paid" value={formatXAF(stats.paidAmount)} icon={Banknote} color="text-blue-600" />
       </div>
+
+      <CashCollections
+        invoices={cashInvoices}
+        treasuryAccounts={treasuryAccounts}
+        canDisburse={canDisburse}
+        userId={user?.id || ""}
+        onDone={loadData}
+      />
 
       <h3 className="text-sm font-semibold text-slate-700 mb-3">Awaiting Disbursement</h3>
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden mb-8">

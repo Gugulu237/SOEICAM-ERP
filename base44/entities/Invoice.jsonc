@@ -22,6 +22,33 @@
       "type": "string",
       "format": "date"
     },
+    "payment_type": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "credit"
+      ],
+      "default": "credit"
+    },
+    "cash_deposited": {
+      "type": "boolean",
+      "default": false
+    },
+    "deposit_treasury_account_id": {
+      "type": "string"
+    },
+    "deposit_treasury_account_name": {
+      "type": "string"
+    },
+    "deposited_at": {
+      "type": "string"
+    },
+    "deposited_by": {
+      "type": "string"
+    },
+    "deposit_journal_id": {
+      "type": "string"
+    },
     "status": {
       "type": "string",
       "enum": [
