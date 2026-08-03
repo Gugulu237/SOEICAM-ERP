@@ -1,0 +1,51 @@
+{
+  "name": "PaymentAllocation",
+  "type": "object",
+  "properties": {
+    "payment_id": {
+      "type": "string"
+    },
+    "payment_number": {
+      "type": "string"
+    },
+    "document_type": {
+      "type": "string",
+      "enum": [
+        "invoice",
+        "bill"
+      ]
+    },
+    "document_id": {
+      "type": "string"
+    },
+    "document_number": {
+      "type": "string"
+    },
+    "party_type": {
+      "type": "string",
+      "enum": [
+        "customer",
+        "supplier"
+      ]
+    },
+    "party_id": {
+      "type": "string"
+    },
+    "party_name": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "allocation_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "payment_id",
+    "document_type",
+    "document_id",
+    "amount"
+  ]
+}

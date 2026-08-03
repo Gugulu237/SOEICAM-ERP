@@ -1,0 +1,62 @@
+{
+  "name": "Bill",
+  "type": "object",
+  "properties": {
+    "bill_number": {
+      "type": "string"
+    },
+    "supplier_id": {
+      "type": "string"
+    },
+    "supplier_name": {
+      "type": "string"
+    },
+    "po_id": {
+      "type": "string"
+    },
+    "po_number": {
+      "type": "string"
+    },
+    "bill_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "amount_paid": {
+      "type": "number",
+      "default": 0
+    },
+    "balance": {
+      "type": "number",
+      "default": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "partially_paid",
+        "paid",
+        "cancelled"
+      ],
+      "default": "open"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "supplier_id",
+    "bill_date",
+    "total"
+  ]
+}

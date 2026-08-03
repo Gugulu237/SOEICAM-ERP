@@ -25,6 +25,8 @@ import JournalEntryForm from '@/pages/JournalEntryForm';
 import JournalDetail from '@/pages/JournalDetail';
 import GeneralLedger from '@/pages/GeneralLedger';
 import TrialBalance from '@/pages/TrialBalance';
+import Receivables from '@/pages/Receivables';
+import Payables from '@/pages/Payables';
 import Purchases from '@/pages/Purchases';
 import PurchaseOrderForm from '@/pages/PurchaseOrderForm';
 import GoodsReceiptForm from '@/pages/GoodsReceiptForm';
@@ -86,6 +88,8 @@ const AuthenticatedApp = () => {
           <Route path="/accounting/journals/:id" element={<JournalDetail />} />
           <Route path="/accounting/ledger" element={<GeneralLedger />} />
           <Route path="/accounting/trial-balance" element={<TrialBalance />} />
+          <Route path="/accounting/receivables" element={<Receivables />} />
+          <Route path="/accounting/payables" element={<Payables />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<PurchaseOrderForm />} />
           <Route path="/purchases/:id" element={<PurchaseOrderForm />} />
