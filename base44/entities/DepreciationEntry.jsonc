@@ -1,0 +1,44 @@
+{
+  "name": "DepreciationEntry",
+  "type": "object",
+  "properties": {
+    "asset_id": {
+      "type": "string"
+    },
+    "asset_number": {
+      "type": "string"
+    },
+    "asset_name": {
+      "type": "string"
+    },
+    "period_label": {
+      "type": "string"
+    },
+    "depreciation_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "accumulated_after": {
+      "type": "number",
+      "default": 0
+    },
+    "net_book_value_after": {
+      "type": "number",
+      "default": 0
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "created_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset_id",
+    "depreciation_date",
+    "amount"
+  ]
+}

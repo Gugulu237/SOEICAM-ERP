@@ -29,6 +29,7 @@ import Receivables from '@/pages/Receivables';
 import Payables from '@/pages/Payables';
 import Treasury from '@/pages/Treasury';
 import FinancialStatements from '@/pages/FinancialStatements';
+import FixedAssets from '@/pages/FixedAssets';
 import Purchases from '@/pages/Purchases';
 import PurchaseOrderForm from '@/pages/PurchaseOrderForm';
 import GoodsReceiptForm from '@/pages/GoodsReceiptForm';
@@ -94,6 +95,7 @@ const AuthenticatedApp = () => {
           <Route path="/accounting/payables" element={<Payables />} />
           <Route path="/accounting/treasury" element={<Treasury />} />
           <Route path="/accounting/statements" element={<FinancialStatements />} />
+          <Route path="/accounting/assets" element={<FixedAssets />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<PurchaseOrderForm />} />
           <Route path="/purchases/:id" element={<PurchaseOrderForm />} />

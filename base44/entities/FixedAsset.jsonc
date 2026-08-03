@@ -1,0 +1,139 @@
+{
+  "name": "FixedAsset",
+  "type": "object",
+  "properties": {
+    "asset_number": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "machinery",
+        "vehicle",
+        "building",
+        "furniture",
+        "equipment",
+        "it_equipment",
+        "other"
+      ],
+      "default": "equipment"
+    },
+    "description": {
+      "type": "string"
+    },
+    "serial_number": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "branch_id": {
+      "type": "string"
+    },
+    "supplier_id": {
+      "type": "string"
+    },
+    "acquisition_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "acquisition_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "salvage_value": {
+      "type": "number",
+      "default": 0
+    },
+    "useful_life_months": {
+      "type": "number",
+      "default": 60
+    },
+    "depreciation_method": {
+      "type": "string",
+      "enum": [
+        "straight_line",
+        "none"
+      ],
+      "default": "straight_line"
+    },
+    "accumulated_depreciation": {
+      "type": "number",
+      "default": 0
+    },
+    "net_book_value": {
+      "type": "number",
+      "default": 0
+    },
+    "last_depreciation_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "asset_account_id": {
+      "type": "string"
+    },
+    "asset_account_number": {
+      "type": "string"
+    },
+    "asset_account_name": {
+      "type": "string"
+    },
+    "accum_dep_account_id": {
+      "type": "string"
+    },
+    "accum_dep_account_number": {
+      "type": "string"
+    },
+    "accum_dep_account_name": {
+      "type": "string"
+    },
+    "expense_account_id": {
+      "type": "string"
+    },
+    "expense_account_number": {
+      "type": "string"
+    },
+    "expense_account_name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "fully_depreciated",
+        "disposed",
+        "written_off"
+      ],
+      "default": "active"
+    },
+    "disposal_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "disposal_proceeds": {
+      "type": "number",
+      "default": 0
+    },
+    "disposal_gain_loss": {
+      "type": "number",
+      "default": 0
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "acquisition_date",
+    "acquisition_cost",
+    "asset_account_id",
+    "accum_dep_account_id",
+    "expense_account_id"
+  ]
+}
