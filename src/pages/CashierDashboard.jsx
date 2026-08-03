@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { disburseCashForPO } from "@/lib/purchase-payments";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import PageHeader from "@/components/shared/PageHeader";
 import KPICard from "@/components/shared/KPICard";
@@ -17,12 +18,13 @@ export default function CashierDashboard() {
   const { user, canDisburse, canSignChequeGM, canSignChequePM } = useCurrentUser();
   const { toast } = useToast();
   const [approvedPOs, setApprovedPOs] = useState([]);
+  const [treasuryAccounts, setTreasuryAccounts] = useState([]);
   const [pendingCheques, setPendingCheques] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [disbursePO, setDisbursePO] = useState(null);
   const [payForm, setPayForm] = useState({
-    payment_method: "cash", reference: "", amount: 0,
+    payment_method: "cash", treasury_account_id: "", reference: "", amount: 0,
     payment_date: new Date().toISOString().split("T")[0], notes: ""
   });
   const [saving, setSaving] = useState(false);
@@ -30,12 +32,14 @@ export default function CashierDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pos, pays, cheques] = await Promise.all([
+      const [pos, pays, cheques, treasury] = await Promise.all([
         base44.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment" }, "-created_date", 20),
         base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "draft" }, "-created_date", 50),
+        base44.entities.TreasuryAccount.filter({ is_active: true }),
       ]);
-      setApprovedPOs(pos);
+      setTreasuryAccounts(treasury);
+      setApprovedPOs(pos.filter(p => (p.payment_terms || "cash") === "cash" && !p.cash_disbursed));
       setPendingCheques(cheques.filter(c => c.payment_method === "cheque"));
       setPayments(pays.filter(p => p.status !== "draft"));
     } catch (e) {
@@ -56,7 +60,7 @@ export default function CashierDashboard() {
   function openDisburse(po) {
     setDisbursePO(po);
     setPayForm({
-      payment_method: "cash", reference: "", amount: po.total || 0,
+      payment_method: "cash", treasury_account_id: treasuryAccounts[0]?.id || "", reference: "", amount: po.total || 0,
       payment_date: new Date().toISOString().split("T")[0], notes: ""
     });
   }
@@ -66,11 +70,28 @@ export default function CashierDashboard() {
       toast({ title: "Error", description: "Enter a valid amount", variant: "destructive" });
       return;
     }
+    const isCheque = payForm.payment_method === "cheque";
+    if (!isCheque && !payForm.treasury_account_id) {
+      toast({ title: "Error", description: "Select the cash/bank account to pay from", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
+      if (!isCheque) {
+        const account = treasuryAccounts.find(a => a.id === payForm.treasury_account_id);
+        await disburseCashForPO({
+          po: disbursePO, treasuryAccount: account, amount: Number(payForm.amount),
+          date: payForm.payment_date, reference: payForm.reference, notes: payForm.notes,
+          userId: user?.id || "",
+        });
+        toast({ title: "Cash released", description: `${formatXAF(payForm.amount)} paid to ${disbursePO.supplier_name} from ${account.name}` });
+        setDisbursePO(null);
+        await loadData();
+        setSaving(false);
+        return;
+      }
       const settings = (await base44.entities.CompanySettings.filter({}))[0];
       const num = settings?.next_journal_number || 1;
-      const isCheque = payForm.payment_method === "cheque";
       await base44.entities.Payment.create({
         payment_number: `PAY-${String(num).padStart(5, "0")}`,
         payment_type: "supplier_payment",
@@ -288,6 +309,17 @@ export default function CashierDashboard() {
                     </SelectContent>
                   </Select>
                 </div>
+                {payForm.payment_method !== "cheque" && (
+                  <div>
+                    <Label>Pay From Account *</Label>
+                    <Select value={payForm.treasury_account_id} onValueChange={v => setPayForm(f => ({ ...f, treasury_account_id: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Select cash / bank account" /></SelectTrigger>
+                      <SelectContent>
+                        {treasuryAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({formatXAF(a.balance)})</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div>
                   <Label>Reference</Label>
                   <Input value={payForm.reference} onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))} placeholder="Optional" />

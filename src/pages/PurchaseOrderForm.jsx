@@ -25,7 +25,7 @@ export default function PurchaseOrderForm() {
   const [departments, setDepartments] = useState([]);
   const [requester, setRequester] = useState({ name: "", title: "", id: "" });
   const [form, setForm] = useState({
-    supplier_id: "", warehouse_id: "", requested_department_id: "",
+    supplier_id: "", warehouse_id: "", requested_department_id: "", payment_terms: "cash",
     order_date: new Date().toISOString().split("T")[0], expected_date: "", notes: "", status: "draft"
   });
   const [lines, setLines] = useState([]);
@@ -60,6 +60,7 @@ export default function PurchaseOrderForm() {
     setForm({
       supplier_id: o.supplier_id, warehouse_id: o.warehouse_id || "",
       requested_department_id: o.requested_department_id || "",
+      payment_terms: o.payment_terms || "cash",
       order_date: o.order_date, expected_date: o.expected_date || "", notes: o.notes || "", status: o.status
     });
     const ls = await base44.entities.PurchaseOrderLine.filter({ po_id: id });
@@ -206,6 +207,16 @@ export default function PurchaseOrderForm() {
             <Select value={form.supplier_id} onValueChange={v => setForm(f => ({ ...f, supplier_id: v }))}>
               <SelectTrigger><SelectValue placeholder="Auto from lines" /></SelectTrigger>
               <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Payment Terms *</Label>
+            <Select value={form.payment_terms} onValueChange={v => setForm(f => ({ ...f, payment_terms: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">Cash — cashier releases funds</SelectItem>
+                <SelectItem value="credit">Credit — supplier payable</SelectItem>
+              </SelectContent>
             </Select>
           </div>
           <div>

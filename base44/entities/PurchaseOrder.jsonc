@@ -41,6 +41,33 @@
       "type": "string",
       "format": "date"
     },
+    "payment_terms": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "credit"
+      ],
+      "default": "cash"
+    },
+    "cash_disbursed": {
+      "type": "boolean",
+      "default": false
+    },
+    "cash_treasury_account_id": {
+      "type": "string"
+    },
+    "cash_treasury_account_name": {
+      "type": "string"
+    },
+    "cash_disbursed_at": {
+      "type": "string"
+    },
+    "cash_disbursed_by": {
+      "type": "string"
+    },
+    "cash_journal_id": {
+      "type": "string"
+    },
     "status": {
       "type": "string",
       "enum": [
