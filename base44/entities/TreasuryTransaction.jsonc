@@ -1,0 +1,63 @@
+{
+  "name": "TreasuryTransaction",
+  "type": "object",
+  "properties": {
+    "transaction_number": {
+      "type": "string"
+    },
+    "treasury_account_id": {
+      "type": "string"
+    },
+    "treasury_account_name": {
+      "type": "string"
+    },
+    "transaction_type": {
+      "type": "string",
+      "enum": [
+        "expense",
+        "transfer_in",
+        "transfer_out"
+      ]
+    },
+    "counterparty_account_id": {
+      "type": "string"
+    },
+    "counterparty_account_name": {
+      "type": "string"
+    },
+    "expense_account_id": {
+      "type": "string"
+    },
+    "expense_account_number": {
+      "type": "string"
+    },
+    "expense_account_name": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "transaction_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "description": {
+      "type": "string"
+    },
+    "reference": {
+      "type": "string"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "created_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "treasury_account_id",
+    "transaction_type",
+    "amount",
+    "transaction_date"
+  ]
+}

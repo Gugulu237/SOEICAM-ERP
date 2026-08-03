@@ -66,6 +66,7 @@ export default function Accounting() {
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" onClick={() => navigate("/accounting/receivables")}>Receivables</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/payables")}>Payables</Button>
+            <Button variant="outline" onClick={() => navigate("/accounting/treasury")}>Treasury</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/ledger")}><BookOpen size={16} className="mr-1" /> General Ledger</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/trial-balance")}><Scale size={16} className="mr-1" /> Trial Balance</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/payments/new")}><Plus size={16} className="mr-1" /> Record Payment</Button>

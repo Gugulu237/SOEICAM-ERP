@@ -1,0 +1,47 @@
+{
+  "name": "TreasuryAccount",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "account_type": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "bank",
+        "mobile_money",
+        "petty_cash"
+      ]
+    },
+    "gl_account_id": {
+      "type": "string"
+    },
+    "gl_account_number": {
+      "type": "string"
+    },
+    "gl_account_name": {
+      "type": "string"
+    },
+    "balance": {
+      "type": "number",
+      "default": 0
+    },
+    "float_limit": {
+      "type": "number",
+      "default": 0
+    },
+    "custodian": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "name",
+    "account_type",
+    "gl_account_id"
+  ]
+}
