@@ -40,6 +40,8 @@ import Manufacturing from '@/pages/Manufacturing';
 import RecipeForm from '@/pages/RecipeForm';
 import ProductionOrderForm from '@/pages/ProductionOrderForm';
 import QualityControl from '@/pages/QualityControl';
+import BatchTrace from '@/pages/BatchTrace';
+import ExpiryRisk from '@/pages/ExpiryRisk';
 import Sales from '@/pages/Sales';
 import SalesOrderForm from '@/pages/SalesOrderForm';
 import Customers from '@/pages/Customers';
@@ -113,6 +115,8 @@ const AuthenticatedApp = () => {
           <Route path="/manufacturing/recipes/new" element={<RecipeForm />} />
           <Route path="/manufacturing/recipes/:id" element={<RecipeForm />} />
           <Route path="/quality" element={<QualityControl />} />
+          <Route path="/traceability" element={<BatchTrace />} />
+          <Route path="/expiry" element={<ExpiryRisk />} />
           <Route path="/sales" element={<Sales />} />
           <Route path="/sales/new" element={<SalesOrderForm />} />
           <Route path="/sales/:id" element={<SalesOrderForm />} />

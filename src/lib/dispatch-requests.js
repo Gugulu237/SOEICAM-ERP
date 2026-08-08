@@ -11,9 +11,13 @@ const today = () => new Date().toISOString().slice(0, 10);
 // Available finished goods in the source store, keyed by product.
 export async function getWarehouseAvailability(warehouseId) {
   if (!warehouseId) return {};
+  const todayStr = new Date().toISOString().slice(0, 10);
   const balances = await base44.entities.StockBalance.filter({ warehouse_id: warehouseId });
   const map = {};
-  balances.forEach((b) => { map[b.product_id] = round3((map[b.product_id] || 0) + (b.quantity || 0)); });
+  // Only QC-released, in-date stock counts as available to load.
+  balances
+    .filter((b) => (b.qc_status || "approved") === "approved" && (!b.expiry_date || b.expiry_date >= todayStr))
+    .forEach((b) => { map[b.product_id] = round3((map[b.product_id] || 0) + (b.quantity || 0)); });
   return map;
 }
 

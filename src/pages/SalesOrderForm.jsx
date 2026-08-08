@@ -12,6 +12,7 @@ import { formatXAF } from "@/lib/formatters";
 import { postJournal } from "@/lib/posting";
 import { CASH_CLEARING_ACCOUNT_NUMBER } from "@/lib/cash-sales";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { issueStock } from "@/lib/inventory";
 import { getActiveDispatchForUser, getVehicleStock } from "@/lib/dispatch";
 import { Save, ArrowLeft, Plus, Trash2, FileText, AlertTriangle, Truck } from "lucide-react";
 
@@ -212,29 +213,18 @@ export default function SalesOrderForm() {
           total: sl.total, unit_cost: sl.unit_cost || 0, cogs_total: cogsLine
         });
 
-        // Reduce inventory (FEFO)
-        const balances = await base44.entities.StockBalance.filter(
-          order.warehouse_id ? { product_id: sl.product_id, warehouse_id: order.warehouse_id } : { product_id: sl.product_id }
-        );
-        const available = balances.filter(b => b.quantity > 0).sort((a, b) => (a.expiry_date || "9999") < (b.expiry_date || "9999") ? -1 : 1);
-        let remaining = sl.quantity;
-        for (const bal of available) {
-          if (remaining <= 0) break;
-          const qty = Math.min(remaining, bal.quantity);
-          await base44.entities.StockMovement.create({
-            product_id: sl.product_id, product_name: sl.product_name, quantity: qty,
-            movement_type: "customer_delivery", source_warehouse_id: bal.warehouse_id,
-            lot_number: bal.lot_number, unit_cost: bal.unit_cost || sl.unit_cost,
-            total_value: Math.round(qty * (bal.unit_cost || sl.unit_cost)),
-            document_type: "Invoice", document_id: invoice.id,
-            movement_date: new Date().toISOString().split("T")[0]
-          });
-          await base44.entities.StockBalance.update(bal.id, {
-            quantity: bal.quantity - qty,
-            total_value: Math.max(0, (bal.total_value || 0) - Math.round(qty * (bal.unit_cost || 0)))
-          });
-          remaining -= qty;
-        }
+        // Deliver FEFO through the inventory engine — expired, quarantined and
+        // unreleased batches are never picked.
+        await issueStock({
+          productId: sl.product_id, productName: sl.product_name,
+          warehouseId: order.warehouse_id,
+          quantity: sl.quantity,
+          movementType: "customer_delivery",
+          documentType: "SalesOrder", documentId: id,
+          movementDate: new Date().toISOString().split("T")[0],
+          reason: order.customer_name,
+          saleableOnly: true,
+        });
       }
 
       // Accounting: cash sales debit the cash clearing account (banked later by the

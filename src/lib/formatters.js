@@ -48,6 +48,10 @@ export function statusColor(status) {
     partially_paid: "bg-blue-100 text-blue-700",
     active: "bg-green-100 text-green-700",
     quarantined: "bg-orange-100 text-orange-800",
+    quarantine: "bg-orange-100 text-orange-800",
+    awaiting_qc: "bg-orange-100 text-orange-800",
+    expired: "bg-red-100 text-red-700",
+    processed: "bg-green-100 text-green-800",
   };
   return colors[status] || "bg-gray-100 text-gray-700";
 }

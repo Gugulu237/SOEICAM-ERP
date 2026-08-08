@@ -32,6 +32,28 @@
     "total_value": {
       "type": "number",
       "default": 0
+    },
+    "qc_status": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "quarantine",
+        "rejected",
+        "pending"
+      ],
+      "default": "approved"
+    },
+    "production_order_id": {
+      "type": "string"
+    },
+    "qc_released_by": {
+      "type": "string"
+    },
+    "qc_released_at": {
+      "type": "string"
+    },
+    "qc_notes": {
+      "type": "string"
     }
   },
   "required": [

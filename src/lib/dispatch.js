@@ -44,6 +44,7 @@ export async function loadDispatch(dispatch, userName = "") {
       toWarehouseId: vehicleWarehouseId,
       quantity: qty,
       movementType: "vehicle_load",
+      saleableOnly: true,
       documentType: "Dispatch",
       documentId: dispatch.id,
       movementDate: dispatch.dispatch_date || today(),

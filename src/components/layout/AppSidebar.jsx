@@ -3,7 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   ShieldCheck, Receipt, UserCheck, Truck, UserCog, Wallet, BarChart3,
-  CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote
+  CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
+  CalendarClock, GitBranch
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -16,6 +17,8 @@ const navItems = [
   { label: "Inventory", icon: Package, path: "/inventory", roles: ["admin", "warehouse_manager", "procurement"] },
   { label: "Manufacturing", icon: Factory, path: "/manufacturing", roles: ["admin", "production_manager", "warehouse_manager"] },
   { label: "Quality Control", icon: ShieldCheck, path: "/quality", roles: ["admin", "production_manager"] },
+  { label: "Expiry Risk", icon: CalendarClock, path: "/expiry", roles: ["admin", "warehouse_manager", "production_manager", "employee"] },
+  { label: "Traceability", icon: GitBranch, path: "/traceability", roles: ["admin", "production_manager", "warehouse_manager"] },
   { label: "Sales", icon: Receipt, path: "/sales", roles: ["admin", "employee"] },
   { label: "Customers", icon: UserCheck, path: "/customers", roles: ["admin", "employee"] },
   { label: "Distribution", icon: Truck, path: "/distribution", roles: ["admin", "employee"] },

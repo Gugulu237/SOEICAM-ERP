@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatXAF, formatNumber } from "@/lib/formatters";
 import { Save, ArrowLeft, CheckCircle, Play, PackageCheck, Send } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { issueStock, receiveStock } from "@/lib/inventory";
 
 export default function ProductionOrderForm() {
   const { id } = useParams();
@@ -138,31 +139,27 @@ export default function ProductionOrderForm() {
 
   async function handleIssueMaterials() {
     try {
-      const wipWh = warehouses.find(w => w.warehouse_type === "wip");
+      const storeWh = warehouses.find(w => w.warehouse_type === "raw_material") || warehouses.find(w => w.id === order.warehouse_id);
       for (const m of materials) {
-        // Find stock using FEFO
-        const balances = await base44.entities.StockBalance.filter({ product_id: m.material_id });
-        const available = balances.filter(b => b.quantity > 0).sort((a, b) => (a.expiry_date || "9999") < (b.expiry_date || "9999") ? -1 : 1);
-        let remaining = m.standard_quantity;
-        for (const bal of available) {
-          if (remaining <= 0) break;
-          const issueQty = Math.min(remaining, bal.quantity);
-          await base44.entities.StockMovement.create({
-            product_id: m.material_id, product_name: m.material_name, quantity: issueQty,
-            movement_type: "production_issue", source_warehouse_id: bal.warehouse_id,
-            destination_warehouse_id: wipWh?.id || "", lot_number: bal.lot_number || "",
-            expiry_date: bal.expiry_date, unit_cost: bal.unit_cost || m.unit_cost,
-            total_value: Math.round(issueQty * (bal.unit_cost || m.unit_cost)),
-            document_type: "ProductionOrder", document_id: id,
-            movement_date: order.production_date
-          });
-          await base44.entities.StockBalance.update(bal.id, {
-            quantity: bal.quantity - issueQty,
-            total_value: (bal.total_value || 0) - Math.round(issueQty * (bal.unit_cost || 0))
-          });
-          remaining -= issueQty;
-        }
-        await base44.entities.ProductionMaterial.update(m.id, { issued_quantity: m.standard_quantity, consumed_quantity: m.standard_quantity });
+        // Central engine consumes lots FEFO and records the ledger movements.
+        const { layers, totalValue } = await issueStock({
+          productId: m.material_id, productName: m.material_name,
+          warehouseId: storeWh?.id || order.warehouse_id,
+          quantity: m.standard_quantity,
+          movementType: "production_issue",
+          documentType: "ProductionOrder", documentId: id,
+          movementDate: order.production_date,
+          reason: `Issued to ${order.order_number}`,
+        });
+        // Keep the consumed material lots on the record — this is the batch genealogy.
+        await base44.entities.ProductionMaterial.update(m.id, {
+          issued_quantity: m.standard_quantity,
+          consumed_quantity: m.standard_quantity,
+          lot_number: layers.map(l => l.lotNumber).filter(Boolean).join(", "),
+          expiry_date: layers.find(l => l.expiryDate)?.expiryDate || "",
+          unit_cost: m.standard_quantity > 0 ? Math.round(totalValue / m.standard_quantity) : 0,
+          total_cost: Math.round(totalValue),
+        });
       }
       await base44.entities.ProductionOrder.update(id, { status: "materials_issued", materials_issued_by: user?.full_name || user?.email || "", materials_issued_at: new Date().toISOString() });
       await base44.entities.AuditLog.create({ action: "issue_materials", module: "manufacturing", entity_type: "ProductionOrder", entity_id: id, user_id: user?.id || "", description: `Materials issued for ${order.order_number}` });
@@ -176,38 +173,32 @@ export default function ProductionOrderForm() {
     if (!actualOutput) return;
     const qty = Number(actualOutput);
     try {
-      const fgWh = warehouses.find(w => w.warehouse_type === "finished_goods" || w.warehouse_type === "cold_room");
+      const fgWh = warehouses.find(w => w.warehouse_type === "cold_room") || warehouses.find(w => w.warehouse_type === "finished_goods");
       const actualCost = materials.reduce((s, m) => s + ((m.consumed_quantity || m.standard_quantity) * (m.unit_cost || 0)), 0);
       const actualCPU = qty > 0 ? Math.round(actualCost / qty) : 0;
 
-      // Create finished goods stock
-      await base44.entities.StockMovement.create({
-        product_id: order.product_id, product_name: order.product_name, quantity: qty,
-        movement_type: "production_output", destination_warehouse_id: fgWh?.id || "",
-        lot_number: order.batch_number, expiry_date: order.expiry_date,
-        unit_cost: actualCPU, total_value: Math.round(qty * actualCPU),
-        document_type: "ProductionOrder", document_id: id,
-        movement_date: order.production_date
-      });
-
-      // Create/update stock balance for finished product
-      const existing = await base44.entities.StockBalance.filter({
-        product_id: order.product_id, warehouse_id: fgWh?.id || "", lot_number: order.batch_number || ""
-      });
-      if (existing.length > 0) {
-        const bal = existing[0];
-        await base44.entities.StockBalance.update(bal.id, {
-          quantity: bal.quantity + qty, total_value: (bal.total_value || 0) + Math.round(qty * actualCPU),
-          unit_cost: actualCPU
-        });
-      } else {
-        await base44.entities.StockBalance.create({
-          product_id: order.product_id, product_name: order.product_name,
-          warehouse_id: fgWh?.id || "", warehouse_name: fgWh?.name || "Finished Goods",
-          lot_number: order.batch_number || "", expiry_date: order.expiry_date,
-          quantity: qty, unit_cost: actualCPU, total_value: Math.round(qty * actualCPU)
-        });
+      // Expiry comes from the product's shelf life, counted from the production date.
+      const product = await base44.entities.Product.get(order.product_id);
+      let expiry = order.expiry_date;
+      if (!expiry && product?.shelf_life_days) {
+        const d = new Date(order.production_date);
+        d.setDate(d.getDate() + Number(product.shelf_life_days));
+        expiry = d.toISOString().slice(0, 10);
       }
+
+      // Finished batch enters the cold room in QUARANTINE — it cannot be sold
+      // until Quality releases it.
+      await receiveStock({
+        productId: order.product_id, productName: order.product_name,
+        warehouseId: fgWh?.id || order.warehouse_id,
+        quantity: qty, unitCost: actualCPU,
+        lotNumber: order.batch_number || "", expiryDate: expiry || "",
+        movementType: "production_output",
+        documentType: "ProductionOrder", documentId: id,
+        movementDate: order.production_date,
+        reason: `Batch ${order.batch_number} produced`,
+        qcStatus: "quarantine", productionOrderId: id,
+      });
 
       // Update product cost
       await base44.entities.Product.update(order.product_id, { current_cost: actualCPU });
@@ -245,7 +236,7 @@ export default function ProductionOrderForm() {
       }
 
       await base44.entities.ProductionOrder.update(id, {
-        status: "completed", actual_output: qty,
+        status: "awaiting_qc", actual_output: qty, expiry_date: expiry || "",
         actual_cost_per_unit: actualCPU, total_material_cost: Math.round(actualCost)
       });
 
@@ -254,7 +245,7 @@ export default function ProductionOrderForm() {
         description: `Completed ${order.order_number}: ${qty} units at ${formatXAF(actualCPU)}/unit`
       });
 
-      toast({ title: "Production completed", description: `${qty} units produced at ${formatXAF(actualCPU)} per unit` });
+      toast({ title: "Production completed", description: `${qty} units in quarantine awaiting QC release` });
       loadOrder();
     } catch (e) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }

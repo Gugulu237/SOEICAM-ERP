@@ -69,6 +69,8 @@ export const NAV_ROLE_ACCESS = {
   '/inventory': ['admin', 'warehouse_manager', 'procurement'],
   '/manufacturing': ['admin', 'production_manager', 'warehouse_manager'],
   '/quality': ['admin', 'production_manager'],
+  '/expiry': ['admin', 'warehouse_manager', 'production_manager', 'employee'],
+  '/traceability': ['admin', 'production_manager', 'warehouse_manager'],
   '/sales': ['admin', 'employee'],
   '/customers': ['admin', 'employee'],
   '/distribution': ['admin', 'employee', 'warehouse_manager'],
