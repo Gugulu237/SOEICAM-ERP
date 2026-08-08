@@ -115,6 +115,7 @@ export default function DispatchForm() {
         await base44.entities.Dispatch.update(id, data);
       } else {
         data.dispatch_number = `DSP-${Date.now().toString(36).toUpperCase()}`;
+        data.source = "manual_push";
         data.status = nextStatus || "draft";
         const created = await base44.entities.Dispatch.create(data);
         dispatchId = created.id;

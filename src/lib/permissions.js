@@ -71,11 +71,11 @@ export const NAV_ROLE_ACCESS = {
   '/quality': ['admin', 'production_manager'],
   '/sales': ['admin', 'employee'],
   '/customers': ['admin', 'employee'],
-  '/distribution': ['admin', 'employee'],
+  '/distribution': ['admin', 'employee', 'warehouse_manager'],
   '/employees': ['admin'],
   '/payroll': ['admin'],
   '/cashier': ['admin', 'cashier', 'production_manager'],
   '/reports': ['admin'],
-  '/approvals': ['admin', 'procurement', 'production_manager'],
+  '/approvals': ['admin', 'procurement', 'production_manager', 'warehouse_manager'],
   '/admin': ['admin'],
 };

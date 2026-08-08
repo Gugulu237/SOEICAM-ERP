@@ -9,6 +9,17 @@
       "type": "string",
       "format": "date"
     },
+    "source": {
+      "type": "string",
+      "enum": [
+        "driver_request",
+        "manual_push"
+      ],
+      "default": "manual_push"
+    },
+    "request_id": {
+      "type": "string"
+    },
     "route_id": {
       "type": "string"
     },

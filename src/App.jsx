@@ -46,6 +46,7 @@ import Customers from '@/pages/Customers';
 import CustomerForm from '@/pages/CustomerForm';
 import Distribution from '@/pages/Distribution';
 import DispatchForm from '@/pages/DispatchForm';
+import DispatchRequestForm from '@/pages/DispatchRequestForm';
 import Employees from '@/pages/Employees';
 import Payroll from '@/pages/Payroll';
 import Reports from '@/pages/Reports';
@@ -119,6 +120,8 @@ const AuthenticatedApp = () => {
           <Route path="/customers/new" element={<CustomerForm />} />
           <Route path="/customers/:id" element={<CustomerForm />} />
           <Route path="/distribution" element={<Distribution />} />
+          <Route path="/distribution/requests/new" element={<DispatchRequestForm />} />
+          <Route path="/distribution/requests/:id" element={<DispatchRequestForm />} />
           <Route path="/distribution/dispatches/new" element={<DispatchForm />} />
           <Route path="/distribution/dispatches/:id" element={<DispatchForm />} />
           <Route path="/employees" element={<Employees />} />

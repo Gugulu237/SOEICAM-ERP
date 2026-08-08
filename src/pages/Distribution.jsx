@@ -11,6 +11,7 @@ import { Plus } from "lucide-react";
 
 export default function Distribution() {
   const [dispatches, setDispatches] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +22,8 @@ export default function Distribution() {
       base44.entities.Dispatch.list("-created_date", 50),
       base44.entities.Route.filter({}),
       base44.entities.Vehicle.filter({}),
-    ]).then(([d, r, v]) => { setDispatches(d); setRoutes(r); setVehicles(v); }).finally(() => setLoading(false));
+      base44.entities.DispatchRequest.list("-created_date", 50),
+    ]).then(([d, r, v, req]) => { setDispatches(d); setRoutes(r); setVehicles(v); setRequests(req); }).finally(() => setLoading(false));
   }, []);
 
   const dispatchCols = [
@@ -33,6 +35,18 @@ export default function Distribution() {
     { key: "total_loaded_value", label: "Loaded", render: v => formatXAF(v), className: "text-right" },
     { key: "status", label: "Status", render: v => <StatusBadge status={v} /> },
   ];
+
+  const requestCols = [
+    { key: "request_number", label: "Request #" },
+    { key: "request_date", label: "Date", render: v => formatDate(v) },
+    { key: "driver_name", label: "Driver" },
+    { key: "vehicle_name", label: "Vehicle" },
+    { key: "source_warehouse_name", label: "From Store" },
+    { key: "items", label: "Products", render: v => (v || []).length, className: "text-right" },
+    { key: "status", label: "Status", render: v => <StatusBadge status={v} /> },
+  ];
+
+  const pendingRequests = requests.filter(r => r.status === "pending_approval").length;
 
   const routeCols = [
     { key: "code", label: "Code" },
@@ -54,16 +68,30 @@ export default function Distribution() {
       <PageHeader
         title="Distribution"
         subtitle={`${dispatches.length} dispatches · ${routes.length} routes · ${vehicles.length} vehicles`}
-        actions={<Button onClick={() => navigate("/distribution/dispatches/new")}><Plus size={16} className="mr-1" /> New Dispatch</Button>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/distribution/requests/new")}><Plus size={16} className="mr-1" /> Request Stock</Button>
+            <Button onClick={() => navigate("/distribution/dispatches/new")}><Plus size={16} className="mr-1" /> New Dispatch</Button>
+          </div>
+        }
       />
       <Tabs defaultValue="dispatches">
         <TabsList>
           <TabsTrigger value="dispatches">Dispatches</TabsTrigger>
+          <TabsTrigger value="requests">
+            Stock Requests
+            {pendingRequests > 0 && (
+              <span className="ml-2 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-semibold">{pendingRequests} pending</span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="routes">Routes</TabsTrigger>
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
         </TabsList>
         <TabsContent value="dispatches" className="mt-4">
           <DataTable columns={dispatchCols} data={dispatches} searchFields={["dispatch_number", "route_name", "vehicle_name"]} onRowClick={row => navigate(`/distribution/dispatches/${row.id}`)} />
+        </TabsContent>
+        <TabsContent value="requests" className="mt-4">
+          <DataTable columns={requestCols} data={requests} searchFields={["request_number", "driver_name", "vehicle_name"]} onRowClick={row => navigate(`/distribution/requests/${row.id}`)} emptyMessage="No stock requests yet" />
         </TabsContent>
         <TabsContent value="routes" className="mt-4">
           <DataTable columns={routeCols} data={routes} searchFields={["name", "code"]} />
