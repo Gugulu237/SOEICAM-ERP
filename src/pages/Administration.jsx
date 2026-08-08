@@ -8,29 +8,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { Save } from "lucide-react";
+import { Save, Plus, Pencil } from "lucide-react";
+import WarehouseDialog from "@/components/admin/WarehouseDialog";
+import DepartmentDialog from "@/components/admin/DepartmentDialog";
 
 export default function Administration() {
   const [settings, setSettings] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [branches, setBranches] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [warehouseDialog, setWarehouseDialog] = useState({ open: false, record: null });
+  const [departmentDialog, setDepartmentDialog] = useState({ open: false, record: null });
   const { toast } = useToast();
 
-  useEffect(() => {
+  useEffect(() => { loadData(); }, []);
+
+  function loadData() {
     Promise.all([
       base44.entities.CompanySettings.filter({}),
       base44.entities.AuditLog.list("-created_date", 100),
       base44.entities.Branch.filter({}),
       base44.entities.Warehouse.filter({}),
-    ]).then(([s, a, b, w]) => {
+      base44.entities.Department.filter({}),
+    ]).then(([s, a, b, w, d]) => {
       setSettings(s[0] || null);
       setAuditLogs(a);
       setBranches(b);
       setWarehouses(w);
+      setDepartments(d);
     }).finally(() => setLoading(false));
-  }, []);
+  }
 
   async function saveSettings() {
     if (settings?.id) {
@@ -56,7 +65,17 @@ export default function Administration() {
   const warehouseCols = [
     { key: "code", label: "Code" },
     { key: "name", label: "Name" },
-    { key: "warehouse_type", label: "Type" },
+    { key: "warehouse_type", label: "Type", render: v => (v || "").replace(/_/g, " ") },
+    { key: "address", label: "Location" },
+    { key: "is_active", label: "Status", render: v => v === false ? <span className="text-red-500">Inactive</span> : <span className="text-emerald-600">Active</span> },
+    { key: "id", label: "", render: (_, row) => <button onClick={e => { e.stopPropagation(); setWarehouseDialog({ open: true, record: row }); }} className="p-1 text-slate-400 hover:text-slate-700"><Pencil size={14} /></button> },
+  ];
+
+  const departmentCols = [
+    { key: "code", label: "Code" },
+    { key: "name", label: "Name" },
+    { key: "is_active", label: "Status", render: v => v === false ? <span className="text-red-500">Inactive</span> : <span className="text-emerald-600">Active</span> },
+    { key: "id", label: "", render: (_, row) => <button onClick={e => { e.stopPropagation(); setDepartmentDialog({ open: true, record: row }); }} className="p-1 text-slate-400 hover:text-slate-700"><Pencil size={14} /></button> },
   ];
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
@@ -95,8 +114,20 @@ export default function Administration() {
               <DataTable columns={branchCols} data={branches} />
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900 mb-3">Warehouses</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-900">Warehouses & Locations</h3>
+                <Button size="sm" variant="outline" onClick={() => setWarehouseDialog({ open: true, record: null })}><Plus size={14} className="mr-1" /> Add Location</Button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">Operational locations where goods are delivered or operations are carried out — not only storage warehouses.</p>
               <DataTable columns={warehouseCols} data={warehouses} />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-900">Departments</h3>
+                <Button size="sm" variant="outline" onClick={() => setDepartmentDialog({ open: true, record: null })}><Plus size={14} className="mr-1" /> Add Department</Button>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">Factory departments that can request purchases.</p>
+              <DataTable columns={departmentCols} data={departments} />
             </div>
           </div>
         </TabsContent>
@@ -105,6 +136,21 @@ export default function Administration() {
           <DataTable columns={auditCols} data={auditLogs} searchFields={["user_name", "module", "action", "description"]} />
         </TabsContent>
       </Tabs>
+
+      <WarehouseDialog
+        open={warehouseDialog.open}
+        onOpenChange={o => setWarehouseDialog(d => ({ ...d, open: o }))}
+        warehouse={warehouseDialog.record}
+        branches={branches}
+        onSaved={loadData}
+      />
+      <DepartmentDialog
+        open={departmentDialog.open}
+        onOpenChange={o => setDepartmentDialog(d => ({ ...d, open: o }))}
+        department={departmentDialog.record}
+        branches={branches}
+        onSaved={loadData}
+      />
     </div>
   );
 }
