@@ -23,6 +23,7 @@ export default function PurchaseOrderForm() {
   const [products, setProducts] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [requester, setRequester] = useState({ name: "", title: "", id: "" });
   const [form, setForm] = useState({
     supplier_id: "", warehouse_id: "", requested_department_id: "", payment_terms: "cash",
@@ -38,21 +39,37 @@ export default function PurchaseOrderForm() {
       base44.entities.Product.filter({ is_active: true }),
       base44.entities.Warehouse.filter({ is_active: true }),
       base44.entities.Department.filter({ is_active: true }),
-    ]).then(([s, p, w, d]) => {
-      setSuppliers(s); setProducts(p); setWarehouses(w); setDepartments(d);
+      base44.entities.Employee.filter({ status: "active" }),
+    ]).then(([s, p, w, d, e]) => {
+      setSuppliers(s); setProducts(p); setWarehouses(w); setDepartments(d); setEmployees(e);
     });
     if (isEdit) loadOrder();
   }, [id]);
 
+  const [requestedEmployeeId, setRequestedEmployeeId] = useState("");
+
+  // Default the requester to the logged-in user's employee record; they can pick someone else.
   useEffect(() => {
-    if (user) {
-      setRequester({
-        name: employee?.full_name || user.full_name || user.email || "",
-        title: employee?.job_title || "",
-        id: user.id,
-      });
+    if (user && !requestedEmployeeId) {
+      const own = employees.find(e => e.user_id === user.id);
+      if (own) {
+        setRequestedEmployeeId(own.id);
+        setRequester({ name: own.full_name, title: own.job_title || "", id: own.id });
+      } else {
+        setRequester({
+          name: employee?.full_name || user.full_name || user.email || "",
+          title: employee?.job_title || "",
+          id: user.id,
+        });
+      }
     }
-  }, [user, employee]);
+  }, [user, employee, employees]);
+
+  function selectRequester(empId) {
+    setRequestedEmployeeId(empId);
+    const emp = employees.find(e => e.id === empId);
+    if (emp) setRequester({ name: emp.full_name, title: emp.job_title || "", id: emp.id });
+  }
 
   async function loadOrder() {
     const o = await base44.entities.PurchaseOrder.get(id);
@@ -63,6 +80,10 @@ export default function PurchaseOrderForm() {
       payment_terms: o.payment_terms || "cash",
       order_date: o.order_date, expected_date: o.expected_date || "", notes: o.notes || "", status: o.status
     });
+    if (o.requested_by_id) {
+      setRequestedEmployeeId(o.requested_by_id);
+      setRequester({ name: o.requested_by_name || "", title: o.requested_by_title || "", id: o.requested_by_id });
+    }
     const ls = await base44.entities.PurchaseOrderLine.filter({ po_id: id });
     setLines(ls.map(l => ({ ...l, _saved: true })));
   }
@@ -109,6 +130,10 @@ export default function PurchaseOrderForm() {
   async function handleSave(submitStatus = "draft") {
     if (lines.length === 0) {
       toast({ title: "Error", description: "Add at least one line", variant: "destructive" });
+      return;
+    }
+    if (!requester.name) {
+      toast({ title: "Error", description: "Select the employee requesting this purchase", variant: "destructive" });
       return;
     }
     const missingSupplier = lines.findIndex(l => !l.supplier_id);
@@ -216,6 +241,15 @@ export default function PurchaseOrderForm() {
               <SelectContent>
                 <SelectItem value="cash">Cash — cashier releases funds</SelectItem>
                 <SelectItem value="credit">Credit — supplier payable</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Requested By (Employee) *</Label>
+            <Select value={requestedEmployeeId} onValueChange={selectRequester}>
+              <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+              <SelectContent>
+                {employees.map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}{e.job_title ? ` — ${e.job_title}` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
