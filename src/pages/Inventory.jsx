@@ -7,10 +7,16 @@ import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
+import { Plus, ArrowLeftRight, ClipboardCheck } from "lucide-react";
 import RawMaterialDialog from "@/components/inventory/RawMaterialDialog";
 import PackagingDialog from "@/components/inventory/PackagingDialog";
 import FinishedProductDialog from "@/components/inventory/FinishedProductDialog";
+import StockTransferDialog from "@/components/inventory/StockTransferDialog";
+import StockAdjustmentDialog from "@/components/inventory/StockAdjustmentDialog";
+import WarehouseStockGrid from "@/components/inventory/WarehouseStockGrid";
+import StockAlerts from "@/components/inventory/StockAlerts";
+import MovementLedger from "@/components/inventory/MovementLedger";
+import KPICard from "@/components/shared/KPICard";
 
 export default function Inventory() {
   const [products, setProducts] = useState([]);
@@ -21,6 +27,8 @@ export default function Inventory() {
   const [showRM, setShowRM] = useState(false);
   const [showPK, setShowPK] = useState(false);
   const [showFP, setShowFP] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { loadData(); }, []);
@@ -30,7 +38,7 @@ export default function Inventory() {
       const [p, b, m, w] = await Promise.all([
         base44.entities.Product.filter({}),
         base44.entities.StockBalance.filter({}),
-        base44.entities.StockMovement.list("-created_date", 50),
+        base44.entities.StockMovement.list("-created_date", 500),
         base44.entities.Warehouse.filter({}),
       ]);
       setProducts(p); setBalances(b); setMovements(m); setWarehouses(w);
@@ -50,6 +58,12 @@ export default function Inventory() {
   const wipBalances = balances.filter(b => whTypeMap[b.warehouse_id] === "wip");
   const deliveryBalances = balances.filter(b => whTypeMap[b.warehouse_id] === "vehicle");
   const totalValue = balances.reduce((s, b) => s + (b.total_value || 0), 0);
+
+  const typeByProduct = {};
+  products.forEach(p => { typeByProduct[p.id] = p.inventory_type; });
+  const valueByType = (types) => balances
+    .filter(b => types.includes(typeByProduct[b.product_id]))
+    .reduce((s, b) => s + (b.total_value || 0), 0);
 
   const rmCols = [
     { key: "sku", label: "SKU" },
@@ -92,15 +106,6 @@ export default function Inventory() {
     { key: "total_value", label: "Value", render: v => formatXAF(v), className: "text-right" },
   ];
 
-  const movementCols = [
-    { key: "movement_date", label: "Date", render: v => formatDate(v) },
-    { key: "product_name", label: "Product" },
-    { key: "movement_type", label: "Type", render: v => v?.replace(/_/g, " ") },
-    { key: "quantity", label: "Qty", render: v => formatNumber(v, 2), className: "text-right" },
-    { key: "total_value", label: "Value", render: v => formatXAF(v), className: "text-right" },
-    { key: "lot_number", label: "Lot" },
-  ];
-
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
 
   return (
@@ -108,7 +113,21 @@ export default function Inventory() {
       <PageHeader
         title="Inventory"
         subtitle={`${products.length} products · ${formatXAF(totalValue)} total stock value`}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setShowAdjust(true)}><ClipboardCheck size={16} className="mr-1" /> Adjust / Count</Button>
+            <Button onClick={() => setShowTransfer(true)}><ArrowLeftRight size={16} className="mr-1" /> Move Stock</Button>
+          </>
+        }
       />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <KPICard title="Total Stock Value" value={formatXAF(totalValue)} subtitle={`${balances.filter(b => b.quantity > 0).length} stock lines`} />
+        <KPICard title="Raw & Packaging" value={formatXAF(valueByType(["raw_material", "packaging"]))} subtitle="In stores" />
+        <KPICard title="Work in Progress" value={formatXAF(wipBalances.reduce((s, b) => s + (b.total_value || 0), 0))} subtitle="Issued to production" />
+        <KPICard title="Out for Delivery" value={formatXAF(deliveryBalances.reduce((s, b) => s + (b.total_value || 0), 0))} subtitle="Loaded on vehicles" />
+      </div>
+
       <Tabs defaultValue="raw">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="raw">Raw Materials</TabsTrigger>
@@ -117,6 +136,8 @@ export default function Inventory() {
           <TabsTrigger value="wip">Work in Progress</TabsTrigger>
           <TabsTrigger value="delivery">Out for Delivery</TabsTrigger>
           <TabsTrigger value="stock">All Inventory</TabsTrigger>
+          <TabsTrigger value="warehouses">By Warehouse</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="movements">Stock Movements</TabsTrigger>
         </TabsList>
 
@@ -153,14 +174,24 @@ export default function Inventory() {
           <DataTable columns={balanceCols} data={balances} searchFields={["product_name", "warehouse_name", "lot_number"]} />
         </TabsContent>
 
+        <TabsContent value="warehouses" className="mt-4">
+          <WarehouseStockGrid products={products} warehouses={warehouses} balances={balances} />
+        </TabsContent>
+
+        <TabsContent value="alerts" className="mt-4">
+          <StockAlerts products={products} balances={balances} />
+        </TabsContent>
+
         <TabsContent value="movements" className="mt-4">
-          <DataTable columns={movementCols} data={movements} searchFields={["product_name", "movement_type", "lot_number"]} emptyMessage="No stock movements yet. Movements are created automatically by purchases, production, and deliveries." />
+          <MovementLedger movements={movements} warehouses={warehouses} />
         </TabsContent>
       </Tabs>
 
       <RawMaterialDialog open={showRM} onOpenChange={setShowRM} onSaved={loadData} />
       <PackagingDialog open={showPK} onOpenChange={setShowPK} onSaved={loadData} />
       <FinishedProductDialog open={showFP} onOpenChange={setShowFP} onSaved={loadData} />
+      <StockTransferDialog open={showTransfer} onOpenChange={setShowTransfer} products={products} warehouses={warehouses} onSaved={loadData} />
+      <StockAdjustmentDialog open={showAdjust} onOpenChange={setShowAdjust} balances={balances} onSaved={loadData} />
     </div>
   );
 }
