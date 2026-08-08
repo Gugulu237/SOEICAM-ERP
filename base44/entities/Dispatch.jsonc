@@ -21,6 +21,9 @@
     "vehicle_name": {
       "type": "string"
     },
+    "vehicle_warehouse_id": {
+      "type": "string"
+    },
     "driver_id": {
       "type": "string"
     },
@@ -30,30 +33,62 @@
     "salesperson_id": {
       "type": "string"
     },
+    "salesperson_name": {
+      "type": "string"
+    },
     "warehouse_id": {
+      "type": "string"
+    },
+    "warehouse_name": {
+      "type": "string"
+    },
+    "departure_date": {
+      "type": "string"
+    },
+    "return_date": {
       "type": "string"
     },
     "status": {
       "type": "string",
       "enum": [
         "draft",
-        "planned",
-        "loading",
+        "pending_approval",
+        "approved",
         "loaded",
         "in_transit",
-        "delivering",
         "returned",
-        "reconciling",
-        "reconciled",
-        "closed"
+        "completed",
+        "cancelled"
       ],
       "default": "draft"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "loaded_by": {
+      "type": "string"
+    },
+    "loaded_at": {
+      "type": "string"
+    },
+    "closed_by": {
+      "type": "string"
+    },
+    "closed_at": {
+      "type": "string"
     },
     "total_loaded_value": {
       "type": "number",
       "default": 0
     },
     "total_delivered_value": {
+      "type": "number",
+      "default": 0
+    },
+    "total_returned_value": {
       "type": "number",
       "default": 0
     },
@@ -71,7 +106,6 @@
   },
   "required": [
     "dispatch_date",
-    "route_id",
     "vehicle_id"
   ]
 }

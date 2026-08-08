@@ -26,6 +26,9 @@
     "route_id": {
       "type": "string"
     },
+    "dispatch_id": {
+      "type": "string"
+    },
     "order_date": {
       "type": "string",
       "format": "date"

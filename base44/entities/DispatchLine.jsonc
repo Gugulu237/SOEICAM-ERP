@@ -1,0 +1,46 @@
+{
+  "name": "DispatchLine",
+  "type": "object",
+  "properties": {
+    "dispatch_id": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "unit": {
+      "type": "string"
+    },
+    "requested_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "loaded_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "returned_quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "unit_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "loaded_value": {
+      "type": "number",
+      "default": 0
+    },
+    "unit_price": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "dispatch_id",
+    "product_id"
+  ]
+}

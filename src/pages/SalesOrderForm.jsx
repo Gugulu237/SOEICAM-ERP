@@ -11,7 +11,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatXAF } from "@/lib/formatters";
 import { postJournal } from "@/lib/posting";
 import { CASH_CLEARING_ACCOUNT_NUMBER } from "@/lib/cash-sales";
-import { Save, ArrowLeft, Plus, Trash2, FileText, AlertTriangle } from "lucide-react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { getActiveDispatchForUser, getVehicleStock } from "@/lib/dispatch";
+import { Save, ArrowLeft, Plus, Trash2, FileText, AlertTriangle, Truck } from "lucide-react";
 
 export default function SalesOrderForm() {
   const { id } = useParams();
@@ -30,6 +32,9 @@ export default function SalesOrderForm() {
   const [order, setOrder] = useState(null);
   const [creditWarning, setCreditWarning] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { employee } = useCurrentUser();
+  const [activeDispatch, setActiveDispatch] = useState(null);
+  const [vehicleStock, setVehicleStock] = useState([]);
 
   useEffect(() => {
     Promise.all([
@@ -39,6 +44,20 @@ export default function SalesOrderForm() {
     ]).then(([c, p, w]) => { setCustomers(c); setProducts(p); setWarehouses(w); });
     if (isEdit) loadOrder();
   }, [id]);
+
+  // A salesperson or driver out on a loaded dispatch sells from the vehicle's stock.
+  useEffect(() => {
+    if (isEdit || !employee?.id) return;
+    getActiveDispatchForUser(employee.id).then(async (d) => {
+      if (!d) return;
+      setActiveDispatch(d);
+      setVehicleStock(await getVehicleStock(d.vehicle_warehouse_id));
+      setForm(f => ({ ...f, warehouse_id: d.vehicle_warehouse_id || "" }));
+    });
+  }, [employee?.id, isEdit]);
+
+  const vehicleQty = (productId) => vehicleStock.find(s => s.product_id === productId)?.quantity || 0;
+  const sellableProducts = activeDispatch ? products.filter(p => vehicleQty(p.id) > 0) : products;
 
   async function loadOrder() {
     const o = await base44.entities.SalesOrder.get(id);
@@ -113,8 +132,19 @@ export default function SalesOrderForm() {
     setSaving(true);
     try {
       const cust = customers.find(c => c.id === form.customer_id);
+      if (activeDispatch) {
+        const over = lines.find(l => Number(l.quantity) > vehicleQty(l.product_id));
+        if (over) {
+          toast({ title: "Not enough stock on the vehicle", description: `${over.product_name}: only ${vehicleQty(over.product_id)} available on board`, variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+      }
       const data = {
         ...form, customer_name: cust?.name || cust?.business_name || "",
+        dispatch_id: activeDispatch?.id || form.dispatch_id || "",
+        salesperson_id: activeDispatch?.salesperson_id || employee?.id || "",
+        route_id: activeDispatch?.route_id || "",
         subtotal: Math.round(totals.sub), discount_total: Math.round(totals.disc),
         tax_total: Math.round(totals.tax), total: Math.round(totals.total),
         payment_terms_days: cust?.payment_terms_days || 0
@@ -183,7 +213,9 @@ export default function SalesOrderForm() {
         });
 
         // Reduce inventory (FEFO)
-        const balances = await base44.entities.StockBalance.filter({ product_id: sl.product_id });
+        const balances = await base44.entities.StockBalance.filter(
+          order.warehouse_id ? { product_id: sl.product_id, warehouse_id: order.warehouse_id } : { product_id: sl.product_id }
+        );
         const available = balances.filter(b => b.quantity > 0).sort((a, b) => (a.expiry_date || "9999") < (b.expiry_date || "9999") ? -1 : 1);
         let remaining = sl.quantity;
         for (const bal of available) {
@@ -274,6 +306,12 @@ export default function SalesOrderForm() {
         }
       />
 
+      {activeDispatch && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center gap-2 text-blue-800 text-sm">
+          <Truck size={16} /> Mobile sale on dispatch {activeDispatch.dispatch_number} — {activeDispatch.vehicle_name}. Stock is deducted from the vehicle.
+        </div>
+      )}
+
       {creditWarning && (
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4 flex items-center gap-2 text-orange-800 text-sm">
           <AlertTriangle size={16} /> {creditWarning}
@@ -304,8 +342,8 @@ export default function SalesOrderForm() {
             <Input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))} />
           </div>
           <div>
-            <Label>Warehouse</Label>
-            <Select value={form.warehouse_id} onValueChange={v => setForm(f => ({ ...f, warehouse_id: v }))}>
+            <Label>{activeDispatch ? "Selling From (Vehicle)" : "Warehouse"}</Label>
+            <Select value={form.warehouse_id} disabled={!!activeDispatch} onValueChange={v => setForm(f => ({ ...f, warehouse_id: v }))}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>{warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
             </Select>
@@ -335,7 +373,11 @@ export default function SalesOrderForm() {
                     <td className="py-2 pr-2">
                       <Select value={l.product_id} onValueChange={v => updateLine(i, "product_id", v)}>
                         <SelectTrigger className="h-9"><SelectValue placeholder="Select" /></SelectTrigger>
-                        <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                        <SelectContent>{sellableProducts.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}{activeDispatch ? ` — ${vehicleQty(p.id)} on board` : ""}
+                          </SelectItem>
+                        ))}</SelectContent>
                       </Select>
                     </td>
                     <td className="py-2 pr-2"><Input type="number" className="h-9" value={l.quantity} onChange={e => updateLine(i, "quantity", e.target.value)} /></td>

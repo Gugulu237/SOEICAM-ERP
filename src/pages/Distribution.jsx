@@ -51,7 +51,11 @@ export default function Distribution() {
 
   return (
     <div>
-      <PageHeader title="Distribution" subtitle={`${dispatches.length} dispatches · ${routes.length} routes · ${vehicles.length} vehicles`} />
+      <PageHeader
+        title="Distribution"
+        subtitle={`${dispatches.length} dispatches · ${routes.length} routes · ${vehicles.length} vehicles`}
+        actions={<Button onClick={() => navigate("/distribution/dispatches/new")}><Plus size={16} className="mr-1" /> New Dispatch</Button>}
+      />
       <Tabs defaultValue="dispatches">
         <TabsList>
           <TabsTrigger value="dispatches">Dispatches</TabsTrigger>
@@ -59,7 +63,7 @@ export default function Distribution() {
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
         </TabsList>
         <TabsContent value="dispatches" className="mt-4">
-          <DataTable columns={dispatchCols} data={dispatches} searchFields={["dispatch_number", "route_name", "vehicle_name"]} />
+          <DataTable columns={dispatchCols} data={dispatches} searchFields={["dispatch_number", "route_name", "vehicle_name"]} onRowClick={row => navigate(`/distribution/dispatches/${row.id}`)} />
         </TabsContent>
         <TabsContent value="routes" className="mt-4">
           <DataTable columns={routeCols} data={routes} searchFields={["name", "code"]} />
