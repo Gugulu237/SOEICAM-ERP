@@ -193,6 +193,11 @@ export async function getVehicleStock(vehicleWarehouseId) {
   return Object.values(byProduct).filter((p) => p.quantity > 0);
 }
 
+// All dispatches currently out on the road, for picking which vehicle made a sale.
+export async function getLoadedDispatches() {
+  return base44.entities.Dispatch.filter({ status: "loaded" });
+}
+
 // The open dispatch a salesperson/driver is currently selling from.
 export async function getActiveDispatchForUser(employeeId) {
   if (!employeeId) return null;

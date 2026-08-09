@@ -13,7 +13,7 @@ import { postJournal } from "@/lib/posting";
 import { CASH_CLEARING_ACCOUNT_NUMBER } from "@/lib/cash-sales";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { issueStock } from "@/lib/inventory";
-import { getActiveDispatchForUser, getVehicleStock } from "@/lib/dispatch";
+import { getActiveDispatchForUser, getVehicleStock, getLoadedDispatches } from "@/lib/dispatch";
 import { Save, ArrowLeft, Plus, Trash2, FileText, AlertTriangle, Truck } from "lucide-react";
 
 export default function SalesOrderForm() {
@@ -24,7 +24,7 @@ export default function SalesOrderForm() {
 
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
+  const [dispatches, setDispatches] = useState([]);
   const [form, setForm] = useState({
     customer_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
     delivery_date: "", payment_type: "cash", notes: ""
@@ -41,21 +41,24 @@ export default function SalesOrderForm() {
     Promise.all([
       base44.entities.Customer.filter({ is_active: true }),
       base44.entities.Product.filter({ is_active: true, inventory_type: "finished_product" }),
-      base44.entities.Warehouse.filter({ is_active: true }),
-    ]).then(([c, p, w]) => { setCustomers(c); setProducts(p); setWarehouses(w); });
+      getLoadedDispatches(),
+    ]).then(([c, p, d]) => { setCustomers(c); setProducts(p); setDispatches(d); });
     if (isEdit) loadOrder();
   }, [id]);
 
   // A salesperson or driver out on a loaded dispatch sells from the vehicle's stock.
   useEffect(() => {
     if (isEdit || !employee?.id) return;
-    getActiveDispatchForUser(employee.id).then(async (d) => {
-      if (!d) return;
-      setActiveDispatch(d);
-      setVehicleStock(await getVehicleStock(d.vehicle_warehouse_id));
-      setForm(f => ({ ...f, warehouse_id: d.vehicle_warehouse_id || "" }));
-    });
+    getActiveDispatchForUser(employee.id).then(d => { if (d) selectDispatch(d); });
   }, [employee?.id, isEdit]);
+
+  // Sales are made off a vehicle: picking the dispatch tells us which vehicle's
+  // stock the delivery came out of.
+  async function selectDispatch(d) {
+    setActiveDispatch(d);
+    setForm(f => ({ ...f, warehouse_id: d.vehicle_warehouse_id || "" }));
+    setVehicleStock(await getVehicleStock(d.vehicle_warehouse_id));
+  }
 
   const vehicleQty = (productId) => vehicleStock.find(s => s.product_id === productId)?.quantity || 0;
   const sellableProducts = activeDispatch ? products.filter(p => vehicleQty(p.id) > 0) : products;
@@ -66,6 +69,7 @@ export default function SalesOrderForm() {
     setForm({ customer_id: o.customer_id, warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "" });
     const ls = await base44.entities.SalesOrderLine.filter({ order_id: id });
     setLines(ls);
+    if (o.dispatch_id) setActiveDispatch(await base44.entities.Dispatch.get(o.dispatch_id));
   }
 
   function handleCustomerChange(custId) {
@@ -128,6 +132,10 @@ export default function SalesOrderForm() {
   async function handleSave() {
     if (!form.customer_id || lines.length === 0) {
       toast({ title: "Error", description: "Select a customer and add lines", variant: "destructive" });
+      return;
+    }
+    if (!activeDispatch) {
+      toast({ title: "Select the delivery vehicle", description: "Sales are recorded against the vehicle that made the delivery", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -332,11 +340,19 @@ export default function SalesOrderForm() {
             <Input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))} />
           </div>
           <div>
-            <Label>{activeDispatch ? "Selling From (Vehicle)" : "Warehouse"}</Label>
-            <Select value={form.warehouse_id} disabled={!!activeDispatch} onValueChange={v => setForm(f => ({ ...f, warehouse_id: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent>{warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
+            <Label>Delivery Vehicle *</Label>
+            <Select
+              value={activeDispatch?.id || ""}
+              onValueChange={v => selectDispatch(dispatches.find(d => d.id === v))}
+            >
+              <SelectTrigger><SelectValue placeholder="Which vehicle delivered?" /></SelectTrigger>
+              <SelectContent>{dispatches.map(d => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.vehicle_name || "Vehicle"} — {d.route_name || d.dispatch_number}
+                </SelectItem>
+              ))}</SelectContent>
             </Select>
+            {dispatches.length === 0 && <p className="text-xs text-slate-400 mt-1">No vehicles are out on the road right now.</p>}
           </div>
         </div>
 
