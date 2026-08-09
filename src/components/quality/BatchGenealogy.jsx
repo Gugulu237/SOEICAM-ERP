@@ -1,6 +1,7 @@
 import React from "react";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { formatDate, formatNumber, formatXAF } from "@/lib/formatters";
+import TraceJourney from "@/components/quality/TraceJourney";
 
 function Section({ title, children }) {
   return (
@@ -20,8 +21,18 @@ export default function BatchGenealogy({ direction, lot, data }) {
 
   if (direction === "backward") {
     const { order, recipe, ingredients } = data;
+    const reachedBack = ["materials", "production"];
+    if (["released", "completed", "closed"].includes(order.status)) reachedBack.push("quality", "store");
     return (
       <div>
+        <TraceJourney
+          reached={reachedBack}
+          detail={{
+            materials: `${ingredients.length} material${ingredients.length === 1 ? "" : "s"}`,
+            production: formatDate(order.production_date),
+            quality: order.status === "released" ? "Released" : "Pending",
+          }}
+        />
         <Section title={`Production — ${order.order_number}`}>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div><p className="text-slate-500">Product</p><p className="font-medium">{order.product_name}</p></div>
@@ -63,8 +74,21 @@ export default function BatchGenealogy({ direction, lot, data }) {
   }
 
   const { produced, delivered, returned, onHand, customers, movements } = data;
+  const inStock = onHand.reduce((s, o) => s + o.quantity, 0);
+  const reachedFwd = ["materials", "production", "quality"];
+  if (inStock > 0) reachedFwd.push("store");
+  if (movements.some(m => (m.destination_name || "").toLowerCase().includes("vehicle")) || delivered > 0) reachedFwd.push("transit");
+  if (customers.length > 0) reachedFwd.push("customer");
   return (
     <div>
+      <TraceJourney
+        reached={reachedFwd}
+        detail={{
+          production: `${formatNumber(produced, 0)} units`,
+          store: `${formatNumber(inStock, 0)} left`,
+          customer: `${customers.length} customer${customers.length === 1 ? "" : "s"}`,
+        }}
+      />
       <Section title="Batch Balance">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           <div><p className="text-slate-500">Produced</p><p className="font-medium">{formatNumber(produced, 2)}</p></div>

@@ -5,7 +5,9 @@ import DataTable from "@/components/shared/DataTable";
 import KPICard from "@/components/shared/KPICard";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber, formatXAF } from "@/lib/formatters";
-import { AlertTriangle, Clock, ShieldAlert, Trash2 } from "lucide-react";
+import { AlertTriangle, Clock, ShieldAlert, Trash2, LayoutGrid, Table } from "lucide-react";
+import ExpiryTriage from "@/components/inventory/ExpiryTriage";
+import ViewToggle from "@/components/shared/ViewToggle";
 
 const WINDOWS = [1, 3, 7, 14, 30];
 
@@ -29,6 +31,7 @@ export default function ExpiryRisk() {
   const [days, setDays] = useState(30);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("board");
 
   useEffect(() => {
     setLoading(true);
@@ -81,8 +84,21 @@ export default function ExpiryRisk() {
         <KPICard title="Value at Risk" value={formatXAF(atRiskValue)} subtitle={`within ${days} days`} icon={Clock} color="amber" />
       </div>
 
+      <div className="flex justify-end mb-3">
+        <ViewToggle
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "board", label: "Triage Board", icon: LayoutGrid },
+            { value: "table", label: "Table View", icon: Table },
+          ]}
+        />
+      </div>
+
       {loading
         ? <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>
+        : view === "board"
+        ? <ExpiryTriage rows={rows} />
         : <DataTable columns={cols} data={rows} searchFields={["product_name", "lot_number", "warehouse_name"]} emptyMessage="No stock at risk — every batch is in date and released." />
       }
     </div>
