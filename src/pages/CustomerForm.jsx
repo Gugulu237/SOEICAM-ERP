@@ -21,7 +21,7 @@ export default function CustomerForm() {
 
   const [form, setForm] = useState({
     business_name: "", contact_person: "", phone: "", whatsapp: "", email: "",
-    category: "shop", address: "", town: "", neighbourhood: "",
+    category: "shop", financial_centralization_mode: "centralized", address: "", town: "", neighbourhood: "",
     credit_limit: 0, max_overdue_days: 30, payment_terms_days: 0,
     is_active: true, notes: ""
   });
@@ -34,7 +34,8 @@ export default function CustomerForm() {
       base44.entities.Customer.get(id).then(c => setForm({
         business_name: c.business_name || "", contact_person: c.contact_person || "",
         phone: c.phone || "", whatsapp: c.whatsapp || "", email: c.email || "",
-        category: c.category || "shop", address: c.address || "", town: c.town || "",
+        category: c.category || "shop", financial_centralization_mode: c.financial_centralization_mode || "centralized",
+        address: c.address || "", town: c.town || "",
         neighbourhood: c.neighbourhood || "", credit_limit: c.credit_limit || 0,
         max_overdue_days: c.max_overdue_days || 30, payment_terms_days: c.payment_terms_days || 0,
         is_active: c.is_active !== false, notes: c.notes || ""
@@ -124,6 +125,16 @@ export default function CustomerForm() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {["supermarket", "minimarket", "wholesaler", "shop", "cash_customer", "institutional"].map(c => <SelectItem key={c} value={c}>{c.replace(/_/g, " ")}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Payment Organization</Label>
+                <Select value={form.financial_centralization_mode} onValueChange={v => set("financial_centralization_mode", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="centralized">Centralized — headquarters pays for all branches</SelectItem>
+                    <SelectItem value="decentralized">Decentralized — each branch pays its own invoices</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

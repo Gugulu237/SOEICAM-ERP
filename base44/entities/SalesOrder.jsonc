@@ -11,6 +11,12 @@
     "customer_name": {
       "type": "string"
     },
+    "location_id": {
+      "type": "string"
+    },
+    "location_name": {
+      "type": "string"
+    },
     "branch_id": {
       "type": "string"
     },

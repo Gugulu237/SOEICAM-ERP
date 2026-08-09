@@ -25,8 +25,9 @@ export default function SalesOrderForm() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [dispatches, setDispatches] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [form, setForm] = useState({
-    customer_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
+    customer_id: "", location_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
     delivery_date: "", payment_type: "cash", notes: ""
   });
   const [lines, setLines] = useState([]);
@@ -66,14 +67,16 @@ export default function SalesOrderForm() {
   async function loadOrder() {
     const o = await base44.entities.SalesOrder.get(id);
     setOrder(o);
-    setForm({ customer_id: o.customer_id, warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "" });
+    setForm({ customer_id: o.customer_id, location_id: o.location_id || "", warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "" });
+    base44.entities.CustomerLocation.filter({ customer_id: o.customer_id, is_active: true }).then(setLocations);
     const ls = await base44.entities.SalesOrderLine.filter({ order_id: id });
     setLines(ls);
     if (o.dispatch_id) setActiveDispatch(await base44.entities.Dispatch.get(o.dispatch_id));
   }
 
   function handleCustomerChange(custId) {
-    setForm(f => ({ ...f, customer_id: custId }));
+    setForm(f => ({ ...f, customer_id: custId, location_id: "" }));
+    base44.entities.CustomerLocation.filter({ customer_id: custId, is_active: true }).then(setLocations);
     const cust = customers.find(c => c.id === custId);
     if (cust && cust.payment_terms_days > 0) setForm(f => ({ ...f, payment_type: "credit" }));
     checkCredit(custId);
@@ -138,6 +141,10 @@ export default function SalesOrderForm() {
       toast({ title: "Select the delivery vehicle", description: "Sales are recorded against the vehicle that made the delivery", variant: "destructive" });
       return;
     }
+    if (locations.length > 0 && !form.location_id) {
+      toast({ title: "Select the delivery branch", description: "This partner has multiple locations — pick the branch that received the goods", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const cust = customers.find(c => c.id === form.customer_id);
@@ -151,6 +158,7 @@ export default function SalesOrderForm() {
       }
       const data = {
         ...form, customer_name: cust?.name || cust?.business_name || "",
+        location_name: locations.find(l => l.id === form.location_id)?.name || "",
         dispatch_id: activeDispatch?.id || form.dispatch_id || "",
         salesperson_id: activeDispatch?.salesperson_id || employee?.id || "",
         route_id: activeDispatch?.route_id || "",
@@ -325,6 +333,17 @@ export default function SalesOrderForm() {
               <SelectContent>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+          {locations.length > 0 && (
+            <div>
+              <Label>Delivery Branch *</Label>
+              <Select value={form.location_id} onValueChange={v => setForm(f => ({ ...f, location_id: v }))}>
+                <SelectTrigger><SelectValue placeholder="Which branch receives?" /></SelectTrigger>
+                <SelectContent>{locations.map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.name}{l.town ? ` — ${l.town}` : ""}</SelectItem>
+                ))}</SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label>Payment Type</Label>
             <Select value={form.payment_type} onValueChange={v => setForm(f => ({ ...f, payment_type: v }))}>

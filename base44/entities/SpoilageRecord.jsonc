@@ -1,0 +1,87 @@
+{
+  "name": "SpoilageRecord",
+  "type": "object",
+  "properties": {
+    "record_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "location_id": {
+      "type": "string"
+    },
+    "location_name": {
+      "type": "string"
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number",
+      "default": 0
+    },
+    "unit": {
+      "type": "string"
+    },
+    "unit_cost": {
+      "type": "number",
+      "default": 0
+    },
+    "total_value": {
+      "type": "number",
+      "default": 0
+    },
+    "reported_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "dispatch_id": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "expired",
+        "damaged_in_transit",
+        "damaged_at_store",
+        "packaging_defect",
+        "quality_issue",
+        "other"
+      ],
+      "default": "expired"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "reported",
+        "replaced",
+        "credited",
+        "written_off"
+      ],
+      "default": "reported"
+    },
+    "replaced_by": {
+      "type": "string"
+    },
+    "replaced_at": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "customer_id",
+    "location_id",
+    "product_id",
+    "quantity",
+    "reported_date"
+  ]
+}

@@ -35,6 +35,14 @@
       ],
       "default": "shop"
     },
+    "financial_centralization_mode": {
+      "type": "string",
+      "enum": [
+        "centralized",
+        "decentralized"
+      ],
+      "default": "centralized"
+    },
     "address": {
       "type": "string"
     },
