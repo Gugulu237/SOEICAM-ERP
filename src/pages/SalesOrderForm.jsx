@@ -61,6 +61,12 @@ export default function SalesOrderForm() {
     setVehicleStock(await getVehicleStock(d.vehicle_warehouse_id));
   }
 
+  const selectedCustomer = customers.find(c => c.id === form.customer_id);
+  const billingHint = !form.location_id ? null
+    : selectedCustomer?.financial_centralization_mode === "decentralized"
+      ? "Invoice will be billed to this branch."
+      : `Invoice will be billed to ${locations.find(l => l.is_headquarters)?.name || "the partner headquarters"}.`;
+
   const vehicleQty = (productId) => vehicleStock.find(s => s.product_id === productId)?.quantity || 0;
   const sellableProducts = activeDispatch ? products.filter(p => vehicleQty(p.id) > 0) : products;
 
@@ -200,6 +206,12 @@ export default function SalesOrderForm() {
   async function handleCreateInvoice() {
     try {
       const cust = customers.find(c => c.id === order.customer_id);
+      // Route the invoice: decentralized partners are billed at the branch that
+      // received the goods; centralized partners are billed at their headquarters.
+      const billingMode = cust?.financial_centralization_mode || "centralized";
+      const deliveryLocation = locations.find(l => l.id === order.location_id);
+      const hqLocation = locations.find(l => l.is_headquarters);
+      const billTo = billingMode === "decentralized" ? deliveryLocation : (hqLocation || deliveryLocation);
       const settings = (await base44.entities.CompanySettings.filter({}))[0];
       const invNum = settings?.next_invoice_number || 1;
       const dueDate = new Date(order.order_date);
@@ -208,6 +220,9 @@ export default function SalesOrderForm() {
       const invoice = await base44.entities.Invoice.create({
         invoice_number: `INV-${String(invNum).padStart(5, "0")}`,
         customer_id: order.customer_id, customer_name: order.customer_name,
+        location_id: order.location_id || "", location_name: order.location_name || "",
+        bill_to_location_id: billTo?.id || "", bill_to_location_name: billTo?.name || "",
+        billing_mode: billingMode,
         sales_order_id: id, invoice_date: new Date().toISOString().split("T")[0],
         due_date: dueDate.toISOString().split("T")[0],
         subtotal: order.subtotal, tax_total: order.tax_total, total: order.total,
@@ -260,7 +275,7 @@ export default function SalesOrderForm() {
         {
           account_id: debitAccount.id, account_number: debitAccount.account_number, account_name: debitAccount.name,
           debit: order.total, credit: 0,
-          description: isCash ? `Cash sale awaiting deposit — ${order.customer_name}` : `Receivable from ${order.customer_name}`,
+          description: `${isCash ? "Cash sale awaiting deposit" : "Receivable from"} ${order.customer_name}${billTo?.name ? ` (${billTo.name})` : ""}`,
           party_type: "customer", party_id: order.customer_id
         },
         {
@@ -277,7 +292,7 @@ export default function SalesOrderForm() {
 
       const journal = await postJournal({
         entryDate: new Date().toISOString().split("T")[0],
-        description: `Invoice ${invoice.invoice_number} — ${order.customer_name}`,
+        description: `Invoice ${invoice.invoice_number} — ${order.customer_name}${billTo?.name ? ` / ${billTo.name}` : ""}`,
         sourceModule: "sales", sourceDocumentType: "Invoice", sourceDocumentId: invoice.id,
         lines: journalLines,
       });
@@ -294,7 +309,7 @@ export default function SalesOrderForm() {
         description: `Invoice ${invoice.invoice_number} created for ${order.customer_name}: ${formatXAF(order.total)}. COGS: ${formatXAF(totalCogs)}`
       });
 
-      toast({ title: "Invoice created", description: `${invoice.invoice_number} - Inventory and accounting updated` });
+      toast({ title: "Invoice created", description: `${invoice.invoice_number} billed to ${billTo?.name || order.customer_name} — inventory and accounting updated` });
       navigate("/sales");
     } catch (e) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
@@ -333,17 +348,21 @@ export default function SalesOrderForm() {
               <SelectContent>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          {locations.length > 0 && (
-            <div>
-              <Label>Delivery Branch *</Label>
-              <Select value={form.location_id} onValueChange={v => setForm(f => ({ ...f, location_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Which branch receives?" /></SelectTrigger>
-                <SelectContent>{locations.map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.name}{l.town ? ` — ${l.town}` : ""}</SelectItem>
-                ))}</SelectContent>
-              </Select>
-            </div>
-          )}
+          <div>
+            <Label>Delivered To (Branch) {locations.length > 0 && "*"}</Label>
+            <Select value={form.location_id} onValueChange={v => setForm(f => ({ ...f, location_id: v }))} disabled={locations.length === 0}>
+              <SelectTrigger><SelectValue placeholder={form.customer_id ? "Which branch received the goods?" : "Select a partner first"} /></SelectTrigger>
+              <SelectContent>{locations.map(l => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.name}{l.town ? ` — ${l.town}` : ""}{l.is_headquarters ? " (HQ)" : ""}
+                </SelectItem>
+              ))}</SelectContent>
+            </Select>
+            {form.customer_id && locations.length === 0 && (
+              <p className="text-xs text-slate-400 mt-1">This partner has no branches yet — add them on the partner page.</p>
+            )}
+            {billingHint && <p className="text-xs text-slate-500 mt-1">{billingHint}</p>}
+          </div>
           <div>
             <Label>Payment Type</Label>
             <Select value={form.payment_type} onValueChange={v => setForm(f => ({ ...f, payment_type: v }))}>

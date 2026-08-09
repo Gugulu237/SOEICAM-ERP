@@ -11,6 +11,26 @@
     "customer_name": {
       "type": "string"
     },
+    "location_id": {
+      "type": "string"
+    },
+    "location_name": {
+      "type": "string"
+    },
+    "bill_to_location_id": {
+      "type": "string"
+    },
+    "bill_to_location_name": {
+      "type": "string"
+    },
+    "billing_mode": {
+      "type": "string",
+      "enum": [
+        "centralized",
+        "decentralized"
+      ],
+      "default": "centralized"
+    },
     "sales_order_id": {
       "type": "string"
     },
