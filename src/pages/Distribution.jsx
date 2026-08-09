@@ -8,6 +8,7 @@ import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
+import FleetBoard from "@/components/distribution/FleetBoard";
 
 export default function Distribution() {
   const [dispatches, setDispatches] = useState([]);
@@ -75,8 +76,9 @@ export default function Distribution() {
           </div>
         }
       />
-      <Tabs defaultValue="dispatches">
+      <Tabs defaultValue="fleet">
         <TabsList>
+          <TabsTrigger value="fleet">Fleet</TabsTrigger>
           <TabsTrigger value="dispatches">Dispatches</TabsTrigger>
           <TabsTrigger value="requests">
             Stock Requests
@@ -87,6 +89,9 @@ export default function Distribution() {
           <TabsTrigger value="routes">Routes</TabsTrigger>
           <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
         </TabsList>
+        <TabsContent value="fleet" className="mt-4">
+          <FleetBoard vehicles={vehicles} dispatches={dispatches} />
+        </TabsContent>
         <TabsContent value="dispatches" className="mt-4">
           <DataTable columns={dispatchCols} data={dispatches} searchFields={["dispatch_number", "route_name", "vehicle_name"]} onRowClick={row => navigate(`/distribution/dispatches/${row.id}`)} />
         </TabsContent>

@@ -14,6 +14,7 @@ import FinishedProductDialog from "@/components/inventory/FinishedProductDialog"
 import StockTransferDialog from "@/components/inventory/StockTransferDialog";
 import StockAdjustmentDialog from "@/components/inventory/StockAdjustmentDialog";
 import WarehouseStockGrid from "@/components/inventory/WarehouseStockGrid";
+import WarehouseZones from "@/components/inventory/WarehouseZones";
 import StockAlerts from "@/components/inventory/StockAlerts";
 import MovementLedger from "@/components/inventory/MovementLedger";
 import KPICard from "@/components/shared/KPICard";
@@ -128,8 +129,9 @@ export default function Inventory() {
         <KPICard title="Out for Delivery" value={formatXAF(deliveryBalances.reduce((s, b) => s + (b.total_value || 0), 0))} subtitle="Loaded on vehicles" />
       </div>
 
-      <Tabs defaultValue="raw">
+      <Tabs defaultValue="map">
         <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="map">Warehouse Map</TabsTrigger>
           <TabsTrigger value="raw">Raw Materials</TabsTrigger>
           <TabsTrigger value="packaging">Packaging</TabsTrigger>
           <TabsTrigger value="finished">Finished Products</TabsTrigger>
@@ -140,6 +142,10 @@ export default function Inventory() {
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="movements">Stock Movements</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="map" className="mt-4">
+          <WarehouseZones warehouses={warehouses} balances={balances} />
+        </TabsContent>
 
         <TabsContent value="raw" className="mt-4">
           <div className="flex justify-end mb-3">

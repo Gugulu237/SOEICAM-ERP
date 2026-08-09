@@ -9,11 +9,14 @@ import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { Plus, Send, CheckCircle } from "lucide-react";
+import { Plus, Send, CheckCircle, LayoutGrid, Table } from "lucide-react";
+import ProductionBoard from "@/components/manufacturing/ProductionBoard";
+import ViewToggle from "@/components/shared/ViewToggle";
 
 export default function Manufacturing() {
   const [orders, setOrders] = useState([]);
   const [recipes, setRecipes] = useState([]);
+  const [view, setView] = useState("board");
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { user, canApproveProduction } = useCurrentUser();
@@ -92,7 +95,19 @@ export default function Manufacturing() {
           <TabsTrigger value="recipes">Recipes / BOM</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="mt-4">
-          <DataTable columns={orderCols} data={orders} searchFields={["order_number", "product_name"]} onRowClick={row => navigate(`/manufacturing/${row.id}`)} />
+          <div className="flex justify-end mb-3">
+            <ViewToggle
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "board", label: "Board View", icon: LayoutGrid },
+                { value: "table", label: "Table View", icon: Table },
+              ]}
+            />
+          </div>
+          {view === "board"
+            ? <ProductionBoard orders={orders} />
+            : <DataTable columns={orderCols} data={orders} searchFields={["order_number", "product_name"]} onRowClick={row => navigate(`/manufacturing/${row.id}`)} />}
         </TabsContent>
         <TabsContent value="recipes" className="mt-4">
           <DataTable columns={recipeCols} data={recipes} searchFields={["recipe_name", "product_name"]} onRowClick={row => navigate(`/manufacturing/recipes/${row.id}`)} />
