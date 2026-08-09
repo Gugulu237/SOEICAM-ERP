@@ -63,6 +63,7 @@ export function canIssueMaterials(role) {
 // Sidebar navigation role mapping (null = all roles)
 export const NAV_ROLE_ACCESS = {
   '/': null,
+  '/cockpit': ['admin'],
   '/accounting': ['admin', 'cashier'],
   '/purchases': ['admin', 'procurement', 'production_manager', 'warehouse_manager', 'employee'],
   '/suppliers': ['admin', 'procurement'],

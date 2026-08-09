@@ -18,6 +18,7 @@ import ResetPassword from '@/pages/ResetPassword';
 import AppLayout from '@/components/layout/AppLayout';
 
 // Pages
+import Home from '@/pages/Home';
 import Dashboard from '@/pages/Dashboard';
 import Accounting from '@/pages/Accounting';
 import PaymentForm from '@/pages/PaymentForm';
@@ -88,7 +89,8 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/cockpit" element={<Dashboard />} />
           <Route path="/accounting" element={<Accounting />} />
           <Route path="/accounting/payments/new" element={<PaymentForm />} />
           <Route path="/accounting/journals/new" element={<JournalEntryForm />} />

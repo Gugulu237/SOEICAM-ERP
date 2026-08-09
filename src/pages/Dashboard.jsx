@@ -72,7 +72,7 @@ export default function Dashboard() {
   return (
     <div>
       <PageHeader
-        title="Dashboard"
+        title="Business Cockpit"
         subtitle="SOEICAM SARL — YOLA Brand Operations"
       />
 

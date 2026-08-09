@@ -10,7 +10,8 @@ import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard, path: "/", roles: null },
+  { label: "Home", icon: LayoutDashboard, path: "/", roles: null },
+  { label: "Business Cockpit", icon: BarChart3, path: "/cockpit", roles: ["admin"] },
   { label: "Accounting", icon: BookOpen, path: "/accounting", roles: ["admin", "cashier"] },
   { label: "Purchases", icon: ShoppingCart, path: "/purchases", roles: ["admin", "procurement", "production_manager", "warehouse_manager", "employee"] },
   { label: "Suppliers", icon: Users, path: "/suppliers", roles: ["admin", "procurement"] },
