@@ -4,10 +4,16 @@
 import {
   Factory, FlaskConical, Package, CalendarClock, GitBranch, ShoppingCart,
   Users, Receipt, UserCheck, Truck, BookOpen, Banknote, CheckSquare,
-  BarChart3, Wallet, UserCog, Settings, LineChart
+  BarChart3, Wallet, UserCog, Settings, LineChart, Activity
 } from "lucide-react";
 
 export const APP_MODULES = [
+  {
+    key: "finance_pulse", label: "Finance Pulse", path: "/finance-pulse", icon: Activity,
+    description: "Cash, sales, spend & losses",
+    color: "bg-emerald-50 text-emerald-700", ring: "hover:border-emerald-300",
+    roles: ["admin", "cashier", "production_manager"],
+  },
   {
     key: "production", label: "Production", path: "/manufacturing", icon: Factory,
     description: "Batches, recipes & yield",
