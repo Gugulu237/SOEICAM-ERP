@@ -7,7 +7,7 @@ import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Plus, BookOpen, Scale } from "lucide-react";
+import { Plus, BookOpen, Scale, Wallet } from "lucide-react";
 import PeriodsManager from "@/components/accounting/PeriodsManager";
 import PostingRulesManager from "@/components/accounting/PostingRulesManager";
 
@@ -64,6 +64,7 @@ export default function Accounting() {
         subtitle="Chart of Accounts · Journals · Ledger · Payments · Periods"
         actions={
           <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => navigate("/expenses")}><Wallet size={16} className="mr-1" /> Expenses</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/receivables")}>Receivables</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/payables")}>Payables</Button>
             <Button variant="outline" onClick={() => navigate("/accounting/treasury")}>Treasury</Button>

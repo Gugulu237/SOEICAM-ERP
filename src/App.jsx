@@ -57,6 +57,7 @@ import Approvals from '@/pages/Approvals';
 import Administration from '@/pages/Administration';
 import CashierDashboard from '@/pages/CashierDashboard';
 import FinancePulse from '@/pages/FinancePulse';
+import Expenses from '@/pages/Expenses';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -138,6 +139,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin" element={<Administration />} />
           <Route path="/cashier" element={<CashierDashboard />} />
           <Route path="/finance-pulse" element={<FinancePulse />} />
+          <Route path="/expenses" element={<Expenses />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

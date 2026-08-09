@@ -9,6 +9,12 @@ import {
 
 export const APP_MODULES = [
   {
+    key: "expenses", label: "Expenses & Budgets", path: "/expenses", icon: Wallet,
+    description: "Request, approve & pay expenses",
+    color: "bg-amber-50 text-amber-600", ring: "hover:border-amber-300",
+    roles: ["admin", "cashier", "procurement", "production_manager", "warehouse_manager", "employee"],
+  },
+  {
     key: "finance_pulse", label: "Finance Pulse", path: "/finance-pulse", icon: Activity,
     description: "Cash, sales, spend & losses",
     color: "bg-emerald-50 text-emerald-700", ring: "hover:border-emerald-300",

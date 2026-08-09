@@ -78,6 +78,7 @@ export const NAV_ROLE_ACCESS = {
   '/employees': ['admin'],
   '/payroll': ['admin'],
   '/cashier': ['admin', 'cashier', 'production_manager'],
+  '/expenses': null,
   '/reports': ['admin'],
   '/approvals': ['admin', 'procurement', 'production_manager', 'warehouse_manager'],
   '/admin': ['admin'],

@@ -1,0 +1,117 @@
+{
+  "name": "ExpenseRequest",
+  "type": "object",
+  "properties": {
+    "request_number": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "requester_id": {
+      "type": "string"
+    },
+    "requester_name": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string"
+    },
+    "request_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "amount": {
+      "type": "number",
+      "default": 0
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "travel",
+        "fuel",
+        "office",
+        "utilities",
+        "maintenance",
+        "transport",
+        "communication",
+        "cleaning",
+        "medical",
+        "training",
+        "security",
+        "other"
+      ],
+      "default": "other"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending_approval",
+        "approved",
+        "paid",
+        "rejected"
+      ],
+      "default": "draft"
+    },
+    "justification": {
+      "type": "string"
+    },
+    "receipt_url": {
+      "type": "string"
+    },
+    "expense_account_id": {
+      "type": "string"
+    },
+    "expense_account_number": {
+      "type": "string"
+    },
+    "expense_account_name": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "rejected_by": {
+      "type": "string"
+    },
+    "rejected_at": {
+      "type": "string"
+    },
+    "rejection_reason": {
+      "type": "string"
+    },
+    "treasury_account_id": {
+      "type": "string"
+    },
+    "treasury_account_name": {
+      "type": "string"
+    },
+    "paid_by": {
+      "type": "string"
+    },
+    "paid_at": {
+      "type": "string"
+    },
+    "treasury_transaction_id": {
+      "type": "string"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "budget_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "amount",
+    "request_date"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "Budget",
+  "type": "object",
+  "properties": {
+    "department_id": {
+      "type": "string"
+    },
+    "department_name": {
+      "type": "string"
+    },
+    "period_id": {
+      "type": "string"
+    },
+    "period_name": {
+      "type": "string"
+    },
+    "budget_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "actual_spent": {
+      "type": "number",
+      "default": 0
+    },
+    "remaining_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "department_id",
+    "period_id",
+    "budget_amount"
+  ]
+}
