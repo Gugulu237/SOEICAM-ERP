@@ -18,6 +18,7 @@ import WarehouseZones from "@/components/inventory/WarehouseZones";
 import StockAlerts from "@/components/inventory/StockAlerts";
 import MovementLedger from "@/components/inventory/MovementLedger";
 import KPICard from "@/components/shared/KPICard";
+import ItemRowActions from "@/components/items/ItemRowActions";
 
 export default function Inventory() {
   const [products, setProducts] = useState([]);
@@ -66,6 +67,11 @@ export default function Inventory() {
     .filter(b => types.includes(typeByProduct[b.product_id]))
     .reduce((s, b) => s + (b.total_value || 0), 0);
 
+  const actionsCol = {
+    key: "_actions", label: "Actions", sortable: false, className: "text-right",
+    render: (_, row) => <ItemRowActions item={row} onChanged={loadData} editPath={`/inventory/products/${row.id}`} />,
+  };
+
   const rmCols = [
     { key: "sku", label: "SKU" },
     { key: "name", label: "Ingredient" },
@@ -74,6 +80,7 @@ export default function Inventory() {
     { key: "current_cost", label: "Cost", render: v => formatXAF(v), className: "text-right" },
     { key: "id", label: "Stock", sortable: false, render: (_, row) => formatNumber(stockMap[row.id] || 0, 2), className: "text-right" },
     { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
+    actionsCol,
   ];
 
   const pkCols = [
@@ -84,6 +91,7 @@ export default function Inventory() {
     { key: "current_cost", label: "Cost", render: v => formatXAF(v), className: "text-right" },
     { key: "id", label: "Stock", sortable: false, render: (_, row) => formatNumber(stockMap[row.id] || 0, 2), className: "text-right" },
     { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
+    actionsCol,
   ];
 
   const fpCols = [
@@ -95,6 +103,7 @@ export default function Inventory() {
     { key: "selling_price", label: "Price", render: v => formatXAF(v), className: "text-right" },
     { key: "id", label: "Stock", sortable: false, render: (_, row) => formatNumber(stockMap[row.id] || 0, 2), className: "text-right" },
     { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
+    actionsCol,
   ];
 
   const balanceCols = [

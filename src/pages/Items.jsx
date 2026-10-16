@@ -78,7 +78,7 @@ export default function Items() {
     { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
     {
       key: "_actions", label: "Actions", sortable: false, className: "text-right",
-      render: (_, row) => <ItemRowActions item={row} onDeleted={refresh} />,
+      render: (_, row) => <ItemRowActions item={row} onChanged={refresh} />,
     },
   ];
 
