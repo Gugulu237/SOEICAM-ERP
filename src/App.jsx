@@ -36,7 +36,8 @@ import PurchaseOrderForm from '@/pages/PurchaseOrderForm';
 import GoodsReceiptForm from '@/pages/GoodsReceiptForm';
 import Suppliers from '@/pages/Suppliers';
 import Inventory from '@/pages/Inventory';
-import ProductForm from '@/pages/ProductForm';
+import Items from '@/pages/Items';
+import ItemForm from '@/pages/ItemForm';
 import Manufacturing from '@/pages/Manufacturing';
 import RecipeForm from '@/pages/RecipeForm';
 import ProductionOrderForm from '@/pages/ProductionOrderForm';
@@ -111,8 +112,11 @@ const AuthenticatedApp = () => {
           <Route path="/purchases/receive" element={<Purchases />} />
           <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/inventory" element={<Inventory />} />
-          <Route path="/inventory/products/new" element={<ProductForm />} />
-          <Route path="/inventory/products/:id" element={<ProductForm />} />
+          <Route path="/items" element={<Items />} />
+          <Route path="/items/new" element={<ItemForm />} />
+          <Route path="/items/:id" element={<ItemForm />} />
+          <Route path="/inventory/products/new" element={<ItemForm />} />
+          <Route path="/inventory/products/:id" element={<ItemForm />} />
           <Route path="/manufacturing" element={<Manufacturing />} />
           <Route path="/manufacturing/new" element={<ProductionOrderForm />} />
           <Route path="/manufacturing/:id" element={<ProductionOrderForm />} />

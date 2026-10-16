@@ -4,7 +4,7 @@ import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   ShieldCheck, Receipt, UserCheck, Truck, UserCog, Wallet, BarChart3,
   CheckSquare, Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
-  CalendarClock, GitBranch
+  CalendarClock, GitBranch, Boxes
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -15,6 +15,7 @@ const navItems = [
   { label: "Accounting", icon: BookOpen, path: "/accounting", roles: ["admin", "cashier"] },
   { label: "Purchases", icon: ShoppingCart, path: "/purchases", roles: ["admin", "procurement", "production_manager", "warehouse_manager", "employee"] },
   { label: "Suppliers", icon: Users, path: "/suppliers", roles: ["admin", "procurement"] },
+  { label: "Items & Services", icon: Boxes, path: "/items", roles: ["admin", "warehouse_manager", "procurement", "employee"] },
   { label: "Inventory", icon: Package, path: "/inventory", roles: ["admin", "warehouse_manager", "procurement"] },
   { label: "Manufacturing", icon: Factory, path: "/manufacturing", roles: ["admin", "production_manager", "warehouse_manager"] },
   { label: "Quality Control", icon: ShieldCheck, path: "/quality", roles: ["admin", "production_manager"] },

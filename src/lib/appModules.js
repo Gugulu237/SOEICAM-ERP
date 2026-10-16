@@ -4,7 +4,7 @@
 import {
   Factory, FlaskConical, Package, CalendarClock, GitBranch, ShoppingCart,
   Users, Receipt, UserCheck, Truck, BookOpen, Banknote, CheckSquare,
-  BarChart3, Wallet, UserCog, Settings, LineChart, Activity
+  BarChart3, Wallet, UserCog, Settings, LineChart, Activity, Boxes
 } from "lucide-react";
 
 export const APP_MODULES = [
@@ -40,6 +40,12 @@ export const APP_MODULES = [
     color: "bg-sky-50 text-sky-600", ring: "hover:border-sky-300",
     roles: ["admin", "warehouse_manager", "procurement"],
     statKey: "inventory",
+  },
+  {
+    key: "items", label: "Items & Services", path: "/items", icon: Boxes,
+    description: "Inventory items, services & assemblies",
+    color: "bg-slate-100 text-slate-700", ring: "hover:border-slate-300",
+    roles: ["admin", "warehouse_manager", "procurement", "employee"],
   },
   {
     key: "expiry", label: "Expiry Center", path: "/expiry", icon: CalendarClock,

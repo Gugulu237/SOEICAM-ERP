@@ -33,8 +33,36 @@
         "promotional",
         "returned",
         "damaged",
-        "expired"
+        "expired",
+        "service",
+        "assembly"
       ]
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "unit_cost": {
+            "type": "number"
+          },
+          "line_cost": {
+            "type": "number"
+          }
+        }
+      }
     },
     "purchase_unit": {
       "type": "string"
