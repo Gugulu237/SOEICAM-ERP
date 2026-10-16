@@ -7,6 +7,7 @@ import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatXAF } from "@/lib/formatters";
+import ItemRowActions from "@/components/items/ItemRowActions";
 import { Plus } from "lucide-react";
 
 export const INVENTORY_TYPES = [
@@ -30,14 +31,24 @@ export default function Items() {
   const [counts, setCounts] = useState({ all: 0, inventory_item: 0, service: 0, assembly: 0 });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    base44.entities.Product.count({}).then(all => setCounts(c => ({ ...c, all })));
-    base44.entities.Product.count({ inventory_type: { $in: INVENTORY_TYPES } }).then(v => setCounts(c => ({ ...c, inventory_item: v })));
-    base44.entities.Product.count({ inventory_type: "service" }).then(v => setCounts(c => ({ ...c, service: v })));
-    base44.entities.Product.count({ inventory_type: "assembly" }).then(v => setCounts(c => ({ ...c, assembly: v })));
-  }, []);
+  useEffect(() => { loadCounts(); }, []);
 
   useEffect(() => { loadList(); }, [tab]);
+
+  async function loadCounts() {
+    const [all, inv, svc, asm] = await Promise.all([
+      base44.entities.Product.count({}),
+      base44.entities.Product.count({ inventory_type: { $in: INVENTORY_TYPES } }),
+      base44.entities.Product.count({ inventory_type: "service" }),
+      base44.entities.Product.count({ inventory_type: "assembly" }),
+    ]);
+    setCounts({ all, inventory_item: inv, service: svc, assembly: asm });
+  }
+
+  function refresh() {
+    loadList();
+    loadCounts();
+  }
 
   async function loadList() {
     setLoading(true);
@@ -65,6 +76,10 @@ export default function Items() {
       render: (v, row) => typeOf(row) === "assembly" ? `${(v || []).length} component${(v || []).length === 1 ? "" : "s"}` : "—",
     },
     { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
+    {
+      key: "_actions", label: "Actions", sortable: false, className: "text-right",
+      render: (_, row) => <ItemRowActions item={row} onDeleted={refresh} />,
+    },
   ];
 
   const empty = {
