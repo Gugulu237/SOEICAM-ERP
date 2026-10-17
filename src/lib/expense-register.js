@@ -49,41 +49,70 @@ export async function loadExpenses(query, cursor) {
   return base44.entities.TreasuryTransaction.filter(query, { sort: "-transaction_date", limit: 100, cursor });
 }
 
-// Period totals for the KPI strip — computed by the server, not from the loaded page.
+// Period totals for the KPI strip: a single aggregate returns both the count and
+// the sum. Aggregate is the most rate-limited call, so it is used exactly once.
 export async function loadExpenseTotals(query) {
-  const [count, agg] = await Promise.all([
-    base44.entities.TreasuryTransaction.count(query),
-    base44.entities.TreasuryTransaction.aggregate({ query, sum: "amount" }),
-  ]);
-  return { count, total: agg.rows?.[0]?.sum_amount || 0 };
+  const agg = await base44.entities.TreasuryTransaction.aggregate({ query, sum: "amount" });
+  const row = agg.rows?.[0] || {};
+  return { count: row.count || 0, total: row.sum_amount || 0 };
 }
 
-// Categorisation report: by expense type, by month, by account paid from, by department.
-export async function loadExpenseReport(query) {
-  const [categories, months, accounts, departments] = await Promise.all([
-    base44.entities.TreasuryTransaction.aggregate({ query, groupBy: "category", sum: "amount", sort: "-sum_amount" }),
-    base44.entities.TreasuryTransaction.aggregate({ query, dateBucket: { field: "transaction_date", unit: "month" }, sum: "amount" }),
-    base44.entities.TreasuryTransaction.aggregate({ query, groupBy: "treasury_account_name", sum: "amount", sort: "-sum_amount" }),
-    base44.entities.TreasuryTransaction.aggregate({ query, groupBy: "department_name", sum: "amount", sort: "-sum_amount" }),
-  ]);
-  return {
-    categories: categories.rows || [],
-    months: months.rows || [],
-    accounts: accounts.rows || [],
-    departments: departments.rows || [],
-  };
-}
-
-// Full export of the filtered expenses as a CSV download.
-export async function exportExpensesCsv(query, label = "report") {
+// Every expense matching the query, read in pages.
+async function loadExpenseRows(query, maxPages = 4) {
   const rows = [];
   let cursor;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < maxPages; i++) {
     const page = await base44.entities.TreasuryTransaction.filter(query, { sort: "-transaction_date", limit: 500, cursor });
     rows.push(...page.items);
     if (!page.has_more) break;
     cursor = page.next_cursor;
   }
+  return rows;
+}
+
+// Groups expense rows into the report breakdowns: type, month, account and department.
+export function summarizeExpenses(rows) {
+  const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const group = (field) => {
+    const map = new Map();
+    rows.forEach(r => {
+      const key = r[field] || null;
+      const cur = map.get(key) || { count: 0, sum_amount: 0 };
+      cur.count += 1;
+      cur.sum_amount += Number(r.amount) || 0;
+      map.set(key, cur);
+    });
+    return [...map.entries()]
+      .map(([key, v]) => ({ [field]: key, ...v }))
+      .sort((a, b) => b.sum_amount - a.sum_amount);
+  };
+  const months = new Map();
+  rows.forEach(r => {
+    const key = String(r.transaction_date || "").slice(0, 7);
+    const cur = months.get(key) || { count: 0, sum_amount: 0 };
+    cur.count += 1;
+    cur.sum_amount += Number(r.amount) || 0;
+    months.set(key, cur);
+  });
+  return {
+    total,
+    count: rows.length,
+    categories: group("category"),
+    accounts: group("treasury_account_name"),
+    departments: group("department_name"),
+    months: [...months.entries()].map(([key, v]) => ({ transaction_date: key, ...v })),
+  };
+}
+
+// Categorisation report — grouped from one filtered read, so it never bursts the
+// aggregate rate limit when the filters change.
+export async function loadExpenseReport(query) {
+  return summarizeExpenses(await loadExpenseRows(query));
+}
+
+// Full export of the filtered expenses as a CSV download.
+export async function exportExpensesCsv(query, label = "report") {
+  const rows = await loadExpenseRows(query, 40);
   const head = ["Date", "Reference", "Expense Type", "Description", "Payee", "Department", "Source", "Paid From", "GL Account", "Amount", "Journal"];
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const body = rows.map(r => [

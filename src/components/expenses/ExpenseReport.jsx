@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import BreakdownList from "@/components/finance/BreakdownList";
 import { statusLabel, formatXAF } from "@/lib/formatters";
-import { buildQuery, loadExpenseReport, loadExpenseTotals, exportExpensesCsv, presetRange } from "@/lib/expense-register";
+import { buildQuery, loadExpenseReport, exportExpensesCsv, presetRange } from "@/lib/expense-register";
 import { useToast } from "@/components/ui/use-toast";
 import ExpenseFilterBar from "./ExpenseFilterBar";
 import MonthlySpendTrend from "./MonthlySpendTrend";
@@ -24,8 +24,8 @@ export default function ExpenseReport() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([loadExpenseReport(query), loadExpenseTotals(query)])
-      .then(([r, t]) => { setReport(r); setTotals(t); })
+    loadExpenseReport(query)
+      .then(r => { setReport(r); setTotals({ count: r.count, total: r.total }); })
       .finally(() => setLoading(false));
   }, [query]);
 
