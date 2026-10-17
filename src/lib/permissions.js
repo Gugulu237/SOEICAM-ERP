@@ -134,6 +134,26 @@ export function roleLabel(role) {
   return roleDefinition(role)?.label || ROLE_LABELS[role] || role || 'Unassigned';
 }
 
+// Older employee records stored the role as free text (e.g. "Cashier"). Map those
+// labels onto the system roles so every employee opens with a usable role.
+const LEGACY_ROLE_ALIASES = {
+  'managing director': 'admin', 'general manager': 'admin', 'gm': 'admin',
+  'cashier': 'cashier', 'accountant': 'cashier', 'treasurer': 'cashier',
+  'procurement': 'procurement', 'procurement officer': 'procurement', 'buyer': 'procurement',
+  'warehouse manager': 'warehouse_manager', 'storekeeper': 'warehouse_manager', 'store keeper': 'warehouse_manager',
+  'production manager': 'production_manager', 'quality-control officer': 'production_manager',
+  'quality control officer': 'production_manager', 'quality officer': 'production_manager',
+  'commercial': 'commercial', 'salesperson': 'commercial', 'sales person': 'commercial',
+  'hotesse': 'hotesse', 'hostess': 'hotesse',
+  'employee': 'employee', 'driver': 'employee', 'worker': 'employee', 'staff': 'employee',
+};
+
+export function normalizeRole(role) {
+  if (!role) return '';
+  if (roleDefinition(role)) return role;
+  return LEGACY_ROLE_ALIASES[String(role).trim().toLowerCase()] || '';
+}
+
 // Who can approve purchase orders (GM only — procurement/production manager submit, GM approves)
 export const PO_APPROVERS = ['admin'];
 // Who can see all purchase orders (vs only their department's)

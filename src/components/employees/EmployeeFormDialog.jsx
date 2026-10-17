@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { ROLE_DEFINITIONS, roleDefinition } from "@/lib/permissions";
+import { ROLE_DEFINITIONS, roleDefinition, normalizeRole } from "@/lib/permissions";
 import { Save } from "lucide-react";
 
 const EMPTY = {
@@ -22,11 +22,12 @@ const STATUSES = ["active", "on_leave", "suspended", "terminated"];
 export default function EmployeeFormDialog({ open, onOpenChange, employee, employees, onSaved }) {
   const [form, setForm] = useState(EMPTY);
   const [users, setUsers] = useState([]);
+  const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     if (!open) return;
-    setForm(employee ? { ...EMPTY, ...employee } : EMPTY);
+    setForm(employee ? { ...EMPTY, ...employee, role: normalizeRole(employee.role) } : EMPTY);
     base44.entities.User.list().then(res => setUsers(Array.isArray(res) ? res : res?.items || []));
   }, [open, employee]);
 
@@ -41,16 +42,17 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
     return { ...f, role: key, responsibilities: keepCustom ? f.responsibilities : dutiesOf(key) };
   });
 
-  // A system role is required, so legacy free-text roles get re-categorised on save.
-  const valid = form.full_name.trim() && form.job_title.trim() && !!roleDefinition(form.role);
+  // A profile edit must always be saveable: the role is only written when it is a real system role.
+  const valid = form.full_name.trim() && form.job_title.trim();
 
   const save = async () => {
-    if (!valid) return;
+    if (!valid || saving) return;
+    setSaving(true);
     const linked = users.find(u => u.id === form.user_id);
     const payload = {
       full_name: form.full_name.trim(),
       job_title: form.job_title.trim(),
-      role: form.role,
+      ...(roleDefinition(form.role) ? { role: form.role } : {}),
       responsibilities: form.responsibilities,
       phone: form.phone,
       email: form.email,
@@ -61,18 +63,24 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
       user_id: form.user_id,
       user_email: linked?.email || "",
     };
-    if (employee?.id) {
-      await base44.entities.Employee.update(employee.id, payload);
-    } else {
-      await base44.entities.Employee.create({
-        ...payload,
-        employee_number: `E-${String(employees.length + 1).padStart(4, "0")}`,
-        start_date: new Date().toISOString().split("T")[0],
-      });
+    try {
+      if (employee?.id) {
+        await base44.entities.Employee.update(employee.id, payload);
+      } else {
+        await base44.entities.Employee.create({
+          ...payload,
+          employee_number: `E-${String(employees.length + 1).padStart(4, "0")}`,
+          start_date: new Date().toISOString().split("T")[0],
+        });
+      }
+      toast({ title: employee ? "Employee updated" : "Employee created" });
+      onOpenChange(false);
+      onSaved();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Could not save employee", description: String(e?.message || e) });
+    } finally {
+      setSaving(false);
     }
-    toast({ title: employee ? "Employee updated" : "Employee created" });
-    onOpenChange(false);
-    onSaved();
   };
 
   const currentRole = roleDefinition(form.role);
@@ -166,8 +174,8 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
           </div>
         </div>
 
-        <Button className="mt-4" onClick={save} disabled={!valid}>
-          <Save size={16} className="mr-1" /> {employee ? "Save changes" : "Create employee"}
+        <Button className="mt-4" onClick={save} disabled={!valid || saving}>
+          <Save size={16} className="mr-1" /> {saving ? "Saving…" : employee ? "Save changes" : "Create employee"}
         </Button>
       </DialogContent>
     </Dialog>
