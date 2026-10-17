@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { disburseCashForPO } from "@/lib/purchase-payments";
+import { prepareCashDisbursement } from "@/lib/purchase-payments";
 import CashCollections from "@/components/cashier/CashCollections";
+import DailyCashReceived from "@/components/cashier/DailyCashReceived";
+import DisbursementRequests from "@/components/cashier/DisbursementRequests";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import PageHeader from "@/components/shared/PageHeader";
 import KPICard from "@/components/shared/KPICard";
@@ -16,13 +18,15 @@ import { useToast } from "@/components/ui/use-toast";
 import { Banknote, Clock, CheckCircle2, DollarSign } from "lucide-react";
 
 export default function CashierDashboard() {
-  const { user, canDisburse, canSignChequeGM, canSignChequePM } = useCurrentUser();
+  const { user, canDisburse, canReceiveHandover, isAdmin, canSignChequeGM, canSignChequePM } = useCurrentUser();
   const { toast } = useToast();
   const [approvedPOs, setApprovedPOs] = useState([]);
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
   const [cashInvoices, setCashInvoices] = useState([]);
   const [pendingCheques, setPendingCheques] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [disbursementRequests, setDisbursementRequests] = useState([]);
+  const [readyToRelease, setReadyToRelease] = useState([]);
   const [loading, setLoading] = useState(true);
   const [disbursePO, setDisbursePO] = useState(null);
   const [payForm, setPayForm] = useState({
@@ -34,16 +38,22 @@ export default function CashierDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pos, pays, cheques, treasury, invoices] = await Promise.all([
+      const [pos, pays, cheques, treasury, invoices, requested, approved] = await Promise.all([
         base44.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment" }, "-created_date", 20),
         base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "draft" }, "-created_date", 50),
         base44.entities.TreasuryAccount.filter({ is_active: true }),
         base44.entities.Invoice.filter({ payment_type: "cash", cash_deposited: false }, "-created_date", 50),
+        base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }, "-created_date", 50),
+        base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "approved" }, "-created_date", 50),
       ]);
       setTreasuryAccounts(treasury);
       setCashInvoices(invoices.filter(i => (i.balance || 0) > 0 && i.status !== "cancelled"));
-      setApprovedPOs(pos.filter(p => (p.payment_terms || "cash") === "cash" && !p.cash_disbursed));
+      setDisbursementRequests(requested);
+      setReadyToRelease(approved);
+      // A purchase order already waiting for cash approval is not offered again.
+      const spokenFor = new Set([...requested, ...approved].map(p => p.po_id).filter(Boolean));
+      setApprovedPOs(pos.filter(p => (p.payment_terms || "cash") === "cash" && !p.cash_disbursed && !spokenFor.has(p.id)));
       setPendingCheques(cheques.filter(c => c.payment_method === "cheque"));
       setPayments(pays.filter(p => p.status !== "draft"));
     } catch (e) {
@@ -83,12 +93,12 @@ export default function CashierDashboard() {
     try {
       if (!isCheque) {
         const account = treasuryAccounts.find(a => a.id === payForm.treasury_account_id);
-        await disburseCashForPO({
+        await prepareCashDisbursement({
           po: disbursePO, treasuryAccount: account, amount: Number(payForm.amount),
           date: payForm.payment_date, reference: payForm.reference, notes: payForm.notes,
           userId: user?.id || "",
         });
-        toast({ title: "Cash released", description: `${formatXAF(payForm.amount)} paid to ${disbursePO.supplier_name} from ${account.name}` });
+        toast({ title: "Sent for approval", description: `${formatXAF(payForm.amount)} for ${disbursePO.po_number} is waiting for the General Manager's approval` });
         setDisbursePO(null);
         await loadData();
         setSaving(false);
@@ -180,6 +190,8 @@ export default function CashierDashboard() {
         onDone={loadData}
       />
 
+      <DailyCashReceived canReceive={canReceiveHandover} onDone={loadData} />
+
       <h3 className="text-sm font-semibold text-slate-700 mb-3">Awaiting Disbursement</h3>
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden mb-8">
         <table className="w-full text-sm">
@@ -205,7 +217,7 @@ export default function CashierDashboard() {
                 <td className="px-4 py-3 text-right font-medium">{formatXAF(po.total)}</td>
                 <td className="px-4 py-3 text-right">
                   {canDisburse ? (
-                    <Button size="sm" onClick={() => openDisburse(po)}><Banknote size={14} className="mr-1" /> Disburse</Button>
+                    <Button size="sm" onClick={() => openDisburse(po)}><Banknote size={14} className="mr-1" /> Request cash</Button>
                   ) : <span className="text-xs text-slate-400">View only</span>}
                 </td>
               </tr>
@@ -213,6 +225,16 @@ export default function CashierDashboard() {
           </tbody>
         </table>
       </div>
+
+      <DisbursementRequests
+        requests={disbursementRequests}
+        ready={readyToRelease}
+        treasuryAccounts={treasuryAccounts}
+        isApprover={isAdmin}
+        canDisburse={canDisburse}
+        userId={user?.id || ""}
+        onDone={loadData}
+      />
 
       {pendingCheques.length > 0 && (
         <div className="mb-8">
@@ -346,7 +368,7 @@ export default function CashierDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisbursePO(null)}>Cancel</Button>
             <Button onClick={handleDisburse} disabled={saving || !payForm.amount}>
-              <Banknote size={16} className="mr-1" /> {saving ? "Processing..." : "Confirm Disbursement"}
+              <Banknote size={16} className="mr-1" /> {saving ? "Processing..." : payForm.payment_method === "cheque" ? "Prepare cheque" : "Send for approval"}
             </Button>
           </DialogFooter>
         </DialogContent>

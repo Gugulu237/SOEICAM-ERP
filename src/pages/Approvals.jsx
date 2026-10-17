@@ -16,12 +16,13 @@ export default function Approvals() {
   }, []);
 
   async function loadPending() {
-    const [pos, recipes, production, payroll, stockRequests] = await Promise.all([
+    const [pos, recipes, production, payroll, stockRequests, cashRequests] = await Promise.all([
       base44.entities.PurchaseOrder.filter({ status: "pending_approval" }),
       base44.entities.Recipe.filter({ status: "pending_approval" }),
       base44.entities.ProductionOrder.filter({ status: "awaiting_approval" }),
       base44.entities.PayrollRun.filter({ status: "calculated" }),
       base44.entities.DispatchRequest.filter({ status: "pending_approval" }),
+      base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }),
     ]);
     const all = [
       ...pos.map(p => ({ ...p, _type: "Purchase Order", _ref: p.po_number })),
@@ -29,6 +30,7 @@ export default function Approvals() {
       ...production.map(p => ({ ...p, _type: "Production Order", _ref: p.order_number })),
       ...payroll.map(p => ({ ...p, _type: "Payroll Run", _ref: p.period_name })),
       ...stockRequests.map(r => ({ ...r, _type: "Stock Request", _ref: `${r.request_number} — ${r.vehicle_name || ""}`, _link: `/distribution/requests/${r.id}` })),
+      ...cashRequests.map(p => ({ ...p, _type: "Cash Disbursement", _ref: `${p.payment_number} — ${p.party_name}`, _link: "/cashier" })),
     ];
     setItems(all);
     setLoading(false);

@@ -50,10 +50,19 @@
     "account_id": {
       "type": "string"
     },
+    "treasury_account_id": {
+      "type": "string"
+    },
+    "treasury_account_name": {
+      "type": "string"
+    },
     "status": {
       "type": "string",
       "enum": [
         "draft",
+        "pending_approval",
+        "approved",
+        "rejected",
         "confirmed",
         "posted",
         "cancelled"
@@ -64,6 +73,27 @@
       "type": "string"
     },
     "po_id": {
+      "type": "string"
+    },
+    "prepared_by": {
+      "type": "string"
+    },
+    "prepared_at": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "rejected_by": {
+      "type": "string"
+    },
+    "rejected_at": {
+      "type": "string"
+    },
+    "rejection_reason": {
       "type": "string"
     },
     "disbursed_by": {
