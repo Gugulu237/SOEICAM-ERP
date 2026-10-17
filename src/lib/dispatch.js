@@ -195,7 +195,7 @@ export async function getVehicleStock(vehicleWarehouseId) {
 
 // All dispatches currently out on the road, for picking which vehicle made a sale.
 export async function getLoadedDispatches() {
-  return base44.entities.Dispatch.filter({ status: "loaded" });
+  return base44.entities.Dispatch.filter({ status: { $in: ["loaded", "in_transit"] } });
 }
 
 // The open dispatch a salesperson/driver is currently selling from.

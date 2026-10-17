@@ -23,6 +23,18 @@
     "warehouse_id": {
       "type": "string"
     },
+    "vehicle_id": {
+      "type": "string"
+    },
+    "vehicle_name": {
+      "type": "string"
+    },
+    "driver_id": {
+      "type": "string"
+    },
+    "driver_name": {
+      "type": "string"
+    },
     "salesperson_id": {
       "type": "string"
     },

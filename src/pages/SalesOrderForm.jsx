@@ -30,7 +30,8 @@ export default function SalesOrderForm() {
   const [branches, setBranches] = useState([]);
   const [form, setForm] = useState({
     customer_id: "", location_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
-    delivery_date: "", payment_type: "cash", notes: "", salesperson_id: ""
+    delivery_date: "", payment_type: "cash", notes: "", salesperson_id: "",
+    vehicle_id: "", vehicle_name: "", driver_id: "", driver_name: ""
   });
   const [lines, setLines] = useState([]);
   const [order, setOrder] = useState(null);
@@ -39,6 +40,7 @@ export default function SalesOrderForm() {
   const { employee } = useCurrentUser();
   const [activeDispatch, setActiveDispatch] = useState(null);
   const [vehicleStock, setVehicleStock] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
 
   useEffect(() => {
     Promise.all([
@@ -46,7 +48,8 @@ export default function SalesOrderForm() {
       base44.entities.Product.filter({ is_active: true, inventory_type: "finished_product" }),
       getLoadedDispatches(),
       base44.entities.Employee.filter({ status: "active" }),
-    ]).then(([c, p, d, e]) => { setCustomers(c); setProducts(p); setDispatches(d); setEmployees(e); });
+      base44.entities.Vehicle.filter({ is_active: true }),
+    ]).then(([c, p, d, e, v]) => { setCustomers(c); setProducts(p); setDispatches(d); setEmployees(e); setVehicles(v); });
     if (isEdit) loadOrder();
   }, [id]);
 
@@ -61,12 +64,37 @@ export default function SalesOrderForm() {
     getActiveDispatchForUser(employee.id).then(d => { if (d) selectDispatch(d); });
   }, [employee?.id, isEdit]);
 
-  // Sales are made off a vehicle: picking the dispatch tells us which vehicle's
-  // stock the delivery came out of.
+  // The vehicle that made the delivery, and the driver out on the road with it.
+  const dispatchForVehicle = (vehicleId) => dispatches.find(d => d.vehicle_id === vehicleId) || null;
+  const driverFor = (vehicleId) => {
+    const d = dispatchForVehicle(vehicleId);
+    return d?.driver_name || d?.salesperson_name || "";
+  };
+
+  // A vehicle that is out on a dispatch also tells us which stock the delivery came from.
   async function selectDispatch(d) {
     setActiveDispatch(d);
-    setForm(f => ({ ...f, warehouse_id: d.vehicle_warehouse_id || "" }));
+    setForm(f => ({
+      ...f,
+      warehouse_id: d.vehicle_warehouse_id || f.warehouse_id,
+      vehicle_id: d.vehicle_id || f.vehicle_id,
+      vehicle_name: d.vehicle_name || f.vehicle_name,
+      driver_id: d.driver_id || "",
+      driver_name: d.driver_name || d.salesperson_name || "",
+    }));
     setVehicleStock(await getVehicleStock(d.vehicle_warehouse_id));
+  }
+
+  async function selectVehicle(vehicleId) {
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    setForm(f => ({ ...f, vehicle_id: vehicleId, vehicle_name: vehicle?.name || "" }));
+    const d = dispatchForVehicle(vehicleId);
+    if (d) await selectDispatch(d);
+    else {
+      setActiveDispatch(null);
+      setVehicleStock([]);
+      setForm(f => ({ ...f, driver_id: "", driver_name: "" }));
+    }
   }
 
   const selectedCustomer = customers.find(c => c.id === form.customer_id);
@@ -98,7 +126,13 @@ export default function SalesOrderForm() {
   async function loadOrder() {
     const o = await base44.entities.SalesOrder.get(id);
     setOrder(o);
-    setForm({ customer_id: o.customer_id, location_id: o.location_id || "", warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "", salesperson_id: o.salesperson_id || "" });
+    setForm({
+      customer_id: o.customer_id, location_id: o.location_id || "", warehouse_id: o.warehouse_id || "",
+      order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash",
+      notes: o.notes || "", salesperson_id: o.salesperson_id || "",
+      vehicle_id: o.vehicle_id || "", vehicle_name: o.vehicle_name || "",
+      driver_id: o.driver_id || "", driver_name: o.driver_name || "",
+    });
     loadCustomerContext(o.customer_id);
     const ls = await base44.entities.SalesOrderLine.filter({ order_id: id });
     setLines(ls);
@@ -168,7 +202,7 @@ export default function SalesOrderForm() {
       toast({ title: "Error", description: "Select a customer and add lines", variant: "destructive" });
       return;
     }
-    if (!activeDispatch) {
+    if (!form.vehicle_id) {
       toast({ title: "Select the delivery vehicle", description: "Sales are recorded against the vehicle that made the delivery", variant: "destructive" });
       return;
     }
@@ -191,6 +225,10 @@ export default function SalesOrderForm() {
         ...form, customer_name: cust?.name || cust?.business_name || "",
         location_name: branches.find(b => b.id === form.location_id)?.business_name || locations.find(l => l.id === form.location_id)?.name || "",
         dispatch_id: activeDispatch?.id || form.dispatch_id || "",
+        vehicle_id: form.vehicle_id || activeDispatch?.vehicle_id || "",
+        vehicle_name: form.vehicle_name || activeDispatch?.vehicle_name || "",
+        driver_id: form.driver_id || activeDispatch?.driver_id || "",
+        driver_name: form.driver_name || activeDispatch?.driver_name || activeDispatch?.salesperson_name || "",
         salesperson_id: form.salesperson_id || activeDispatch?.salesperson_id || employee?.id || "",
         salesperson_name: employees.find(e => e.id === (form.salesperson_id || activeDispatch?.salesperson_id || employee?.id))?.full_name || "",
         route_id: activeDispatch?.route_id || "",
@@ -423,18 +461,22 @@ export default function SalesOrderForm() {
           </div>
           <div>
             <Label>Delivery Vehicle *</Label>
-            <Select
-              value={activeDispatch?.id || ""}
-              onValueChange={v => selectDispatch(dispatches.find(d => d.id === v))}
-            >
+            <Select value={form.vehicle_id || ""} onValueChange={selectVehicle}>
               <SelectTrigger><SelectValue placeholder="Which vehicle delivered?" /></SelectTrigger>
-              <SelectContent>{dispatches.map(d => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.vehicle_name || "Vehicle"} — {d.route_name || d.dispatch_number}
+              <SelectContent>{vehicles.map(v => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.name}{v.registration ? ` (${v.registration})` : ""}{driverFor(v.id) ? ` — ${driverFor(v.id)}` : ""}
                 </SelectItem>
               ))}</SelectContent>
             </Select>
-            {dispatches.length === 0 && <p className="text-xs text-slate-400 mt-1">No vehicles are out on the road right now.</p>}
+            {vehicles.length === 0 && <p className="text-xs text-slate-400 mt-1">No vehicles recorded yet — add them in Administration.</p>}
+            {form.vehicle_id && (activeDispatch ? (
+              <p className="text-xs text-slate-500 mt-1">
+                On dispatch {activeDispatch.dispatch_number}{driverFor(form.vehicle_id) ? ` — driver ${driverFor(form.vehicle_id)}` : ""}.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 mt-1">No load recorded on this vehicle — the order is not limited to vehicle stock.</p>
+            ))}
           </div>
         </div>
 
