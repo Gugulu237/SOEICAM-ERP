@@ -65,6 +65,12 @@ export async function payExpense({ request, treasuryAccount, expenseAccount, use
     description: `${request.title} — ${request.request_number}`,
     reference: request.request_number,
     userId,
+    category: request.category || "other",
+    department_id: request.department_id || "",
+    department_name: request.department_name || "",
+    source: "request",
+    source_document_id: request.id,
+    source_document_number: request.request_number || "",
   });
 
   const budget = await findBudgetForRequest(request.department_id, date);

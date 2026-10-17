@@ -7,7 +7,11 @@ const txNumber = () => `TRX-${Date.now().toString(36).toUpperCase()}`;
 
 // Petty-cash / operating expense paid from a treasury account:
 // Dr expense account, Cr treasury GL account.
-export async function recordExpense({ treasuryAccount, expenseAccount, amount, date, description, reference = "", userId = "" }) {
+export async function recordExpense({
+  treasuryAccount, expenseAccount, amount, date, description, reference = "", userId = "",
+  category = "", payee = "", department_id = "", department_name = "",
+  source = "direct", source_document_id = "", source_document_number = "",
+}) {
   amount = round2(amount);
   if (amount <= 0) throw new Error("Amount must be greater than zero");
   if (amount > round2(treasuryAccount.balance)) throw new Error(`Insufficient funds in ${treasuryAccount.name} (${treasuryAccount.balance} XAF available)`);
@@ -17,6 +21,8 @@ export async function recordExpense({ treasuryAccount, expenseAccount, amount, d
     treasury_account_id: treasuryAccount.id, treasury_account_name: treasuryAccount.name,
     transaction_type: "expense",
     expense_account_id: expenseAccount.id, expense_account_number: expenseAccount.account_number, expense_account_name: expenseAccount.name,
+    category, payee, department_id, department_name,
+    source, source_document_id, source_document_number,
     amount, transaction_date: date, description, reference, created_by: userId,
   });
 

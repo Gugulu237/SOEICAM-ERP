@@ -13,6 +13,8 @@ import ExpenseBoard from "@/components/expenses/ExpenseBoard";
 import ExpenseRequestDialog from "@/components/expenses/ExpenseRequestDialog";
 import PayExpenseDialog from "@/components/expenses/PayExpenseDialog";
 import BudgetManager from "@/components/expenses/BudgetManager";
+import ExpenseRegister from "@/components/expenses/ExpenseRegister";
+import ExpenseReport from "@/components/expenses/ExpenseReport";
 import { Plus } from "lucide-react";
 
 export default function Expenses() {
@@ -67,7 +69,7 @@ export default function Expenses() {
     <div>
       <PageHeader
         title="Expenses & Budgets"
-        subtitle="Request, approve and pay day-to-day operating expenses"
+        subtitle="Request, approve, categorise and report every operating expense paid out of treasury"
         actions={<Button onClick={() => setNewOpen(true)}><Plus size={16} className="mr-1" /> New Expense Request</Button>}
       />
 
@@ -89,12 +91,17 @@ export default function Expenses() {
         </div>
       </div>
 
-      <Tabs defaultValue="board">
+      <Tabs defaultValue="register">
         <TabsList>
+          <TabsTrigger value="register">Expense Register</TabsTrigger>
           <TabsTrigger value="board">Requests Board</TabsTrigger>
           <TabsTrigger value="list">All Requests</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
         </TabsList>
+        <TabsContent value="register" className="mt-4">
+          <ExpenseRegister />
+        </TabsContent>
         <TabsContent value="board" className="mt-4">
           <ExpenseBoard
             requests={requests}
@@ -109,6 +116,9 @@ export default function Expenses() {
         </TabsContent>
         <TabsContent value="list" className="mt-4">
           <DataTable columns={cols} data={requests} searchFields={["request_number", "title", "requester_name", "department_name"]} />
+        </TabsContent>
+        <TabsContent value="reports" className="mt-4">
+          <ExpenseReport />
         </TabsContent>
         <TabsContent value="budgets" className="mt-4">
           <BudgetManager />

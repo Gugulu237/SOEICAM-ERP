@@ -9,7 +9,7 @@ import TransferDialog from "@/components/treasury/TransferDialog";
 import TreasuryAccountDialog from "@/components/treasury/TreasuryAccountDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
-import { Plus, ArrowLeftRight, Receipt, ArrowLeft, Wallet, Landmark, Smartphone, Coins } from "lucide-react";
+import { Plus, ArrowLeftRight, Receipt, ArrowLeft, Wallet, Landmark, Smartphone, Coins, BarChart3 } from "lucide-react";
 
 const TYPE_ICON = { cash: Wallet, bank: Landmark, mobile_money: Smartphone, petty_cash: Coins };
 const TYPE_LABEL = { cash: "Cash", bank: "Bank", mobile_money: "Mobile Money", petty_cash: "Petty Cash" };
@@ -62,6 +62,7 @@ export default function Treasury() {
         actions={
           <div className="flex gap-2 flex-wrap">
             {canOperate && <Button onClick={() => setDialog("expense")}><Receipt size={16} className="mr-1" /> Record Expense</Button>}
+            <Button variant="outline" onClick={() => navigate("/expenses")}><BarChart3 size={16} className="mr-1" /> Expense Register</Button>
             {canOperate && <Button variant="outline" onClick={() => setDialog("transfer")}><ArrowLeftRight size={16} className="mr-1" /> Transfer Funds</Button>}
             {isAdmin && <Button variant="outline" onClick={() => setDialog("account")}><Plus size={16} className="mr-1" /> New Account</Button>}
             <Button variant="outline" onClick={() => navigate("/accounting")}><ArrowLeft size={16} className="mr-1" /> Accounting</Button>

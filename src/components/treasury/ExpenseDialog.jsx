@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { formatXAF } from "@/lib/formatters";
+import { formatXAF, statusLabel } from "@/lib/formatters";
+import { EXPENSE_CATEGORIES } from "@/lib/expenses";
 import { recordExpense } from "@/lib/treasury";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -14,9 +15,11 @@ export default function ExpenseDialog({ accounts, onClose, onDone }) {
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [expenseAccounts, setExpenseAccounts] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [form, setForm] = useState({
     treasury_id: "", expense_id: "", amount: 0, reference: "",
     date: new Date().toISOString().slice(0, 10), description: "",
+    category: "other", payee: "", department_id: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -24,6 +27,7 @@ export default function ExpenseDialog({ accounts, onClose, onDone }) {
     base44.entities.Account.filter({ is_active: true }, "account_number", 500).then((accs) =>
       setExpenseAccounts(accs.filter((a) => ["expense", "other_expense", "cogs"].includes(a.account_type)))
     );
+    base44.entities.Department.filter({ is_active: true }).then(setDepartments);
   }, []);
 
   async function handleSave() {
@@ -35,9 +39,12 @@ export default function ExpenseDialog({ accounts, onClose, onDone }) {
     }
     setSaving(true);
     try {
+      const department = departments.find((d) => d.id === form.department_id);
       await recordExpense({
         treasuryAccount, expenseAccount, amount: Number(form.amount),
         date: form.date, description: form.description, reference: form.reference, userId: user?.id || "",
+        category: form.category, payee: form.payee,
+        department_id: department?.id || "", department_name: department?.name || "",
       });
       toast({ title: "Expense recorded", description: `${formatXAF(Number(form.amount))} from ${treasuryAccount.name}` });
       onDone();
@@ -62,6 +69,29 @@ export default function ExpenseDialog({ accounts, onClose, onDone }) {
             <Select value={form.expense_id} onValueChange={(v) => setForm((f) => ({ ...f, expense_id: v }))}>
               <SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger>
               <SelectContent>{expenseAccounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.account_number} — {a.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Expense Type</Label>
+              <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{statusLabel(c)}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Payee / Vendor</Label>
+              <Input value={form.payee} onChange={(e) => setForm((f) => ({ ...f, payee: e.target.value }))} placeholder="Who was paid" />
+            </div>
+          </div>
+          <div>
+            <Label>Department (optional)</Label>
+            <Select value={form.department_id || "none"} onValueChange={(v) => setForm((f) => ({ ...f, department_id: v === "none" ? "" : v }))}>
+              <SelectTrigger><SelectValue placeholder="No department" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No department</SelectItem>
+                {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+              </SelectContent>
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">
