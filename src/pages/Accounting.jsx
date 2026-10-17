@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { formatXAF, formatDate } from "@/lib/formatters";
@@ -10,21 +10,27 @@ import { Button } from "@/components/ui/button";
 import { Plus, BookOpen, Scale, Wallet } from "lucide-react";
 import PeriodsManager from "@/components/accounting/PeriodsManager";
 import PostingRulesManager from "@/components/accounting/PostingRulesManager";
+import AccountDialog from "@/components/accounting/AccountDialog";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 export default function Accounting() {
   const [accounts, setAccounts] = useState([]);
   const [journals, setJournals] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
   const navigate = useNavigate();
+  const { isAdmin } = useCurrentUser();
 
-  useEffect(() => {
-    Promise.all([
+  const load = useCallback(() => {
+    return Promise.all([
       base44.entities.Account.filter({}),
       base44.entities.JournalEntry.list("-created_date", 50),
       base44.entities.Payment.list("-created_date", 50),
     ]).then(([a, j, p]) => { setAccounts(a); setJournals(j); setPayments(p); }).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const accountCols = [
     { key: "account_number", label: "Account #" },
@@ -33,6 +39,11 @@ export default function Accounting() {
     { key: "normal_balance", label: "Normal Bal" },
     { key: "balance", label: "Balance", render: v => formatXAF(v), className: "text-right" },
     { key: "is_active", label: "Status", render: v => <StatusBadge status={v ? "active" : "inactive"} /> },
+    ...(isAdmin ? [{
+      key: "actions", label: "", render: (v, a) => (
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setEditing(a); }}>Edit</Button>
+      ),
+    }] : []),
   ];
 
   const journalCols = [
@@ -86,7 +97,12 @@ export default function Accounting() {
           <TabsTrigger value="rules">Posting Rules</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts" className="mt-4">
-          <DataTable columns={accountCols} data={accounts.sort((a, b) => a.account_number.localeCompare(b.account_number))} searchFields={["account_number", "name"]} />
+          <DataTable
+            columns={accountCols}
+            data={accounts.sort((a, b) => a.account_number.localeCompare(b.account_number))}
+            searchFields={["account_number", "name"]}
+            onRowClick={isAdmin ? (row) => setEditing(row) : undefined}
+          />
         </TabsContent>
         <TabsContent value="journals" className="mt-4">
           <DataTable columns={journalCols} data={journals} searchFields={["journal_number", "description", "source_module"]} onRowClick={row => navigate(`/accounting/journals/${row.id}`)} />
@@ -101,6 +117,8 @@ export default function Accounting() {
           <PostingRulesManager />
         </TabsContent>
       </Tabs>
+
+      {editing && <AccountDialog account={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />}
     </div>
   );
 }
