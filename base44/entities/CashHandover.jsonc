@@ -1,0 +1,86 @@
+{
+  "name": "CashHandover",
+  "type": "object",
+  "properties": {
+    "handover_number": {
+      "type": "string"
+    },
+    "commercial_id": {
+      "type": "string"
+    },
+    "commercial_name": {
+      "type": "string"
+    },
+    "cashier_id": {
+      "type": "string"
+    },
+    "cashier_name": {
+      "type": "string"
+    },
+    "handover_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "expected_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "offered_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "received_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "variance": {
+      "type": "number",
+      "default": 0
+    },
+    "variance_reason": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "submitted",
+        "partially_received",
+        "received",
+        "disputed"
+      ],
+      "default": "draft"
+    },
+    "submitted_at": {
+      "type": "string"
+    },
+    "confirmed_at": {
+      "type": "string"
+    },
+    "acknowledgement_reference": {
+      "type": "string"
+    },
+    "treasury_account_id": {
+      "type": "string"
+    },
+    "treasury_account_name": {
+      "type": "string"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "journal_number": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "commercial_id",
+    "expected_amount"
+  ]
+}

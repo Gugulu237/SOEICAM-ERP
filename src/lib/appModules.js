@@ -4,7 +4,8 @@
 import {
   Factory, FlaskConical, Package, CalendarClock, GitBranch, ShoppingCart,
   Users, Receipt, UserCheck, Truck, BookOpen, Banknote, CheckSquare,
-  BarChart3, Wallet, UserCog, Settings, LineChart, Activity, Boxes
+  BarChart3, Wallet, UserCog, Settings, LineChart, Activity, Boxes,
+  MapPin, ClipboardCheck, Handshake, Coins
 } from "lucide-react";
 
 export const APP_MODULES = [
@@ -94,6 +95,30 @@ export const APP_MODULES = [
     color: "bg-amber-50 text-amber-700", ring: "hover:border-amber-300",
     roles: ["admin", "cashier"],
     statKey: "finance", badgeKey: "overdueInvoices",
+  },
+  {
+    key: "field_sales", label: "Field Sales", path: "/field-sales", icon: MapPin,
+    description: "My stock, deliveries & cash",
+    color: "bg-teal-50 text-teal-700", ring: "hover:border-teal-300",
+    roles: ["admin", "commercial"],
+  },
+  {
+    key: "field_review", label: "Field Sale Review", path: "/field-review", icon: ClipboardCheck,
+    description: "Receipts, approval & posting",
+    color: "bg-lime-50 text-lime-700", ring: "hover:border-lime-300",
+    roles: ["admin"],
+  },
+  {
+    key: "custody", label: "Commercial Custody", path: "/custody", icon: Handshake,
+    description: "Issue stock to commercials",
+    color: "bg-cyan-50 text-cyan-700", ring: "hover:border-cyan-300",
+    roles: ["admin", "warehouse_manager"],
+  },
+  {
+    key: "cash_handovers", label: "Cash Handovers", path: "/cash-handovers", icon: Coins,
+    description: "Collections & cashier receipt",
+    color: "bg-emerald-50 text-emerald-700", ring: "hover:border-emerald-300",
+    roles: ["admin", "cashier", "commercial"],
   },
   {
     key: "cashier", label: "Cashier", path: "/cashier", icon: Banknote,

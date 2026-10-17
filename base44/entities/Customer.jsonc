@@ -64,6 +64,15 @@
     "gps_lng": {
       "type": "number"
     },
+    "gps_accuracy_m": {
+      "type": "number"
+    },
+    "gps_captured_at": {
+      "type": "string"
+    },
+    "delivery_instructions": {
+      "type": "string"
+    },
     "salesperson_id": {
       "type": "string"
     },
@@ -107,6 +116,44 @@
       "default": true
     },
     "notes": {
+      "type": "string"
+    },
+    "acquired_by_id": {
+      "type": "string"
+    },
+    "acquired_by_name": {
+      "type": "string"
+    },
+    "acquisition_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "acquisition_source": {
+      "type": "string"
+    },
+    "acquisition_verified": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "verified_unique",
+        "duplicate",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "acquisition_verified_by": {
+      "type": "string"
+    },
+    "acquisition_verified_at": {
+      "type": "string"
+    },
+    "acquisition_notes": {
+      "type": "string"
+    },
+    "registered_by_id": {
+      "type": "string"
+    },
+    "registered_at": {
       "type": "string"
     }
   },

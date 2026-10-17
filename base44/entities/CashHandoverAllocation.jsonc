@@ -1,0 +1,37 @@
+{
+  "name": "CashHandoverAllocation",
+  "type": "object",
+  "properties": {
+    "handover_id": {
+      "type": "string"
+    },
+    "handover_number": {
+      "type": "string"
+    },
+    "collection_id": {
+      "type": "string"
+    },
+    "collection_number": {
+      "type": "string"
+    },
+    "sale_number": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "amount_allocated": {
+      "type": "number",
+      "default": 0
+    },
+    "allocation_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "handover_id",
+    "collection_id",
+    "amount_allocated"
+  ]
+}

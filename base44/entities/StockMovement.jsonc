@@ -31,7 +31,11 @@
         "stock_adjustment",
         "stock_count_variance",
         "promotional_issue",
-        "sample_issue"
+        "sample_issue",
+        "commercial_issue",
+        "commercial_return",
+        "field_delivery",
+        "field_delivery_return"
       ]
     },
     "source_warehouse_id": {

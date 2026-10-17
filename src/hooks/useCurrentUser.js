@@ -37,5 +37,11 @@ export function useCurrentUser() {
     canApproveProduction: ['admin'].includes(role),
     canSignChequeGM: ['admin'].includes(role),
     canSignChequePM: ['production_manager'].includes(role),
+    isCommercial: role === 'commercial',
+    isHotesse: role === 'hotesse',
+    isFieldActor: ['commercial', 'hotesse'].includes(role),
+    canIssueCustody: ['admin', 'warehouse_manager'].includes(role),
+    canApproveFieldSale: role === 'admin',
+    canReceiveHandover: ['admin', 'cashier'].includes(role),
   };
 }

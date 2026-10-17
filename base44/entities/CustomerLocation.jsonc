@@ -39,6 +39,27 @@
     "gps_lng": {
       "type": "number"
     },
+    "gps_accuracy_m": {
+      "type": "number"
+    },
+    "gps_captured_at": {
+      "type": "string"
+    },
+    "delivery_instructions": {
+      "type": "string"
+    },
+    "assigned_commercial_id": {
+      "type": "string"
+    },
+    "assigned_commercial_name": {
+      "type": "string"
+    },
+    "assigned_hotesse_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "route_id": {
       "type": "string"
     },

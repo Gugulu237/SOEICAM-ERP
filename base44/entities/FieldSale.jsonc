@@ -1,0 +1,170 @@
+{
+  "name": "FieldSale",
+  "type": "object",
+  "properties": {
+    "sale_number": {
+      "type": "string"
+    },
+    "commercial_id": {
+      "type": "string"
+    },
+    "commercial_name": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "location_id": {
+      "type": "string"
+    },
+    "location_name": {
+      "type": "string"
+    },
+    "route_id": {
+      "type": "string"
+    },
+    "transaction_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "submitted_at": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "submitted",
+        "under_review",
+        "approved_posted",
+        "returned",
+        "rejected",
+        "posting_failed"
+      ],
+      "default": "draft"
+    },
+    "payment_type": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "credit"
+      ],
+      "default": "cash"
+    },
+    "subtotal": {
+      "type": "number",
+      "default": 0
+    },
+    "discount_total": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_total": {
+      "type": "number",
+      "default": 0
+    },
+    "total": {
+      "type": "number",
+      "default": 0
+    },
+    "cost_of_goods": {
+      "type": "number",
+      "default": 0
+    },
+    "amount_collected": {
+      "type": "number",
+      "default": 0
+    },
+    "collection_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "amount_due": {
+      "type": "number",
+      "default": 0
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "payment_terms_days": {
+      "type": "number",
+      "default": 0
+    },
+    "receipt_reference": {
+      "type": "string"
+    },
+    "receipt_file_uris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "receipt_review_notes": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "custodian_warehouse_id": {
+      "type": "string"
+    },
+    "custody_issue_id": {
+      "type": "string"
+    },
+    "stock_moved_at": {
+      "type": "string"
+    },
+    "pending_warehouse_id": {
+      "type": "string"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "journal_number": {
+      "type": "string"
+    },
+    "posting_error": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "decided_by": {
+      "type": "string"
+    },
+    "decided_at": {
+      "type": "string"
+    },
+    "decision_reason": {
+      "type": "string"
+    },
+    "duplicate_flag": {
+      "type": "boolean",
+      "default": false
+    },
+    "duplicate_note": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "credit_override_by": {
+      "type": "string"
+    },
+    "credit_override_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "commercial_id",
+    "customer_id",
+    "transaction_date"
+  ]
+}

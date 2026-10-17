@@ -1,0 +1,117 @@
+{
+  "name": "CashCollection",
+  "type": "object",
+  "properties": {
+    "collection_number": {
+      "type": "string"
+    },
+    "field_sale_id": {
+      "type": "string"
+    },
+    "sale_number": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "commercial_id": {
+      "type": "string"
+    },
+    "commercial_name": {
+      "type": "string"
+    },
+    "payment_type": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "credit"
+      ],
+      "default": "cash"
+    },
+    "amount_due": {
+      "type": "number",
+      "default": 0
+    },
+    "amount_collected": {
+      "type": "number",
+      "default": 0
+    },
+    "collection_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "cash",
+        "mobile_money"
+      ],
+      "default": "cash"
+    },
+    "reference": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "held_by_commercial",
+        "handover_submitted",
+        "partially_received",
+        "received",
+        "disputed",
+        "cancelled"
+      ],
+      "default": "held_by_commercial"
+    },
+    "handed_over_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "received_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "outstanding_amount": {
+      "type": "number",
+      "default": 0
+    },
+    "handover_id": {
+      "type": "string"
+    },
+    "handover_number": {
+      "type": "string"
+    },
+    "treasury_account_id": {
+      "type": "string"
+    },
+    "treasury_account_name": {
+      "type": "string"
+    },
+    "received_by": {
+      "type": "string"
+    },
+    "received_at": {
+      "type": "string"
+    },
+    "acknowledgement_reference": {
+      "type": "string"
+    },
+    "journal_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "commercial_id",
+    "amount_collected",
+    "collection_date"
+  ]
+}

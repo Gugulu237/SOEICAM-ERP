@@ -8,6 +8,8 @@ export const ROLES = {
   CASHIER: 'cashier',
   PRODUCTION_MANAGER: 'production_manager',
   EMPLOYEE: 'employee',
+  COMMERCIAL: 'commercial',
+  HOTESSE: 'hotesse',
 };
 
 export const ROLE_LABELS = {
@@ -17,6 +19,8 @@ export const ROLE_LABELS = {
   cashier: 'Cashier',
   production_manager: 'Production Manager',
   employee: 'Employee',
+  commercial: 'Commercial (Field Sales)',
+  hotesse: 'Hotesse (Outlet Reporting)',
 };
 
 // Who can approve purchase orders (GM only — procurement/production manager submit, GM approves)
@@ -60,6 +64,13 @@ export function canIssueMaterials(role) {
   return WAREHOUSE_ISSUERS.includes(role);
 }
 
+// Who may issue goods into a Commercial's custody
+export const CUSTODY_ISSUERS = ['admin', 'warehouse_manager'];
+// Who may review and approve field sales (never the submitting Commercial)
+export const FIELD_SALE_APPROVERS = ['admin'];
+// Who may confirm cash physically received from a Commercial
+export const HANDOVER_RECEIVERS = ['admin', 'cashier'];
+
 // Sidebar navigation role mapping (null = all roles)
 export const NAV_ROLE_ACCESS = {
   '/': null,
@@ -82,4 +93,20 @@ export const NAV_ROLE_ACCESS = {
   '/reports': ['admin'],
   '/approvals': ['admin', 'procurement', 'production_manager', 'warehouse_manager'],
   '/admin': ['admin'],
+  '/field-sales': ['admin', 'commercial'],
+  '/field-review': ['admin'],
+  '/custody': ['admin', 'warehouse_manager'],
+  '/cash-handovers': ['admin', 'cashier', 'commercial'],
 };
+
+export function canIssueCustody(role) {
+  return CUSTODY_ISSUERS.includes(role);
+}
+
+export function canApproveFieldSale(role) {
+  return FIELD_SALE_APPROVERS.includes(role);
+}
+
+export function canReceiveHandover(role) {
+  return HANDOVER_RECEIVERS.includes(role);
+}

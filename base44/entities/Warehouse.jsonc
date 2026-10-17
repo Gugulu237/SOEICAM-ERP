@@ -22,8 +22,16 @@
         "quarantine",
         "damaged",
         "vehicle",
-        "general"
+        "general",
+        "commercial_custody",
+        "field_delivery_pending"
       ]
+    },
+    "custodian_employee_id": {
+      "type": "string"
+    },
+    "custodian_name": {
+      "type": "string"
     },
     "address": {
       "type": "string"

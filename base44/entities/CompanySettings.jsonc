@@ -76,6 +76,26 @@
     "next_delivery_number": {
       "type": "number",
       "default": 1
+    },
+    "next_field_sale_number": {
+      "type": "number",
+      "default": 1
+    },
+    "next_collection_number": {
+      "type": "number",
+      "default": 1
+    },
+    "next_handover_number": {
+      "type": "number",
+      "default": 1
+    },
+    "gps_max_accuracy_m": {
+      "type": "number",
+      "default": 30
+    },
+    "gps_max_age_seconds": {
+      "type": "number",
+      "default": 120
     }
   },
   "required": [
