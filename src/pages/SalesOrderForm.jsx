@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { formatXAF } from "@/lib/formatters";
+import { formatXAF, statusLabel } from "@/lib/formatters";
 import { postJournal } from "@/lib/posting";
 import { CASH_CLEARING_ACCOUNT_NUMBER } from "@/lib/cash-sales";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -25,10 +25,11 @@ export default function SalesOrderForm() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [dispatches, setDispatches] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [locations, setLocations] = useState([]);
   const [form, setForm] = useState({
     customer_id: "", location_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
-    delivery_date: "", payment_type: "cash", notes: ""
+    delivery_date: "", payment_type: "cash", notes: "", salesperson_id: ""
   });
   const [lines, setLines] = useState([]);
   const [order, setOrder] = useState(null);
@@ -43,9 +44,15 @@ export default function SalesOrderForm() {
       base44.entities.Customer.filter({ is_active: true }),
       base44.entities.Product.filter({ is_active: true, inventory_type: "finished_product" }),
       getLoadedDispatches(),
-    ]).then(([c, p, d]) => { setCustomers(c); setProducts(p); setDispatches(d); });
+      base44.entities.Employee.filter({ status: "active" }),
+    ]).then(([c, p, d, e]) => { setCustomers(c); setProducts(p); setDispatches(d); setEmployees(e); });
     if (isEdit) loadOrder();
   }, [id]);
+
+  // The seller defaults to the person logged in; it stays changeable.
+  useEffect(() => {
+    if (employee?.id) setForm(f => f.salesperson_id ? f : { ...f, salesperson_id: employee.id });
+  }, [employee?.id]);
 
   // A salesperson or driver out on a loaded dispatch sells from the vehicle's stock.
   useEffect(() => {
@@ -62,6 +69,25 @@ export default function SalesOrderForm() {
   }
 
   const selectedCustomer = customers.find(c => c.id === form.customer_id);
+  const isBranch = !!selectedCustomer?.parent_id;
+
+  // Main partners first, each followed by its branches.
+  const partnerOptions = (() => {
+    const mains = customers.filter(c => !c.parent_id).sort((a, b) => (a.business_name || "").localeCompare(b.business_name || ""));
+    const subs = customers.filter(c => c.parent_id);
+    return [
+      ...mains.flatMap(m => [m, ...subs.filter(s => s.parent_id === m.id)]),
+      ...subs.filter(s => !customers.some(p => p.id === s.parent_id)),
+    ];
+  })();
+
+  // A branch is delivered and billed through its main partner's branches.
+  async function loadLocations(cust) {
+    const own = await base44.entities.CustomerLocation.filter({ customer_id: cust.id, is_active: true });
+    if (own.length > 0 || !cust.parent_id) return own;
+    return base44.entities.CustomerLocation.filter({ customer_id: cust.parent_id, is_active: true });
+  }
+
   const billingHint = !form.location_id ? null
     : selectedCustomer?.financial_centralization_mode === "decentralized"
       ? "Invoice will be billed to this branch."
@@ -73,8 +99,8 @@ export default function SalesOrderForm() {
   async function loadOrder() {
     const o = await base44.entities.SalesOrder.get(id);
     setOrder(o);
-    setForm({ customer_id: o.customer_id, location_id: o.location_id || "", warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "" });
-    base44.entities.CustomerLocation.filter({ customer_id: o.customer_id, is_active: true }).then(setLocations);
+    setForm({ customer_id: o.customer_id, location_id: o.location_id || "", warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "", salesperson_id: o.salesperson_id || "" });
+    base44.entities.Customer.get(o.customer_id).then(c => loadLocations(c)).then(setLocations);
     const ls = await base44.entities.SalesOrderLine.filter({ order_id: id });
     setLines(ls);
     if (o.dispatch_id) setActiveDispatch(await base44.entities.Dispatch.get(o.dispatch_id));
@@ -82,8 +108,8 @@ export default function SalesOrderForm() {
 
   function handleCustomerChange(custId) {
     setForm(f => ({ ...f, customer_id: custId, location_id: "" }));
-    base44.entities.CustomerLocation.filter({ customer_id: custId, is_active: true }).then(setLocations);
     const cust = customers.find(c => c.id === custId);
+    if (cust) loadLocations(cust).then(setLocations);
     if (cust && cust.payment_terms_days > 0) setForm(f => ({ ...f, payment_type: "credit" }));
     checkCredit(custId);
   }
@@ -166,7 +192,8 @@ export default function SalesOrderForm() {
         ...form, customer_name: cust?.name || cust?.business_name || "",
         location_name: locations.find(l => l.id === form.location_id)?.name || "",
         dispatch_id: activeDispatch?.id || form.dispatch_id || "",
-        salesperson_id: activeDispatch?.salesperson_id || employee?.id || "",
+        salesperson_id: form.salesperson_id || activeDispatch?.salesperson_id || employee?.id || "",
+        salesperson_name: employees.find(e => e.id === (form.salesperson_id || activeDispatch?.salesperson_id || employee?.id))?.full_name || "",
         route_id: activeDispatch?.route_id || "",
         subtotal: Math.round(totals.sub), discount_total: Math.round(totals.disc),
         tax_total: Math.round(totals.tax), total: Math.round(totals.total),
@@ -345,7 +372,11 @@ export default function SalesOrderForm() {
             <Label>Customer *</Label>
             <Select value={form.customer_id} onValueChange={handleCustomerChange}>
               <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-              <SelectContent>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}</SelectContent>
+              <SelectContent>{partnerOptions.map(c => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.business_name}{c.parent_id ? ` — branch of ${c.parent_name || "main partner"}` : ""}
+                </SelectItem>
+              ))}</SelectContent>
             </Select>
           </div>
           <div>
@@ -359,7 +390,10 @@ export default function SalesOrderForm() {
               ))}</SelectContent>
             </Select>
             {form.customer_id && locations.length === 0 && (
-              <p className="text-xs text-slate-400 mt-1">This partner has no branches yet — add them on the partner page.</p>
+              <p className="text-xs text-slate-400 mt-1">No branches recorded for this partner yet — add them on the partner page.</p>
+            )}
+            {isBranch && locations.length > 0 && (
+              <p className="text-xs text-slate-400 mt-1">Branch of {selectedCustomer.parent_name || "the main partner"} — the sale is booked on this branch.</p>
             )}
             {billingHint && <p className="text-xs text-slate-500 mt-1">{billingHint}</p>}
           </div>
@@ -376,6 +410,15 @@ export default function SalesOrderForm() {
           <div>
             <Label>Order Date</Label>
             <Input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))} />
+          </div>
+          <div>
+            <Label>Commercial (Salesperson)</Label>
+            <Select value={form.salesperson_id || ""} onValueChange={v => setForm(f => ({ ...f, salesperson_id: v }))}>
+              <SelectTrigger><SelectValue placeholder="Who made the sale?" /></SelectTrigger>
+              <SelectContent>{employees.map(e => (
+                <SelectItem key={e.id} value={e.id}>{e.full_name}{e.role ? ` — ${statusLabel(e.role)}` : ""}</SelectItem>
+              ))}</SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Delivery Vehicle *</Label>
