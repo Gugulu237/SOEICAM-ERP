@@ -31,6 +31,21 @@ export async function loadCashToCollect() {
     .filter(row => isCashSale(row.invoice, row.order));
 }
 
+// Who can be handing the cash over: the commercials named on an outstanding
+// delivery, plus the active commercials on the register.
+export async function loadOutstandingCommercials(rows = []) {
+  const names = new Map();
+  rows.forEach(({ order }) => {
+    const n = order?.salesperson_name;
+    if (n && !names.has(n)) names.set(n, { id: order.salesperson_id || n, name: n });
+  });
+  const page = await base44.entities.Employee.filter({ role: "commercial", status: "active" }, { limit: 100 });
+  (page.items || []).forEach(e => {
+    if (!names.has(e.full_name)) names.set(e.full_name, { id: e.id, name: e.full_name });
+  });
+  return [...names.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function loadCashReceipts(limit = 50) {
   const page = await base44.entities.CashCollection.filter({ status: "received" }, { sort: "-received_at", limit });
   return page.items;
@@ -73,7 +88,7 @@ export async function receiveCashFromCommercial({
     customer_id: invoice.customer_id,
     customer_name: invoice.customer_name || "",
     commercial_id: order?.salesperson_id || "",
-    commercial_name: order?.salesperson_name || collectedBy || "",
+    commercial_name: collectedBy || order?.salesperson_name || "",
     driver_name: order?.driver_name || "",
     vehicle_name: order?.vehicle_name || "",
     payment_type: "cash",

@@ -12,7 +12,7 @@ import { HandCoins } from "lucide-react";
 
 // Receiving the cash a commercial collected on delivery, against the physical
 // receipt they carry. Confirming posts the money to the ledger.
-export default function ReceiveCashDialog({ row, treasuryAccounts, userId, userName, onClose, onDone }) {
+export default function ReceiveCashDialog({ row, commercials = [], treasuryAccounts, userId, userName, onClose, onDone }) {
   const { toast } = useToast();
   const { invoice, order } = row;
   const [form, setForm] = useState({
@@ -20,7 +20,7 @@ export default function ReceiveCashDialog({ row, treasuryAccounts, userId, userN
     amount: invoice.balance || 0,
     date: new Date().toISOString().slice(0, 10),
     receipt_reference: "",
-    received_from: order?.salesperson_name || order?.driver_name || "",
+    received_from: order?.salesperson_name || (commercials.length === 1 ? commercials[0].name : ""),
     notes: "",
     receipt: "",
   });
@@ -100,7 +100,15 @@ export default function ReceiveCashDialog({ row, treasuryAccounts, userId, userN
             </div>
             <div>
               <Label>Received From</Label>
-              <Input value={form.received_from} onChange={e => setForm(f => ({ ...f, received_from: e.target.value }))} placeholder="Commercial / driver" />
+              <Select value={form.received_from} onValueChange={v => setForm(f => ({ ...f, received_from: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select commercial" /></SelectTrigger>
+                <SelectContent>
+                  {commercials.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {commercials.length === 0 && (
+                <p className="text-xs text-slate-400 mt-1">No commercials with outstanding deliveries</p>
+              )}
             </div>
           </div>
 

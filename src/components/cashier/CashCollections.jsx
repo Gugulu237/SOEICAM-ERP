@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { loadCashToCollect, loadCashReceipts } from "@/lib/cash-receipts";
+import { loadCashToCollect, loadCashReceipts, loadOutstandingCommercials } from "@/lib/cash-receipts";
 import { receiptUrl } from "@/lib/field-ops";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,14 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
   const { toast } = useToast();
   const [rows, setRows] = useState([]);
   const [receipts, setReceipts] = useState([]);
+  const [commercials, setCommercials] = useState([]);
   const [receiving, setReceiving] = useState(null);
 
   async function load() {
     const [toCollect, record] = await Promise.all([loadCashToCollect(), loadCashReceipts()]);
     setRows(toCollect);
     setReceipts(record);
+    setCommercials(await loadOutstandingCommercials(toCollect));
   }
 
   useEffect(() => { load(); }, []);
@@ -141,6 +143,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
       {receiving && (
         <ReceiveCashDialog
           row={receiving}
+          commercials={commercials}
           treasuryAccounts={treasuryAccounts}
           userId={userId}
           userName={userName}
