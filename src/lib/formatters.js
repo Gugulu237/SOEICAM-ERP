@@ -29,6 +29,7 @@ export function statusColor(status) {
     approved: "bg-blue-100 text-blue-800",
     confirmed: "bg-blue-100 text-blue-800",
     posted: "bg-green-100 text-green-800",
+    reversed: "bg-purple-100 text-purple-800",
     completed: "bg-green-100 text-green-800",
     released: "bg-green-100 text-green-800",
     paid: "bg-green-100 text-green-800",

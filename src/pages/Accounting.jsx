@@ -11,31 +11,20 @@ import { Plus, BookOpen, Scale, Wallet } from "lucide-react";
 import PeriodsManager from "@/components/accounting/PeriodsManager";
 import PostingRulesManager from "@/components/accounting/PostingRulesManager";
 import ChartOfAccountsManager from "@/components/accounting/ChartOfAccountsManager";
+import JournalRegister from "@/components/accounting/JournalRegister";
 
 export default function Accounting() {
-  const [journals, setJournals] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   const load = useCallback(() => {
-    return Promise.all([
-      base44.entities.JournalEntry.list("-created_date", 50),
-      base44.entities.Payment.list("-created_date", 50),
-    ]).then(([j, p]) => { setJournals(j); setPayments(p); }).finally(() => setLoading(false));
+    return base44.entities.Payment.list("-created_date", 50)
+      .then(setPayments)
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const journalCols = [
-    { key: "journal_number", label: "Journal #" },
-    { key: "entry_date", label: "Date", render: v => formatDate(v) },
-    { key: "description", label: "Description" },
-    { key: "source_module", label: "Source" },
-    { key: "total_debit", label: "Debit", render: v => formatXAF(v), className: "text-right" },
-    { key: "total_credit", label: "Credit", render: v => formatXAF(v), className: "text-right" },
-    { key: "status", label: "Status", render: v => <StatusBadge status={v} /> },
-  ];
 
   const paymentCols = [
     { key: "payment_number", label: "Payment #" },
@@ -81,7 +70,7 @@ export default function Accounting() {
           <ChartOfAccountsManager />
         </TabsContent>
         <TabsContent value="journals" className="mt-4">
-          <DataTable columns={journalCols} data={journals} searchFields={["journal_number", "description", "source_module"]} onRowClick={row => navigate(`/accounting/journals/${row.id}`)} />
+          <JournalRegister />
         </TabsContent>
         <TabsContent value="payments" className="mt-4">
           <DataTable columns={paymentCols} data={payments} searchFields={["payment_number", "party_name"]} />
