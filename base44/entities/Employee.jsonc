@@ -17,6 +17,22 @@
     "job_title": {
       "type": "string"
     },
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "procurement",
+        "warehouse_manager",
+        "cashier",
+        "production_manager",
+        "employee",
+        "commercial",
+        "hotesse"
+      ]
+    },
+    "responsibilities": {
+      "type": "string"
+    },
     "department_id": {
       "type": "string"
     },
@@ -76,7 +92,7 @@
     "user_id": {
       "type": "string"
     },
-    "role": {
+    "user_email": {
       "type": "string"
     }
   },
