@@ -5,6 +5,14 @@
     "journal_id": {
       "type": "string"
     },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "posted"
+      ],
+      "default": "posted"
+    },
     "account_id": {
       "type": "string"
     },

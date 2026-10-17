@@ -21,6 +21,26 @@
         "other_expense"
       ]
     },
+    "subtype": {
+      "type": "string"
+    },
+    "financial_statement": {
+      "type": "string",
+      "enum": [
+        "balance_sheet",
+        "income_statement"
+      ]
+    },
+    "cash_flow_category": {
+      "type": "string",
+      "enum": [
+        "operating",
+        "investing",
+        "financing",
+        "none"
+      ],
+      "default": "none"
+    },
     "parent_id": {
       "type": "string"
     },
@@ -31,11 +51,45 @@
         "credit"
       ]
     },
+    "is_posting": {
+      "type": "boolean",
+      "default": true
+    },
+    "is_control_account": {
+      "type": "boolean",
+      "default": false
+    },
+    "allow_manual_journal": {
+      "type": "boolean",
+      "default": true
+    },
+    "is_treasury": {
+      "type": "boolean",
+      "default": false
+    },
+    "reconciliation_required": {
+      "type": "boolean",
+      "default": false
+    },
+    "branch_restriction": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string",
+      "default": "XAF"
+    },
+    "currency_restriction": {
+      "type": "string"
+    },
     "is_active": {
       "type": "boolean",
       "default": true
     },
     "is_system": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_sample": {
       "type": "boolean",
       "default": false
     },

@@ -59,9 +59,10 @@ async function applyBalanceDeltas(lines, direction = 1) {
   }
 }
 
-function cleanLine(l, journalId, description, branchId) {
+function cleanLine(l, journalId, description, branchId, status) {
   return {
     journal_id: journalId,
+    status: status || "posted",
     account_id: l.account_id,
     account_number: l.account_number || "",
     account_name: l.account_name || "",
@@ -122,7 +123,7 @@ export async function postJournal({
   });
 
   const activeLines = (lines || []).filter((l) => l.account_id && (round2(l.debit) > 0 || round2(l.credit) > 0));
-  await base44.entities.JournalLine.bulkCreate(activeLines.map((l) => cleanLine(l, journal.id, description, branchId)));
+  await base44.entities.JournalLine.bulkCreate(activeLines.map((l) => cleanLine(l, journal.id, description, branchId, status)));
 
   if (status === "posted") {
     await applyBalanceDeltas(activeLines);
@@ -147,6 +148,10 @@ export async function postDraft(journal, userId = "") {
   const { errors, totalDebit, totalCredit } = validateJournal(lines);
   if (errors.length) throw new Error(errors.join(". "));
   await assertOpenPeriod(journal.entry_date);
+  await base44.entities.JournalLine.updateMany(
+    { journal_id: journal.id, status: "draft" },
+    { $set: { status: "posted" } }
+  );
   await applyBalanceDeltas(lines);
   await base44.entities.JournalEntry.update(journal.id, {
     status: "posted",
