@@ -7,6 +7,7 @@ import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import FieldSalesPanel from "@/components/sales/FieldSalesPanel";
 import { Plus } from "lucide-react";
 
 export default function Sales() {
@@ -54,12 +55,16 @@ export default function Sales() {
         <TabsList>
           <TabsTrigger value="orders">Sales Orders</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
+          <TabsTrigger value="field">Field Sales</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="mt-4">
           <DataTable columns={orderCols} data={orders} searchFields={["order_number", "customer_name"]} onRowClick={row => navigate(`/sales/${row.id}`)} />
         </TabsContent>
         <TabsContent value="invoices" className="mt-4">
           <DataTable columns={invoiceCols} data={invoices} searchFields={["invoice_number", "customer_name"]} onRowClick={row => navigate(`/sales/invoices/${row.id}`)} />
+        </TabsContent>
+        <TabsContent value="field" className="mt-4">
+          <FieldSalesPanel />
         </TabsContent>
       </Tabs>
     </div>

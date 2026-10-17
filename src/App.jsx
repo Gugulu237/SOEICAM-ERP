@@ -153,6 +153,7 @@ const AuthenticatedApp = () => {
           <Route path="/field-sales/new" element={<FieldSaleForm />} />
           <Route path="/field-sales/:id" element={<FieldSaleForm />} />
           <Route path="/field-review" element={<FieldSaleReview />} />
+          <Route path="/field-review/:id" element={<FieldSaleReview />} />
           <Route path="/custody" element={<CustodyIssue />} />
           <Route path="/cash-handovers" element={<CashHandovers />} />
         </Route>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
+import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ const FILTERS = [
 ];
 
 export default function FieldSaleReview() {
+  const { id } = useParams();
   const { toast } = useToast();
   const [filter, setFilter] = useState("queue");
   const [sales, setSales] = useState([]);
@@ -51,6 +53,12 @@ export default function FieldSaleReview() {
     const rows = await base44.entities.FieldSaleLine.filter({ field_sale_id: sale.id });
     setLines(rows);
   };
+
+  // Deep link from the Sales section: open this sale straight away.
+  useEffect(() => {
+    if (!id) return;
+    base44.entities.FieldSale.get(id).then(open);
+  }, [id]);
 
   const act = async (action, label) => {
     setBusy(true);
