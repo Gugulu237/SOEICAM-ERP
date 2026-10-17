@@ -11,7 +11,7 @@ import ReceiptField from "./ReceiptField";
 import { HandCoins } from "lucide-react";
 
 // Receiving the cash a commercial collected on delivery, against the physical
-// receipt they carry. Confirming posts the money to the ledger.
+// receipt they carry. Confirming queues the receipt for GM approval.
 export default function ReceiveCashDialog({ row, commercials = [], treasuryAccounts, userId, userName, onClose, onDone }) {
   const { toast } = useToast();
   const { invoice, order } = row;
@@ -25,6 +25,7 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
     receipt: "",
   });
   const [saving, setSaving] = useState(false);
+  const [requestKey] = useState(() => crypto.randomUUID());
 
   async function handleReceive() {
     const account = treasuryAccounts.find(a => a.id === form.treasury_account_id);
@@ -40,11 +41,11 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
         receiptReference: form.receipt_reference.trim(),
         receiptFileUris: form.receipt ? [form.receipt] : [],
         collectedBy: form.received_from, notes: form.notes,
-        userId, userName,
+        userId, userName, requestKey,
       });
       toast({
         title: `Cash received — ${collection.acknowledgement_reference}`,
-        description: `${formatXAF(Number(form.amount))} into ${account.name}, posted to the ledger against receipt ${form.receipt_reference}`,
+        description: `${formatXAF(Number(form.amount))} confirmed by cashier; awaiting GM approval before ledger posting.`, 
       });
       onDone();
     } catch (e) {
@@ -136,7 +137,7 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button disabled={saving} onClick={handleReceive}>
-            <HandCoins size={16} className="mr-1" /> {saving ? "Posting…" : "Receive & Post to Ledger"}
+            <HandCoins size={16} className="mr-1" /> {saving ? "Confirming…" : "Confirm Receipt for GM Approval"}
           </Button>
         </DialogFooter>
       </DialogContent>

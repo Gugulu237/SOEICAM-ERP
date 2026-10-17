@@ -25,7 +25,7 @@ export default function Dashboard() {
         base44.entities.Product.filter({ is_active: true }),
         base44.entities.ProductionOrder.filter({}),
         base44.entities.StockBalance.filter({}),
-        base44.entities.Payment.filter({ payment_type: "customer_payment" }),
+        base44.entities.Payment.aggregate({ query: { payment_type: 'customer_payment', status: 'posted', payment_date: { $gte: new Date().toISOString().slice(0, 7) + '-01' } }, sum: 'amount' }),
         base44.entities.SalesOrder.filter({}),
       ]);
 
@@ -41,7 +41,7 @@ export default function Dashboard() {
       const inventoryValue = stockBalances.reduce((s, b) => s + (b.total_value || 0), 0);
       const activeProduction = productionOrders.filter(p => !["closed", "cancelled", "completed", "released"].includes(p.status));
       const lowStock = products.filter(p => p.reorder_level > 0);
-      const mtdCollections = payments.filter(p => p.payment_date >= monthStart && p.status !== "cancelled").reduce((s, p) => s + (p.amount || 0), 0);
+      const mtdCollections = payments.rows?.[0]?.sum_amount || 0;
       const mtdCogs = invoices.filter(i => i.invoice_date >= monthStart).length; // simplified
 
       setStats({

@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import ReceiveCashDialog from "./ReceiveCashDialog";
 import { HandCoins, Paperclip } from "lucide-react";
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 // Cash the commercials collected on delivery, received at the till against their
-// physical receipts. Every receipt posts Dr treasury / Cr cash clearing.
+// physical receipts. The GM must approve before a receipt reaches the ledger.
 export default function CashCollections({ treasuryAccounts, canReceive, userId, userName, onDone }) {
   const { toast } = useToast();
+  const { role } = useCurrentUser();
   const [rows, setRows] = useState([]);
   const [receipts, setReceipts] = useState([]);
   const [commercials, setCommercials] = useState([]);
@@ -55,7 +57,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
           <div className="text-xs text-slate-500">Received today</div>
           <div className="text-lg font-semibold tabular-nums">{formatXAF(receivedTodayTotal)}</div>
-          <div className="text-xs text-slate-400">{receivedToday.length} receipt(s) posted to the ledger</div>
+          <div className="text-xs text-slate-400">{receivedToday.length} cashier-confirmed receipt(s); ledger posting requires GM approval</div>
         </div>
       </div>
 
@@ -88,7 +90,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
                 </td>
                 <td className="px-4 py-3 text-right font-medium">{formatXAF(invoice.balance)}</td>
                 <td className="px-4 py-3 text-right">
-                  {canReceive ? (
+                  {canReceive && role === 'cashier' ? (
                     <Button size="sm" onClick={() => setReceiving({ invoice, order })}>
                       <HandCoins size={14} className="mr-1" /> Receive cash
                     </Button>
@@ -120,7 +122,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
               <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No cash received from commercials yet</td></tr>
             ) : receipts.map(r => (
               <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium">{r.acknowledgement_reference || r.collection_number}</td>
+                <td className="px-4 py-3 font-medium">{r.acknowledgement_reference || r.collection_number}<div className="text-xs text-muted-foreground">{r.journal_id ? 'Posted to ledger' : 'Awaiting GM approval'}</div></td>
                 <td className="px-4 py-3">{formatDate(r.collection_date)}</td>
                 <td className="px-4 py-3">{r.commercial_name || "—"}</td>
                 <td className="px-4 py-3">{r.invoice_number || r.sale_number}</td>

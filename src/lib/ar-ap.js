@@ -2,6 +2,7 @@
 // All GL postings go through the central posting engine and configurable posting rules.
 import { base44 } from "@/api/base44Client";
 import { postJournal, resolveRuleAccount, round2 } from "@/lib/posting";
+import { confirmCustomerReceipt } from "@/lib/customer-receipts";
 
 const METHOD_RULE = { cash: "cash", bank_transfer: "bank", mobile_money: "mobile_money", cheque: "bank" };
 
@@ -43,45 +44,9 @@ async function applyAllocations({ payment, entityName, docs, allocations, partyT
   if (records.length) await base44.entities.PaymentAllocation.bulkCreate(records);
 }
 
-// Customer payment: Dr Cash/Bank, Cr AR control; allocate to selected invoices.
-export async function recordCustomerPayment({ customer, amount, paymentDate, method, reference, allocations = {}, openInvoices = [], userId = "" }) {
-  amount = round2(amount);
-  if (amount <= 0) throw new Error("Amount must be greater than zero");
-  const allocated = round2(Object.values(allocations).reduce((s, v) => s + round2(v), 0));
-  if (allocated > amount + 0.01) throw new Error("Allocated total exceeds payment amount");
-
-  const cashRule = await resolveRuleAccount(METHOD_RULE[method] || "cash");
-  const arRule = await resolveRuleAccount("customer_receivable");
-
-  const payment = await base44.entities.Payment.create({
-    payment_number: `PMT-${Date.now().toString(36).toUpperCase()}`,
-    payment_type: "customer_payment", party_type: "customer",
-    party_id: customer.id, party_name: customer.business_name || "",
-    payment_date: paymentDate, amount, payment_method: method,
-    reference: reference || "", status: "posted",
-  });
-
-  await applyAllocations({ payment, entityName: "Invoice", docs: openInvoices, allocations, partyType: "customer", party: customer });
-
-  await base44.entities.Customer.update(customer.id, { balance: round2((customer.balance || 0) - amount) });
-
-  const journal = await postJournal({
-    entryDate: paymentDate,
-    description: `Customer payment from ${customer.business_name} (${method})`,
-    sourceModule: "payments", sourceDocumentType: "Payment", sourceDocumentId: payment.id,
-    userId,
-    lines: [
-      { account_id: cashRule.account_id, account_number: cashRule.account_number, account_name: cashRule.account_name, debit: amount, credit: 0, description: `Payment received — ${reference || method}` },
-      { account_id: arRule.account_id, account_number: arRule.account_number, account_name: arRule.account_name, debit: 0, credit: amount, description: `Receivable cleared — ${customer.business_name}`, party_type: "customer", party_id: customer.id },
-    ],
-  });
-  await base44.entities.Payment.update(payment.id, { journal_id: journal.id });
-
-  await base44.entities.AuditLog.create({
-    action: "receive_payment", module: "receivables", entity_type: "Payment", entity_id: payment.id,
-    user_id: userId, description: `Received ${amount} XAF from ${customer.business_name}, allocated ${allocated} XAF to invoices`,
-  });
-  return payment;
+// Customer receipt: cashier confirmation only; GM approval posts and allocates.
+export async function recordCustomerPayment({ customer, amount, paymentDate, method, reference, allocations = {}, treasuryAccountId, requestKey }) {
+  return confirmCustomerReceipt({ customerId: customer.id, treasuryAccountId, amount, date: paymentDate, method, reference, requestKey: requestKey || crypto.randomUUID(), allocations: Object.entries(allocations).filter(([, value]) => Number(value) > 0).map(([invoice_id, value]) => ({ invoice_id, amount: Number(value) })) });
 }
 
 // Supplier payment: Dr AP control, Cr Cash/Bank; allocate to selected bills.

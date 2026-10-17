@@ -119,6 +119,56 @@
     },
     "allocated_to_invoices": {
       "type": "string"
+    },
+    "invoice_numbers": {
+      "type": "string"
+    },
+    "cashier_confirmed_by": {
+      "type": "string"
+    },
+    "cashier_confirmed_name": {
+      "type": "string"
+    },
+    "cashier_confirmed_at": {
+      "type": "string"
+    },
+    "collection_id": {
+      "type": "string"
+    },
+    "receipt_request_key": {
+      "type": "string"
+    },
+    "receipt_posting_token": {
+      "type": "string",
+      "default": ""
+    },
+    "receipt_posting_error": {
+      "type": "string"
+    },
+    "receipt_posting_snapshot": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "receipt_allocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string"
+          },
+          "invoice_number": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "invoice_id",
+          "amount"
+        ]
+      }
     }
   },
   "required": [
@@ -126,5 +176,49 @@
     "party_id",
     "amount",
     "payment_date"
-  ]
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "data.payment_type": {
+            "$ne": "customer_payment"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.payment_type": {
+            "$ne": "customer_payment"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.payment_type": {
+            "$ne": "customer_payment"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
 }

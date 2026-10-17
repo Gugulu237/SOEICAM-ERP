@@ -13,12 +13,13 @@ import { Search, Landmark, Receipt } from "lucide-react";
 
 // Treasury receipt: pick an open invoice, pick the account the money lands in.
 export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
-  const { user } = useCurrentUser();
+  const { user, role } = useCurrentUser();
   const { toast } = useToast();
   const [invoices, setInvoices] = useState([]);
   const [search, setSearch] = useState("");
   const [invoice, setInvoice] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [requestKey] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState({
     treasury_account_id: accounts[0]?.id || "",
     amount: 0,
@@ -52,9 +53,9 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
       const account = accounts.find(a => a.id === form.treasury_account_id);
       await receiveInvoicePayment({
         invoice, treasuryAccount: account, amount: Number(form.amount),
-        date: form.date, reference: form.reference, userId: user?.id || "",
+        date: form.date, reference: form.reference, userId: user?.id || "", requestKey,
       });
-      toast({ title: "Payment received", description: `${formatXAF(form.amount)} into ${account.name} for ${invoice.invoice_number}` });
+      toast({ title: "Cashier receipt confirmed", description: `${formatXAF(form.amount)} for ${invoice.invoice_number}; awaiting GM approval before posting.` });
       onDone();
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -134,8 +135,8 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleReceive} disabled={saving || !invoice || !form.treasury_account_id || !Number(form.amount)}>
-            <Landmark size={16} className="mr-1" /> {saving ? "Processing..." : "Receive Payment"}
+          <Button onClick={handleReceive} disabled={role !== 'cashier' || saving || !invoice || !form.treasury_account_id || !Number(form.amount)}>
+            <Landmark size={16} className="mr-1" /> {saving ? "Confirming..." : "Confirm Receipt for GM"}
           </Button>
         </DialogFooter>
       </DialogContent>

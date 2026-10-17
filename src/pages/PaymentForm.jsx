@@ -15,27 +15,31 @@ import { Save, ArrowLeft } from "lucide-react";
 
 export default function PaymentForm() {
   const navigate = useNavigate();
-  const { user } = useCurrentUser();
+  const { user, role } = useCurrentUser();
   const { toast } = useToast();
   const [customers, setCustomers] = useState([]);
+  const [treasuryAccounts, setTreasuryAccounts] = useState([]);
+  const [requestKey] = useState(() => crypto.randomUUID());
   const [openInvoices, setOpenInvoices] = useState([]);
   const [allocations, setAllocations] = useState({});
   const [form, setForm] = useState({
     party_id: "", amount: 0,
     payment_date: new Date().toISOString().split("T")[0],
-    payment_method: "cash", reference: "",
+    payment_method: "cash", reference: "", treasury_account_id: "",
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { base44.entities.Customer.filter({}).then(setCustomers); }, []);
+  useEffect(() => {
+    Promise.all([
+      base44.entities.Customer.filter({ is_active: true }, { sort: 'business_name', limit: 100 }),
+      base44.entities.TreasuryAccount.filter({ is_active: true }, { sort: 'name', limit: 100 }),
+    ]).then(([customerPage, accountPage]) => { setCustomers(customerPage.items); setTreasuryAccounts(accountPage.items); });
+  }, []);
 
   useEffect(() => {
     setAllocations({});
     if (!form.party_id) { setOpenInvoices([]); return; }
-    base44.entities.Invoice.filter({ customer_id: form.party_id }).then((invs) =>
-      setOpenInvoices(invs.filter((i) => (i.balance || 0) > 0 && !["cancelled", "draft"].includes(i.status))
-        .sort((a, b) => (a.due_date || "").localeCompare(b.due_date || "")))
-    );
+    base44.entities.Invoice.filter({ customer_id: form.party_id, balance: { $gt: 0 }, status: { $in: ['posted', 'partially_paid', 'overdue'] } }, { sort: 'due_date', limit: 50 }).then(page => setOpenInvoices(page.items));
   }, [form.party_id]);
 
   const customer = customers.find((c) => c.id === form.party_id);
@@ -50,9 +54,9 @@ export default function PaymentForm() {
       const payment = await recordCustomerPayment({
         customer, amount: Number(form.amount), paymentDate: form.payment_date,
         method: form.payment_method, reference: form.reference,
-        allocations, openInvoices, userId: user?.id || "",
+        allocations, openInvoices, userId: user?.id || "", treasuryAccountId: form.treasury_account_id, requestKey,
       });
-      toast({ title: "Payment recorded", description: `${payment.payment_number} — invoices and ledger updated` });
+      toast({ title: "Cashier receipt confirmed", description: `${payment.payment_number} — awaiting GM approval before invoice balances and ledger are updated` });
       navigate("/accounting/receivables");
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -60,9 +64,11 @@ export default function PaymentForm() {
     setSaving(false);
   }
 
+  if (role && role !== 'cashier') return <div className="p-6 text-muted-foreground">Only the cashier may confirm customer receipts. The GM reviews them in Accounting → Payments.</div>;
+
   return (
     <div>
-      <PageHeader title="Receive Customer Payment" subtitle="Posts to cash/bank and receivable control via posting rules"
+      <PageHeader title="Confirm Customer Payment Received" subtitle="Cashier confirms collection; GM approves before ledger posting"
         actions={<Button variant="outline" onClick={() => navigate("/accounting/receivables")}><ArrowLeft size={16} className="mr-1" /> Back</Button>} />
       <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -94,7 +100,14 @@ export default function PaymentForm() {
             </Select>
           </div>
           <div className="sm:col-span-2">
-            <Label>Reference</Label>
+            <Label>Received Into *</Label>
+            <Select value={form.treasury_account_id} onValueChange={v => setForm(f => ({ ...f, treasury_account_id: v }))}>
+              <SelectTrigger><SelectValue placeholder="Select cash / bank account" /></SelectTrigger>
+              <SelectContent>{treasuryAccounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label>Receipt / Transaction Reference *</Label>
             <Input value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} placeholder="Receipt or transaction number" />
           </div>
         </div>
@@ -107,7 +120,7 @@ export default function PaymentForm() {
         )}
 
         <div className="flex gap-3 pt-2">
-          <Button onClick={handleSave} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Processing..." : "Record Payment"}</Button>
+          <Button onClick={handleSave} disabled={saving}><Save size={16} className="mr-1" /> {saving ? "Confirming..." : "Confirm Receipt for GM Approval"}</Button>
         </div>
       </div>
     </div>

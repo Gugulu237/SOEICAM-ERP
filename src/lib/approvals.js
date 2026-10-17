@@ -6,6 +6,7 @@ import { base44 } from "@/api/base44Client";
 import { approveDispatchRequest, rejectDispatchRequest } from "@/lib/dispatch-requests";
 import { approveExpense, rejectExpense } from "@/lib/expenses";
 import { approveCashDisbursement, rejectCashDisbursement } from "@/lib/purchase-payments";
+import { customerReceiptAction } from '@/lib/customer-receipts';
 
 const nowIso = () => new Date().toISOString();
 
@@ -15,6 +16,7 @@ export const APPROVAL_TYPE_LABELS = {
   dispatch: "Stock Request",
   expense: "Expense Request",
   cash: "Cash Disbursement",
+  customer_receipt: 'Customer Receipt',
   recipe: "Recipe",
   payroll: "Payroll Run",
 };
@@ -26,6 +28,7 @@ export const APPROVAL_ROLES = {
   dispatch: ["admin", "warehouse_manager"],
   expense: ["admin", "production_manager"],
   cash: ["admin"],
+  customer_receipt: ['admin'],
   recipe: ["admin", "production_manager"],
   payroll: ["admin"],
 };
@@ -37,6 +40,7 @@ export const APPROVAL_OWNER = {
   dispatch: "the Warehouse Manager",
   expense: "the General Manager",
   cash: "the General Manager",
+  customer_receipt: 'the General Manager',
   recipe: "the Production Manager",
   payroll: "the General Manager",
 };
@@ -44,7 +48,7 @@ export const APPROVAL_OWNER = {
 export const canDecide = (type, role) => (APPROVAL_ROLES[type] || []).includes(role);
 
 export async function loadPendingApprovals() {
-  const [pos, production, stockRequests, expenses, cashRequests, recipes, payroll] = await Promise.all([
+  const [pos, production, stockRequests, expenses, cashRequests, recipes, payroll, customerReceipts] = await Promise.all([
     base44.entities.PurchaseOrder.filter({ status: "pending_approval" }),
     base44.entities.ProductionOrder.filter({ status: "awaiting_approval" }),
     base44.entities.DispatchRequest.filter({ status: "pending_approval" }),
@@ -52,6 +56,7 @@ export async function loadPendingApprovals() {
     base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }),
     base44.entities.Recipe.filter({ status: "draft" }),
     base44.entities.PayrollRun.filter({ status: "calculated" }),
+    base44.entities.Payment.filter({ payment_type: 'customer_payment', status: { $in: ['pending_approval', 'approved'] } }, { sort: '-created_date', limit: 50 }),
   ]);
 
   const row = (rec, type, ref, summary, amount, link) => ({
@@ -66,6 +71,7 @@ export async function loadPendingApprovals() {
     ...cashRequests.map(p => row(p, "cash", p.payment_number, p.party_name, p.amount, "/cashier")),
     ...recipes.map(r => row(r, "recipe", `${r.recipe_name} v${r.version || 1}`, r.product_name, null, `/manufacturing/recipes/${r.id}`)),
     ...payroll.map(r => row(r, "payroll", r.period_name, `${r.employee_count || 0} employees`, r.total_net, "/payroll")),
+    ...customerReceipts.items.map(p => row(p, 'customer_receipt', p.payment_number, `${p.party_name} · ${p.invoice_numbers || ''} · Cashier: ${p.cashier_confirmed_name || 'Not confirmed'}`, p.amount, '/accounting?tab=payments')),
   ].sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)));
 }
 
@@ -87,6 +93,9 @@ export async function approveItem(item, { userId = "", userName = "", role } = {
   if (!canDecide(item._type, role)) throw new Error(`Only ${APPROVAL_OWNER[item._type] || "an approver"} can approve this item`);
 
   switch (item._type) {
+    case 'customer_receipt':
+      await customerReceiptAction('approve', { paymentId: item.id });
+      return;
     case "po":
       await base44.entities.PurchaseOrder.update(item.id, { status: "approved", approved_by: userName, approved_at: nowIso() });
       break;
@@ -119,6 +128,9 @@ export async function rejectItem(item, { userId = "", userName = "", role, reaso
   if (!canDecide(item._type, role)) throw new Error(`Only ${APPROVAL_OWNER[item._type] || "an approver"} can reject this item`);
 
   switch (item._type) {
+    case 'customer_receipt':
+      await customerReceiptAction('reject', { paymentId: item.id, reason });
+      return;
     case "dispatch":
       await rejectDispatchRequest(item, userName, reason);
       return;
