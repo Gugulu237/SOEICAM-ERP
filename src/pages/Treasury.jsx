@@ -36,20 +36,20 @@ export default function Treasury() {
   const totalFunds = active.reduce((s, a) => s + (a.balance || 0), 0);
 
   const txCols = [
-    { key: "transaction_date", label: "Date", render: (t) => formatDate(t.transaction_date) },
-    { key: "transaction_number", label: "Ref #", render: (t) => <span className="font-medium">{t.transaction_number}</span> },
+    { key: "transaction_date", label: "Date", render: (v) => formatDate(v) },
+    { key: "transaction_number", label: "Ref #", render: (v) => <span className="font-medium">{v}</span> },
     { key: "treasury_account_name", label: "Account" },
     {
-      key: "transaction_type", label: "Type", render: (t) => (
+      key: "transaction_type", label: "Type", render: (v) => (
         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-          t.transaction_type === "expense" ? "bg-red-100 text-red-700"
-          : t.transaction_type === "transfer_in" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
-          {t.transaction_type.replace("_", " ")}
+          v === "expense" ? "bg-red-100 text-red-700"
+          : v === "transfer_in" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+          {(v || "").replace("_", " ")}
         </span>
       ),
     },
-    { key: "description", label: "Description", render: (t) => t.expense_account_name ? `${t.description} (${t.expense_account_name})` : (t.counterparty_account_name ? `${t.description || "Transfer"} ↔ ${t.counterparty_account_name}` : t.description) },
-    { key: "amount", label: "Amount", render: (t) => <span className={`font-semibold ${t.transaction_type === "transfer_in" ? "text-green-700" : "text-red-600"}`}>{t.transaction_type === "transfer_in" ? "+" : "−"}{formatXAF(t.amount)}</span> },
+    { key: "description", label: "Description", render: (v, t) => t.expense_account_name ? `${v} (${t.expense_account_name})` : (t.counterparty_account_name ? `${v || "Transfer"} ↔ ${t.counterparty_account_name}` : v) },
+    { key: "amount", label: "Amount", render: (v, t) => <span className={`font-semibold ${t.transaction_type === "transfer_in" ? "text-green-700" : "text-red-600"}`}>{t.transaction_type === "transfer_in" ? "+" : "−"}{formatXAF(v)}</span> },
   ];
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;

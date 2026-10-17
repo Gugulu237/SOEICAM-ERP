@@ -41,28 +41,28 @@ export default function FixedAssets() {
   const monthlyCharge = round2(live.filter((a) => a.status === "active").reduce((s, a) => s + monthlyDepreciation(a), 0));
 
   const assetCols = [
-    { key: "asset_number", label: "Asset #", render: (a) => <span className="font-medium">{a.asset_number}</span> },
+    { key: "asset_number", label: "Asset #", render: (v) => <span className="font-medium">{v}</span> },
     { key: "name", label: "Name" },
-    { key: "category", label: "Category", render: (a) => <span className="capitalize">{(a.category || "").replace("_", " ")}</span> },
-    { key: "acquisition_date", label: "Acquired", render: (a) => formatDate(a.acquisition_date) },
-    { key: "acquisition_cost", label: "Cost", render: (a) => formatXAF(a.acquisition_cost) },
-    { key: "accumulated_depreciation", label: "Accum. Dep.", render: (a) => formatXAF(a.accumulated_depreciation) },
-    { key: "net_book_value", label: "Net Book Value", render: (a) => <span className="font-semibold">{formatXAF(a.net_book_value)}</span> },
-    { key: "status", label: "Status", render: (a) => <StatusBadge status={a.status} /> },
+    { key: "category", label: "Category", render: (v) => <span className="capitalize">{(v || "").replace("_", " ")}</span> },
+    { key: "acquisition_date", label: "Acquired", render: (v) => formatDate(v) },
+    { key: "acquisition_cost", label: "Cost", render: (v) => formatXAF(v) },
+    { key: "accumulated_depreciation", label: "Accum. Dep.", render: (v) => formatXAF(v) },
+    { key: "net_book_value", label: "Net Book Value", render: (v) => <span className="font-semibold">{formatXAF(v)}</span> },
+    { key: "status", label: "Status", render: (v) => <StatusBadge status={v} /> },
     {
-      key: "actions", label: "", render: (a) => canManage && a.status !== "disposed" && a.status !== "written_off" ? (
-        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setDisposing(a); }}>Dispose</Button>
+      key: "actions", label: "", render: (v, asset) => canManage && asset.status !== "disposed" && asset.status !== "written_off" ? (
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setDisposing(asset); }}>Dispose</Button>
       ) : null,
     },
   ];
 
   const entryCols = [
-    { key: "depreciation_date", label: "Date", render: (e) => formatDate(e.depreciation_date) },
+    { key: "depreciation_date", label: "Date", render: (v) => formatDate(v) },
     { key: "period_label", label: "Period" },
     { key: "asset_number", label: "Asset #" },
     { key: "asset_name", label: "Asset" },
-    { key: "amount", label: "Charge", render: (e) => formatXAF(e.amount) },
-    { key: "net_book_value_after", label: "NBV After", render: (e) => formatXAF(e.net_book_value_after) },
+    { key: "amount", label: "Charge", render: (v) => formatXAF(v) },
+    { key: "net_book_value_after", label: "NBV After", render: (v) => formatXAF(v) },
   ];
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;

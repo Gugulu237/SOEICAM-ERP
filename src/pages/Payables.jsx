@@ -33,17 +33,17 @@ export default function Payables() {
   const overdue = open.filter((b) => agingBucket(b.due_date) !== "current").reduce((s, b) => s + b.balance, 0);
 
   const cols = [
-    { key: "bill_number", label: "Bill #", render: (b) => <span className="font-medium">{b.bill_number}</span> },
+    { key: "bill_number", label: "Bill #", render: (v) => <span className="font-medium">{v}</span> },
     { key: "supplier_name", label: "Supplier" },
     { key: "po_number", label: "PO #" },
-    { key: "bill_date", label: "Date", render: (b) => formatDate(b.bill_date) },
-    { key: "due_date", label: "Due", render: (b) => formatDate(b.due_date) },
-    { key: "total", label: "Total", render: (b) => formatXAF(b.total) },
-    { key: "balance", label: "Balance", render: (b) => <span className="font-semibold">{formatXAF(b.balance)}</span> },
-    { key: "status", label: "Status", render: (b) => <StatusBadge status={b.status} /> },
+    { key: "bill_date", label: "Date", render: (v) => formatDate(v) },
+    { key: "due_date", label: "Due", render: (v) => formatDate(v) },
+    { key: "total", label: "Total", render: (v) => formatXAF(v) },
+    { key: "balance", label: "Balance", render: (v) => <span className="font-semibold">{formatXAF(v)}</span> },
+    { key: "status", label: "Status", render: (v) => <StatusBadge status={v} /> },
     {
-      key: "actions", label: "", render: (b) => b.balance > 0 && b.status !== "cancelled" ? (
-        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setPaySupplierId(b.supplier_id); }}>
+      key: "actions", label: "", render: (v, bill) => bill.balance > 0 && bill.status !== "cancelled" ? (
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setPaySupplierId(bill.supplier_id); }}>
           <Banknote size={14} className="mr-1" /> Pay
         </Button>
       ) : null,
