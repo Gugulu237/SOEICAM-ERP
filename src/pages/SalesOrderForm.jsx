@@ -27,6 +27,7 @@ export default function SalesOrderForm() {
   const [dispatches, setDispatches] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [form, setForm] = useState({
     customer_id: "", location_id: "", warehouse_id: "", order_date: new Date().toISOString().split("T")[0],
     delivery_date: "", payment_type: "cash", notes: "", salesperson_id: ""
@@ -69,23 +70,21 @@ export default function SalesOrderForm() {
   }
 
   const selectedCustomer = customers.find(c => c.id === form.customer_id);
-  const isBranch = !!selectedCustomer?.parent_id;
 
-  // Main partners first, each followed by its branches.
-  const partnerOptions = (() => {
-    const mains = customers.filter(c => !c.parent_id).sort((a, b) => (a.business_name || "").localeCompare(b.business_name || ""));
-    const subs = customers.filter(c => c.parent_id);
-    return [
-      ...mains.flatMap(m => [m, ...subs.filter(s => s.parent_id === m.id)]),
-      ...subs.filter(s => !customers.some(p => p.id === s.parent_id)),
-    ];
-  })();
+  // Only main partners are billed; their branches are chosen as the delivery point.
+  const customerOptions = customers
+    .filter(c => !c.parent_id || c.id === form.customer_id)
+    .sort((a, b) => (a.business_name || "").localeCompare(b.business_name || ""));
 
-  // A branch is delivered and billed through its main partner's branches.
-  async function loadLocations(cust) {
-    const own = await base44.entities.CustomerLocation.filter({ customer_id: cust.id, is_active: true });
-    if (own.length > 0 || !cust.parent_id) return own;
-    return base44.entities.CustomerLocation.filter({ customer_id: cust.parent_id, is_active: true });
+  // The partner's own locations (for HQ billing) and its branches.
+  async function loadCustomerContext(custId) {
+    const cust = customers.find(c => c.id === custId) || await base44.entities.Customer.get(custId);
+    const [locs, brs] = await Promise.all([
+      base44.entities.CustomerLocation.filter({ customer_id: cust.parent_id || cust.id, is_active: true }),
+      base44.entities.Customer.filter({ parent_id: cust.id, is_active: true }),
+    ]);
+    setLocations(locs);
+    setBranches(brs);
   }
 
   const billingHint = !form.location_id ? null
@@ -100,7 +99,7 @@ export default function SalesOrderForm() {
     const o = await base44.entities.SalesOrder.get(id);
     setOrder(o);
     setForm({ customer_id: o.customer_id, location_id: o.location_id || "", warehouse_id: o.warehouse_id || "", order_date: o.order_date, delivery_date: o.delivery_date || "", payment_type: o.payment_type || "cash", notes: o.notes || "", salesperson_id: o.salesperson_id || "" });
-    base44.entities.Customer.get(o.customer_id).then(c => loadLocations(c)).then(setLocations);
+    loadCustomerContext(o.customer_id);
     const ls = await base44.entities.SalesOrderLine.filter({ order_id: id });
     setLines(ls);
     if (o.dispatch_id) setActiveDispatch(await base44.entities.Dispatch.get(o.dispatch_id));
@@ -109,7 +108,7 @@ export default function SalesOrderForm() {
   function handleCustomerChange(custId) {
     setForm(f => ({ ...f, customer_id: custId, location_id: "" }));
     const cust = customers.find(c => c.id === custId);
-    if (cust) loadLocations(cust).then(setLocations);
+    if (cust) loadCustomerContext(custId);
     if (cust && cust.payment_terms_days > 0) setForm(f => ({ ...f, payment_type: "credit" }));
     checkCredit(custId);
   }
@@ -173,8 +172,8 @@ export default function SalesOrderForm() {
       toast({ title: "Select the delivery vehicle", description: "Sales are recorded against the vehicle that made the delivery", variant: "destructive" });
       return;
     }
-    if (locations.length > 0 && !form.location_id) {
-      toast({ title: "Select the delivery branch", description: "This partner has multiple locations — pick the branch that received the goods", variant: "destructive" });
+    if (branches.length > 0 && !form.location_id) {
+      toast({ title: "Select the delivery branch", description: "Pick the branch that received the goods", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -190,7 +189,7 @@ export default function SalesOrderForm() {
       }
       const data = {
         ...form, customer_name: cust?.name || cust?.business_name || "",
-        location_name: locations.find(l => l.id === form.location_id)?.name || "",
+        location_name: branches.find(b => b.id === form.location_id)?.business_name || locations.find(l => l.id === form.location_id)?.name || "",
         dispatch_id: activeDispatch?.id || form.dispatch_id || "",
         salesperson_id: form.salesperson_id || activeDispatch?.salesperson_id || employee?.id || "",
         salesperson_name: employees.find(e => e.id === (form.salesperson_id || activeDispatch?.salesperson_id || employee?.id))?.full_name || "",
@@ -236,7 +235,10 @@ export default function SalesOrderForm() {
       // Route the invoice: decentralized partners are billed at the branch that
       // received the goods; centralized partners are billed at their headquarters.
       const billingMode = cust?.financial_centralization_mode || "centralized";
-      const deliveryLocation = locations.find(l => l.id === order.location_id);
+      const deliveryBranch = customers.find(c => c.id === order.location_id);
+      const deliveryLocation = deliveryBranch
+        ? { id: deliveryBranch.id, name: deliveryBranch.business_name }
+        : locations.find(l => l.id === order.location_id);
       const hqLocation = locations.find(l => l.is_headquarters);
       const billTo = billingMode === "decentralized" ? deliveryLocation : (hqLocation || deliveryLocation);
       const settings = (await base44.entities.CompanySettings.filter({}))[0];
@@ -372,7 +374,7 @@ export default function SalesOrderForm() {
             <Label>Customer *</Label>
             <Select value={form.customer_id} onValueChange={handleCustomerChange}>
               <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-              <SelectContent>{partnerOptions.map(c => (
+              <SelectContent>{customerOptions.map(c => (
                 <SelectItem key={c.id} value={c.id}>
                   {c.business_name}{c.parent_id ? ` — branch of ${c.parent_name || "main partner"}` : ""}
                 </SelectItem>
@@ -380,20 +382,19 @@ export default function SalesOrderForm() {
             </Select>
           </div>
           <div>
-            <Label>Delivered To (Branch) {locations.length > 0 && "*"}</Label>
-            <Select value={form.location_id} onValueChange={v => setForm(f => ({ ...f, location_id: v }))} disabled={locations.length === 0}>
-              <SelectTrigger><SelectValue placeholder={form.customer_id ? "Which branch received the goods?" : "Select a partner first"} /></SelectTrigger>
-              <SelectContent>{locations.map(l => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.name}{l.town ? ` — ${l.town}` : ""}{l.is_headquarters ? " (HQ)" : ""}
+            <Label>Delivered To (Branch) {branches.length > 0 && "*"}</Label>
+            <Select value={form.location_id} onValueChange={v => setForm(f => ({ ...f, location_id: v }))} disabled={branches.length === 0}>
+              <SelectTrigger>
+                <SelectValue placeholder={!form.customer_id ? "Select a partner first" : branches.length === 0 ? "No branches for this partner" : "Which branch received the goods?"} />
+              </SelectTrigger>
+              <SelectContent>{branches.map(b => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.business_name}{b.town ? ` — ${b.town}` : ""}
                 </SelectItem>
               ))}</SelectContent>
             </Select>
-            {form.customer_id && locations.length === 0 && (
-              <p className="text-xs text-slate-400 mt-1">No branches recorded for this partner yet — add them on the partner page.</p>
-            )}
-            {isBranch && locations.length > 0 && (
-              <p className="text-xs text-slate-400 mt-1">Branch of {selectedCustomer.parent_name || "the main partner"} — the sale is booked on this branch.</p>
+            {form.customer_id && branches.length === 0 && (
+              <p className="text-xs text-slate-400 mt-1">This partner has no branches yet — add them on the partner page.</p>
             )}
             {billingHint && <p className="text-xs text-slate-500 mt-1">{billingHint}</p>}
           </div>
