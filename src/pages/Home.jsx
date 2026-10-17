@@ -27,7 +27,7 @@ export default function Home() {
   async function loadLive() {
     const todayStr = new Date().toISOString().split("T")[0];
     const in7 = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-    const [prodOrders, balances, dispatches, invoices, pos, salesOrders, dispatchRequests] = await Promise.all([
+    const [prodOrders, balances, dispatches, invoices, pos, salesOrders, dispatchRequests, expenseRequests, cashRequests] = await Promise.all([
       base44.entities.ProductionOrder.filter({}),
       base44.entities.StockBalance.filter({}),
       base44.entities.Dispatch.filter({}),
@@ -35,6 +35,8 @@ export default function Home() {
       base44.entities.PurchaseOrder.filter({}),
       base44.entities.SalesOrder.filter({ order_date: todayStr }),
       base44.entities.DispatchRequest.filter({ status: "pending_approval" }),
+      base44.entities.ExpenseRequest.filter({ status: "pending_approval" }),
+      base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }),
     ]);
 
     const lots = balances.filter(b => (b.quantity || 0) > 0);
@@ -49,8 +51,8 @@ export default function Home() {
     const overdueCustomers = new Set(overdueInvoices.map(i => i.customer_id)).size;
     const posPending = pos.filter(p => p.status === "pending_approval").length;
     const cashPending = pos.filter(p => p.status === "approved" && p.payment_terms === "cash" && !p.cash_disbursed).length;
-    const prodPending = prodOrders.filter(p => p.status === "pending_approval").length;
-    const approvals = posPending + prodPending + dispatchRequests.length;
+    const prodPending = prodOrders.filter(p => p.status === "awaiting_approval").length;
+    const approvals = posPending + prodPending + dispatchRequests.length + expenseRequests.length + cashRequests.length;
     const inventoryValue = lots.reduce((s, b) => s + (b.total_value || 0), 0);
     const receivables = openInvoices.reduce((s, i) => s + (i.balance || 0), 0);
 

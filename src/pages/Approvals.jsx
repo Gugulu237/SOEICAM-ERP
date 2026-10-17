@@ -1,59 +1,140 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatXAF } from "@/lib/formatters";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useToast } from "@/components/ui/use-toast";
 import PageHeader from "@/components/shared/PageHeader";
 import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Check, X, Loader2, RefreshCw } from "lucide-react";
+import RejectDialog from "@/components/approvals/RejectDialog";
+import { loadPendingApprovals, approveItem, rejectItem, canDecide, APPROVAL_TYPE_LABELS, APPROVAL_OWNER } from "@/lib/approvals";
 
 export default function Approvals() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [rejectTarget, setRejectTarget] = useState(null);
   const navigate = useNavigate();
+  const { user, role } = useCurrentUser();
+  const { toast } = useToast();
 
-  useEffect(() => {
-    loadPending();
-  }, []);
+  const actor = { userId: user?.id, userName: user?.full_name || user?.email || "", role };
 
   async function loadPending() {
-    const [pos, recipes, production, payroll, stockRequests, cashRequests] = await Promise.all([
-      base44.entities.PurchaseOrder.filter({ status: "pending_approval" }),
-      base44.entities.Recipe.filter({ status: "pending_approval" }),
-      base44.entities.ProductionOrder.filter({ status: "awaiting_approval" }),
-      base44.entities.PayrollRun.filter({ status: "calculated" }),
-      base44.entities.DispatchRequest.filter({ status: "pending_approval" }),
-      base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }),
-    ]);
-    const all = [
-      ...pos.map(p => ({ ...p, _type: "Purchase Order", _ref: p.po_number })),
-      ...recipes.map(r => ({ ...r, _type: "Recipe", _ref: r.recipe_name })),
-      ...production.map(p => ({ ...p, _type: "Production Order", _ref: p.order_number })),
-      ...payroll.map(p => ({ ...p, _type: "Payroll Run", _ref: p.period_name })),
-      ...stockRequests.map(r => ({ ...r, _type: "Stock Request", _ref: `${r.request_number} — ${r.vehicle_name || ""}`, _link: `/distribution/requests/${r.id}` })),
-      ...cashRequests.map(p => ({ ...p, _type: "Cash Disbursement", _ref: `${p.payment_number} — ${p.party_name}`, _link: "/cashier" })),
-    ];
-    setItems(all);
+    setItems(await loadPendingApprovals());
     setLoading(false);
   }
 
+  useEffect(() => { loadPending(); }, []);
+
+  async function handleApprove(row) {
+    setBusyId(row.id);
+    try {
+      await approveItem(row, actor);
+      toast({ title: "Approved", description: `${APPROVAL_TYPE_LABELS[row._type]} ${row._ref}` });
+      await loadPending();
+    } catch (e) {
+      toast({ title: "Could not approve", description: e.message, variant: "destructive" });
+    }
+    setBusyId(null);
+  }
+
+  async function handleReject(reason) {
+    const row = rejectTarget;
+    setBusyId(row.id);
+    try {
+      await rejectItem(row, { ...actor, reason });
+      toast({ title: "Rejected", description: `${APPROVAL_TYPE_LABELS[row._type]} ${row._ref}` });
+      setRejectTarget(null);
+      await loadPending();
+    } catch (e) {
+      toast({ title: "Could not reject", description: e.message, variant: "destructive" });
+    }
+    setBusyId(null);
+  }
+
+  const counts = items.reduce((acc, i) => ({ ...acc, [i._type]: (acc[i._type] || 0) + 1 }), {});
+  const visible = typeFilter === "all" ? items : items.filter(i => i._type === typeFilter);
+  const canDecideAny = items.some(i => canDecide(i._type, role));
+
   const cols = [
-    { key: "_type", label: "Type" },
+    { key: "_type", label: "Type", render: v => <span className="font-medium text-slate-900">{APPROVAL_TYPE_LABELS[v] || v}</span> },
     { key: "_ref", label: "Reference" },
-    { key: "created_date", label: "Date", render: v => formatDate(v) },
+    { key: "_summary", label: "Details", render: v => <span className="text-slate-500">{v || "—"}</span> },
+    { key: "_amount", label: "Amount", className: "text-right", render: v => (v ? formatXAF(v) : "—") },
+    { key: "created_date", label: "Raised", render: v => formatDate(v) },
     { key: "status", label: "Status", render: v => <StatusBadge status={v} /> },
+    {
+      key: "actions", label: "", sortable: false, className: "text-right",
+      render: (_, row) => (
+        <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+          {canDecide(row._type, role) ? (
+            <>
+              <Button size="sm" disabled={busyId === row.id} onClick={() => handleApprove(row)}>
+                {busyId === row.id
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <><Check size={14} className="mr-1" /> Approve</>}
+              </Button>
+              <Button size="sm" variant="outline" disabled={busyId === row.id} onClick={() => setRejectTarget(row)}>
+                <X size={14} className="mr-1" /> Reject
+              </Button>
+            </>
+          ) : (
+            <span className="text-xs text-slate-400 whitespace-nowrap">Awaiting {APPROVAL_OWNER[row._type]}</span>
+          )}
+        </div>
+      ),
+    },
   ];
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
 
   return (
     <div>
-      <PageHeader title="Pending Approvals" subtitle={`${items.length} items awaiting approval`} />
+      <PageHeader
+        title="Pending Approvals"
+        subtitle={`${items.length} item${items.length === 1 ? "" : "s"} awaiting a decision`}
+        actions={
+          <Button variant="outline" onClick={loadPending}><RefreshCw size={16} className="mr-1" /> Refresh</Button>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types ({items.length})</SelectItem>
+            {Object.entries(APPROVAL_TYPE_LABELS)
+              .filter(([key]) => counts[key])
+              .map(([key, label]) => (
+                <SelectItem key={key} value={key}>{label} ({counts[key]})</SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        {!canDecideAny && items.length > 0 && (
+          <p className="text-sm text-slate-500">These items are waiting for another approver — open one to see its detail.</p>
+        )}
+      </div>
+
       <DataTable
         columns={cols}
-        data={items}
-        searchFields={["_type", "_ref"]}
+        data={visible}
+        searchFields={["_ref", "_summary", "_type"]}
         emptyMessage="No pending approvals 🎉"
         onRowClick={row => row._link && navigate(row._link)}
+      />
+
+      <RejectDialog
+        key={rejectTarget?.id || "none"}
+        open={!!rejectTarget}
+        onOpenChange={open => !open && setRejectTarget(null)}
+        item={rejectTarget}
+        onConfirm={handleReject}
+        busy={busyId === rejectTarget?.id}
       />
     </div>
   );
