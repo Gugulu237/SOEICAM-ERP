@@ -11,6 +11,9 @@
     "description": {
       "type": "string"
     },
+    "image_url": {
+      "type": "string"
+    },
     "category": {
       "type": "string"
     },

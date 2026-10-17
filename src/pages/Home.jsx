@@ -3,8 +3,12 @@ import { base44 } from "@/api/base44Client";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { modulesForRole } from "@/lib/appModules";
 import ModuleTile from "@/components/home/ModuleTile";
+import { Image } from "@/components/ui/image";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { formatXAF } from "@/lib/formatters";
+
+const BRAND_LOGO = "https://media.base44.com/images/public/6a5164141d12cb92ecfede16/05ba13dd3_logo.png";
+const RANGE_HERO = "https://media.base44.com/images/public/6a5164141d12cb92ecfede16/2c8ca0ab3_generated_image.png";
 
 function greeting() {
   const h = new Date().getHours();
@@ -87,13 +91,38 @@ export default function Home() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-          {greeting()}{firstName ? `, ${firstName}` : ""}
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          {ROLE_LABELS[role] || "Team member"} · SOEICAM YOLA — here's your business today.
-        </p>
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white mb-8">
+        <div className="grid lg:grid-cols-2 items-stretch">
+          <div className="p-6 sm:p-8">
+            <img src={BRAND_LOGO} alt="SOEICAM" className="h-10 w-auto mb-5" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+              {greeting()}{firstName ? `, ${firstName}` : ""}
+            </h1>
+            <p className="text-sm text-slate-500 mt-2">
+              {ROLE_LABELS[role] || "Team member"} · SOEICAM YOLA — here's your business today.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-5">
+              {[
+                { label: "Stock", value: live.stats.inventory },
+                { label: "Sales", value: live.stats.sales },
+                { label: "Approvals", value: live.stats.approvals },
+              ].filter(c => c.value).map(c => (
+                <span key={c.label} className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1.5 text-xs text-slate-600">
+                  <span className="font-semibold text-slate-900">{c.label}</span> {c.value}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="relative min-h-[200px] hidden lg:block">
+            <Image src={RANGE_HERO} alt="YOLA product range" fittingType="fill" className="absolute inset-0 w-full h-full" />
+            <div className="absolute inset-0 bg-gradient-to-r from-white via-white/30 to-transparent" />
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Your applications</h2>
+        <p className="text-xs text-slate-500 mt-0.5">{modules.length} modules available to your role</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {modules.map(m => (

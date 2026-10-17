@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatXAF } from "@/lib/formatters";
 import ItemRowActions from "@/components/items/ItemRowActions";
+import ProductThumb from "@/components/shared/ProductThumb";
 import { Plus } from "lucide-react";
 
 export const INVENTORY_TYPES = [
@@ -62,7 +63,15 @@ export default function Items() {
 
   const columns = [
     { key: "sku", label: "Code" },
-    { key: "name", label: "Item" },
+    {
+      key: "name", label: "Item",
+      render: (v, row) => (
+        <div className="flex items-center gap-3">
+          <ProductThumb src={row.image_url} name={v} size={40} />
+          <span className="font-medium text-slate-900">{v}</span>
+        </div>
+      ),
+    },
     {
       key: "inventory_type", label: "Type", render: (_, row) => (
         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_STYLE[typeOf(row)]}`}>{typeLabel(row)}</span>

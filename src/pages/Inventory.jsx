@@ -19,6 +19,7 @@ import StockAlerts from "@/components/inventory/StockAlerts";
 import MovementLedger from "@/components/inventory/MovementLedger";
 import KPICard from "@/components/shared/KPICard";
 import ItemRowActions from "@/components/items/ItemRowActions";
+import ProductThumb from "@/components/shared/ProductThumb";
 
 export default function Inventory() {
   const [products, setProducts] = useState([]);
@@ -96,7 +97,15 @@ export default function Inventory() {
 
   const fpCols = [
     { key: "sku", label: "SKU" },
-    { key: "name", label: "Product" },
+    {
+      key: "name", label: "Product",
+      render: (v, row) => (
+        <div className="flex items-center gap-3">
+          <ProductThumb src={row.image_url} name={v} size={44} />
+          <span className="font-medium text-slate-900">{v}</span>
+        </div>
+      ),
+    },
     { key: "flavor", label: "Flavor" },
     { key: "size", label: "Size" },
     { key: "category", label: "Category" },
@@ -107,7 +116,15 @@ export default function Inventory() {
   ];
 
   const balanceCols = [
-    { key: "product_name", label: "Product" },
+    {
+      key: "product_name", label: "Product",
+      render: (v, row) => (
+        <div className="flex items-center gap-3">
+          <ProductThumb src={products.find(p => p.id === row.product_id)?.image_url} name={v} size={40} />
+          <span className="font-medium text-slate-900">{v}</span>
+        </div>
+      ),
+    },
     { key: "warehouse_name", label: "Warehouse" },
     { key: "lot_number", label: "Lot" },
     { key: "expiry_date", label: "Expiry", render: v => v ? formatDate(v) : "—" },

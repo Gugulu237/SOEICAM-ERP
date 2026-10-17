@@ -3,6 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { useNavigate, useParams } from "react-router-dom";
 import PageHeader from "@/components/shared/PageHeader";
 import StatusBadge from "@/components/shared/StatusBadge";
+import ProductThumb from "@/components/shared/ProductThumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -501,14 +502,17 @@ export default function SalesOrderForm() {
                 {lines.map((l, i) => (
                   <tr key={i} className="border-b border-slate-100">
                     <td className="py-2 pr-2">
-                      <Select value={l.product_id} onValueChange={v => updateLine(i, "product_id", v)}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="Select" /></SelectTrigger>
-                        <SelectContent>{sellableProducts.map(p => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}{activeDispatch ? ` — ${vehicleQty(p.id)} on board` : ""}
-                          </SelectItem>
-                        ))}</SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        <ProductThumb src={products.find(p => p.id === l.product_id)?.image_url} name={l.product_name} size={36} />
+                        <Select value={l.product_id} onValueChange={v => updateLine(i, "product_id", v)}>
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select" /></SelectTrigger>
+                          <SelectContent>{sellableProducts.map(p => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}{activeDispatch ? ` — ${vehicleQty(p.id)} on board` : ""}
+                            </SelectItem>
+                          ))}</SelectContent>
+                        </Select>
+                      </div>
                     </td>
                     <td className="py-2 pr-2"><Input type="number" className="h-9" value={l.quantity} onChange={e => updateLine(i, "quantity", e.target.value)} /></td>
                     <td className="py-2 pr-2"><Input type="number" className="h-9" value={l.unit_price} onChange={e => updateLine(i, "unit_price", e.target.value)} /></td>

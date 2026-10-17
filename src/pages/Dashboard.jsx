@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
+import { Link } from "react-router-dom";
 import { formatXAF, formatNumber } from "@/lib/formatters";
+import { Image } from "@/components/ui/image";
 import KPICard from "@/components/shared/KPICard";
 import PageHeader from "@/components/shared/PageHeader";
 import {
@@ -51,6 +53,7 @@ export default function Dashboard() {
         customerCount: customers.length,
         mtdCollections,
         pendingOrders: salesOrders.filter(s => s.status === "confirmed" || s.status === "ready").length,
+        finishedProducts: products.filter(p => p.inventory_type === "finished_product" && p.image_url),
       });
     } catch (e) {
       console.error(e);
@@ -77,18 +80,47 @@ export default function Dashboard() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard title="Today's Sales" value={formatXAF(s.todaySales)} icon={Receipt} to="/sales" color="text-green-600" />
-        <KPICard title="Month-to-Date Sales" value={formatXAF(s.mtdSales)} icon={TrendingUp} to="/reports" color="text-blue-600" />
-        <KPICard title="Customer Receivables" value={formatXAF(s.totalReceivables)} icon={Users} to="/customers" />
-        <KPICard title="Overdue Receivables" value={formatXAF(s.overdueAmount)} subtitle={`${s.overdueCount} invoice(s)`} icon={AlertTriangle} to="/customers" color="text-red-600" />
+        <KPICard title="Today's Sales" value={formatXAF(s.todaySales)} icon={Receipt} to="/sales" color="text-green-600" accent="green" />
+        <KPICard title="Month-to-Date Sales" value={formatXAF(s.mtdSales)} icon={TrendingUp} to="/reports" color="text-blue-600" accent="blue" />
+        <KPICard title="Customer Receivables" value={formatXAF(s.totalReceivables)} icon={Users} to="/customers" accent="sky" />
+        <KPICard title="Overdue Receivables" value={formatXAF(s.overdueAmount)} subtitle={`${s.overdueCount} invoice(s)`} icon={AlertTriangle} to="/customers" color="text-red-600" accent="red" />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard title="Inventory Value" value={formatXAF(s.inventoryValue)} icon={Package} to="/inventory" />
-        <KPICard title="Active Production" value={formatNumber(s.activeProductionCount)} subtitle="orders in progress" icon={Factory} to="/manufacturing" color="text-purple-600" />
-        <KPICard title="Pending Orders" value={formatNumber(s.pendingOrders)} subtitle="awaiting dispatch" icon={Truck} to="/sales" color="text-orange-600" />
-        <KPICard title="MTD Collections" value={formatXAF(s.mtdCollections)} icon={Wallet} to="/accounting" color="text-green-600" />
+        <KPICard title="Inventory Value" value={formatXAF(s.inventoryValue)} icon={Package} to="/inventory" accent="amber" />
+        <KPICard title="Active Production" value={formatNumber(s.activeProductionCount)} subtitle="orders in progress" icon={Factory} to="/manufacturing" color="text-purple-600" accent="purple" />
+        <KPICard title="Pending Orders" value={formatNumber(s.pendingOrders)} subtitle="awaiting dispatch" icon={Truck} to="/sales" color="text-orange-600" accent="orange" />
+        <KPICard title="MTD Collections" value={formatXAF(s.mtdCollections)} icon={Wallet} to="/accounting" color="text-green-600" accent="green" />
       </div>
+
+      {s.finishedProducts?.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-end justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-slate-900">YOLA Product Range</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Your finished goods — open a product for its stock and pricing</p>
+            </div>
+            <Link to="/inventory" className="text-xs font-medium text-amber-600 hover:text-amber-700">View inventory →</Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {s.finishedProducts.map(p => (
+              <Link
+                key={p.id}
+                to={`/inventory/products/${p.id}`}
+                className="group bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all"
+              >
+                <div className="aspect-square bg-slate-50 overflow-hidden">
+                  <Image src={p.image_url} alt={p.name} fittingType="fill" className="w-full h-full group-hover:scale-105 transition-transform" />
+                </div>
+                <div className="p-3">
+                  <p className="text-sm font-medium text-slate-900 leading-tight">{p.name}</p>
+                  <p className="text-xs font-semibold text-amber-600 mt-1">{formatXAF(p.selling_price)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 p-6">
