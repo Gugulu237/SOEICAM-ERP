@@ -9,11 +9,11 @@ import { formatXAF } from "@/lib/formatters";
 import { payExpense } from "@/lib/expenses";
 
 // Cashier disburses an approved expense from a treasury account.
-export default function PayExpenseDialog({ request, onOpenChange, onPaid, user }) {
+export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, defaultTreasuryId = "" }) {
   const { toast } = useToast();
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
   const [expenseAccounts, setExpenseAccounts] = useState([]);
-  const [treasuryId, setTreasuryId] = useState("");
+  const [treasuryId, setTreasuryId] = useState(defaultTreasuryId);
   const [expenseId, setExpenseId] = useState("");
   const [paying, setPaying] = useState(false);
 

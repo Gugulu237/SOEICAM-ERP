@@ -9,11 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 
-export default function TransferDialog({ accounts, onClose, onDone }) {
+export default function TransferDialog({ accounts, defaultToId = "", onClose, onDone }) {
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [form, setForm] = useState({
-    from_id: "", to_id: "", amount: 0, reference: "",
+    from_id: "", to_id: defaultToId, amount: 0, reference: "",
     date: new Date().toISOString().slice(0, 10), description: "",
   });
   const [saving, setSaving] = useState(false);

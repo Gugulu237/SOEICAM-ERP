@@ -5,6 +5,7 @@ import { prepareCashDisbursement } from "@/lib/purchase-payments";
 import CashCollections from "@/components/cashier/CashCollections";
 import DailyCashReceived from "@/components/cashier/DailyCashReceived";
 import DisbursementRequests from "@/components/cashier/DisbursementRequests";
+import PettyCashPanel from "@/components/cashier/PettyCashPanel";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import PageHeader from "@/components/shared/PageHeader";
 import KPICard from "@/components/shared/KPICard";
@@ -191,6 +192,15 @@ export default function CashierDashboard() {
       />
 
       <DailyCashReceived canReceive={canReceiveHandover} onDone={loadData} />
+
+      <PettyCashPanel
+        accounts={treasuryAccounts}
+        canManage={canDisburse}
+        userId={user?.id || ""}
+        userName={user?.full_name || user?.email || ""}
+        user={user}
+        onDone={loadData}
+      />
 
       <h3 className="text-sm font-semibold text-slate-700 mb-3">Awaiting Disbursement</h3>
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden mb-8">
