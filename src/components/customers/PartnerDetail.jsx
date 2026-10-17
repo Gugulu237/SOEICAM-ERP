@@ -6,6 +6,9 @@ import StatusBadge from "@/components/shared/StatusBadge";
 import LocationDialog from "./LocationDialog";
 import SpoilageDialog from "./SpoilageDialog";
 import PartnerGroupPanel from "./PartnerGroupPanel";
+import PartnerStockPanel from "./PartnerStockPanel";
+import PartnerSalesPanel from "./PartnerSalesPanel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatXAF, formatDate, statusLabel } from "@/lib/formatters";
 import { MapPin, Plus, AlertTriangle, Pencil, Landmark, Truck } from "lucide-react";
 
@@ -69,11 +72,18 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => navigate(`/customers/${partner.id}`)}><Pencil size={13} className="mr-1" /> Edit</Button>
           <Button size="sm" variant="outline" onClick={() => setSpoilOpen(true)} disabled={locations.length === 0}><AlertTriangle size={13} className="mr-1" /> Report Spoilage</Button>
-          <Button size="sm" variant="outline" onClick={() => navigate(`/customers/new?parent=${partner.id}`)}><Plus size={13} className="mr-1" /> Add Sub-Partner</Button>
           <Button size="sm" onClick={() => setLocDialog({ open: true, location: null })}><Plus size={13} className="mr-1" /> Add Location</Button>
         </div>
       </div>
 
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="stock">Stock &amp; Expiry</TabsTrigger>
+          <TabsTrigger value="sales">Sales</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-4 space-y-5">
       {subPartners.length > 0 && (
         <PartnerGroupPanel partner={partner} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} />
       )}
@@ -160,6 +170,17 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
           </div>
         </div>
       )}
+
+        </TabsContent>
+
+        <TabsContent value="stock" className="mt-4">
+          <PartnerStockPanel partner={partner} subPartners={subPartners} />
+        </TabsContent>
+
+        <TabsContent value="sales" className="mt-4">
+          <PartnerSalesPanel partner={partner} subPartners={subPartners} />
+        </TabsContent>
+      </Tabs>
 
       <LocationDialog
         open={locDialog.open}

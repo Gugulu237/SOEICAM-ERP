@@ -29,21 +29,35 @@ export default function CustomerForm() {
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
   const [mainPartners, setMainPartners] = useState([]);
+  const [partnerType, setPartnerType] = useState("main");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    base44.entities.Customer
+      .filter({ $or: [{ parent_id: { $exists: false } }, { parent_id: "" }] }, { sort: "business_name", limit: 200 })
+      .then(res => setMainPartners(res.items));
     if (isEdit) {
-      base44.entities.Customer.get(id).then(c => setForm({
-        business_name: c.business_name || "", contact_person: c.contact_person || "",
-        phone: c.phone || "", whatsapp: c.whatsapp || "", email: c.email || "",
-        category: c.category || "shop", financial_centralization_mode: c.financial_centralization_mode || "centralized",
-        address: c.address || "", town: c.town || "",
-        neighbourhood: c.neighbourhood || "", credit_limit: c.credit_limit || 0,
-        max_overdue_days: c.max_overdue_days || 30, payment_terms_days: c.payment_terms_days || 0,
-        is_active: c.is_active !== false, notes: c.notes || ""
-      }));
+      base44.entities.Customer.get(id).then(c => {
+        setForm({
+          business_name: c.business_name || "", contact_person: c.contact_person || "",
+          phone: c.phone || "", whatsapp: c.whatsapp || "", email: c.email || "",
+          category: c.category || "shop", financial_centralization_mode: c.financial_centralization_mode || "centralized",
+          address: c.address || "", town: c.town || "",
+          neighbourhood: c.neighbourhood || "", credit_limit: c.credit_limit || 0,
+          max_overdue_days: c.max_overdue_days || 30, payment_terms_days: c.payment_terms_days || 0,
+          parent_id: c.parent_id || "", parent_name: c.parent_name || "",
+          is_active: c.is_active !== false, notes: c.notes || ""
+        });
+        setPartnerType(c.parent_id ? "branch" : "main");
+      });
       base44.entities.Invoice.filter({ customer_id: id }).then(setInvoices);
       base44.entities.Payment.filter({ party_id: id, payment_type: "customer_payment" }).then(setPayments);
+    } else {
+      const parent = new URLSearchParams(window.location.search).get("parent");
+      if (parent) {
+        setForm(f => ({ ...f, parent_id: parent }));
+        setPartnerType("branch");
+      }
     }
   }, [id, isEdit]);
 
@@ -54,9 +68,18 @@ export default function CustomerForm() {
       toast({ title: "Error", description: "Business name is required", variant: "destructive" });
       return;
     }
+    if (partnerType === "branch" && !form.parent_id) {
+      toast({ title: "Error", description: "Choose the main partner this branch belongs to", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
-      const payload = { ...form, parent_name: mainPartners.find(c => c.id === form.parent_id)?.business_name || "" };
+      const parentId = partnerType === "branch" ? form.parent_id : "";
+      const payload = {
+        ...form,
+        parent_id: parentId,
+        parent_name: parentId ? mainPartners.find(c => c.id === parentId)?.business_name || "" : "",
+      };
       if (isEdit) {
         await base44.entities.Customer.update(id, payload);
       } else {
@@ -90,7 +113,7 @@ export default function CustomerForm() {
   return (
     <div>
       <PageHeader
-        title={isEdit ? `Customer: ${form.business_name}` : "New Customer"}
+        title={isEdit ? `Partner: ${form.business_name}` : "Add Partner"}
         actions={<Button variant="outline" onClick={() => navigate("/customers")}><ArrowLeft size={16} className="mr-1" /> Back</Button>}
       />
       <Tabs defaultValue="details">
@@ -141,17 +164,31 @@ export default function CustomerForm() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="sm:col-span-2">
-                <Label>Main Partner</Label>
-                <Select value={form.parent_id || "none"} onValueChange={v => set("parent_id", v === "none" ? "" : v)}>
+              <div>
+                <Label>Partner Type</Label>
+                <Select value={partnerType} onValueChange={setPartnerType}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None — this is a main partner</SelectItem>
-                    {mainPartners.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}
+                    <SelectItem value="main">Main partner — brand or headquarters</SelectItem>
+                    <SelectItem value="branch">Branch — sub-partner of a main partner</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-500 mt-1">Pick a main partner to make this record one of its sub-partners (branches).</p>
               </div>
+              {partnerType === "branch" ? (
+                <div>
+                  <Label>Main Partner *</Label>
+                  <Select value={form.parent_id} onValueChange={v => set("parent_id", v)}>
+                    <SelectTrigger><SelectValue placeholder="Choose the main partner" /></SelectTrigger>
+                    <SelectContent>
+                      {mainPartners.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="flex items-end pb-2">
+                  <p className="text-xs text-slate-500">Main partners group branches under one name — add a branch with the same Add Partner button.</p>
+                </div>
+              )}
               <div className="sm:col-span-2">
                 <Label>Address</Label>
                 <Input value={form.address} onChange={e => set("address", e.target.value)} />

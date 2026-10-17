@@ -77,7 +77,7 @@ export default function Customers() {
                 { value: "report", label: "Group Report", icon: BarChart3 },
               ]}
             />
-            <Button onClick={() => navigate("/customers/new")}><Plus size={16} className="mr-1" /> New Partner</Button>
+            <Button onClick={() => navigate("/customers/new")}><Plus size={16} className="mr-1" /> Add Partner</Button>
           </div>
         }
       />

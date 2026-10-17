@@ -3,7 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { formatXAF } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
-import { Store, Plus, Pencil, ChevronRight, MapPin } from "lucide-react";
+import { Store, Pencil, ChevronRight, MapPin } from "lucide-react";
 
 // Roll-up of a main partner and all its sub-partners (branches).
 export default function PartnerGroupPanel({ partner, subPartners = [], locationsByCustomer = {}, onSelect }) {
@@ -48,9 +48,6 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900">Group — {subPartners.length} sub-partner{subPartners.length === 1 ? "" : "s"}</h3>
-        <Button size="sm" variant="outline" onClick={() => navigate(`/customers/new?parent=${partner.id}`)}>
-          <Plus size={13} className="mr-1" /> Add Sub-Partner
-        </Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -110,7 +107,7 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
 
       {subPartners.length === 0 && (
         <p className="text-sm text-slate-400 bg-slate-50 rounded-lg p-4 text-center inline-flex items-center gap-2 w-full justify-center">
-          <MapPin size={14} /> No sub-partners yet — add the branches that trade under this name.
+          <MapPin size={14} /> No sub-partners yet — use Add Partner to add a branch that trades under this name.
         </p>
       )}
     </div>
