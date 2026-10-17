@@ -8,9 +8,10 @@ import StatusBadge from "@/components/shared/StatusBadge";
 import ViewToggle from "@/components/shared/ViewToggle";
 import PartnerTree from "@/components/customers/PartnerTree";
 import PartnerDetail from "@/components/customers/PartnerDetail";
+import GroupReport from "@/components/customers/GroupReport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Building2, Network, Table2 } from "lucide-react";
+import { Plus, Building2, Network, Table2, BarChart3 } from "lucide-react";
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
@@ -39,6 +40,14 @@ export default function Customers() {
     return acc;
   }, {});
 
+  // Sub-partners grouped under their main partner.
+  const childrenByParent = customers.reduce((acc, c) => {
+    if (!c.parent_id) return acc;
+    (acc[c.parent_id] = acc[c.parent_id] || []).push(c);
+    return acc;
+  }, {});
+  const mainCount = customers.filter(c => !c.parent_id).length;
+
   const cols = [
     { key: "customer_number", label: "#" },
     { key: "business_name", label: "Business Name" },
@@ -56,7 +65,7 @@ export default function Customers() {
     <div>
       <PageHeader
         title="Business Partners"
-        subtitle={`${customers.length} partners · ${locations.length} delivery locations · ${formatXAF(customers.reduce((s, c) => s + (c.balance || 0), 0))} total receivables`}
+        subtitle={`${mainCount} main partners · ${customers.length} partner records · ${formatXAF(customers.reduce((s, c) => s + (c.balance || 0), 0))} total receivables`}
         actions={
           <div className="flex items-center gap-2">
             <ViewToggle
@@ -65,6 +74,7 @@ export default function Customers() {
               options={[
                 { value: "visual", label: "Explorer", icon: Network },
                 { value: "table", label: "Table", icon: Table2 },
+                { value: "report", label: "Group Report", icon: BarChart3 },
               ]}
             />
             <Button onClick={() => navigate("/customers/new")}><Plus size={16} className="mr-1" /> New Partner</Button>
@@ -74,6 +84,8 @@ export default function Customers() {
 
       {view === "table" ? (
         <DataTable columns={cols} data={customers} searchFields={["business_name", "contact_person", "phone", "customer_number"]} onRowClick={row => { setSelected(row); setView("visual"); }} />
+      ) : view === "report" ? (
+        <GroupReport partners={customers} childrenByParent={childrenByParent} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5">
           <div className="bg-white border border-slate-200 rounded-xl p-3 h-fit lg:sticky lg:top-4">
@@ -86,6 +98,7 @@ export default function Customers() {
             <div className="max-h-[70vh] overflow-y-auto">
               <PartnerTree
                 partners={customers}
+                childrenByParent={childrenByParent}
                 locationsByCustomer={locationsByCustomer}
                 selectedId={selected?.id}
                 onSelect={setSelected}
@@ -95,7 +108,14 @@ export default function Customers() {
           </div>
           <div>
             {selected ? (
-              <PartnerDetail partner={selected} onChanged={load} />
+              <PartnerDetail
+                partner={selected}
+                onChanged={load}
+                subPartners={childrenByParent[selected.id] || []}
+                parentPartner={customers.find(c => c.id === selected.parent_id) || null}
+                locationsByCustomer={locationsByCustomer}
+                onSelect={setSelected}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center text-center py-24 text-slate-400 bg-slate-50 rounded-xl">
                 <Building2 size={36} className="mb-3" />

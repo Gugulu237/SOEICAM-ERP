@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/shared/StatusBadge";
 import LocationDialog from "./LocationDialog";
 import SpoilageDialog from "./SpoilageDialog";
+import PartnerGroupPanel from "./PartnerGroupPanel";
 import { formatXAF, formatDate, statusLabel } from "@/lib/formatters";
 import { MapPin, Plus, AlertTriangle, Pencil, Landmark, Truck } from "lucide-react";
 
-// 360° view of one business partner: locations, deliveries and spoilage per branch.
-export default function PartnerDetail({ partner, onChanged }) {
+// 360° view of one business partner: its group (sub-partners), locations,
+// deliveries and spoilage per branch.
+export default function PartnerDetail({ partner, onChanged, subPartners = [], parentPartner = null, locationsByCustomer = {}, onSelect }) {
   const navigate = useNavigate();
   const [locations, setLocations] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -50,6 +52,11 @@ export default function PartnerDetail({ partner, onChanged }) {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
+          {parentPartner && (
+            <button onClick={() => onSelect?.(parentPartner)} className="text-xs text-blue-600 hover:underline mb-0.5">
+              ← Sub-partner of {parentPartner.business_name}
+            </button>
+          )}
           <h2 className="text-lg font-bold text-slate-900">{partner.business_name}</h2>
           <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
             <StatusBadge status={partner.credit_status || "good"} />
@@ -62,9 +69,14 @@ export default function PartnerDetail({ partner, onChanged }) {
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => navigate(`/customers/${partner.id}`)}><Pencil size={13} className="mr-1" /> Edit</Button>
           <Button size="sm" variant="outline" onClick={() => setSpoilOpen(true)} disabled={locations.length === 0}><AlertTriangle size={13} className="mr-1" /> Report Spoilage</Button>
+          <Button size="sm" variant="outline" onClick={() => navigate(`/customers/new?parent=${partner.id}`)}><Plus size={13} className="mr-1" /> Add Sub-Partner</Button>
           <Button size="sm" onClick={() => setLocDialog({ open: true, location: null })}><Plus size={13} className="mr-1" /> Add Location</Button>
         </div>
       </div>
+
+      {subPartners.length > 0 && (
+        <PartnerGroupPanel partner={partner} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} />
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

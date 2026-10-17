@@ -23,10 +23,12 @@ export default function CustomerForm() {
     business_name: "", contact_person: "", phone: "", whatsapp: "", email: "",
     category: "shop", financial_centralization_mode: "centralized", address: "", town: "", neighbourhood: "",
     credit_limit: 0, max_overdue_days: 30, payment_terms_days: 0,
+    parent_id: "", parent_name: "",
     is_active: true, notes: ""
   });
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [mainPartners, setMainPartners] = useState([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -54,11 +56,12 @@ export default function CustomerForm() {
     }
     setSaving(true);
     try {
+      const payload = { ...form, parent_name: mainPartners.find(c => c.id === form.parent_id)?.business_name || "" };
       if (isEdit) {
-        await base44.entities.Customer.update(id, form);
+        await base44.entities.Customer.update(id, payload);
       } else {
         const count = (await base44.entities.Customer.filter({})).length;
-        await base44.entities.Customer.create({ ...form, customer_number: `C-${String(count + 1).padStart(4, "0")}` });
+        await base44.entities.Customer.create({ ...payload, customer_number: `C-${String(count + 1).padStart(4, "0")}` });
       }
       toast({ title: "Saved" });
       navigate("/customers");
@@ -137,6 +140,17 @@ export default function CustomerForm() {
                     <SelectItem value="decentralized">Decentralized — each branch pays its own invoices</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Main Partner</Label>
+                <Select value={form.parent_id || "none"} onValueChange={v => set("parent_id", v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None — this is a main partner</SelectItem>
+                    {mainPartners.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500 mt-1">Pick a main partner to make this record one of its sub-partners (branches).</p>
               </div>
               <div className="sm:col-span-2">
                 <Label>Address</Label>

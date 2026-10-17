@@ -8,6 +8,12 @@
     "business_name": {
       "type": "string"
     },
+    "parent_id": {
+      "type": "string"
+    },
+    "parent_name": {
+      "type": "string"
+    },
     "contact_person": {
       "type": "string"
     },
