@@ -59,6 +59,11 @@ import Administration from '@/pages/Administration';
 import CashierDashboard from '@/pages/CashierDashboard';
 import FinancePulse from '@/pages/FinancePulse';
 import Expenses from '@/pages/Expenses';
+import FieldSales from '@/pages/FieldSales';
+import FieldSaleForm from '@/pages/FieldSaleForm';
+import FieldSaleReview from '@/pages/FieldSaleReview';
+import CustodyIssue from '@/pages/CustodyIssue';
+import CashHandovers from '@/pages/CashHandovers';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -144,6 +149,12 @@ const AuthenticatedApp = () => {
           <Route path="/cashier" element={<CashierDashboard />} />
           <Route path="/finance-pulse" element={<FinancePulse />} />
           <Route path="/expenses" element={<Expenses />} />
+          <Route path="/field-sales" element={<FieldSales />} />
+          <Route path="/field-sales/new" element={<FieldSaleForm />} />
+          <Route path="/field-sales/:id" element={<FieldSaleForm />} />
+          <Route path="/field-review" element={<FieldSaleReview />} />
+          <Route path="/custody" element={<CustodyIssue />} />
+          <Route path="/cash-handovers" element={<CashHandovers />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
