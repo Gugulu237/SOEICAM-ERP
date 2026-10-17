@@ -11,7 +11,7 @@ export default async function(req) {
     if (!['confirm', 'approve', 'reject'].includes(body.action)) return Response.json({ error: 'Unknown receipt action' }, { status: 400 });
     const svc = base44.asServiceRole;
     if (body.action === 'confirm') {
-      await requireStaff(base44, user, ['cashier'], 'confirming customer money received');
+      const { role } = await requireStaff(base44, user, ['cashier', 'admin'], 'confirming customer money received');
       const amount = round2(body.amount);
       if (!Number.isFinite(Number(body.amount)) || amount <= 0) throw new Error('Enter a positive received amount');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date || '') || !Number.isFinite(Date.parse(body.date))) throw new Error('Enter a valid receipt date');
@@ -32,7 +32,7 @@ export default async function(req) {
         const collection = await svc.entities.CashCollection.create({ collection_number: payment.payment_number, invoice_id: invoice.id, invoice_number: invoice.invoice_number, sale_number: order?.order_number || invoice.invoice_number, customer_id: customer.id, customer_name: customer.business_name, commercial_id: order?.salesperson_id || '', commercial_name: body.collectedBy || order?.salesperson_name || '', driver_name: order?.driver_name || '', vehicle_name: order?.vehicle_name || '', amount_due: invoice.balance, amount_collected: amount, collection_date: body.date, method: treasury.account_type === 'mobile_money' ? 'mobile_money' : 'cash', receipt_reference: payment.reference, receipt_file_uris: Array.isArray(body.receiptFileUris) ? body.receiptFileUris : [], status: 'received', handed_over_amount: amount, received_amount: amount, outstanding_amount: 0, treasury_account_id: treasury.id, treasury_account_name: treasury.name, received_by: payment.cashier_confirmed_name, received_at: now, acknowledgement_reference: payment.payment_number, notes: 'Cashier confirmed. Awaiting GM approval before ledger posting.' });
         await svc.entities.Payment.update(payment.id, { collection_id: collection.id });
       }
-      await audit(svc, { action: 'cashier_confirm_customer_receipt', module: 'cashier', entityType: 'Payment', entityId: payment.id, userId: user.id, description: `Cashier confirmed ${amount} XAF for ${payment.invoice_numbers}; awaiting GM approval, no ledger posting` });
+      await audit(svc, { action: role === 'admin' ? 'admin_confirm_customer_receipt' : 'cashier_confirm_customer_receipt', module: role === 'admin' ? 'customers' : 'cashier', entityType: 'Payment', entityId: payment.id, userId: user.id, description: `${role === 'admin' ? 'Admin' : 'Cashier'} confirmed ${amount} XAF for ${payment.invoice_numbers}; awaiting GM approval, no ledger posting` });
       return Response.json({ payment });
     }
     if (user.role !== 'admin') return Response.json({ error: 'Only the General Manager can approve or reject customer receipts' }, { status: 403 });

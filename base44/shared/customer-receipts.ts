@@ -20,8 +20,8 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
 
 export async function approveReceipt(svc, payment, user) {
   if (payment.status === 'posted') return payment;
-  if (!['pending_approval', 'approved'].includes(payment.status) || !payment.cashier_confirmed_by) throw new Error('Cashier confirmation is required before GM approval');
-  if (payment.cashier_confirmed_by === user.id) throw new Error('The cashier cannot approve their own receipt');
+  if (!['pending_approval', 'approved'].includes(payment.status) || !payment.cashier_confirmed_by) throw new Error('Receipt confirmation is required before GM approval');
+  if (payment.cashier_confirmed_by === user.id) throw new Error('You cannot approve a receipt you recorded; another administrator must approve it');
   const token = crypto.randomUUID();
   if (!await claimField(svc, 'Payment', payment.id, 'receipt_posting_token', token)) throw new Error('This receipt is already being processed');
   try {

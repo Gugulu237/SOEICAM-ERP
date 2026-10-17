@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import React, { useState } from "react";
+import useReceiptInvoices from '@/components/treasury/useReceiptInvoices';
 import { formatXAF, formatDate } from "@/lib/formatters";
 import { receiveInvoicePayment } from "@/lib/treasury";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -12,11 +12,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { Search, Landmark, Receipt } from "lucide-react";
 
 // Treasury receipt: pick an open invoice, pick the account the money lands in.
-export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
+export default function ReceivePaymentDialog({ accounts, onClose, onDone, customer, hasMoreAccounts, onMoreAccounts, loadingMoreAccounts }) {
   const { user, role } = useCurrentUser();
   const { toast } = useToast();
-  const [invoices, setInvoices] = useState([]);
   const [search, setSearch] = useState("");
+  const invoiceQuery = useReceiptInvoices(customer?.id, search);
+  const { invoices } = invoiceQuery;
   const [invoice, setInvoice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [requestKey] = useState(() => crypto.randomUUID());
@@ -26,21 +27,6 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
     date: new Date().toISOString().split("T")[0],
     reference: "",
   });
-
-  const loadInvoices = useCallback(async (term) => {
-    const query = { balance: { $gt: 0 }, status: { $in: ["posted", "partially_paid", "overdue"] } };
-    if (term) query.$or = [
-      { invoice_number: { $regex: term, $options: "i" } },
-      { customer_name: { $regex: term, $options: "i" } },
-    ];
-    const page = await base44.entities.Invoice.filter(query, { sort: "-invoice_date", limit: 50 });
-    setInvoices(page.items);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => loadInvoices(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search, loadInvoices]);
 
   function pick(inv) {
     setInvoice(inv);
@@ -55,7 +41,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
         invoice, treasuryAccount: account, amount: Number(form.amount),
         date: form.date, reference: form.reference, userId: user?.id || "", requestKey,
       });
-      toast({ title: "Cashier receipt confirmed", description: `${formatXAF(form.amount)} for ${invoice.invoice_number}; awaiting GM approval before posting.` });
+      toast({ title: 'Payment receipt recorded', description: `${formatXAF(form.amount)} for ${invoice.invoice_number}; ${role === 'admin' ? 'another administrator must approve before posting.' : 'awaiting GM approval before posting.'}` });
       onDone();
     } catch (e) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -66,7 +52,8 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
   return (
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-2xl">
-        <DialogHeader><DialogTitle>Receive Payment for an Invoice</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{customer ? `Receive Payment · ${customer.business_name}` : 'Receive Payment for an Invoice'}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">Record a full or partial invoice payment. {role === 'admin' ? 'Another administrator must approve your receipt before balances and the ledger are updated.' : 'GM approval is required before balances and the ledger are updated.'}</p>
 
         <div className="space-y-4">
           <div>
@@ -76,7 +63,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
               <Input placeholder="Search invoice # or customer…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
             </div>
             <div className="mt-2 max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-              {invoices.length === 0 && <p className="px-3 py-6 text-center text-sm text-slate-400">No open invoices found</p>}
+              {invoiceQuery.isPending ? <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading open invoices…</p> : invoiceQuery.isError ? <div className="p-3 text-sm text-destructive">Unable to load invoices. <Button size="sm" variant="outline" onClick={() => invoiceQuery.refetch()}>Try again</Button></div> : invoices.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted-foreground">No open invoices found{customer ? ' for this customer' : ''}.</p>}
               {invoices.map(inv => (
                 <button
                   key={inv.id}
@@ -93,6 +80,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
                   <span className="font-semibold text-slate-900 flex-shrink-0">{formatXAF(inv.balance)}</span>
                 </button>
               ))}
+              {invoiceQuery.hasNextPage && <Button variant="outline" size="sm" className="m-2" disabled={invoiceQuery.isFetchingNextPage} onClick={() => invoiceQuery.fetchNextPage()}>{invoiceQuery.isFetchingNextPage ? 'Loading…' : 'Load more invoices'}</Button>}
             </div>
           </div>
 
@@ -112,6 +100,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
                     {accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({formatXAF(a.balance)})</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {hasMoreAccounts && <Button variant="outline" size="sm" className="mt-2" disabled={loadingMoreAccounts} onClick={onMoreAccounts}>{loadingMoreAccounts ? 'Loading…' : 'Load more deposit accounts'}</Button>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -126,7 +115,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
               </div>
 
               <div>
-                <Label>Reference</Label>
+                <Label>Reference *</Label>
                 <Input value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} placeholder="Slip / transaction number" />
               </div>
             </>
@@ -135,7 +124,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone }) {
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleReceive} disabled={role !== 'cashier' || saving || !invoice || !form.treasury_account_id || !Number(form.amount)}>
+          <Button onClick={handleReceive} disabled={!['cashier', 'admin'].includes(role) || saving || !invoice || !form.treasury_account_id || Number(form.amount) <= 0 || !Number.isFinite(Number(form.amount)) || Number(form.amount) > Number(invoice?.balance) || !form.date || !form.reference.trim()}>
             <Landmark size={16} className="mr-1" /> {saving ? "Confirming..." : "Confirm Receipt for GM"}
           </Button>
         </DialogFooter>

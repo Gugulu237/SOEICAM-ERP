@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { formatXAF } from "@/lib/formatters";
+import CustomerPaymentBadge from '@/components/customers/CustomerPaymentBadge';
 import { ChevronRight, ChevronDown, Building2, MapPin, Landmark, Store } from "lucide-react";
 
 // Tree explorer: main partner → sub-partners (branches) → delivery locations.
-export default function PartnerTree({ partners, childrenByParent = {}, locationsByCustomer, selectedId, onSelect, search }) {
+export default function PartnerTree({ partners, childrenByParent = {}, locationsByCustomer, selectedId, onSelect, search, paymentSummaries, paymentError }) {
   const [expanded, setExpanded] = useState({});
   const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
@@ -53,6 +54,7 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
                 ? `${kids.length} sub-partner${kids.length === 1 ? "" : "s"} · ${formatXAF(groupBalance)}`
                 : `${locs.length} location${locs.length === 1 ? "" : "s"} · ${formatXAF(partner.balance)}`}
             </p>
+            {paymentSummaries && <div className="mt-1"><CustomerPaymentBadge summary={paymentSummaries[partner.id]} error={paymentError} /></div>}
           </div>
           {partner.financial_centralization_mode === "centralized" && (
             <Landmark size={13} className="text-blue-500 flex-shrink-0" title="Centralized payments" />

@@ -7,6 +7,11 @@ import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import ViewToggle from "@/components/shared/ViewToggle";
 import PartnerTree from "@/components/customers/PartnerTree";
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import useCustomerPaymentStatus from '@/components/customers/useCustomerPaymentStatus';
+import CustomerPaymentBadge from '@/components/customers/CustomerPaymentBadge';
+import CustomerPaymentSummary from '@/components/customers/CustomerPaymentSummary';
+import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
 import PartnerDetail from "@/components/customers/PartnerDetail";
 import GroupReport from "@/components/customers/GroupReport";
 import { Button } from "@/components/ui/button";
@@ -21,6 +26,9 @@ export default function Customers() {
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
+  const { isAdmin } = useCurrentUser();
+  const [receiptCustomer, setReceiptCustomer] = useState(null);
+  const paymentStatus = useCustomerPaymentStatus(customers, isAdmin);
 
   const load = useCallback(async () => {
     const [cs, ls] = await Promise.all([
@@ -57,6 +65,11 @@ export default function Customers() {
     { key: "category", label: "Category", render: v => <StatusBadge status={v} /> },
     { key: "balance", label: "Balance", render: v => formatXAF(v), className: "text-right" },
     { key: "credit_status", label: "Status", render: v => <StatusBadge status={v} /> },
+    ...(isAdmin ? [
+      { key: 'payment_status', label: 'Payment Status', sortable: false, render: (_, row) => <CustomerPaymentBadge summary={paymentStatus.data?.[row.id]} error={paymentStatus.isError} /> },
+      { key: 'invoice_outstanding', label: 'Invoice Outstanding', sortable: false, render: (_, row) => paymentStatus.data?.[row.id] ? formatXAF(paymentStatus.data[row.id].outstanding) : '—', className: 'text-right' },
+      { key: 'receive_payment', label: 'Payment', sortable: false, render: (_, row) => <Button size="sm" variant="outline" onClick={event => { event.stopPropagation(); setReceiptCustomer(row); }}>Receive Payment</Button> },
+    ] : []),
   ];
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
@@ -103,11 +116,15 @@ export default function Customers() {
                 selectedId={selected?.id}
                 onSelect={setSelected}
                 search={search}
+                paymentSummaries={isAdmin ? paymentStatus.data || {} : null}
+                paymentError={paymentStatus.isError}
               />
             </div>
           </div>
           <div>
             {selected ? (
+              <>
+              {isAdmin && <CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onReceive={setReceiptCustomer} onRetry={() => paymentStatus.refetch()} />}
               <PartnerDetail
                 partner={selected}
                 onChanged={load}
@@ -116,6 +133,7 @@ export default function Customers() {
                 locationsByCustomer={locationsByCustomer}
                 onSelect={setSelected}
               />
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center text-center py-24 text-slate-400 bg-slate-50 rounded-xl">
                 <Building2 size={36} className="mb-3" />
@@ -126,6 +144,7 @@ export default function Customers() {
           </div>
         </div>
       )}
+      {isAdmin && receiptCustomer && <CustomerReceivePayment key={receiptCustomer.id} customer={receiptCustomer} onClose={() => setReceiptCustomer(null)} onDone={() => { setReceiptCustomer(null); paymentStatus.refetch(); load(); }} />}
     </div>
   );
 }
