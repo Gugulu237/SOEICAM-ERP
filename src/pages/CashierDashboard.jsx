@@ -23,7 +23,6 @@ export default function CashierDashboard() {
   const { toast } = useToast();
   const [approvedPOs, setApprovedPOs] = useState([]);
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
-  const [cashInvoices, setCashInvoices] = useState([]);
   const [pendingCheques, setPendingCheques] = useState([]);
   const [payments, setPayments] = useState([]);
   const [disbursementRequests, setDisbursementRequests] = useState([]);
@@ -39,17 +38,15 @@ export default function CashierDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [pos, pays, cheques, treasury, invoices, requested, approved] = await Promise.all([
+      const [pos, pays, cheques, treasury, requested, approved] = await Promise.all([
         base44.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment" }, "-created_date", 20),
         base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "draft" }, "-created_date", 50),
         base44.entities.TreasuryAccount.filter({ is_active: true }),
-        base44.entities.Invoice.filter({ payment_type: "cash", cash_deposited: false }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }, "-created_date", 50),
         base44.entities.Payment.filter({ payment_type: "supplier_payment", status: "approved" }, "-created_date", 50),
       ]);
       setTreasuryAccounts(treasury);
-      setCashInvoices(invoices.filter(i => (i.balance || 0) > 0 && i.status !== "cancelled"));
       setDisbursementRequests(requested);
       setReadyToRelease(approved);
       // A purchase order already waiting for cash approval is not offered again.
@@ -184,10 +181,10 @@ export default function CashierDashboard() {
       </div>
 
       <CashCollections
-        invoices={cashInvoices}
         treasuryAccounts={treasuryAccounts}
-        canDisburse={canDisburse}
+        canReceive={canDisburse}
         userId={user?.id || ""}
+        userName={user?.full_name || user?.email || ""}
         onDone={loadData}
       />
 

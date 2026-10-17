@@ -11,6 +11,12 @@
     "sale_number": {
       "type": "string"
     },
+    "invoice_id": {
+      "type": "string"
+    },
+    "invoice_number": {
+      "type": "string"
+    },
     "customer_id": {
       "type": "string"
     },
@@ -21,6 +27,12 @@
       "type": "string"
     },
     "commercial_name": {
+      "type": "string"
+    },
+    "driver_name": {
+      "type": "string"
+    },
+    "vehicle_name": {
       "type": "string"
     },
     "payment_type": {
@@ -53,6 +65,15 @@
     },
     "reference": {
       "type": "string"
+    },
+    "receipt_reference": {
+      "type": "string"
+    },
+    "receipt_file_uris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "status": {
       "type": "string",
