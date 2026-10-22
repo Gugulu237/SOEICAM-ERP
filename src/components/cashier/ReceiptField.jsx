@@ -1,11 +1,19 @@
+
+/* localized-messages */
+import { sourceMessage, uiMessage } from '@/lib/i18n';
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { uploadReceipt, receiptUrl } from "@/lib/field-ops";
 import { Camera, Loader2, Paperclip, X } from "lucide-react";
 
-// One receipt, photographed or scanned. Stored privately — only the app can read it.
+// One receipt, photographed or scanned. Stored privately â€” only the app can read it.
 export default function ReceiptField({ fileUri, onChange, label = "Receipt" }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -15,7 +23,7 @@ export default function ReceiptField({ fileUri, onChange, label = "Receipt" }) {
     try {
       onChange(await uploadReceipt(files[0]));
     } catch (e) {
-      setError(e.message || "The file could not be uploaded");
+      setError(e.message || sourceMessage("The file could not be uploaded"));
     }
     setBusy(false);
   };
@@ -55,11 +63,10 @@ export default function ReceiptField({ fileUri, onChange, label = "Receipt" }) {
           </label>
         )}
         <p className="text-xs text-slate-500">
-          {fileUri ? "Receipt attached" : "Photograph or scan the receipt"}
-          <br />Stored privately — only the app can read the file.
-        </p>
+          {fileUri ? ui("Receipt attached") : ui("Photograph or scan the receipt")}
+          <br />{ui("Stored privately â€” only the app can read the file.")}</p>
       </div>
-      {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-sm text-red-600 mt-1">{uiMessage(error)}</p>}
     </div>
   );
 }

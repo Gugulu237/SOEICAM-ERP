@@ -1,3 +1,7 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import { formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import StatusBadge from "@/components/shared/StatusBadge";
@@ -5,11 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Eye, RotateCcw, CheckCircle2 } from "lucide-react";
 
 export default function JournalTable({ rows, onOpen, onPost, onReverse, canReverse, working }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   if (!rows.length) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white py-16 text-center text-slate-400">
-        No journals match these filters.
-      </div>
+      <div className="rounded-lg border border-slate-200 bg-white py-16 text-center text-slate-400">{ui("No journals match these filters.")}</div>
     );
   }
 
@@ -18,15 +22,15 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <th className="px-4 py-3 font-semibold">Journal</th>
-            <th className="px-4 py-3 font-semibold">Entry date</th>
-            <th className="px-4 py-3 font-semibold">Description</th>
-            <th className="px-4 py-3 font-semibold">Source</th>
-            <th className="px-4 py-3 font-semibold text-right">Debit</th>
-            <th className="px-4 py-3 font-semibold text-right">Credit</th>
-            <th className="px-4 py-3 font-semibold">Status</th>
-            <th className="px-4 py-3 font-semibold">Recorded</th>
-            <th className="px-4 py-3 font-semibold">Posted</th>
+            <th className="px-4 py-3 font-semibold">{ui("Journal")}</th>
+            <th className="px-4 py-3 font-semibold">{ui("Entry date")}</th>
+            <th className="px-4 py-3 font-semibold">{ui("Description")}</th>
+            <th className="px-4 py-3 font-semibold">{ui("Source")}</th>
+            <th className="px-4 py-3 font-semibold text-right">{ui("Debit")}</th>
+            <th className="px-4 py-3 font-semibold text-right">{ui("Credit")}</th>
+            <th className="px-4 py-3 font-semibold">{ui("Status")}</th>
+            <th className="px-4 py-3 font-semibold">{ui("Recorded")}</th>
+            <th className="px-4 py-3 font-semibold">{ui("Posted")}</th>
             <th className="px-4 py-3" />
           </tr>
         </thead>
@@ -43,7 +47,7 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
                 <td className="px-4 py-3 whitespace-nowrap text-slate-600">{formatDate(j.entry_date)}</td>
                 <td className="px-4 py-3 max-w-[22rem] truncate text-slate-700" title={j.description}>{j.description}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-slate-600 capitalize">
-                  {(j.source_module || "manual").replace(/_/g, " ")}
+                  {(j.source_module || ui("manual")).replace(/_/g, " ")}
                   {j.source_document_type && (
                     <span className="block text-xs text-slate-400">{j.source_document_type}</span>
                   )}
@@ -55,23 +59,23 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
                   {j.total_credit ? formatXAF(j.total_credit) : ""}
                 </td>
                 <td className="px-4 py-3">
-                  <StatusBadge status={j.status} />
-                  {out && <span className="ml-1 text-[10px] font-semibold uppercase text-amber-700">one-sided</span>}
+                  <StatusBadge status={j.reversed_by_journal ? "reversed" : j.status} />
+                  {out && <span className="ml-1 text-[10px] font-semibold uppercase text-amber-700">{ui("one-sided")}</span>}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{formatDateTime(j.created_date)}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{j.posted_at ? formatDateTime(j.posted_at) : "—"}</td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon" title="Open journal" onClick={() => onOpen(j)}>
+                    <Button variant="ghost" size="icon" title={ui("Open journal")} onClick={() => onOpen(j)}>
                       <Eye size={15} />
                     </Button>
-                    {j.status === "draft" && (
-                      <Button variant="ghost" size="icon" title="Post this draft" disabled={working} onClick={() => onPost(j)}>
+                    {j.status === "draft" && j.source_module === "manual" && ["", "manual_journal"].includes(j.source_document_type || "") && (
+                      <Button variant="ghost" size="icon" title={ui("Post this draft")} disabled={working} onClick={() => onPost(j)}>
                         <CheckCircle2 size={15} className="text-green-600" />
                       </Button>
                     )}
-                    {j.status === "posted" && canReverse && (
-                      <Button variant="ghost" size="icon" title="Reverse this journal" disabled={working} onClick={() => onReverse(j)}>
+                    {j.status === "posted" && !j.reversed_by_journal && !j.reversal_of && j.source_module === "manual" && ["", "manual_journal"].includes(j.source_document_type || "") && canReverse && (
+                      <Button variant="ghost" size="icon" title={ui("Reverse this journal")} disabled={working} onClick={() => onReverse(j)}>
                         <RotateCcw size={15} className="text-rose-600" />
                       </Button>
                     )}

@@ -1,7 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
     darkMode: ["class"],
-    content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
+    // Tailwind 3 equivalent of the theme stylesheet's Tailwind 4 @source hint.
+    content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}", "./node_modules/@clerk/ui/dist/themes/shadcn.js"],
   theme: {
   	extend: {
   		borderRadius: {

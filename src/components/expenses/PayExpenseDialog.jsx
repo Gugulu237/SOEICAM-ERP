@@ -1,5 +1,9 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -10,6 +14,8 @@ import { payExpense } from "@/lib/expenses";
 
 // Cashier disburses an approved expense from a treasury account.
 export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, defaultTreasuryId = "" }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const { toast } = useToast();
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
   const [expenseAccounts, setExpenseAccounts] = useState([]);
@@ -20,8 +26,8 @@ export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, 
   useEffect(() => {
     if (!request) return;
     Promise.all([
-      base44.entities.TreasuryAccount.filter({ is_active: true }),
-      base44.entities.Account.filter({ account_type: "expense", is_active: true }),
+      erp.entities.TreasuryAccount.filter({ is_active: true }),
+      erp.entities.Account.filter({ account_type: "expense", is_active: true }),
     ]).then(([t, a]) => {
       setTreasuryAccounts(t);
       setExpenseAccounts(a);
@@ -33,7 +39,7 @@ export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, 
     const treasuryAccount = treasuryAccounts.find(a => a.id === treasuryId);
     const expenseAccount = expenseAccounts.find(a => a.id === expenseId);
     if (!treasuryAccount || !expenseAccount) {
-      toast({ title: "Select both the paying account and the expense account", variant: "destructive" });
+      toast({ title: ui("Select both the paying account and the expense account"), variant: "destructive" });
       return;
     }
     setPaying(true);
@@ -42,11 +48,11 @@ export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, 
         request, treasuryAccount, expenseAccount,
         userId: user?.id || "", userName: user?.full_name || "",
       });
-      toast({ title: "Expense paid", description: "Treasury, ledger and budget updated" });
+      toast({ title: ui("Expense paid"), description: ui("Treasury, ledger and budget updated") });
       onOpenChange(false);
       onPaid();
     } catch (e) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      toast({ title: ui("Error"), description: e.message, variant: "destructive" });
     }
     setPaying(false);
   }
@@ -54,26 +60,26 @@ export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, 
   return (
     <Dialog open={!!request} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Pay {request?.request_number}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{ui("Pay ")}{request?.request_number}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="bg-slate-50 rounded-lg p-3">
             <p className="font-medium text-slate-900">{request?.title}</p>
             <p className="text-xl font-bold text-slate-900 mt-1">{formatXAF(request?.amount)}</p>
-            <p className="text-xs text-slate-500">{request?.department_name || "No department"} · requested by {request?.requester_name || "—"}</p>
+            <p className="text-xs text-slate-500">{request?.department_name || ui("No department")}{ui(" · requested by ")}{request?.requester_name || "—"}</p>
           </div>
           <div>
-            <Label>Pay From *</Label>
+            <Label>{ui("Pay From *")}</Label>
             <Select value={treasuryId} onValueChange={setTreasuryId}>
-              <SelectTrigger><SelectValue placeholder="Select treasury account" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={ui("Select treasury account")} /></SelectTrigger>
               <SelectContent>{treasuryAccounts.map(a => (
                 <SelectItem key={a.id} value={a.id}>{a.name} — {formatXAF(a.balance)}</SelectItem>
               ))}</SelectContent>
             </Select>
           </div>
           <div>
-            <Label>Expense Account *</Label>
+            <Label>{ui("Expense Account *")}</Label>
             <Select value={expenseId} onValueChange={setExpenseId}>
-              <SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={ui("Select expense account")} /></SelectTrigger>
               <SelectContent>{expenseAccounts.map(a => (
                 <SelectItem key={a.id} value={a.id}>{a.account_number} — {a.name}</SelectItem>
               ))}</SelectContent>
@@ -81,8 +87,8 @@ export default function PayExpenseDialog({ request, onOpenChange, onPaid, user, 
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handlePay} disabled={paying}>{paying ? "Paying…" : "Confirm Payment"}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{ui("Cancel")}</Button>
+          <Button onClick={handlePay} disabled={paying}>{paying ? ui("Paying…") : ui("Confirm Payment")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

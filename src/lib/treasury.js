@@ -1,101 +1,17 @@
-// Treasury & petty cash operations — every movement posts a balanced journal.
-import { base44 } from "@/api/base44Client";
-import { postJournal, resolveRuleAccount, round2 } from "@/lib/posting";
-import { getCashClearingAccount } from "@/lib/cash-sales";
+// Cash movements are saved by the checked server in one transaction.
+import { erp } from '@/api/erpClient';
+const cashAction = async body => (await erp.functions.invoke('fieldOps', body)).data;
 
-const txNumber = () => `TRX-${Date.now().toString(36).toUpperCase()}`;
-
-// Petty-cash / operating expense paid from a treasury account:
-// Dr expense account, Cr treasury GL account.
-export async function recordExpense({
-  treasuryAccount, expenseAccount, amount, date, description, reference = "", userId = "",
-  category = "", payee = "", department_id = "", department_name = "",
-  source = "direct", source_document_id = "", source_document_number = "",
-}) {
-  amount = round2(amount);
-  if (amount <= 0) throw new Error("Amount must be greater than zero");
-  if (amount > round2(treasuryAccount.balance)) throw new Error(`Insufficient funds in ${treasuryAccount.name} (${treasuryAccount.balance} XAF available)`);
-
-  const tx = await base44.entities.TreasuryTransaction.create({
-    transaction_number: txNumber(),
-    treasury_account_id: treasuryAccount.id, treasury_account_name: treasuryAccount.name,
-    transaction_type: "expense",
-    expense_account_id: expenseAccount.id, expense_account_number: expenseAccount.account_number, expense_account_name: expenseAccount.name,
-    category, payee, department_id, department_name,
-    source, source_document_id, source_document_number,
-    amount, transaction_date: date, description, reference, created_by: userId,
-  });
-
-  const journal = await postJournal({
-    entryDate: date,
-    description: `${description} (paid from ${treasuryAccount.name})`,
-    sourceModule: "treasury", sourceDocumentType: "TreasuryTransaction", sourceDocumentId: tx.id,
-    userId,
-    lines: [
-      { account_id: expenseAccount.id, account_number: expenseAccount.account_number, account_name: expenseAccount.name, debit: amount, credit: 0, description },
-      { account_id: treasuryAccount.gl_account_id, account_number: treasuryAccount.gl_account_number, account_name: treasuryAccount.gl_account_name, debit: 0, credit: amount, description: `Paid from ${treasuryAccount.name}` },
-    ],
-  });
-  await base44.entities.TreasuryTransaction.update(tx.id, { journal_id: journal.id });
-  await base44.entities.TreasuryAccount.update(treasuryAccount.id, { balance: round2(treasuryAccount.balance - amount) });
-
-  await base44.entities.AuditLog.create({
-    action: "treasury_expense", module: "treasury", entity_type: "TreasuryTransaction", entity_id: tx.id,
-    user_id: userId, description: `Expense ${amount} XAF from ${treasuryAccount.name}: ${description}`,
-  });
-  return tx;
+export async function recordExpense({ treasuryAccount, expenseAccount, amount, date, description, reference = '', category = 'other', payee = '', department_id, source_document_id, source = 'direct', requestKey = crypto.randomUUID() }) {
+  const result = await cashAction({ action: source === 'request' ? 'cashierPayExpense' : 'cashierPettyExpense', requestKey, accountId: treasuryAccount?.id, expenseAccountId: expenseAccount?.id, amount, date, description, reference, category, payee, departmentId: department_id, expenseId: source_document_id });
+  return result.transaction;
 }
 
-// Move funds between treasury accounts (incl. petty-cash replenishment):
-// Dr destination GL, Cr source GL.
-export async function transferFunds({ from, to, amount, date, description, reference = "", userId = "" }) {
-  amount = round2(amount);
-  if (amount <= 0) throw new Error("Amount must be greater than zero");
-  if (from.id === to.id) throw new Error("Source and destination must differ");
-  if (amount > round2(from.balance)) throw new Error(`Insufficient funds in ${from.name} (${from.balance} XAF available)`);
-
-  const outTx = await base44.entities.TreasuryTransaction.create({
-    transaction_number: txNumber(),
-    treasury_account_id: from.id, treasury_account_name: from.name,
-    transaction_type: "transfer_out",
-    counterparty_account_id: to.id, counterparty_account_name: to.name,
-    amount, transaction_date: date, description, reference, created_by: userId,
-  });
-  await base44.entities.TreasuryTransaction.create({
-    transaction_number: txNumber(),
-    treasury_account_id: to.id, treasury_account_name: to.name,
-    transaction_type: "transfer_in",
-    counterparty_account_id: from.id, counterparty_account_name: from.name,
-    amount, transaction_date: date, description, reference, created_by: userId,
-  });
-
-  if (from.gl_account_id !== to.gl_account_id) {
-    const journal = await postJournal({
-      entryDate: date,
-      description: `Funds transfer: ${from.name} → ${to.name}${description ? ` — ${description}` : ""}`,
-      sourceModule: "treasury", sourceDocumentType: "TreasuryTransaction", sourceDocumentId: outTx.id,
-      userId,
-      lines: [
-        { account_id: to.gl_account_id, account_number: to.gl_account_number, account_name: to.gl_account_name, debit: amount, credit: 0, description: `Transfer in from ${from.name}` },
-        { account_id: from.gl_account_id, account_number: from.gl_account_number, account_name: from.gl_account_name, debit: 0, credit: amount, description: `Transfer out to ${to.name}` },
-      ],
-    });
-    await base44.entities.TreasuryTransaction.update(outTx.id, { journal_id: journal.id });
-  }
-
-  await base44.entities.TreasuryAccount.update(from.id, { balance: round2(from.balance - amount) });
-  await base44.entities.TreasuryAccount.update(to.id, { balance: round2(to.balance + amount) });
-
-  await base44.entities.AuditLog.create({
-    action: "treasury_transfer", module: "treasury", entity_type: "TreasuryTransaction", entity_id: outTx.id,
-    user_id: userId, description: `Transferred ${amount} XAF from ${from.name} to ${to.name}`,
-  });
-  return outTx;
+export async function transferFunds({ from, to, amount, date, description, reference = '', requestKey = crypto.randomUUID() }) {
+  const result = await cashAction({ action: 'cashierTransfer', requestKey, accountId: from?.id, toAccountId: to?.id, amount, date, description, reference });
+  return result.transaction;
 }
 
-// Customer receipt collected at the treasury: the operator chooses the account
-// the money lands in. Credit invoices clear receivables; cash sales that were
-// still held in the cash clearing account are cleared from there.
 export async function receiveInvoicePayment({ invoice, treasuryAccount, amount, date, reference = "", requestKey }) {
   const { confirmCustomerReceipt } = await import('@/lib/customer-receipts');
   return confirmCustomerReceipt({ customerId: invoice.customer_id, treasuryAccountId: treasuryAccount?.id, amount, date, reference, requestKey: requestKey || crypto.randomUUID(), allocations: [{ invoice_id: invoice.id, amount }] });

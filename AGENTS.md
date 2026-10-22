@@ -1,34 +1,21 @@
-# AGENTS.md
+# SOEICAM ERP project instructions
 
-## Project Context
+This is a Next.js App Router application, with Supabase PostgreSQL/Storage and the configured Supabase or Clerk sign-in provider. Start with README.md and HOSTINGER_SETUP.md.
 
-This is a Base44 app repository. Treat it as user-owned application code, keep changes focused on the user's request, and preserve existing project conventions.
+## Source and commands
 
-Start with `README.md` for local setup, environment variables, and publish workflow.
+- `src/app`: pages, layouts and authenticated server API routes; `src/proxy.js`: authentication proxy.
+- `src/server`: entity access, transactions and checked domain operations.
+- `src/components`, `src/views`, `src/lib`: application interfaces and shared logic.
+- `migration/entities`: historical schema inputs; `src/server/generated`: runtime metadata.
+- `supabase/migrations`: reviewed schema changes; `tests`: isolated regression fixtures.
+- Node.js 22+ is required. Use Node.js 24 on Hostinger.
+- `npm ci`, `npm run dev`, `npm run lint`, `npm test`, `npm run build`.
+- `npm run start:local` serves localhost:5174; `npm start` serves the production host/PORT.
+- Deploy `main` with the Next.js preset and output `.next`.
 
-## Base44 References
+## Change boundaries
 
-- CLI overview: https://docs.base44.com/developers/references/cli/get-started/overview.md
-- Agent skills: https://docs.base44.com/developers/backend/overview/skills.md
+Keep changes focused and preserve employee attribution, role boundaries, approval checks, retry protection and accounting/stock history. Do not restore Vite build files, Vite environment variables or Base44 runtime dependencies. Historical import utilities must remain manual.
 
-If your agent supports Agent Skills, install or update Base44 skills before Base44-specific work:
-
-```bash
-npx skills add base44/skills
-```
-
-## Key Files
-
-- `src/`: frontend application source.
-- `src/api/base44Client.js`: frontend Base44 SDK client.
-- `vite.config.js`: Vite config and Base44 Vite plugin setup.
-- `.env.local`: local-only environment values; never commit secrets.
-
-## Working Notes
-
-- Use `base44 dev` as the default local development command when you need the local Base44 backend. It can run the backend and frontend together.
-- When docs or code mention the frontend being started automatically, that usually means the Base44 project config includes `site.serveCommand`, for example `"serveCommand": "npm run dev"` in `base44/config.jsonc`.
-- Use `npm run dev` only for frontend-only work against the hosted Base44 backend.
-- Prefer the existing Base44 CLI workflow over adding new npm scripts for Base44-specific tasks.
-- Reuse the existing SDK client and Vite plugin patterns before adding new Base44 integration paths.
-- Run the relevant checks from `package.json` before finishing code changes.
+Never commit actual environment files, credentials, company record exports, backups or logs. Do not reset or migrate live company data as part of a source update or build. Run appropriate isolated checks and report any build, database or deployment verification that could not be completed.

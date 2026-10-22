@@ -1,0 +1,12 @@
+{
+  "reviewed_at": "2026-10-18",
+  "matches": [
+    { "source_id": "stirred-nature-500g", "existing_id": "6ad26220befea8729a2983c2", "reason": "Same YOLA brand, brasse style, Nature flavour and 500 g size in existing name." },
+    { "source_id": "stirred-unsweetened-500g", "existing_id": "db5ce733-8251-4fce-98b4-99dcfae7c2b0", "reason": "Same YOLA Non Sucre 500 g variant; existing photo is the stirred non-sweetened packshot." },
+    { "source_id": "stirred-vanilla-500g", "existing_id": "e0f6999a-8512-4593-9f11-d9c3692831a4", "reason": "Same YOLA Vanille 500 g variant; storefront has one corresponding stirred variant." },
+    { "source_id": "stirred-nature-1kg", "existing_id": "6a5167331d12cb92ecfee060", "reason": "Same YOLA Nature 1 kg variant; storefront has one corresponding stirred variant." },
+    { "source_id": "stirred-unsweetened-1kg", "existing_id": "3eb16e80-072f-4b46-a96a-0aa809d89a30", "reason": "Same YOLA Non Sucre 1 kg variant; storefront has one corresponding stirred variant." },
+    { "source_id": "stirred-vanilla-1kg", "existing_id": "821561eb-6462-4688-9db4-f3835e8ffad9", "reason": "Same YOLA Vanille 1 kg variant; storefront has one corresponding stirred variant." },
+    { "source_id": "stirred-strawberry-500g", "existing_id": "6a5167331d12cb92ecfee061", "reason": "Visually verified identical Fraise stirred bucket photo in storefront PNG and existing brasse-fraise-500g.jpg. Both photos print 500 ml although storefront metadata says 500 g. The legacy ERP name/units are preserved; no mass/volume conversion or existing-record change is made." }
+  ]
+}

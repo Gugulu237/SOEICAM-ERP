@@ -1,3 +1,7 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -6,6 +10,8 @@ import { round2 } from "@/lib/posting";
 
 // docs: open invoices/bills [{id, number, date, due_date, balance}]
 export default function AllocationEditor({ docs, allocations, onChange, amount }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const allocated = round2(Object.values(allocations).reduce((s, v) => s + (Number(v) || 0), 0));
   const unallocated = round2((Number(amount) || 0) - allocated);
 
@@ -21,21 +27,21 @@ export default function AllocationEditor({ docs, allocations, onChange, amount }
     onChange(next);
   }
 
-  if (docs.length === 0) return <p className="text-sm text-slate-400 py-2">No open documents — payment will be recorded on account.</p>;
+  if (docs.length === 0) return <p className="text-sm text-slate-400 py-2">{ui("No open documents — payment will be recorded on account.")}</p>;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-medium text-slate-700">Allocate to open documents</p>
-        <Button type="button" variant="outline" size="sm" onClick={autoAllocate}>Auto-allocate (oldest first)</Button>
+        <p className="text-sm font-medium text-slate-700">{ui("Allocate to open documents")}</p>
+        <Button type="button" variant="outline" size="sm" onClick={autoAllocate}>{ui("Auto-allocate (oldest first)")}</Button>
       </div>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-slate-500">
-            <th className="py-1">Document</th>
-            <th className="py-1">Due</th>
-            <th className="py-1 text-right">Balance</th>
-            <th className="py-1 text-right w-32">Allocate</th>
+            <th className="py-1">{ui("Document")}</th>
+            <th className="py-1">{ui("Due")}</th>
+            <th className="py-1 text-right">{ui("Balance")}</th>
+            <th className="py-1 text-right w-32">{ui("Allocate")}</th>
           </tr>
         </thead>
         <tbody>
@@ -53,8 +59,7 @@ export default function AllocationEditor({ docs, allocations, onChange, amount }
           ))}
         </tbody>
       </table>
-      <div className={`text-xs mt-2 font-medium ${unallocated < 0 ? "text-red-600" : "text-slate-500"}`}>
-        Allocated: {formatXAF(allocated)} · Unallocated (on account): {formatXAF(unallocated)}
+      <div className={`text-xs mt-2 font-medium ${unallocated < 0 ? "text-red-600" : "text-slate-500"}`}>{ui("Allocated: ")}{formatXAF(allocated)}{ui(" · Unallocated (on account): ")}{formatXAF(unallocated)}
       </div>
     </div>
   );

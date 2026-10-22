@@ -1,77 +1,68 @@
-# Base44 Project
+# SOEICAM ERP
 
-Use this repository to run and edit the app locally, then publish changes back through Base44.
+SOEICAM is a Next.js application for yogurt manufacturing, inventory, purchasing, sales, employee operations, payroll and accounting. The application uses Next.js App Router and authenticated server API routes with Supabase PostgreSQL and Storage. Sign-in supports the configured Supabase or Clerk provider.
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+## Requirements
 
-## Prerequisites
+- Node.js 22 or newer; use Node.js 24 on Hostinger.
+- The existing Supabase database and storage configuration.
+- Credentials for the company's configured sign-in provider.
 
-1. Clone the repository using the project's Git URL.
-2. Navigate to the project directory.
-3. Install dependencies: `npm install`.
-4. Install the Base44 CLI: `npm install -g base44@latest`.
+## Local development
 
-See the [Base44 CLI docs](https://docs.base44.com/developers/references/cli/get-started/overview) if you want to run Base44 commands directly.
+Copy `.env.example` to `.env.local` and enter the existing connection settings. Install the locked dependencies and start the development server:
 
-## Run Locally
+```powershell
+npm.cmd ci
+npm.cmd run dev
+```
 
-Run the full local development environment from the project root:
+Open http://localhost:5174. For a local production build:
+
+```powershell
+npm.cmd run build
+npm.cmd run start:local
+```
+
+## Production and Hostinger
+
+Deploy the current `main` branch as a **Next.js Node.js Web App**. Use Node.js 24, build script `build` (`npm run build`) and output directory `.next`. The Next.js preset manages the server entry and standalone startup. Set the existing database and sign-in settings in Hostinger's Environment Variables, including the actual HTTPS ERP URL.
 
 ```bash
-base44 dev
+npm ci
+npm run build
+npm start
 ```
 
-`base44 dev` starts the local Base44 development backend and, when this app is configured for it, also starts the frontend dev server for you. Use the frontend URL printed by the command.
+Production startup binds to `0.0.0.0` and uses the platform's `PORT` (default 3000). The local command retains localhost:5174. [HOSTINGER_SETUP.md](HOSTINGER_SETUP.md) contains the environment and deployment steps.
 
-For example, when the Base44 project config includes a `serveCommand`, `base44 dev` can launch the frontend too:
+The active build has no Vite entry point, Vite dependencies, Vite environment variables or hosted Base44 backend. Runtime code lives in `src/app`, `src/server`, `src/components`, `src/views` and `src/lib`.
 
-```json5
-{
-  "site": {
-    "serveCommand": "npm run dev"
-  }
-}
-```
+## Application areas
 
-In a Base44 project this lives in `base44/config.jsonc`.
+- Inventory: finished products, ingredients, packaging, assemblies, receiving, stock movements and adjustments.
+- Manufacturing: bucket-based recipes, fermentation, additives, flavouring, sticker/material availability, actual packaged output and batch/expiry tracking.
+- Employees: role hierarchy, employee accounts, responsibilities, shared duties, reports and Payroll.
+- Payroll: current employee details, GM payslip review and approval, Cashier settlement and employee payables.
+- Purchasing and suppliers: material catalogues, requests, approved receipts, supplier bills and settlements.
+- Sales and customers: customer registration, employee attribution, orders, invoices, receipts, deliveries and verified expired-product exchanges.
+- Accounting: controlled journals, ledger, financial statements, treasury and report exports.
 
-## Run Only The Frontend
+Server routes enforce role, employee scope and approval rules independently of navigation. Financial and stock workflows use transactional writes and retry references. Deploying source does not reset records or run database maintenance.
 
-If you only want to work on the frontend against the hosted Base44 backend, run:
+## Checks
 
 ```bash
-npm run dev
+npm run verify:deployment
+npm run lint
+npm test
+npm run build
 ```
 
-Open the local URL printed by Vite.
+The deployment source check runs before every production build and rejects Vite dependencies/configuration, missing Next.js entry points and a mismatched dependency lockfile. A successful build still needs production login and database checks. `/api/health` reports configuration readiness, not database connectivity.
 
-## Use The Hosted Backend
+## Database setup and historical imports
 
-For frontend-only development, create or update `.env.local` in the project root:
+[NEXTJS_SETUP.md](NEXTJS_SETUP.md) describes the database, authentication and controlled import/verification utilities. Original entity definitions are retained as schema inputs in `migration/entities`; they are data definitions, not an application backend. Generated metadata lives in `src/server/generated` and SQL migrations in `supabase/migrations`.
 
-```bash
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=https://your-app.base44.app
-```
-
-`VITE_BASE44_APP_ID` identifies the Base44 app.
-
-`VITE_BASE44_APP_BASE_URL` tells the Base44 Vite plugin where to send local `/api` requests. Point it at your deployed Base44 app URL when you want the local frontend to use the hosted backend.
-
-When you use `base44 dev`, the command injects the local Base44 values for you, so `.env.local` is mainly needed for frontend-only workflows.
-
-## Publish Your Changes
-
-After pushing your changes to git, open the Base44 dashboard and publish the app:
-
-```bash
-base44 dashboard open
-```
-
-## Docs & Support
-
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Base44 CLI command reference: [https://docs.base44.com/developers/references/cli/commands/introduction](https://docs.base44.com/developers/references/cli/commands/introduction)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+Historical export/import utilities are manual maintenance tools. They are never run by installation, build or startup. Use the existing configured database to retain company records. Keep `.env.local`, exports, backups and logs out of Git.

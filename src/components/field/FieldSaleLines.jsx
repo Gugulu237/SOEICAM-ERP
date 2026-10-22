@@ -1,90 +1,44 @@
-import React from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2 } from "lucide-react";
-import { formatXAF } from "@/lib/formatters";
 
-// Only products the Commercial actually holds in custody can be sold.
-export default function FieldSaleLines({ lines, onChange, stock }) {
-  const setLine = (index, patch) =>
-    onChange(lines.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import React from 'react';
+import { Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import ProductThumb from '@/components/shared/ProductThumb';
+import { formatXAF } from '@/lib/formatters';
+import { roundMoney, roundQuantity } from '@/lib/field-pos';
 
-  const addLine = () => {
-    const first = stock.find((s) => !lines.some((l) => l.product_id === s.product_id));
-    onChange([...lines, { product_id: first?.product_id || "", quantity: 1, unit_price: first?.selling_price || 0 }]);
-  };
+export default function FieldSaleLines({ lines, onChange, stock, disabled = false, isAdmin = false }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label>Products delivered</Label>
-        <Button type="button" variant="outline" size="sm" onClick={addLine} disabled={!stock.length}>
-          <Plus className="w-3.5 h-3.5 mr-1" /> Add product
-        </Button>
-      </div>
-
-      {!stock.length && (
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          You hold no stock in custody yet. Ask the warehouse to issue goods to you before recording a sale.
-        </p>
-      )}
-
-      {lines.map((line, index) => {
-        const held = stock.find((s) => s.product_id === line.product_id);
-        const lineTotal = (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
-        return (
-          <div key={index} className="rounded-lg border border-slate-200 p-3 space-y-2">
-            <div className="flex gap-2 items-start">
-              <Select value={line.product_id} onValueChange={(v) => {
-                const pick = stock.find((s) => s.product_id === v);
-                setLine(index, { product_id: v, unit_price: pick?.selling_price || 0 });
-              }}>
-                <SelectTrigger className="flex-1"><SelectValue placeholder="Select product" /></SelectTrigger>
-                <SelectContent>
-                  {stock.map((s) => (
-                    <SelectItem key={s.product_id} value={s.product_id}>
-                      {s.product_name} — {s.quantity} held
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="ghost" size="icon" onClick={() => onChange(lines.filter((_, i) => i !== index))}>
-                <Trash2 className="w-4 h-4 text-red-500" />
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">Quantity</Label>
-                <Input
-                  type="number"
-                  step="0.001"
-                  value={line.quantity}
-                  onChange={(e) => setLine(index, { quantity: e.target.value })}
-                />
-                {held && Number(line.quantity) > held.quantity && (
-                  <p className="text-xs text-red-600 mt-1">Only {held.quantity} in custody</p>
-                )}
-              </div>
-              <div>
-                <Label className="text-xs">Unit price</Label>
-                <Input
-                  type="number"
-                  value={line.unit_price}
-                  onChange={(e) => setLine(index, { unit_price: e.target.value })}
-                />
-                {held && Number(line.unit_price) < held.selling_price && (
-                  <p className="text-xs text-amber-600 mt-1">Below the authorized price of {formatXAF(held.selling_price)}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="text-right text-sm font-medium text-slate-700">{formatXAF(lineTotal)}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  const change = (index, patch) => onChange(lines.map((line, i) => i === index ? { ...line, ...patch } : line));
+  if (!lines.length) return <div className="rounded-xl border border-dashed border-slate-200 p-7 text-center"><ShoppingBag className="mx-auto mb-2 h-8 w-8 text-slate-300" /><p className="text-sm font-medium text-slate-600">{ui("Your sale starts here")}</p><p className="mt-1 text-xs text-slate-500">{ui("Tap a product photo to add it.")}</p></div>;
+  return <div className="divide-y divide-slate-100">
+    {lines.map((line, index) => {
+      const product = stock.find((p) => p.product_id === line.product_id);
+      const name = product?.name || line.product_name || ui("Unavailable product");
+      const quantity = Number(line.quantity) || 0;
+      const available = product?.quantity || 0;
+      const unit = product?.unit_of_measure || product?.storage_unit || ui("units");
+      return <div key={`${line.product_id}-${index}`} className="py-4 first:pt-0 last:pb-0">
+        <div className="flex items-start gap-3"><ProductThumb product={product} name={name} size={54} />
+          <div className="min-w-0 flex-1"><p className="text-sm font-semibold leading-snug text-slate-900">{name}</p><p className="mt-1 text-xs text-slate-500">{disabled ? `${quantity} ${unit} supplied` : ui("{0} {1} on this delivery run", available, unit)}</p></div>
+          {!disabled && <button type="button" aria-label={ui("Remove {0}", name)} onClick={() => onChange(lines.filter((_, i) => i !== index))} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 size={16} /></button>}
+        </div>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+          <div><label htmlFor={`qty-${index}`} className="mb-1 block text-[11px] text-slate-500">{ui("Exact quantity supplied (")}{unit})</label><div className="flex items-center rounded-lg border border-slate-200">
+            <button type="button" aria-label={ui("Decrease {0}", name)} disabled={disabled} onClick={() => quantity <= 1 ? onChange(lines.filter((_, i) => i !== index)) : change(index, { quantity: roundQuantity(quantity - 1) })} className="flex h-11 w-10 items-center justify-center disabled:opacity-30"><Minus size={16} /></button>
+            <input id={`qty-${index}`} type="number" inputMode="decimal" step="0.001" min="0.001" max={available} disabled={disabled} value={line.quantity} onChange={(e) => change(index, { quantity: e.target.value })} className="h-11 w-16 min-w-0 border-x border-slate-200 bg-transparent px-1 text-center text-sm font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
+            <button type="button" aria-label={ui("Increase {0}", name)} disabled={disabled || quantity >= available} onClick={() => change(index, { quantity: Math.min(available, roundQuantity(quantity + 1)) })} className="flex h-11 w-10 items-center justify-center disabled:opacity-30"><Plus size={16} /></button>
+          </div></div>
+          <div className="w-28"><label htmlFor={`price-${index}`} className="mb-1 block text-[11px] text-slate-500">{ui("Unit price · XAF")}</label><Input id={`price-${index}`} type="number" inputMode="decimal" step="0.01" min={isAdmin ? 0.01 : product?.selling_price || 0.01} value={line.unit_price} disabled={disabled} onChange={(e) => change(index, { unit_price: e.target.value })} className="h-11 text-right" /></div>
+        </div>
+        {!disabled && quantity > available && <p role="alert" className="mt-2 text-xs text-red-600">{ui("Only ")}{available}{ui(" available. Reduce the quantity.")}</p>}
+        {!disabled && quantity > 0 && quantity <= available && <p className="mt-2 text-xs font-medium text-emerald-700">{roundQuantity(available - quantity)} {unit}{ui(" remain on this run after this supply.")}</p>}
+        {!disabled && !isAdmin && Number(line.unit_price) < (product?.selling_price || 0) && <p className="mt-2 text-xs text-red-600">{ui("Minimum price: ")}{formatXAF(product.selling_price)}</p>}
+        <p className="mt-2 text-right text-sm font-semibold text-slate-800">{formatXAF(roundMoney(roundQuantity(line.quantity) * roundMoney(line.unit_price)))}</p>
+      </div>;
+    })}
+  </div>;
 }

@@ -7,7 +7,7 @@
 //
 // The ledger entry is the deposit; the cash collection record is the proof of
 // operation that ties the money to a named commercial, a delivery and a receipt.
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { confirmCustomerReceipt } from "@/lib/customer-receipts";
 
 const isCashSale = (invoice, order) =>
@@ -15,14 +15,14 @@ const isCashSale = (invoice, order) =>
 
 // Cash sales delivered but not yet handed over: the invoice still carries a balance.
 export async function loadCashToCollect() {
-  const page = await base44.entities.Invoice.filter(
+  const page = await erp.entities.Invoice.filter(
     { balance: { $gt: 0 }, status: { $ne: "cancelled" } },
-    { sort: "-invoice_date", limit: 100 },
+    { sort: "-invoice_date", limit: 100, include_total: false },
   );
   const invoices = page.items;
   const orderIds = [...new Set(invoices.map(i => i.sales_order_id).filter(Boolean))];
   const orders = orderIds.length
-    ? (await base44.entities.SalesOrder.filter({ id: { $in: orderIds } }, { limit: 200 })).items
+    ? (await erp.entities.SalesOrder.filter({ id: { $in: orderIds } }, { limit: 200, include_total: false })).items
     : [];
   const byId = Object.fromEntries(orders.map(o => [o.id, o]));
   return invoices
@@ -38,7 +38,7 @@ export async function loadOutstandingCommercials(rows = []) {
     const n = order?.salesperson_name;
     if (n && !names.has(n)) names.set(n, { id: order.salesperson_id || n, name: n });
   });
-  const page = await base44.entities.Employee.filter({ role: "commercial", status: "active" }, { limit: 100 });
+  const page = await erp.entities.Employee.filter({ role: "commercial", status: "active" }, { limit: 100, include_total: false });
   (page.items || []).forEach(e => {
     if (!names.has(e.full_name)) names.set(e.full_name, { id: e.id, name: e.full_name });
   });
@@ -46,7 +46,7 @@ export async function loadOutstandingCommercials(rows = []) {
 }
 
 export async function loadCashReceipts(limit = 50) {
-  const page = await base44.entities.CashCollection.filter({ status: "received" }, { sort: "-received_at", limit });
+  const page = await erp.entities.CashCollection.filter({ status: "received" }, { sort: "-received_at", limit, include_total: false });
   return page.items;
 }
 

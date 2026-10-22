@@ -1,24 +1,12 @@
 // Account balances are derived from the posted ledger — never from a stored
 // number. Draft journals never affect a balance, and the general ledger stays
 // the single source of truth.
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { round2 } from "@/lib/posting";
 
 export async function loadAccountBalances() {
-  const res = await base44.entities.JournalLine.aggregate({
-    query: { status: { $ne: "draft" } },
-    groupBy: "account_id",
-    sum: ["debit", "credit"],
-  });
-  const map = {};
-  (res.rows || []).forEach((r) => {
-    map[r.account_id] = {
-      debit: round2(r.sum_debit),
-      credit: round2(r.sum_credit),
-      entries: r.count || 0,
-    };
-  });
-  return map;
+  const { data } = await erp.functions.invoke('fieldOps', { action: 'accountPosition' });
+  return data.balances;
 }
 
 export function ledgerTotals(balances) {

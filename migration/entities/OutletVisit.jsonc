@@ -1,0 +1,112 @@
+{
+  "name": "OutletVisit",
+  "type": "object",
+  "properties": {
+    "request_key": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "location_id": {
+      "type": "string"
+    },
+    "location_name": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "recorded_by": {
+      "type": "string"
+    },
+    "recorded_at": {
+      "type": "string"
+    },
+    "visit_date": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "reviewed_by": {
+      "type": "string"
+    },
+    "reviewed_at": {
+      "type": "string"
+    },
+    "review_notes": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "submitted",
+        "reviewed"
+      ],
+      "default": "submitted"
+    },
+    "has_concerns": {
+      "type": "boolean"
+    },
+    "proof_file_uris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "availability": {
+            "type": "string"
+          },
+          "issue": {
+            "type": "string"
+          },
+          "expiry_date": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "observed_price": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "request_key",
+    "employee_id",
+    "location_id",
+    "visit_date",
+    "recorded_at",
+    "status",
+    "lines"
+  ],
+  "rls": {
+    "create": false,
+    "read": false,
+    "update": false,
+    "delete": false
+  }
+}

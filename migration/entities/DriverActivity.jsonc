@@ -1,0 +1,72 @@
+{
+  "name": "DriverActivity",
+  "type": "object",
+  "properties": {
+    "request_key": {
+      "type": "string"
+    },
+    "dispatch_id": {
+      "type": "string"
+    },
+    "dispatch_number": {
+      "type": "string"
+    },
+    "driver_id": {
+      "type": "string"
+    },
+    "driver_name": {
+      "type": "string"
+    },
+    "recorded_by": {
+      "type": "string"
+    },
+    "recorded_at": {
+      "type": "string"
+    },
+    "order_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "receiver": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "receipt_reference": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "trip_started",
+        "trip_returned",
+        "delivery_completed",
+        "delivery_partial",
+        "delivery_failed",
+        "incident"
+      ]
+    },
+    "proof_file_uris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "request_key",
+    "dispatch_id",
+    "driver_id",
+    "recorded_at",
+    "type"
+  ],
+  "rls": {
+    "create": false,
+    "read": false,
+    "update": false,
+    "delete": false
+  }
+}

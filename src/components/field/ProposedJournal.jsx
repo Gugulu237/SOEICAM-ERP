@@ -1,3 +1,10 @@
+
+/* localized-messages */
+import { sourceMessage, uiMessage } from '@/lib/i18n';
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useState } from "react";
 import { Loader2, Scale } from "lucide-react";
 import { invokeFieldOps } from "@/lib/field-ops";
@@ -5,6 +12,8 @@ import { formatXAF } from "@/lib/formatters";
 
 // The exact journal this sale will post, read from the same policy the server uses.
 export default function ProposedJournal({ saleId }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const [lines, setLines] = useState(null);
   const [posted, setPosted] = useState(false);
   const [error, setError] = useState("");
@@ -19,16 +28,15 @@ export default function ProposedJournal({ saleId }) {
         setLines(res.data?.lines || []);
         setPosted(!!res.data?.posts);
       })
-      .catch((e) => alive && setError(e.message || "The proposed journal could not be prepared"));
+      .catch((e) => alive && setError(e.message || sourceMessage("The proposed journal could not be prepared")));
     return () => { alive = false; };
   }, [saleId]);
 
-  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (error) return <p className="text-sm text-red-600">{uiMessage(error)}</p>;
   if (!lines) {
     return (
       <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
-        <Loader2 className="w-4 h-4 animate-spin" /> Preparing the proposed journal…
-      </div>
+        <Loader2 className="w-4 h-4 animate-spin" />{ui(" Preparing the proposed journal…")}</div>
     );
   }
 
@@ -40,17 +48,17 @@ export default function ProposedJournal({ saleId }) {
       <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 border-b border-slate-200">
         <Scale className="w-4 h-4 text-slate-500" />
         <span className="text-sm font-semibold text-slate-800">
-          {posted ? "Posted journal" : "Proposed journal"}
+          {posted ? ui("Posted journal") : ui("Proposed journal")}
         </span>
-        {debit === credit && <span className="ml-auto text-xs text-emerald-600">balanced</span>}
+        {debit === credit && <span className="ml-auto text-xs text-emerald-600">{ui("balanced")}</span>}
       </div>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-xs uppercase text-slate-500 border-b border-slate-100">
-            <th className="text-left px-3 py-2 font-medium">Account</th>
-            <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Description</th>
-            <th className="text-right px-3 py-2 font-medium">Debit</th>
-            <th className="text-right px-3 py-2 font-medium">Credit</th>
+            <th className="text-left px-3 py-2 font-medium">{ui("Account")}</th>
+            <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">{ui("Description")}</th>
+            <th className="text-right px-3 py-2 font-medium">{ui("Debit")}</th>
+            <th className="text-right px-3 py-2 font-medium">{ui("Credit")}</th>
           </tr>
         </thead>
         <tbody>
@@ -68,7 +76,7 @@ export default function ProposedJournal({ saleId }) {
         </tbody>
         <tfoot>
           <tr className="bg-slate-50 font-semibold">
-            <td className="px-3 py-2" colSpan={2}>Total</td>
+            <td className="px-3 py-2" colSpan={2}>{ui("Total")}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatXAF(debit)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatXAF(credit)}</td>
           </tr>

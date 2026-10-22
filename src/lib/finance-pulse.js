@@ -1,12 +1,14 @@
+/* localized-metadata */
+import {ui} from './i18n.js';
 // Aggregates a quick financial health snapshot for a chosen period.
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 
 export const PERIODS = [
-  { key: "today", label: "Today" },
-  { key: "week", label: "This Week" },
-  { key: "month", label: "This Month" },
-  { key: "quarter", label: "This Quarter" },
-  { key: "year", label: "This Year" },
+  { key: "today", get label(){return ui("Today");} },
+  { key: "week", get label(){return ui("This Week");} },
+  { key: "month", get label(){return ui("This Month");} },
+  { key: "quarter", get label(){return ui("This Quarter");} },
+  { key: "year", get label(){return ui("This Year");} },
 ];
 
 const SPOILAGE_TYPES = ["damage", "expiry"];
@@ -43,11 +45,11 @@ export async function getFinancePulse(periodKey) {
   const { start, end } = periodRange(periodKey);
 
   const [accounts, invoices, purchases, treasuryTx, movements] = await Promise.all([
-    base44.entities.TreasuryAccount.filter({ is_active: true }),
-    base44.entities.Invoice.list("-invoice_date", 1000),
-    base44.entities.PurchaseOrder.list("-order_date", 1000),
-    base44.entities.TreasuryTransaction.list("-transaction_date", 1000),
-    base44.entities.StockMovement.list("-created_date", 1000),
+    erp.entities.TreasuryAccount.filter({ is_active: true }),
+    erp.entities.Invoice.list("-invoice_date", 1000),
+    erp.entities.PurchaseOrder.list("-order_date", 1000),
+    erp.entities.TreasuryTransaction.list("-transaction_date", 1000),
+    erp.entities.StockMovement.list("-created_date", 1000),
   ]);
 
   const periodInvoices = invoices.filter(i =>

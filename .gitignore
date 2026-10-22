@@ -28,5 +28,13 @@ dist-ssr
 *.sw?
 
 .env
-.vite
-base44/.app.jsonc
+# Local source-platform references are excluded from the Next.js repository.
+/base44/
+/outputs/
+/soeicam-update-backups/
+/soeicam-server-logs/
+
+.next/
+.data/
+exports/
+!.env.example

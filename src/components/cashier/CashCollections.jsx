@@ -1,3 +1,7 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useState } from "react";
 import { loadCashToCollect, loadCashReceipts, loadOutstandingCommercials } from "@/lib/cash-receipts";
 import { receiptUrl } from "@/lib/field-ops";
@@ -11,6 +15,8 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 // Cash the commercials collected on delivery, received at the till against their
 // physical receipts. The GM must approve before a receipt reaches the ledger.
 export default function CashCollections({ treasuryAccounts, canReceive, userId, userName, onDone }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const { toast } = useToast();
   const { role } = useCurrentUser();
   const [rows, setRows] = useState([]);
@@ -36,7 +42,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
     try {
       window.open(await receiptUrl(uri), "_blank");
     } catch (e) {
-      toast({ title: "Receipt unavailable", description: e.message, variant: "destructive" });
+      toast({ title: ui("Receipt unavailable"), description: e.message, variant: "destructive" });
     }
   }
 
@@ -45,19 +51,18 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
   return (
     <div className="mb-8">
       <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-        <HandCoins size={15} className="text-amber-600" /> Cash Sales Received from Commercials
-      </h3>
+        <HandCoins size={15} className="text-amber-600" />{ui(" Cash Sales Received from Commercials")}</h3>
 
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
-          <div className="text-xs text-slate-500">Cash awaiting receipt</div>
+          <div className="text-xs text-slate-500">{ui("Cash awaiting receipt")}</div>
           <div className="text-lg font-semibold tabular-nums">{formatXAF(toCollectTotal)}</div>
-          <div className="text-xs text-slate-400">{rows.length} delivered cash sale(s) not yet handed over</div>
+          <div className="text-xs text-slate-400">{rows.length}{ui(" delivered cash sale(s) not yet handed over")}</div>
         </div>
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
-          <div className="text-xs text-slate-500">Received today</div>
+          <div className="text-xs text-slate-500">{ui("Received today")}</div>
           <div className="text-lg font-semibold tabular-nums">{formatXAF(receivedTodayTotal)}</div>
-          <div className="text-xs text-slate-400">{receivedToday.length} cashier-confirmed receipt(s); ledger posting requires GM approval</div>
+          <div className="text-xs text-slate-400">{receivedToday.length}{ui(" cashier-confirmed receipt(s); ledger posting requires GM approval")}</div>
         </div>
       </div>
 
@@ -65,24 +70,24 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Invoice #</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Customer</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Commercial</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Delivery</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">Cash to Collect</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">Action</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Invoice #")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Customer")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Commercial")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Delivery")}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-600">{ui("Cash to Collect")}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-600">{ui("Action")}</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">No delivered cash sales waiting to be received</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">{ui("No delivered cash sales waiting to be received")}</td></tr>
             ) : rows.map(({ invoice, order }) => (
               <tr key={invoice.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium">{invoice.invoice_number}</td>
                 <td className="px-4 py-3">{invoice.customer_name}</td>
                 <td className="px-4 py-3">
-                  {order?.salesperson_name || order?.driver_name || <span className="text-slate-400">Not recorded</span>}
-                  {order?.driver_name && <div className="text-xs text-slate-400">Driver: {order.driver_name}</div>}
+                  {order?.salesperson_name || order?.driver_name || <span className="text-slate-400">{ui("Not recorded")}</span>}
+                  {order?.driver_name && <div className="text-xs text-slate-400">{ui("Driver: ")}{order.driver_name}</div>}
                 </td>
                 <td className="px-4 py-3">
                   {formatDate(order?.delivery_date || invoice.invoice_date)}
@@ -92,9 +97,8 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
                 <td className="px-4 py-3 text-right">
                   {canReceive && role === 'cashier' ? (
                     <Button size="sm" onClick={() => setReceiving({ invoice, order })}>
-                      <HandCoins size={14} className="mr-1" /> Receive cash
-                    </Button>
-                  ) : <span className="text-xs text-slate-400">View only</span>}
+                      <HandCoins size={14} className="mr-1" />{ui(" Receive cash")}</Button>
+                  ) : <span className="text-xs text-slate-400">{ui("View only")}</span>}
                 </td>
               </tr>
             ))}
@@ -102,27 +106,27 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
         </table>
       </div>
 
-      <h4 className="text-sm font-semibold text-slate-700 mb-2">Cash Receipts Record</h4>
+      <h4 className="text-sm font-semibold text-slate-700 mb-2">{ui("Cash Receipts Record")}</h4>
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Receipt #</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Date</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Commercial</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Invoice</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Physical receipt</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">Amount</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Received by</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">Proof</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Receipt #")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Date")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Commercial")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Invoice")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Physical receipt")}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-600">{ui("Amount")}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Received by")}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-600">{ui("Proof")}</th>
             </tr>
           </thead>
           <tbody>
             {receipts.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No cash received from commercials yet</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">{ui("No cash received from commercials yet")}</td></tr>
             ) : receipts.map(r => (
               <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium">{r.acknowledgement_reference || r.collection_number}<div className="text-xs text-muted-foreground">{r.journal_id ? 'Posted to ledger' : 'Awaiting GM approval'}</div></td>
+                <td className="px-4 py-3 font-medium">{r.acknowledgement_reference || r.collection_number}<div className="text-xs text-muted-foreground">{r.journal_id ? ui("Posted to ledger") : ui("Awaiting GM approval")}</div></td>
                 <td className="px-4 py-3">{formatDate(r.collection_date)}</td>
                 <td className="px-4 py-3">{r.commercial_name || "—"}</td>
                 <td className="px-4 py-3">{r.invoice_number || r.sale_number}</td>
@@ -132,9 +136,8 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
                 <td className="px-4 py-3 text-right">
                   {r.receipt_file_uris?.length ? (
                     <Button size="sm" variant="outline" onClick={() => openReceipt(r.receipt_file_uris[0])}>
-                      <Paperclip size={14} className="mr-1" /> View
-                    </Button>
-                  ) : <span className="text-xs text-slate-400">No scan</span>}
+                      <Paperclip size={14} className="mr-1" />{ui(" View")}</Button>
+                  ) : <span className="text-xs text-slate-400">{ui("No scan")}</span>}
                 </td>
               </tr>
             ))}

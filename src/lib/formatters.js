@@ -1,23 +1,29 @@
 // Currency and number formatting utilities for SOEICAM (XAF)
+import { getLocale,ui } from './i18n.js';
 export function formatXAF(amount) {
   if (amount == null || isNaN(amount)) return "0 XAF";
   const num = Math.round(Number(amount));
-  return num.toLocaleString("fr-CM") + " XAF";
+  return num.toLocaleString(getLocale()) + " XAF";
 }
 
 export function formatNumber(num, decimals = 0) {
   if (num == null || isNaN(num)) return "0";
-  return Number(num).toLocaleString("fr-CM", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return Number(num).toLocaleString(getLocale(), { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+export function formatQuantity(num) {
+  if (num == null || !Number.isFinite(Number(num))) return '-';
+  return Number(num).toLocaleString(getLocale(), { maximumFractionDigits: 3 });
 }
 
 export function formatDate(dateStr) {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString("fr-CM", { year: "numeric", month: "short", day: "numeric" });
+  return new Date(dateStr).toLocaleDateString(getLocale(), { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function formatDateTime(dateStr) {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString("fr-CM", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(dateStr).toLocaleDateString(getLocale(), { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function statusColor(status) {
@@ -59,5 +65,6 @@ export function statusColor(status) {
 
 export function statusLabel(status) {
   if (!status) return "";
-  return status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  if (status==='in_production') return ui('Under fermentation');
+  return ui(status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
 }

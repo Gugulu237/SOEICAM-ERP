@@ -1,16 +1,20 @@
+import { readAll } from '@/lib/field-pos';
+import { tableReport, money } from '@/lib/report-models';
+import {ui} from './i18n.js';
+/* localized-metadata */
 // Expense register & reporting.
 // Every operating expense is a treasury expense transaction, so the register and
 // its reports read the same ledger the Treasury module shows — one source of truth.
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 
 export { EXPENSE_CATEGORIES } from "@/lib/expenses";
 
 export const PERIOD_PRESETS = [
-  { key: "month", label: "This Month" },
-  { key: "last_month", label: "Last Month" },
-  { key: "quarter", label: "This Quarter" },
-  { key: "year", label: "This Year" },
-  { key: "all", label: "All Time" },
+  { key: "month", get label(){return ui("This Month");} },
+  { key: "last_month", get label(){return ui("Last Month");} },
+  { key: "quarter", get label(){return ui("This Quarter");} },
+  { key: "year", get label(){return ui("This Year");} },
+  { key: "all", get label(){return ui("All Time");} },
 ];
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -46,28 +50,20 @@ export function buildQuery({ from, to, category, accountId, search } = {}) {
 
 // One page of expenses (the register shows a page, "load more" fetches the next).
 export async function loadExpenses(query, cursor) {
-  return base44.entities.TreasuryTransaction.filter(query, { sort: "-transaction_date", limit: 100, cursor });
+  return erp.entities.TreasuryTransaction.filter(query, { sort: "-transaction_date", limit: 100, cursor });
 }
 
 // Period totals for the KPI strip: a single aggregate returns both the count and
 // the sum. Aggregate is the most rate-limited call, so it is used exactly once.
 export async function loadExpenseTotals(query) {
-  const agg = await base44.entities.TreasuryTransaction.aggregate({ query, sum: "amount" });
+  const agg = await erp.entities.TreasuryTransaction.aggregate({ query, sum: "amount" });
   const row = agg.rows?.[0] || {};
   return { count: row.count || 0, total: row.sum_amount || 0 };
 }
 
 // Every expense matching the query, read in pages.
-async function loadExpenseRows(query, maxPages = 4) {
-  const rows = [];
-  let cursor;
-  for (let i = 0; i < maxPages; i++) {
-    const page = await base44.entities.TreasuryTransaction.filter(query, { sort: "-transaction_date", limit: 500, cursor });
-    rows.push(...page.items);
-    if (!page.has_more) break;
-    cursor = page.next_cursor;
-  }
-  return rows;
+export async function loadExpenseRows(query) {
+  return readAll(erp.entities.TreasuryTransaction,query,'-transaction_date');
 }
 
 // Groups expense rows into the report breakdowns: type, month, account and department.
@@ -112,7 +108,7 @@ export async function loadExpenseReport(query) {
 
 // Full export of the filtered expenses as a CSV download.
 export async function exportExpensesCsv(query, label = "report") {
-  const rows = await loadExpenseRows(query, 40);
+  const rows = await loadExpenseRows(query);
   const head = ["Date", "Reference", "Expense Type", "Description", "Payee", "Department", "Source", "Paid From", "GL Account", "Amount", "Journal"];
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const body = rows.map(r => [
@@ -120,7 +116,7 @@ export async function exportExpensesCsv(query, label = "report") {
     r.department_name, r.source === "request" ? "Request" : "Direct", r.treasury_account_name,
     r.expense_account_name, r.amount, r.journal_id,
   ].map(esc).join(","));
-  const csv = [head.map(esc).join(","), ...body].join("\n");
+  const csv = [head.map(value=>ui(value)).map(esc).join(","), ...body].join("\n");
   const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }));
   const a = document.createElement("a");
   a.href = url;
@@ -128,4 +124,17 @@ export async function exportExpensesCsv(query, label = "report") {
   a.click();
   URL.revokeObjectURL(url);
   return rows.length;
+}
+
+export async function expenseReportDocument(query,filters) {
+  const rows=await loadExpenseRows(query),summary=summarizeExpenses(rows);
+  const report=tableReport('Operating expense report',[
+    {key:'transaction_date',label:'Date'},{key:'transaction_number',label:'Reference'},{key:'category',label:'Category'},
+    {key:'description',label:'Description'},{key:'payee',label:'Payee'},{key:'department_name',label:'Department'},
+    {key:'treasury_account_name',label:'Paid from'},{key:'expense_account_name',label:'Expense account'},
+    {key:'amount',label:'Amount',exportType:'money'},{key:'journal_id',label:'Journal'},
+  ],rows,Object.entries(filters));
+  report.sections[0].totals=[['Total','','','','','','','',summary.total,'']];
+  for(const [title,items,key] of [['By expense type',summary.categories,'category'],['By paid-from account',summary.accounts,'treasury_account_name'],['By department',summary.departments,'department_name'],['By month',summary.months,'transaction_date']]) report.sections.push({title,columns:['Group','Expense count',money('Total')],rows:items.map(r=>[r[key]||'Unassigned',r.count,r.sum_amount])});
+  return report;
 }

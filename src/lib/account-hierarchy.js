@@ -1,16 +1,18 @@
+/* localized-metadata */
+import {ui} from './i18n.js';
 // Chart-of-accounts structure: account type metadata, the account tree with
 // rolled-up balances, account numbering and account validation rules.
-import { round2 } from "@/lib/posting";
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 export const ACCOUNT_TYPES = [
-  { value: "asset", label: "Assets", normal: "debit", prefix: "1", statement: "balance_sheet" },
-  { value: "liability", label: "Liabilities", normal: "credit", prefix: "2", statement: "balance_sheet" },
-  { value: "equity", label: "Equity", normal: "credit", prefix: "3", statement: "balance_sheet" },
-  { value: "revenue", label: "Revenue", normal: "credit", prefix: "4", statement: "income_statement" },
-  { value: "cogs", label: "Cost of Sales", normal: "debit", prefix: "5", statement: "income_statement" },
-  { value: "expense", label: "Operating Expenses", normal: "debit", prefix: "6", statement: "income_statement" },
-  { value: "other_income", label: "Other Income", normal: "credit", prefix: "7", statement: "income_statement" },
-  { value: "other_expense", label: "Other Expenses", normal: "debit", prefix: "8", statement: "income_statement" },
+  { value: "asset", get label(){return ui("Assets");}, normal: "debit", prefix: "1", statement: "balance_sheet" },
+  { value: "liability", get label(){return ui("Liabilities");}, normal: "credit", prefix: "2", statement: "balance_sheet" },
+  { value: "equity", get label(){return ui("Equity");}, normal: "credit", prefix: "3", statement: "balance_sheet" },
+  { value: "revenue", get label(){return ui("Revenue");}, normal: "credit", prefix: "4", statement: "income_statement" },
+  { value: "cogs", get label(){return ui("Cost of Sales");}, normal: "debit", prefix: "5", statement: "income_statement" },
+  { value: "expense", get label(){return ui("Operating Expenses");}, normal: "debit", prefix: "6", statement: "income_statement" },
+  { value: "other_income", get label(){return ui("Other Income");}, normal: "credit", prefix: "7", statement: "income_statement" },
+  { value: "other_expense", get label(){return ui("Other Expenses");}, normal: "debit", prefix: "8", statement: "income_statement" },
 ];
 
 export const typeMeta = (value) => ACCOUNT_TYPES.find((t) => t.value === value) || ACCOUNT_TYPES[0];
@@ -26,6 +28,7 @@ const byNumber = (a, b) => {
 // Suggests the next free account number: inside the parent when nesting,
 // otherwise the next slot in the account type's own number block.
 export function suggestAccountNumber(accounts, type, parentId) {
+  const taken = new Set(accounts.map(a => String(a.account_number)));
   const parent = parentId ? accounts.find((a) => a.id === parentId) : null;
   if (parent) {
     const base = Number(parent.account_number);
@@ -33,7 +36,9 @@ export function suggestAccountNumber(accounts, type, parentId) {
       .filter((a) => a.parent_id === parent.id)
       .map((a) => Number(a.account_number))
       .filter((n) => Number.isFinite(n));
-    return String(used.length ? Math.max(...used) + 1 : (Number.isFinite(base) ? base + 1 : 1001));
+    let next = used.length ? Math.max(...used) + 1 : (Number.isFinite(base) ? base + 1 : 1001);
+    while (taken.has(String(next))) next++;
+    return String(next);
   }
   const block = Number(typeMeta(type).prefix) * 1000;
   const used = accounts
@@ -116,7 +121,7 @@ export function buildAccountTree(accounts, balances) {
   if (strays.length) {
     sections.push({
       value: "other",
-      label: "Other",
+      get label(){return ui("Other");},
       roots: strays,
       net: round2(strays.reduce((s, r) => s + (rollups.get(r.id) || 0), 0)),
       count: strays.reduce((s, r) => s + (counts.get(r.id) || 0), 0),
@@ -136,24 +141,20 @@ export function validateAccount(form, accounts, balances) {
   if (clash) errors.push(`Account number ${number} is already used by ${clash.name}`);
 
   const parent = form.parent_id ? accounts.find((a) => a.id === form.parent_id) : null;
+  if (form.parent_id && !parent) errors.push("The selected parent account no longer exists");
+  if (form.id && form.parent_id === form.id) errors.push("An account cannot be its own parent");
   if (parent) {
     if (parent.account_type !== form.account_type) {
       errors.push(`${parent.account_number} is a ${typeLabel(parent.account_type).toLowerCase()} account, so a ${typeLabel(form.account_type).toLowerCase()} account cannot sit under it`);
     }
-    if (parent.is_posting !== false) {
-      errors.push(`${parent.account_number} is a posting account — turn it into a header account before nesting accounts under it`);
-    }
+    if (parent.is_active === false) errors.push("Choose an active parent account");
     if (form.id && isDescendantOf(form.id, parent.id, accounts)) {
       errors.push("An account cannot be nested inside one of its own sub-accounts");
     }
   }
 
-  if (form.is_posting !== false && accounts.some((a) => a.parent_id === form.id)) {
-    errors.push("This account has sub-accounts, so it must be a header account");
-  }
-
   const posted = balances?.[form.id];
-  const hasPostings = posted && ((posted.debit || 0) !== 0 || (posted.credit || 0) !== 0);
+  const hasPostings = posted && (posted.entries > 0 || (posted.debit || 0) !== 0 || (posted.credit || 0) !== 0);
   if (hasPostings) {
     const original = accounts.find((a) => a.id === form.id);
     if (original && original.account_type !== form.account_type) {
@@ -165,4 +166,29 @@ export function validateAccount(form, accounts, balances) {
   }
 
   return errors;
+}
+
+// Posting parents retain their own ledger activity as well as child rollups.
+export function eligibleAccountParents(accounts, form) {
+  return accounts.filter(a => a.id !== form.id && a.is_active !== false && a.account_type === form.account_type && (!form.id || !isDescendantOf(form.id, a.id, accounts))).sort(byNumber);
+}
+
+export function visibleAccounts(accounts, balances, {type='all', status='visible', query=''}={}) {
+  const byId=new Map(accounts.map(a=>[a.id,a]));
+  let list=accounts.filter(a=>type==='all' || a.account_type===type);
+  const used=a=>Number(balances?.[a.id]?.entries)>0 || Number(a.balance || 0)!==0 || Number(a.opening_debit || 0)!==0 || Number(a.opening_credit || 0)!==0;
+  if(status==='visible')list=list.filter(a=>a.is_active!==false && !a.is_hidden);
+  if(status==='hidden')list=list.filter(a=>a.is_hidden);
+  if(status==='active')list=list.filter(a=>a.is_active!==false);
+  if(status==='inactive')list=list.filter(a=>a.is_active===false);
+  if(status==='used')list=list.filter(used);
+  const q=query.trim().toLowerCase();
+  if(q)list=list.filter(a=>`${a.account_number} ${a.name}`.toLowerCase().includes(q));
+  // Keep ancestor context, including hidden grouping rows, for search/used views.
+  if(q || status==='used'){
+    const keep=new Set(list.map(a=>a.id));
+    for(const a of list){let id=a.parent_id;const seen=new Set([a.id]);while(id && byId.has(id) && !seen.has(id)){seen.add(id);keep.add(id);id=byId.get(id).parent_id;}}
+    list=accounts.filter(a=>keep.has(a.id));
+  }
+  return list;
 }

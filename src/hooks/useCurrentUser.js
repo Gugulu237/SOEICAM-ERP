@@ -1,30 +1,24 @@
-import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { base44 } from '@/api/base44Client';
 import { getEffectiveRole } from '@/lib/permissions';
 
 export function useCurrentUser() {
-  const { user, isLoadingAuth } = useAuth();
-  const [employee, setEmployee] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (isLoadingAuth) return;
-    if (!user) { setLoading(false); return; }
-    base44.entities.Employee.filter({ user_id: user.id })
-      .then(emps => setEmployee(emps[0] || null))
-      .finally(() => setLoading(false));
-  }, [user, isLoadingAuth]);
-
-  const role = getEffectiveRole(user, employee);
+  const { user, employee, isLoadingAuth, authError } = useAuth();
+  const profileLoading = isLoadingAuth;
+  const error = authError?.message || '';
+  const role = profileLoading || error ? null : getEffectiveRole(user, employee);
   const departmentId = employee?.department_id || null;
+  const assignedRole = employee?.assigned_role || employee?.role || role;
 
   return {
     user,
     employee,
     role,
+    assignedRole,
+    roleLabel: employee?.role_label || '',
+    allowedModules: employee?.allowed_modules || user?.role_modules || null,
     departmentId,
-    loading: loading || isLoadingAuth,
+    error,
+    loading: profileLoading,
     isAdmin: role === 'admin',
     isProcurement: role === 'procurement',
     isCashier: role === 'cashier',
@@ -33,11 +27,12 @@ export function useCurrentUser() {
     canApprovePO: ['admin'].includes(role),
     canDisburse: ['admin', 'cashier'].includes(role),
     canViewAllPOs: ['admin', 'procurement', 'cashier'].includes(role),
-    canIssueMaterials: ['admin', 'warehouse_manager'].includes(role),
+    canIssueMaterials: role==='admin' || role==='warehouse_manager' && assignedRole!=='production_manager',
     canApproveProduction: ['admin'].includes(role),
     canSignChequeGM: ['admin'].includes(role),
     canSignChequePM: ['production_manager'].includes(role),
     isCommercial: role === 'commercial',
+    isDriver: role === 'driver',
     isHotesse: role === 'hotesse',
     isFieldActor: ['commercial', 'hotesse'].includes(role),
     canIssueCustody: ['admin', 'warehouse_manager'].includes(role),

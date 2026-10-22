@@ -1,5 +1,9 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { formatXAF } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ChevronDown, Download, Building2, Store } from "lucide-react";
@@ -8,14 +12,16 @@ const EMPTY = { delivered: 0, invoiced: 0, collected: 0, outstanding: 0, spoilag
 
 // Consolidated report: one line per main partner, expandable into its sub-partners.
 export default function GroupReport({ partners, childrenByParent = {} }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const [metrics, setMetrics] = useState(null);
   const [expanded, setExpanded] = useState({});
 
   useEffect(() => {
     Promise.all([
-      base44.entities.SalesOrder.aggregate({ query: { status: { $in: ["delivered", "partially_delivered", "invoiced"] } }, groupBy: "customer_id", sum: ["total"] }),
-      base44.entities.Invoice.aggregate({ query: {}, groupBy: "customer_id", sum: ["total", "balance"] }),
-      base44.entities.SpoilageRecord.aggregate({ query: {}, groupBy: "customer_id", sum: ["total_value"] }),
+      erp.entities.SalesOrder.aggregate({ query: { status: { $in: ["delivered", "partially_delivered", "invoiced"] } }, groupBy: "customer_id", sum: ["total"] }),
+      erp.entities.Invoice.aggregate({ query: {}, groupBy: "customer_id", sum: ["total", "balance"] }),
+      erp.entities.SpoilageRecord.aggregate({ query: {}, groupBy: "customer_id", sum: ["total_value"] }),
     ]).then(([sales, invoices, spoilage]) => {
       const map = {};
       const row = (id) => (map[id] = map[id] || { ...EMPTY });
@@ -54,7 +60,7 @@ export default function GroupReport({ partners, childrenByParent = {} }) {
   const grand = sum(groups.map(g => g.totals));
 
   function exportCsv() {
-    const lines = [["Main Partner", "Sub-Partner", "Invoiced", "Collected", "Outstanding", "Delivered", "Spoilage"]];
+    const lines = [[ui("Main Partner"), "Sub-Partner", "Invoiced", "Collected", "Outstanding", "Delivered", "Spoilage"]];
     groups.forEach(g => {
       lines.push([g.main.business_name, "(group)", g.totals.invoiced, g.totals.collected, g.totals.outstanding, g.totals.delivered, g.totals.spoilage]);
       g.branchRows.forEach(b => lines.push([g.main.business_name, b.partner.business_name, b.invoiced, b.collected, b.outstanding, b.delivered, b.spoilage]));
@@ -75,21 +81,21 @@ export default function GroupReport({ partners, childrenByParent = {} }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-slate-500">{groups.length} main partners · {groups.reduce((s, g) => s + g.branches.length, 0)} sub-partners</p>
-        <Button variant="outline" size="sm" onClick={exportCsv}><Download size={14} className="mr-1" /> Export CSV</Button>
+        <p className="text-sm text-slate-500">{groups.length}{ui(" main partners · ")}{groups.reduce((s, g) => s + g.branches.length, 0)}{ui(" sub-partners")}</p>
+        <Button variant="outline" size="sm" onClick={exportCsv}><Download size={14} className="mr-1" />{ui(" Export CSV")}</Button>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-              <th className="px-4 py-3 text-left font-semibold">Main Partner</th>
-              <th className="px-4 py-3 text-left font-semibold">Branches</th>
-              <th className={cell + " font-semibold"}>Invoiced</th>
-              <th className={cell + " font-semibold"}>Collected</th>
-              <th className={cell + " font-semibold"}>Outstanding</th>
-              <th className={cell + " font-semibold"}>Delivered</th>
-              <th className={cell + " font-semibold"}>Spoilage</th>
+              <th className="px-4 py-3 text-left font-semibold">{ui("Main Partner")}</th>
+              <th className="px-4 py-3 text-left font-semibold">{ui("Branches")}</th>
+              <th className={cell + " font-semibold"}>{ui("Invoiced")}</th>
+              <th className={cell + " font-semibold"}>{ui("Collected")}</th>
+              <th className={cell + " font-semibold"}>{ui("Outstanding")}</th>
+              <th className={cell + " font-semibold"}>{ui("Delivered")}</th>
+              <th className={cell + " font-semibold"}>{ui("Spoilage")}</th>
             </tr>
           </thead>
           <tbody>
@@ -129,13 +135,13 @@ export default function GroupReport({ partners, childrenByParent = {} }) {
               </React.Fragment>
             ))}
             {groups.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">No business partners yet</td></tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">{ui("No business partners yet")}</td></tr>
             )}
           </tbody>
           {groups.length > 0 && (
             <tfoot>
               <tr className="bg-slate-100 font-semibold text-slate-900">
-                <td className="px-4 py-3">All partners</td>
+                <td className="px-4 py-3">{ui("All partners")}</td>
                 <td className="px-4 py-3" />
                 <td className={cell}>{formatXAF(grand.invoiced)}</td>
                 <td className={cell}>{formatXAF(grand.collected)}</td>

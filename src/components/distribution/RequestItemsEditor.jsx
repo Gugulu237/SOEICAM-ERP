@@ -1,3 +1,7 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -6,6 +10,8 @@ import { formatNumber } from "@/lib/formatters";
 import { Plus, Trash2 } from "lucide-react";
 
 export default function RequestItemsEditor({ items, setItems, products, available, readOnly }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   function addItem() {
     setItems(list => [...list, { product_id: "", product_name: "", unit: "unit", quantity: 0 }]);
   }
@@ -27,8 +33,8 @@ export default function RequestItemsEditor({ items, setItems, products, availabl
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900">Goods Requested</h3>
-        {!readOnly && <Button variant="outline" size="sm" onClick={addItem}><Plus size={14} className="mr-1" /> Add</Button>}
+        <h3 className="font-semibold text-slate-900">{ui("Goods Requested")}</h3>
+        {!readOnly && <Button variant="outline" size="sm" onClick={addItem}><Plus size={14} className="mr-1" />{ui(" Add")}</Button>}
       </div>
 
       {items.map((item, i) => {
@@ -40,7 +46,7 @@ export default function RequestItemsEditor({ items, setItems, products, availabl
               <p className="font-medium text-slate-900">{item.product_name}</p>
             ) : (
               <Select value={item.product_id} onValueChange={v => updateItem(i, "product_id", v)}>
-                <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={ui("Select product")} /></SelectTrigger>
                 <SelectContent>
                   {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
@@ -48,13 +54,13 @@ export default function RequestItemsEditor({ items, setItems, products, availabl
             )}
             <div className="flex items-center gap-3">
               {readOnly ? (
-                <p className="text-sm text-slate-700">Qty: {formatNumber(item.quantity, 2)} {item.unit}</p>
+                <p className="text-sm text-slate-700">{ui("Qty: ")}{formatNumber(item.quantity, 2)} {item.unit}</p>
               ) : (
                 <Input
                   type="number"
                   inputMode="decimal"
                   className="flex-1"
-                  placeholder="Quantity"
+                  placeholder={ui("Quantity")}
                   value={item.quantity}
                   onChange={e => updateItem(i, "quantity", e.target.value)}
                 />
@@ -66,13 +72,13 @@ export default function RequestItemsEditor({ items, setItems, products, availabl
               )}
             </div>
             <p className={`text-xs ${short ? "text-red-600 font-medium" : "text-slate-500"}`}>
-              {short ? `Only ${formatNumber(stock, 2)} available in store` : `${formatNumber(stock, 2)} available in store`}
+              {short ? ui("Only {0} available in store", formatNumber(stock, 2)) : ui("{0} available in store", formatNumber(stock, 2))}
             </p>
           </div>
         );
       })}
 
-      {items.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">No products requested yet.</p>}
+      {items.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">{ui("No products requested yet.")}</p>}
     </div>
   );
 }

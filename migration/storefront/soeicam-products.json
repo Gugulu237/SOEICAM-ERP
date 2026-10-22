@@ -1,0 +1,162 @@
+{
+  "source_url": "https://soeicam.com/fr/products",
+  "catalogue_source": "https://soeicam.com/_next/static/chunks/802-bfebc2e01d7b9ceb.js",
+  "crawled_at": "2026-10-18T12:11:21.197Z",
+  "language": "fr-CM",
+  "product_count": 19,
+  "verification": "Each product name, image and size comes from its French detail-page Product JSON-LD; visible heading and product image verified against that page. Catalogue membership checked against the public storefront product module.",
+  "products": [
+    {
+      "source_id": "drinkable-nature-250g",
+      "name": "YOLA Yaourt à boire Nature 250 g",
+      "display_name": "Yola Nature 250g Yaourt à Boire",
+      "size": "250g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-250g-nature.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-nature-250g"
+    },
+    {
+      "source_id": "drinkable-strawberry-250g",
+      "name": "YOLA Yaourt à boire Fraise 250 g",
+      "display_name": "Yola Fraise 250g Yaourt à Boire",
+      "size": "250g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-250g-strawberry.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-strawberry-250g"
+    },
+    {
+      "source_id": "drinkable-nature-330g",
+      "name": "YOLA Yaourt à boire Nature 330 g",
+      "display_name": "Yola Nature 330g Yaourt à Boire",
+      "size": "330g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-330g-nature.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-nature-330g"
+    },
+    {
+      "source_id": "drinkable-strawberry-330g",
+      "name": "YOLA Yaourt à boire Fraise 330 g",
+      "display_name": "Yola Fraise 330g Yaourt à Boire",
+      "size": "330g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-330g-strawberry.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-strawberry-330g"
+    },
+    {
+      "source_id": "drinkable-unsweetened-330g",
+      "name": "YOLA Yaourt à boire Non sucré 330 g",
+      "display_name": "Yola Non Sucré 330g Yaourt à Boire",
+      "size": "330g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-330g-unsweetened.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-unsweetened-330g"
+    },
+    {
+      "source_id": "drinkable-vanilla-330g",
+      "name": "YOLA Yaourt à boire Vanille 330 g",
+      "display_name": "Yola Vanille 330g Yaourt à Boire",
+      "size": "330g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-330g-vanilla.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-vanilla-330g"
+    },
+    {
+      "source_id": "drinkable-nature-500g",
+      "name": "YOLA Yaourt à boire Nature 500 g",
+      "display_name": "Yola Nature 500g Yaourt à Boire",
+      "size": "500g",
+      "image_url": "https://soeicam.com/brand/products/drinkable-500g-nature.png",
+      "source_url": "https://soeicam.com/fr/products/drinkable-nature-500g"
+    },
+    {
+      "source_id": "stirred-chocolate-500g",
+      "name": "YOLA Yaourt brassé Chocolat 500 g",
+      "display_name": "Yola Chocolat 500g",
+      "size": "500g",
+      "image_url": "https://soeicam.com/brand/products/stirred-500g-chocolate.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-chocolate-500g"
+    },
+    {
+      "source_id": "stirred-nature-500g",
+      "name": "YOLA Yaourt brassé Nature 500 g",
+      "display_name": "Yola Nature 500g",
+      "size": "500g",
+      "image_url": "https://soeicam.com/brand/products/stirred-500g-nature.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-nature-500g"
+    },
+    {
+      "source_id": "stirred-strawberry-500g",
+      "name": "YOLA Yaourt brassé Fraise 500 g",
+      "display_name": "Yola Fraise 500g",
+      "size": "500g",
+      "image_url": "https://soeicam.com/brand/products/stirred-500g-strawberry.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-strawberry-500g"
+    },
+    {
+      "source_id": "stirred-unsweetened-500g",
+      "name": "YOLA Yaourt brassé Non sucré 500 g",
+      "display_name": "Yola Non Sucré 500g",
+      "size": "500g",
+      "image_url": "https://soeicam.com/brand/products/stirred-500g-unsweetened.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-unsweetened-500g"
+    },
+    {
+      "source_id": "stirred-vanilla-500g",
+      "name": "YOLA Yaourt brassé Vanille 500 g",
+      "display_name": "Yola Vanille 500g",
+      "size": "500g",
+      "image_url": "https://soeicam.com/brand/products/stirred-500g-vanilla.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-vanilla-500g"
+    },
+    {
+      "source_id": "stirred-nature-1kg",
+      "name": "YOLA Yaourt brassé Nature 1 kg",
+      "display_name": "Yola Nature 1kg",
+      "size": "1kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-1kg-nature.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-nature-1kg"
+    },
+    {
+      "source_id": "stirred-unsweetened-1kg",
+      "name": "YOLA Yaourt brassé Non sucré 1 kg",
+      "display_name": "Yola Non Sucré 1kg",
+      "size": "1kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-1kg-unsweetened.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-unsweetened-1kg"
+    },
+    {
+      "source_id": "stirred-vanilla-1kg",
+      "name": "YOLA Yaourt brassé Vanille 1 kg",
+      "display_name": "Yola Vanille 1kg",
+      "size": "1kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-1kg-vanilla.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-vanilla-1kg"
+    },
+    {
+      "source_id": "stirred-nature-2.5kg",
+      "name": "YOLA Yaourt brassé Nature 2,5 kg",
+      "display_name": "Yola Nature 2,5kg",
+      "size": "2.5kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-2.5kg-nature.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-nature-2.5kg"
+    },
+    {
+      "source_id": "stirred-strawberry-2.5kg",
+      "name": "YOLA Yaourt brassé Fraise 2,5 kg",
+      "display_name": "Yola Fraise 2,5kg",
+      "size": "2.5kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-2.5kg-strawberry.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-strawberry-2.5kg"
+    },
+    {
+      "source_id": "stirred-vanilla-2.5kg",
+      "name": "YOLA Yaourt brassé Vanille 2,5 kg",
+      "display_name": "Yola Vanille 2,5kg",
+      "size": "2.5kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-2.5kg-vanilla.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-vanilla-2.5kg"
+    },
+    {
+      "source_id": "stirred-nature-10kg",
+      "name": "YOLA Yaourt brassé Nature 10 kg",
+      "display_name": "Yola Nature 10kg",
+      "size": "10kg",
+      "image_url": "https://soeicam.com/brand/products/stirred-10kg-nature.png",
+      "source_url": "https://soeicam.com/fr/products/stirred-nature-10kg"
+    }
+  ]
+}

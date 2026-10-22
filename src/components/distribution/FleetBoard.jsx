@@ -1,13 +1,17 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/lib/router";
 import { Truck } from "lucide-react";
 import { formatXAF } from "@/lib/formatters";
 
 const VEHICLE_STATUS = {
-  available: { label: "AVAILABLE", chip: "bg-slate-100 text-slate-600", accent: "border-slate-200" },
-  loading: { label: "LOADING", chip: "bg-blue-100 text-blue-700", accent: "border-blue-300" },
-  on_route: { label: "ON ROUTE", chip: "bg-green-100 text-green-700", accent: "border-green-300" },
-  reconciliation: { label: "RECONCILIATION", chip: "bg-orange-100 text-orange-700", accent: "border-orange-300" },
+  available: { get label(){return ui("AVAILABLE");}, chip: "bg-slate-100 text-slate-600", accent: "border-slate-200" },
+  loading: { get label(){return ui("LOADING");}, chip: "bg-blue-100 text-blue-700", accent: "border-blue-300" },
+  on_route: { get label(){return ui("ON ROUTE");}, chip: "bg-green-100 text-green-700", accent: "border-green-300" },
+  reconciliation: { get label(){return ui("RECONCILIATION");}, chip: "bg-orange-100 text-orange-700", accent: "border-orange-300" },
 };
 
 function vehicleState(vehicle, dispatches) {
@@ -22,10 +26,12 @@ function vehicleState(vehicle, dispatches) {
 
 // Visual fleet overview — one card per vehicle with its live dispatch state.
 export default function FleetBoard({ vehicles, dispatches }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const navigate = useNavigate();
 
   if (!vehicles.length) {
-    return <p className="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-8 text-center">No vehicles registered yet. Add vehicles in Administration.</p>;
+    return <p className="text-sm text-slate-500 bg-white border border-slate-200 rounded-xl p-8 text-center">{ui("No vehicles registered yet. A General Manager or warehouse manager can add them in ")}<button type="button" className="font-medium text-blue-700 underline" onClick={() => navigate('/distribution?tab=vehicles')}>{ui("Distribution / Vehicles")}</button>.</p>;
   }
 
   return (
@@ -54,24 +60,24 @@ export default function FleetBoard({ vehicles, dispatches }) {
             {dispatch ? (
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <p className="text-slate-400">Route</p>
+                  <p className="text-slate-400">{ui("Route")}</p>
                   <p className="font-medium text-slate-700">{dispatch.route_name || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Driver</p>
+                  <p className="text-slate-400">{ui("Driver")}</p>
                   <p className="font-medium text-slate-700">{dispatch.driver_name || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Loaded</p>
+                  <p className="text-slate-400">{ui("Loaded")}</p>
                   <p className="font-medium text-slate-700">{formatXAF(dispatch.total_loaded_value)}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Collected</p>
+                  <p className="text-slate-400">{ui("Collected")}</p>
                   <p className="font-medium text-slate-700">{formatXAF(dispatch.total_cash_collected)}</p>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-400">Idle — tap to create a dispatch.</p>
+              <p className="text-xs text-slate-400">{ui("Idle — tap to create a dispatch.")}</p>
             )}
           </button>
         );

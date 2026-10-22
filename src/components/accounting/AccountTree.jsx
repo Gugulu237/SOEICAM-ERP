@@ -1,11 +1,17 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import AccountRow, { balanceLabel } from "@/components/accounting/AccountRow";
 import { Layers } from "lucide-react";
 
 export default function AccountTree({
   sections, childrenMap, rollups, entryCounts, collapsed,
-  onToggleCollapse, onEdit, onAddChild, onToggleActive, canManage,
+  onToggleCollapse, onEdit, onAddChild, onToggleActive, onToggleHidden, onDelete, busy, canManage,
 }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   return (
     <div className="space-y-5">
       {sections.map((section) => (
@@ -15,18 +21,18 @@ export default function AccountTree({
               <Layers size={15} className="text-slate-500" />
               <span className="font-semibold text-slate-700">{section.label}</span>
               <span className="text-xs text-slate-500">
-                {section.count} account{section.count === 1 ? "" : "s"}
+                {section.count}{ui(" account")}{section.count === 1 ? "" : "s"}
               </span>
             </div>
             <span className="text-sm font-semibold text-slate-700 tabular-nums">{balanceLabel(section.net)}</span>
           </div>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="py-2 pl-3 font-medium">Account</th>
-                <th className="py-2 font-medium text-center w-20">Postings</th>
-                <th className="py-2 pr-3 font-medium text-right w-40">Balance</th>
-                <th className="w-28" />
+                <th className="py-2 pl-3 font-medium">{ui("Account")}</th>
+                <th className="py-2 font-medium text-center w-20">{ui("Postings")}</th>
+                <th className="py-2 pr-3 font-medium text-right w-40">{ui("Balance")}</th>
+                <th className="w-48" />
               </tr>
             </thead>
             <tbody>
@@ -43,11 +49,14 @@ export default function AccountTree({
                   onEdit={onEdit}
                   onAddChild={onAddChild}
                   onToggleActive={onToggleActive}
+                  onToggleHidden={onToggleHidden}
+                  onDelete={onDelete}
+                  busy={busy}
                   canManage={canManage}
                 />
               ))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       ))}
     </div>

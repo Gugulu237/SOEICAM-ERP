@@ -1,3 +1,7 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState } from "react";
 import { formatXAF } from "@/lib/formatters";
 import CustomerPaymentBadge from '@/components/customers/CustomerPaymentBadge';
@@ -5,6 +9,8 @@ import { ChevronRight, ChevronDown, Building2, MapPin, Landmark, Store } from "l
 
 // Tree explorer: main partner → sub-partners (branches) → delivery locations.
 export default function PartnerTree({ partners, childrenByParent = {}, locationsByCustomer, selectedId, onSelect, search, paymentSummaries, paymentError }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const [expanded, setExpanded] = useState({});
   const toggle = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
@@ -22,6 +28,8 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
   };
 
   function Row({ partner, isBranch }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
     const kids = childrenByParent[partner.id] || [];
     const locs = locationsOf(partner.id);
     const isOpen = expanded[partner.id] || (!!q && kids.length + locs.length > 0);
@@ -57,7 +65,7 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
             {paymentSummaries && <div className="mt-1"><CustomerPaymentBadge summary={paymentSummaries[partner.id]} error={paymentError} /></div>}
           </div>
           {partner.financial_centralization_mode === "centralized" && (
-            <Landmark size={13} className="text-blue-500 flex-shrink-0" title="Centralized payments" />
+            <Landmark size={13} className="text-blue-500 flex-shrink-0" title={ui("Centralized payments")} />
           )}
         </div>
         {isOpen && kids.map(k => <Row key={k.id} partner={k} isBranch />)}
@@ -66,7 +74,7 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
             <MapPin size={13} className={l.is_headquarters ? "text-amber-500" : "text-slate-400"} />
             <span className="truncate">{l.name}</span>
             {l.town && <span className="text-xs text-slate-400 truncate">· {l.town}</span>}
-            {l.is_headquarters && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 rounded-full">HQ</span>}
+            {l.is_headquarters && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 rounded-full">{ui("HQ")}</span>}
           </div>
         ))}
       </div>
@@ -78,7 +86,7 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
   return (
     <div className="space-y-1">
       {filtered.map(p => <Row key={p.id} partner={p} isBranch={false} />)}
-      {filtered.length === 0 && <p className="text-sm text-slate-400 text-center py-8">No partners found</p>}
+      {filtered.length === 0 && <p className="text-sm text-slate-400 text-center py-8">{ui("No partners found")}</p>}
     </div>
   );
 }

@@ -1,8 +1,13 @@
+import ReportExport from '@/components/shared/ReportExport';
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import BreakdownList from "@/components/finance/BreakdownList";
 import { statusLabel, formatXAF } from "@/lib/formatters";
-import { buildQuery, loadExpenseReport, exportExpensesCsv, presetRange } from "@/lib/expense-register";
+import { buildQuery, loadExpenseReport, exportExpensesCsv, expenseReportDocument, presetRange } from "@/lib/expense-register";
 import { useToast } from "@/components/ui/use-toast";
 import ExpenseFilterBar from "./ExpenseFilterBar";
 import MonthlySpendTrend from "./MonthlySpendTrend";
@@ -10,30 +15,34 @@ import CategoryBadge from "./CategoryBadge";
 
 // Categorised expense reporting for a chosen period, type and source account.
 export default function ExpenseReport() {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const { toast } = useToast();
   const [accounts, setAccounts] = useState([]);
   const [filters, setFilters] = useState({ preset: "year", ...presetRange("year"), category: "all", accountId: "all", search: "" });
   const [report, setReport] = useState(null);
   const [totals, setTotals] = useState({ count: 0, total: 0 });
   const [loading, setLoading] = useState(true);
+  const [error,setError] = useState('');
   const [exporting, setExporting] = useState(false);
 
-  useEffect(() => { base44.entities.TreasuryAccount.filter({ is_active: true }).then(setAccounts); }, []);
+  useEffect(() => { erp.entities.TreasuryAccount.filter({ is_active: true }).then(setAccounts).catch(e=>setError(e.message)); }, []);
 
   const query = useMemo(() => buildQuery(filters), [filters]);
 
   useEffect(() => {
-    setLoading(true);
+    let active=true;setLoading(true);setError('');setReport(null);
     loadExpenseReport(query)
-      .then(r => { setReport(r); setTotals({ count: r.count, total: r.total }); })
-      .finally(() => setLoading(false));
+      .then(r => { if(active){setReport(r);setTotals({count:r.count,total:r.total});} })
+      .catch(e=>{if(active)setError(e.message);}).finally(() => {if(active)setLoading(false);});
+    return()=>{active=false;};
   }, [query]);
 
   async function handleExport() {
     setExporting(true);
     try {
       const n = await exportExpensesCsv(query, filters.preset);
-      toast({ title: "Export ready", description: `${n} expenses written to the CSV file` });
+      toast({ title: ui("Export ready"), description: ui("{0} expenses written to the CSV file", n) });
     } finally {
       setExporting(false);
     }
@@ -46,7 +55,7 @@ export default function ExpenseReport() {
     value: r.sum_amount || 0,
   }));
   const accountRows = (report?.accounts || []).map(r => ({ label: r.treasury_account_name || "Unassigned", value: r.sum_amount || 0 }));
-  const departmentRows = (report?.departments || []).map(r => ({ label: r.department_name || "No department", value: r.sum_amount || 0 }));
+  const departmentRows = (report?.departments || []).map(r => ({ label: r.department_name || ui("No department"), value: r.sum_amount || 0 }));
 
   const biggest = (report?.categories || [])[0];
   const average = totals.count ? totals.total / totals.count : 0;
@@ -55,50 +64,52 @@ export default function ExpenseReport() {
     <div>
       <ExpenseFilterBar filters={filters} onChange={setFilters} accounts={accounts} onExport={exporting ? undefined : handleExport} />
 
+      <div className="mb-4"><ReportExport disabled={loading || !!error || !!(filters.from && filters.to && filters.from>filters.to)} getReport={()=>expenseReportDocument(query,filters)}/></div>
+      {error&&<p role="alert" className="mb-4 text-red-700">{error}</p>}
       {loading || !report ? (
         <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Total Spent</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Total Spent")}</p>
               <p className="text-xl font-bold text-red-600">{formatXAF(totals.total)}</p>
-              <p className="text-xs text-slate-400">{totals.count} expenses</p>
+              <p className="text-xs text-slate-400">{totals.count}{ui(" expenses")}</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Average per Expense</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Average per Expense")}</p>
               <p className="text-xl font-bold text-slate-900">{formatXAF(average)}</p>
-              <p className="text-xs text-slate-400">Across the selection</p>
+              <p className="text-xs text-slate-400">{ui("Across the selection")}</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Biggest Expense Type</p>
-              <p className="text-xl font-bold text-slate-900">{biggest ? statusLabel(biggest.category) || "Uncategorised" : "—"}</p>
-              <p className="text-xs text-slate-400">{biggest ? formatXAF(biggest.sum_amount) : "No expenses yet"}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Biggest Expense Type")}</p>
+              <p className="text-xl font-bold text-slate-900">{biggest ? statusLabel(biggest.category) || ui("Uncategorised") : "—"}</p>
+              <p className="text-xs text-slate-400">{biggest ? formatXAF(biggest.sum_amount) : ui("No expenses yet")}</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Expense Types Used</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Expense Types Used")}</p>
               <p className="text-xl font-bold text-slate-900">{categoryRows.length}</p>
-              <p className="text-xs text-slate-400">{accountRows.length} accounts funded them</p>
+              <p className="text-xs text-slate-400">{accountRows.length}{ui(" accounts funded them")}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <BreakdownList title="Spend by Expense Type" rows={categoryRows} emptyMessage="No expenses in this period." barClass="bg-blue-500" />
+            <BreakdownList title={ui("Spend by Expense Type")} rows={categoryRows} emptyMessage={ui("No expenses in this period.")} barClass="bg-blue-500" />
             <MonthlySpendTrend rows={report.months} />
-            <BreakdownList title="Spend by Account Paid From" rows={accountRows} emptyMessage="No treasury payments in this period." barClass="bg-emerald-500" />
-            <BreakdownList title="Spend by Department" rows={departmentRows} emptyMessage="No department was charged in this period." barClass="bg-violet-500" />
+            <BreakdownList title={ui("Spend by Account Paid From")} rows={accountRows} emptyMessage={ui("No treasury payments in this period.")} barClass="bg-emerald-500" />
+            <BreakdownList title={ui("Spend by Department")} rows={departmentRows} emptyMessage={ui("No department was charged in this period.")} barClass="bg-violet-500" />
           </div>
 
           <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <h3 className="font-semibold text-slate-900 mb-3 text-sm">Category Summary</h3>
+            <h3 className="font-semibold text-slate-900 mb-3 text-sm">{ui("Category Summary")}</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Expense Type</th>
-                    <th className="px-4 py-2 text-right font-semibold text-slate-600">Expenses</th>
-                    <th className="px-4 py-2 text-right font-semibold text-slate-600">Total</th>
-                    <th className="px-4 py-2 text-right font-semibold text-slate-600">Share</th>
+                    <th className="px-4 py-2 text-left font-semibold text-slate-600">{ui("Expense Type")}</th>
+                    <th className="px-4 py-2 text-right font-semibold text-slate-600">{ui("Expenses")}</th>
+                    <th className="px-4 py-2 text-right font-semibold text-slate-600">{ui("Total")}</th>
+                    <th className="px-4 py-2 text-right font-semibold text-slate-600">{ui("Share")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -111,7 +122,7 @@ export default function ExpenseReport() {
                     </tr>
                   ))}
                   {categoryRows.length === 0 && (
-                    <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">No expenses in this period.</td></tr>
+                    <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">{ui("No expenses in this period.")}</td></tr>
                   )}
                 </tbody>
               </table>

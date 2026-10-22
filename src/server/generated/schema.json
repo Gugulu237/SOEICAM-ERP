@@ -1,0 +1,4987 @@
+{
+  "Account": {
+    "table": "account",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "account_number": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "account_type": {
+        "type": "string",
+        "enum": [
+          "asset",
+          "liability",
+          "equity",
+          "revenue",
+          "cogs",
+          "expense",
+          "other_income",
+          "other_expense"
+        ]
+      },
+      "subtype": {
+        "type": "string"
+      },
+      "financial_statement": {
+        "type": "string",
+        "enum": [
+          "balance_sheet",
+          "income_statement"
+        ]
+      },
+      "cash_flow_category": {
+        "type": "string",
+        "enum": [
+          "operating",
+          "investing",
+          "financing",
+          "none"
+        ],
+        "default": "none"
+      },
+      "parent_id": {
+        "type": "string"
+      },
+      "normal_balance": {
+        "type": "string",
+        "enum": [
+          "debit",
+          "credit"
+        ]
+      },
+      "is_posting": {
+        "type": "boolean",
+        "default": true
+      },
+      "is_control_account": {
+        "type": "boolean",
+        "default": false
+      },
+      "allow_manual_journal": {
+        "type": "boolean",
+        "default": true
+      },
+      "is_treasury": {
+        "type": "boolean",
+        "default": false
+      },
+      "reconciliation_required": {
+        "type": "boolean",
+        "default": false
+      },
+      "branch_restriction": {
+        "type": "string"
+      },
+      "currency": {
+        "type": "string",
+        "default": "XAF"
+      },
+      "currency_restriction": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      },
+      "is_system": {
+        "type": "boolean",
+        "default": false
+      },
+      "is_sample": {
+        "type": "boolean",
+        "default": false
+      },
+      "description": {
+        "type": "string"
+      },
+      "balance": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "required": [
+      "account_number",
+      "name",
+      "account_type",
+      "normal_balance"
+    ],
+    "source": "Account.jsonc"
+  },
+  "AccountingPeriod": {
+    "table": "accounting_period",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "fiscal_year": {
+        "type": "string"
+      },
+      "period_number": {
+        "type": "number"
+      },
+      "start_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "end_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "open",
+          "review",
+          "closed",
+          "locked"
+        ],
+        "default": "open"
+      }
+    },
+    "required": [
+      "name",
+      "fiscal_year",
+      "period_number",
+      "start_date",
+      "end_date"
+    ],
+    "source": "AccountingPeriod.jsonc"
+  },
+  "AuditLog": {
+    "table": "audit_log",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "user_id": {
+        "type": "string"
+      },
+      "user_name": {
+        "type": "string"
+      },
+      "action": {
+        "type": "string"
+      },
+      "module": {
+        "type": "string"
+      },
+      "entity_type": {
+        "type": "string"
+      },
+      "entity_id": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "previous_value": {
+        "type": "string"
+      },
+      "new_value": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "action",
+      "module",
+      "description"
+    ],
+    "source": "AuditLog.jsonc"
+  },
+  "Bill": {
+    "table": "bill",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "bill_number": {
+        "type": "string"
+      },
+      "supplier_id": {
+        "type": "string"
+      },
+      "supplier_name": {
+        "type": "string"
+      },
+      "po_id": {
+        "type": "string"
+      },
+      "po_number": {
+        "type": "string"
+      },
+      "bill_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "due_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "amount_paid": {
+        "type": "number",
+        "default": 0
+      },
+      "balance": {
+        "type": "number",
+        "default": 0
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "open",
+          "partially_paid",
+          "paid",
+          "cancelled"
+        ],
+        "default": "open"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "supplier_id",
+      "bill_date",
+      "total"
+    ],
+    "source": "Bill.jsonc"
+  },
+  "Branch": {
+    "table": "branch",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "code": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "city": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "code"
+    ],
+    "source": "Branch.jsonc"
+  },
+  "Budget": {
+    "table": "budget",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "department_id": {
+        "type": "string"
+      },
+      "department_name": {
+        "type": "string"
+      },
+      "period_id": {
+        "type": "string"
+      },
+      "period_name": {
+        "type": "string"
+      },
+      "budget_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "actual_spent": {
+        "type": "number",
+        "default": 0
+      },
+      "remaining_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "department_id",
+      "period_id",
+      "budget_amount"
+    ],
+    "source": "Budget.jsonc"
+  },
+  "CashCollection": {
+    "table": "cash_collection",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "collection_number": {
+        "type": "string"
+      },
+      "field_sale_id": {
+        "type": "string"
+      },
+      "sale_number": {
+        "type": "string"
+      },
+      "invoice_id": {
+        "type": "string"
+      },
+      "invoice_number": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "commercial_id": {
+        "type": "string"
+      },
+      "commercial_name": {
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "vehicle_name": {
+        "type": "string"
+      },
+      "payment_type": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "credit"
+        ],
+        "default": "cash"
+      },
+      "amount_due": {
+        "type": "number",
+        "default": 0
+      },
+      "amount_collected": {
+        "type": "number",
+        "default": 0
+      },
+      "collection_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "method": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "mobile_money"
+        ],
+        "default": "cash"
+      },
+      "reference": {
+        "type": "string"
+      },
+      "receipt_reference": {
+        "type": "string"
+      },
+      "receipt_file_uris": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "held_by_commercial",
+          "handover_submitted",
+          "partially_received",
+          "received",
+          "disputed",
+          "cancelled"
+        ],
+        "default": "held_by_commercial"
+      },
+      "handed_over_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "received_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "outstanding_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "handover_id": {
+        "type": "string"
+      },
+      "handover_number": {
+        "type": "string"
+      },
+      "treasury_account_id": {
+        "type": "string"
+      },
+      "treasury_account_name": {
+        "type": "string"
+      },
+      "received_by": {
+        "type": "string"
+      },
+      "received_at": {
+        "type": "string"
+      },
+      "acknowledgement_reference": {
+        "type": "string"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "idempotency_key": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "commercial_id",
+      "amount_collected",
+      "collection_date"
+    ],
+    "source": "CashCollection.jsonc"
+  },
+  "CashHandover": {
+    "table": "cash_handover",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "handover_number": {
+        "type": "string"
+      },
+      "commercial_id": {
+        "type": "string"
+      },
+      "commercial_name": {
+        "type": "string"
+      },
+      "cashier_id": {
+        "type": "string"
+      },
+      "cashier_name": {
+        "type": "string"
+      },
+      "handover_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "expected_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "offered_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "received_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "variance": {
+        "type": "number",
+        "default": 0
+      },
+      "variance_reason": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "submitted",
+          "partially_received",
+          "received",
+          "disputed"
+        ],
+        "default": "draft"
+      },
+      "submitted_at": {
+        "type": "string"
+      },
+      "confirmed_at": {
+        "type": "string"
+      },
+      "acknowledgement_reference": {
+        "type": "string"
+      },
+      "treasury_account_id": {
+        "type": "string"
+      },
+      "treasury_account_name": {
+        "type": "string"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "journal_number": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "idempotency_key": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "commercial_id",
+      "expected_amount"
+    ],
+    "source": "CashHandover.jsonc"
+  },
+  "CashHandoverAllocation": {
+    "table": "cash_handover_allocation",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "handover_id": {
+        "type": "string"
+      },
+      "handover_number": {
+        "type": "string"
+      },
+      "collection_id": {
+        "type": "string"
+      },
+      "collection_number": {
+        "type": "string"
+      },
+      "sale_number": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "amount_allocated": {
+        "type": "number",
+        "default": 0
+      },
+      "allocation_date": {
+        "type": "string",
+        "format": "date"
+      }
+    },
+    "required": [
+      "handover_id",
+      "collection_id",
+      "amount_allocated"
+    ],
+    "source": "CashHandoverAllocation.jsonc"
+  },
+  "CompanySettings": {
+    "table": "company_settings",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "company_name": {
+        "type": "string"
+      },
+      "brand_name": {
+        "type": "string"
+      },
+      "currency": {
+        "type": "string",
+        "default": "XAF"
+      },
+      "timezone": {
+        "type": "string",
+        "default": "Africa/Douala"
+      },
+      "fiscal_year_start_month": {
+        "type": "number",
+        "default": 1
+      },
+      "current_fiscal_year": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "city": {
+        "type": "string"
+      },
+      "country": {
+        "type": "string",
+        "default": "Cameroon"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "tax_id": {
+        "type": "string"
+      },
+      "logo_url": {
+        "type": "string"
+      },
+      "default_language": {
+        "type": "string",
+        "enum": [
+          "en",
+          "fr"
+        ],
+        "default": "en"
+      },
+      "allow_negative_stock": {
+        "type": "boolean",
+        "default": false
+      },
+      "next_journal_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_invoice_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_po_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_production_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_delivery_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_field_sale_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_collection_number": {
+        "type": "number",
+        "default": 1
+      },
+      "next_handover_number": {
+        "type": "number",
+        "default": 1
+      },
+      "gps_max_accuracy_m": {
+        "type": "number",
+        "default": 30
+      },
+      "gps_max_age_seconds": {
+        "type": "number",
+        "default": 120
+      }
+    },
+    "required": [
+      "company_name"
+    ],
+    "source": "CompanySettings.jsonc"
+  },
+  "Customer": {
+    "table": "customer",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "customer_number": {
+        "type": "string"
+      },
+      "business_name": {
+        "type": "string"
+      },
+      "parent_id": {
+        "type": "string"
+      },
+      "parent_name": {
+        "type": "string"
+      },
+      "contact_person": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "whatsapp": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "tax_id": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "supermarket",
+          "minimarket",
+          "wholesaler",
+          "shop",
+          "cash_customer",
+          "institutional"
+        ],
+        "default": "shop"
+      },
+      "financial_centralization_mode": {
+        "type": "string",
+        "enum": [
+          "centralized",
+          "decentralized"
+        ],
+        "default": "centralized"
+      },
+      "address": {
+        "type": "string"
+      },
+      "town": {
+        "type": "string"
+      },
+      "neighbourhood": {
+        "type": "string"
+      },
+      "gps_lat": {
+        "type": "number"
+      },
+      "gps_lng": {
+        "type": "number"
+      },
+      "gps_accuracy_m": {
+        "type": "number"
+      },
+      "gps_captured_at": {
+        "type": "string"
+      },
+      "delivery_instructions": {
+        "type": "string"
+      },
+      "salesperson_id": {
+        "type": "string"
+      },
+      "route_id": {
+        "type": "string"
+      },
+      "delivery_days": {
+        "type": "string"
+      },
+      "credit_limit": {
+        "type": "number",
+        "default": 0
+      },
+      "max_overdue_days": {
+        "type": "number",
+        "default": 30
+      },
+      "payment_terms_days": {
+        "type": "number",
+        "default": 0
+      },
+      "price_list": {
+        "type": "string"
+      },
+      "balance": {
+        "type": "number",
+        "default": 0
+      },
+      "credit_status": {
+        "type": "string",
+        "enum": [
+          "good",
+          "warning",
+          "hold",
+          "blocked"
+        ],
+        "default": "good"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      },
+      "notes": {
+        "type": "string"
+      },
+      "acquired_by_id": {
+        "type": "string"
+      },
+      "acquired_by_name": {
+        "type": "string"
+      },
+      "acquisition_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "acquisition_source": {
+        "type": "string"
+      },
+      "acquisition_verified": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "verified_unique",
+          "duplicate",
+          "rejected"
+        ],
+        "default": "pending"
+      },
+      "acquisition_verified_by": {
+        "type": "string"
+      },
+      "acquisition_verified_at": {
+        "type": "string"
+      },
+      "acquisition_notes": {
+        "type": "string"
+      },
+      "registered_by_id": {
+        "type": "string"
+      },
+      "registered_at": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "business_name"
+    ],
+    "source": "Customer.jsonc"
+  },
+  "CustomerLocation": {
+    "table": "customer_location",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "code": {
+        "type": "string"
+      },
+      "is_headquarters": {
+        "type": "boolean",
+        "default": false
+      },
+      "contact_person": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "town": {
+        "type": "string"
+      },
+      "neighbourhood": {
+        "type": "string"
+      },
+      "gps_lat": {
+        "type": "number"
+      },
+      "gps_lng": {
+        "type": "number"
+      },
+      "gps_accuracy_m": {
+        "type": "number"
+      },
+      "gps_captured_at": {
+        "type": "string"
+      },
+      "delivery_instructions": {
+        "type": "string"
+      },
+      "assigned_commercial_id": {
+        "type": "string"
+      },
+      "assigned_commercial_name": {
+        "type": "string"
+      },
+      "assigned_hotesse_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "route_id": {
+        "type": "string"
+      },
+      "route_name": {
+        "type": "string"
+      },
+      "delivery_days": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "customer_id",
+      "name"
+    ],
+    "source": "CustomerLocation.jsonc"
+  },
+  "Department": {
+    "table": "department",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "code": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "code"
+    ],
+    "source": "Department.jsonc"
+  },
+  "DepreciationEntry": {
+    "table": "depreciation_entry",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "asset_id": {
+        "type": "string"
+      },
+      "asset_number": {
+        "type": "string"
+      },
+      "asset_name": {
+        "type": "string"
+      },
+      "period_label": {
+        "type": "string"
+      },
+      "depreciation_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "amount": {
+        "type": "number"
+      },
+      "accumulated_after": {
+        "type": "number",
+        "default": 0
+      },
+      "net_book_value_after": {
+        "type": "number",
+        "default": 0
+      },
+      "journal_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "asset_id",
+      "depreciation_date",
+      "amount"
+    ],
+    "source": "DepreciationEntry.jsonc"
+  },
+  "Dispatch": {
+    "table": "dispatch",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "dispatch_number": {
+        "type": "string"
+      },
+      "dispatch_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "source": {
+        "type": "string",
+        "enum": [
+          "driver_request",
+          "manual_push"
+        ],
+        "default": "manual_push"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "route_id": {
+        "type": "string"
+      },
+      "route_name": {
+        "type": "string"
+      },
+      "vehicle_id": {
+        "type": "string"
+      },
+      "vehicle_name": {
+        "type": "string"
+      },
+      "vehicle_warehouse_id": {
+        "type": "string"
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "salesperson_id": {
+        "type": "string"
+      },
+      "salesperson_name": {
+        "type": "string"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "warehouse_name": {
+        "type": "string"
+      },
+      "departure_date": {
+        "type": "string"
+      },
+      "return_date": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "loaded",
+          "in_transit",
+          "returned",
+          "completed",
+          "cancelled"
+        ],
+        "default": "draft"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "loaded_by": {
+        "type": "string"
+      },
+      "loaded_at": {
+        "type": "string"
+      },
+      "closed_by": {
+        "type": "string"
+      },
+      "closed_at": {
+        "type": "string"
+      },
+      "total_loaded_value": {
+        "type": "number",
+        "default": 0
+      },
+      "total_delivered_value": {
+        "type": "number",
+        "default": 0
+      },
+      "total_returned_value": {
+        "type": "number",
+        "default": 0
+      },
+      "total_cash_collected": {
+        "type": "number",
+        "default": 0
+      },
+      "total_credit_sales": {
+        "type": "number",
+        "default": 0
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "dispatch_date",
+      "vehicle_id"
+    ],
+    "source": "Dispatch.jsonc"
+  },
+  "DispatchLine": {
+    "table": "dispatch_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "dispatch_id": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "requested_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "loaded_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "returned_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "loaded_value": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_price": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "required": [
+      "dispatch_id",
+      "product_id"
+    ],
+    "source": "DispatchLine.jsonc"
+  },
+  "DispatchRequest": {
+    "table": "dispatch_request",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "request_number": {
+        "type": "string"
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "vehicle_id": {
+        "type": "string"
+      },
+      "vehicle_name": {
+        "type": "string"
+      },
+      "route_id": {
+        "type": "string"
+      },
+      "route_name": {
+        "type": "string"
+      },
+      "source_warehouse_id": {
+        "type": "string"
+      },
+      "source_warehouse_name": {
+        "type": "string"
+      },
+      "request_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "processed",
+          "rejected"
+        ],
+        "default": "draft"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product_id": {
+              "type": "string"
+            },
+            "product_name": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "dispatch_id": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "rejected_by": {
+        "type": "string"
+      },
+      "rejected_at": {
+        "type": "string"
+      },
+      "rejection_reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "vehicle_id",
+      "request_date"
+    ],
+    "source": "DispatchRequest.jsonc"
+  },
+  "DriverActivity": {
+    "table": "driver_activity",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "request_key": {
+        "type": "string"
+      },
+      "dispatch_id": {
+        "type": "string"
+      },
+      "dispatch_number": {
+        "type": "string"
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "recorded_by": {
+        "type": "string"
+      },
+      "recorded_at": {
+        "type": "string"
+      },
+      "order_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "receiver": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "receipt_reference": {
+        "type": "string"
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "trip_started",
+          "trip_returned",
+          "delivery_completed",
+          "delivery_partial",
+          "delivery_failed",
+          "incident"
+        ]
+      },
+      "proof_file_uris": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "request_key",
+      "dispatch_id",
+      "driver_id",
+      "recorded_at",
+      "type"
+    ],
+    "source": "DriverActivity.jsonc"
+  },
+  "Employee": {
+    "table": "employee",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "employee_number": {
+        "type": "string"
+      },
+      "full_name": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "job_title": {
+        "type": "string"
+      },
+      "role": {
+        "type": "string",
+        "enum": [
+          "admin",
+          "procurement",
+          "warehouse_manager",
+          "cashier",
+          "production_manager",
+          "employee",
+          "commercial",
+          "hotesse",
+          "driver"
+        ]
+      },
+      "responsibilities": {
+        "type": "string"
+      },
+      "department_id": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "contract_type": {
+        "type": "string",
+        "enum": [
+          "permanent",
+          "temporary",
+          "daily",
+          "intern",
+          "contractor"
+        ],
+        "default": "permanent"
+      },
+      "start_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "active",
+          "on_leave",
+          "suspended",
+          "terminated"
+        ],
+        "default": "active"
+      },
+      "base_salary": {
+        "type": "number",
+        "default": 0
+      },
+      "payment_method": {
+        "type": "string",
+        "enum": [
+          "bank_transfer",
+          "mobile_money",
+          "cash"
+        ],
+        "default": "bank_transfer"
+      },
+      "bank_name": {
+        "type": "string"
+      },
+      "bank_account": {
+        "type": "string"
+      },
+      "mobile_money_number": {
+        "type": "string"
+      },
+      "bonus_plan": {
+        "type": "string"
+      },
+      "user_id": {
+        "type": "string"
+      },
+      "user_email": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "full_name",
+      "job_title"
+    ],
+    "source": "Employee.jsonc"
+  },
+  "ExpenseRequest": {
+    "table": "expense_request",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "request_number": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "requester_id": {
+        "type": "string"
+      },
+      "requester_name": {
+        "type": "string"
+      },
+      "payee": {
+        "type": "string"
+      },
+      "petty_cash": {
+        "type": "boolean",
+        "default": false
+      },
+      "department_id": {
+        "type": "string"
+      },
+      "department_name": {
+        "type": "string"
+      },
+      "request_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "amount": {
+        "type": "number",
+        "default": 0
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "travel",
+          "fuel",
+          "office",
+          "utilities",
+          "maintenance",
+          "transport",
+          "communication",
+          "cleaning",
+          "medical",
+          "training",
+          "security",
+          "other"
+        ],
+        "default": "other"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "paid",
+          "rejected"
+        ],
+        "default": "draft"
+      },
+      "justification": {
+        "type": "string"
+      },
+      "receipt_url": {
+        "type": "string"
+      },
+      "receipt_collected_at": {
+        "type": "string"
+      },
+      "expense_account_id": {
+        "type": "string"
+      },
+      "expense_account_number": {
+        "type": "string"
+      },
+      "expense_account_name": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "rejected_by": {
+        "type": "string"
+      },
+      "rejected_at": {
+        "type": "string"
+      },
+      "rejection_reason": {
+        "type": "string"
+      },
+      "treasury_account_id": {
+        "type": "string"
+      },
+      "treasury_account_name": {
+        "type": "string"
+      },
+      "paid_by": {
+        "type": "string"
+      },
+      "paid_at": {
+        "type": "string"
+      },
+      "treasury_transaction_id": {
+        "type": "string"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "budget_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "amount",
+      "request_date"
+    ],
+    "source": "ExpenseRequest.jsonc"
+  },
+  "FieldSale": {
+    "table": "field_sale",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "sale_number": {
+        "type": "string"
+      },
+      "commercial_id": {
+        "type": "string"
+      },
+      "commercial_name": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "location_id": {
+        "type": "string"
+      },
+      "location_name": {
+        "type": "string"
+      },
+      "route_id": {
+        "type": "string"
+      },
+      "transaction_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "submitted_at": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "submitted",
+          "under_review",
+          "approved_posted",
+          "returned",
+          "rejected",
+          "posting_failed"
+        ],
+        "default": "draft"
+      },
+      "payment_type": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "credit"
+        ],
+        "default": "cash"
+      },
+      "subtotal": {
+        "type": "number",
+        "default": 0
+      },
+      "discount_total": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_total": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "cost_of_goods": {
+        "type": "number",
+        "default": 0
+      },
+      "amount_collected": {
+        "type": "number",
+        "default": 0
+      },
+      "collection_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "amount_due": {
+        "type": "number",
+        "default": 0
+      },
+      "due_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "payment_terms_days": {
+        "type": "number",
+        "default": 0
+      },
+      "receipt_reference": {
+        "type": "string"
+      },
+      "receipt_file_uris": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "receipt_review_notes": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "custodian_warehouse_id": {
+        "type": "string"
+      },
+      "custody_issue_id": {
+        "type": "string"
+      },
+      "stock_moved_at": {
+        "type": "string"
+      },
+      "pending_warehouse_id": {
+        "type": "string"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "journal_number": {
+        "type": "string"
+      },
+      "posting_error": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "decided_by": {
+        "type": "string"
+      },
+      "decided_at": {
+        "type": "string"
+      },
+      "decision_reason": {
+        "type": "string"
+      },
+      "duplicate_flag": {
+        "type": "boolean",
+        "default": false
+      },
+      "duplicate_note": {
+        "type": "string"
+      },
+      "idempotency_key": {
+        "type": "string"
+      },
+      "credit_override_by": {
+        "type": "string"
+      },
+      "credit_override_reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "commercial_id",
+      "customer_id",
+      "transaction_date"
+    ],
+    "source": "FieldSale.jsonc"
+  },
+  "FieldSaleLine": {
+    "table": "field_sale_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "field_sale_id": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_price": {
+        "type": "number",
+        "default": 0
+      },
+      "list_price": {
+        "type": "number",
+        "default": 0
+      },
+      "discount": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_rate": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "line_total": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "line_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "lot_number": {
+        "type": "string"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      }
+    },
+    "required": [
+      "field_sale_id",
+      "product_id"
+    ],
+    "source": "FieldSaleLine.jsonc"
+  },
+  "FixedAsset": {
+    "table": "fixed_asset",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "asset_number": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "machinery",
+          "vehicle",
+          "building",
+          "furniture",
+          "equipment",
+          "it_equipment",
+          "other"
+        ],
+        "default": "equipment"
+      },
+      "description": {
+        "type": "string"
+      },
+      "serial_number": {
+        "type": "string"
+      },
+      "location": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "supplier_id": {
+        "type": "string"
+      },
+      "acquisition_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "acquisition_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "salvage_value": {
+        "type": "number",
+        "default": 0
+      },
+      "useful_life_months": {
+        "type": "number",
+        "default": 60
+      },
+      "depreciation_method": {
+        "type": "string",
+        "enum": [
+          "straight_line",
+          "none"
+        ],
+        "default": "straight_line"
+      },
+      "accumulated_depreciation": {
+        "type": "number",
+        "default": 0
+      },
+      "net_book_value": {
+        "type": "number",
+        "default": 0
+      },
+      "last_depreciation_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "asset_account_id": {
+        "type": "string"
+      },
+      "asset_account_number": {
+        "type": "string"
+      },
+      "asset_account_name": {
+        "type": "string"
+      },
+      "accum_dep_account_id": {
+        "type": "string"
+      },
+      "accum_dep_account_number": {
+        "type": "string"
+      },
+      "accum_dep_account_name": {
+        "type": "string"
+      },
+      "expense_account_id": {
+        "type": "string"
+      },
+      "expense_account_number": {
+        "type": "string"
+      },
+      "expense_account_name": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "active",
+          "fully_depreciated",
+          "disposed",
+          "written_off"
+        ],
+        "default": "active"
+      },
+      "disposal_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "disposal_proceeds": {
+        "type": "number",
+        "default": 0
+      },
+      "disposal_gain_loss": {
+        "type": "number",
+        "default": 0
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "acquisition_date",
+      "acquisition_cost",
+      "asset_account_id",
+      "accum_dep_account_id",
+      "expense_account_id"
+    ],
+    "source": "FixedAsset.jsonc"
+  },
+  "GoodsReceipt": {
+    "table": "goods_receipt",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "receipt_number": {
+        "type": "string"
+      },
+      "po_id": {
+        "type": "string"
+      },
+      "supplier_id": {
+        "type": "string"
+      },
+      "supplier_name": {
+        "type": "string"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "receipt_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "confirmed",
+          "cancelled"
+        ],
+        "default": "draft"
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "po_id",
+      "receipt_date"
+    ],
+    "source": "GoodsReceipt.jsonc"
+  },
+  "GoodsReceiptLine": {
+    "table": "goods_receipt_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "receipt_id": {
+        "type": "string"
+      },
+      "po_line_id": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "ordered_quantity": {
+        "type": "number"
+      },
+      "received_quantity": {
+        "type": "number"
+      },
+      "rejected_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "damaged_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_cost": {
+        "type": "number"
+      },
+      "lot_number": {
+        "type": "string"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "quality_status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "quarantined",
+          "rejected"
+        ],
+        "default": "approved"
+      }
+    },
+    "required": [
+      "receipt_id",
+      "product_id",
+      "received_quantity"
+    ],
+    "source": "GoodsReceiptLine.jsonc"
+  },
+  "Invoice": {
+    "table": "invoice",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "invoice_number": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "location_id": {
+        "type": "string"
+      },
+      "location_name": {
+        "type": "string"
+      },
+      "bill_to_location_id": {
+        "type": "string"
+      },
+      "bill_to_location_name": {
+        "type": "string"
+      },
+      "billing_mode": {
+        "type": "string",
+        "enum": [
+          "centralized",
+          "decentralized"
+        ],
+        "default": "centralized"
+      },
+      "sales_order_id": {
+        "type": "string"
+      },
+      "invoice_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "due_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "payment_type": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "credit"
+        ],
+        "default": "credit"
+      },
+      "cash_deposited": {
+        "type": "boolean",
+        "default": false
+      },
+      "deposit_treasury_account_id": {
+        "type": "string"
+      },
+      "deposit_treasury_account_name": {
+        "type": "string"
+      },
+      "deposited_at": {
+        "type": "string"
+      },
+      "deposited_by": {
+        "type": "string"
+      },
+      "deposit_journal_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "posted",
+          "partially_paid",
+          "paid",
+          "overdue",
+          "cancelled",
+          "credited"
+        ],
+        "default": "draft"
+      },
+      "subtotal": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_total": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "amount_paid": {
+        "type": "number",
+        "default": 0
+      },
+      "balance": {
+        "type": "number",
+        "default": 0
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "customer_id",
+      "invoice_date"
+    ],
+    "source": "Invoice.jsonc"
+  },
+  "InvoiceLine": {
+    "table": "invoice_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "invoice_id": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "quantity": {
+        "type": "number"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "unit_price": {
+        "type": "number"
+      },
+      "discount_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "cogs_total": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "required": [
+      "invoice_id",
+      "product_id",
+      "quantity",
+      "unit_price"
+    ],
+    "source": "InvoiceLine.jsonc"
+  },
+  "JournalEntry": {
+    "table": "journal_entry",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "journal_number": {
+        "type": "string"
+      },
+      "entry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "description": {
+        "type": "string"
+      },
+      "source_module": {
+        "type": "string"
+      },
+      "source_document_type": {
+        "type": "string"
+      },
+      "source_document_id": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "posted",
+          "reversed"
+        ],
+        "default": "draft"
+      },
+      "total_debit": {
+        "type": "number",
+        "default": 0
+      },
+      "total_credit": {
+        "type": "number",
+        "default": 0
+      },
+      "posted_by": {
+        "type": "string"
+      },
+      "posted_at": {
+        "type": "string"
+      },
+      "reversal_of": {
+        "type": "string"
+      },
+      "reversed_by_journal": {
+        "type": "string"
+      },
+      "period_id": {
+        "type": "string"
+      },
+      "is_immutable": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "required": [
+      "entry_date",
+      "description"
+    ],
+    "source": "JournalEntry.jsonc"
+  },
+  "JournalLine": {
+    "table": "journal_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "posted"
+        ],
+        "default": "posted"
+      },
+      "account_id": {
+        "type": "string"
+      },
+      "account_number": {
+        "type": "string"
+      },
+      "account_name": {
+        "type": "string"
+      },
+      "debit": {
+        "type": "number",
+        "default": 0
+      },
+      "credit": {
+        "type": "number",
+        "default": 0
+      },
+      "description": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "department_id": {
+        "type": "string"
+      },
+      "party_type": {
+        "type": "string"
+      },
+      "party_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "journal_id",
+      "account_id"
+    ],
+    "source": "JournalLine.jsonc"
+  },
+  "OutletVisit": {
+    "table": "outlet_visit",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "request_key": {
+        "type": "string"
+      },
+      "employee_id": {
+        "type": "string"
+      },
+      "employee_name": {
+        "type": "string"
+      },
+      "location_id": {
+        "type": "string"
+      },
+      "location_name": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "recorded_by": {
+        "type": "string"
+      },
+      "recorded_at": {
+        "type": "string"
+      },
+      "visit_date": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "reviewed_by": {
+        "type": "string"
+      },
+      "reviewed_at": {
+        "type": "string"
+      },
+      "review_notes": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "submitted",
+          "reviewed"
+        ],
+        "default": "submitted"
+      },
+      "has_concerns": {
+        "type": "boolean"
+      },
+      "proof_file_uris": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "lines": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product_id": {
+              "type": "string"
+            },
+            "product_name": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "availability": {
+              "type": "string"
+            },
+            "issue": {
+              "type": "string"
+            },
+            "expiry_date": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "number"
+            },
+            "observed_price": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "required": [
+      "request_key",
+      "employee_id",
+      "location_id",
+      "visit_date",
+      "recorded_at",
+      "status",
+      "lines"
+    ],
+    "source": "OutletVisit.jsonc"
+  },
+  "Payment": {
+    "table": "payment",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "payment_number": {
+        "type": "string"
+      },
+      "payment_type": {
+        "type": "string",
+        "enum": [
+          "customer_payment",
+          "supplier_payment",
+          "salary_payment"
+        ]
+      },
+      "party_type": {
+        "type": "string",
+        "enum": [
+          "customer",
+          "supplier",
+          "employee"
+        ]
+      },
+      "party_id": {
+        "type": "string"
+      },
+      "party_name": {
+        "type": "string"
+      },
+      "payment_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "amount": {
+        "type": "number"
+      },
+      "payment_method": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank_transfer",
+          "mobile_money",
+          "cheque"
+        ],
+        "default": "cash"
+      },
+      "reference": {
+        "type": "string"
+      },
+      "account_id": {
+        "type": "string"
+      },
+      "treasury_account_id": {
+        "type": "string"
+      },
+      "treasury_account_name": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "rejected",
+          "confirmed",
+          "posted",
+          "cancelled"
+        ],
+        "default": "draft"
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "po_id": {
+        "type": "string"
+      },
+      "prepared_by": {
+        "type": "string"
+      },
+      "prepared_at": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "rejected_by": {
+        "type": "string"
+      },
+      "rejected_at": {
+        "type": "string"
+      },
+      "rejection_reason": {
+        "type": "string"
+      },
+      "disbursed_by": {
+        "type": "string"
+      },
+      "disbursed_at": {
+        "type": "string"
+      },
+      "cheque_gm_signed_by": {
+        "type": "string"
+      },
+      "cheque_gm_signed_at": {
+        "type": "string"
+      },
+      "cheque_pm_signed_by": {
+        "type": "string"
+      },
+      "cheque_pm_signed_at": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "allocated_to_invoices": {
+        "type": "string"
+      },
+      "invoice_numbers": {
+        "type": "string"
+      },
+      "cashier_confirmed_by": {
+        "type": "string"
+      },
+      "cashier_confirmed_name": {
+        "type": "string"
+      },
+      "cashier_confirmed_at": {
+        "type": "string"
+      },
+      "collection_id": {
+        "type": "string"
+      },
+      "receipt_request_key": {
+        "type": "string"
+      },
+      "receipt_posting_token": {
+        "type": "string",
+        "default": ""
+      },
+      "receipt_posting_error": {
+        "type": "string"
+      },
+      "receipt_posting_snapshot": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "receipt_allocations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "invoice_id": {
+              "type": "string"
+            },
+            "invoice_number": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "invoice_id",
+            "amount"
+          ]
+        }
+      }
+    },
+    "required": [
+      "payment_type",
+      "party_id",
+      "amount",
+      "payment_date"
+    ],
+    "source": "Payment.jsonc"
+  },
+  "PaymentAllocation": {
+    "table": "payment_allocation",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "payment_id": {
+        "type": "string"
+      },
+      "payment_number": {
+        "type": "string"
+      },
+      "document_type": {
+        "type": "string",
+        "enum": [
+          "invoice",
+          "bill"
+        ]
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "document_number": {
+        "type": "string"
+      },
+      "party_type": {
+        "type": "string",
+        "enum": [
+          "customer",
+          "supplier"
+        ]
+      },
+      "party_id": {
+        "type": "string"
+      },
+      "party_name": {
+        "type": "string"
+      },
+      "amount": {
+        "type": "number"
+      },
+      "allocation_date": {
+        "type": "string",
+        "format": "date"
+      }
+    },
+    "required": [
+      "payment_id",
+      "document_type",
+      "document_id",
+      "amount"
+    ],
+    "source": "PaymentAllocation.jsonc"
+  },
+  "PayrollLine": {
+    "table": "payroll_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "payroll_id": {
+        "type": "string"
+      },
+      "employee_id": {
+        "type": "string"
+      },
+      "employee_name": {
+        "type": "string"
+      },
+      "base_salary": {
+        "type": "number",
+        "default": 0
+      },
+      "allowances": {
+        "type": "number",
+        "default": 0
+      },
+      "overtime": {
+        "type": "number",
+        "default": 0
+      },
+      "bonus": {
+        "type": "number",
+        "default": 0
+      },
+      "commission": {
+        "type": "number",
+        "default": 0
+      },
+      "gross_pay": {
+        "type": "number",
+        "default": 0
+      },
+      "statutory_deductions": {
+        "type": "number",
+        "default": 0
+      },
+      "other_deductions": {
+        "type": "number",
+        "default": 0
+      },
+      "loan_repayment": {
+        "type": "number",
+        "default": 0
+      },
+      "salary_advance": {
+        "type": "number",
+        "default": 0
+      },
+      "net_pay": {
+        "type": "number",
+        "default": 0
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "calculated",
+          "approved",
+          "paid"
+        ],
+        "default": "calculated"
+      }
+    },
+    "required": [
+      "payroll_id",
+      "employee_id"
+    ],
+    "source": "PayrollLine.jsonc"
+  },
+  "PayrollRun": {
+    "table": "payroll_run",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "period_name": {
+        "type": "string"
+      },
+      "month": {
+        "type": "number"
+      },
+      "year": {
+        "type": "number"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "calculated",
+          "under_review",
+          "approved",
+          "posted",
+          "partially_paid",
+          "paid",
+          "closed",
+          "reversed"
+        ],
+        "default": "draft"
+      },
+      "total_gross": {
+        "type": "number",
+        "default": 0
+      },
+      "total_deductions": {
+        "type": "number",
+        "default": 0
+      },
+      "total_net": {
+        "type": "number",
+        "default": 0
+      },
+      "employee_count": {
+        "type": "number",
+        "default": 0
+      },
+      "journal_id": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "period_name",
+      "month",
+      "year"
+    ],
+    "source": "PayrollRun.jsonc"
+  },
+  "PostingRule": {
+    "table": "posting_rule",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "rule_key": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "account_id": {
+        "type": "string"
+      },
+      "account_number": {
+        "type": "string"
+      },
+      "account_name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "rule_key",
+      "account_id"
+    ],
+    "source": "PostingRule.jsonc"
+  },
+  "Product": {
+    "table": "product",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "sku": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "image_url": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string"
+      },
+      "flavor": {
+        "type": "string"
+      },
+      "size": {
+        "type": "string"
+      },
+      "inventory_type": {
+        "type": "string",
+        "enum": [
+          "raw_material",
+          "packaging",
+          "wip",
+          "finished_product",
+          "consumable",
+          "cleaning",
+          "spare_part",
+          "promotional",
+          "returned",
+          "damaged",
+          "expired",
+          "service",
+          "assembly"
+        ]
+      },
+      "components": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product_id": {
+              "type": "string"
+            },
+            "product_name": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "number"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "unit_cost": {
+              "type": "number"
+            },
+            "line_cost": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "purchase_unit": {
+        "type": "string"
+      },
+      "storage_unit": {
+        "type": "string"
+      },
+      "production_unit": {
+        "type": "string"
+      },
+      "sales_unit": {
+        "type": "string"
+      },
+      "purchase_to_storage_factor": {
+        "type": "number",
+        "default": 1
+      },
+      "storage_to_production_factor": {
+        "type": "number",
+        "default": 1
+      },
+      "storage_to_sales_factor": {
+        "type": "number",
+        "default": 1
+      },
+      "costing_method": {
+        "type": "string",
+        "enum": [
+          "average",
+          "fifo",
+          "standard"
+        ],
+        "default": "average"
+      },
+      "current_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "standard_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "selling_price": {
+        "type": "number",
+        "default": 0
+      },
+      "reorder_level": {
+        "type": "number",
+        "default": 0
+      },
+      "min_stock": {
+        "type": "number",
+        "default": 0
+      },
+      "max_stock": {
+        "type": "number",
+        "default": 0
+      },
+      "preferred_supplier_id": {
+        "type": "string"
+      },
+      "lot_tracking": {
+        "type": "boolean",
+        "default": false
+      },
+      "expiry_tracking": {
+        "type": "boolean",
+        "default": false
+      },
+      "shelf_life_days": {
+        "type": "number"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      },
+      "tax_rate": {
+        "type": "number",
+        "default": 0
+      },
+      "inventory_account_id": {
+        "type": "string"
+      },
+      "cogs_account_id": {
+        "type": "string"
+      },
+      "revenue_account_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sku",
+      "name",
+      "inventory_type"
+    ],
+    "source": "Product.jsonc"
+  },
+  "ProductionMaterial": {
+    "table": "production_material",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "production_order_id": {
+        "type": "string"
+      },
+      "material_id": {
+        "type": "string"
+      },
+      "material_name": {
+        "type": "string"
+      },
+      "standard_quantity": {
+        "type": "number"
+      },
+      "issued_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "returned_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "consumed_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "wastage_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "unit": {
+        "type": "string"
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "total_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "lot_number": {
+        "type": "string"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "is_substitute": {
+        "type": "boolean",
+        "default": false
+      },
+      "original_material_id": {
+        "type": "string"
+      },
+      "substitution_reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "production_order_id",
+      "material_id",
+      "standard_quantity"
+    ],
+    "source": "ProductionMaterial.jsonc"
+  },
+  "ProductionOrder": {
+    "table": "production_order",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "order_number": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "planned_output": {
+        "type": "number"
+      },
+      "actual_output": {
+        "type": "number",
+        "default": 0
+      },
+      "rejected_output": {
+        "type": "number",
+        "default": 0
+      },
+      "production_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "batch_number": {
+        "type": "string"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "awaiting_approval",
+          "approved",
+          "materials_reserved",
+          "materials_issued",
+          "in_production",
+          "awaiting_qc",
+          "completed",
+          "released",
+          "rejected",
+          "closed",
+          "cancelled"
+        ],
+        "default": "draft"
+      },
+      "standard_cost_per_unit": {
+        "type": "number",
+        "default": 0
+      },
+      "actual_cost_per_unit": {
+        "type": "number",
+        "default": 0
+      },
+      "total_material_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "notes": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "materials_issued_by": {
+        "type": "string"
+      },
+      "materials_issued_at": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "product_id",
+      "recipe_id",
+      "planned_output",
+      "production_date"
+    ],
+    "source": "ProductionOrder.jsonc"
+  },
+  "PurchaseItem": {
+    "table": "purchase_item",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "item_code": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "petty",
+          "machinery_asset",
+          "office_supply",
+          "service"
+        ]
+      },
+      "category_label": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "estimated_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "default_supplier_id": {
+        "type": "string"
+      },
+      "default_supplier_name": {
+        "type": "string"
+      },
+      "default_account_id": {
+        "type": "string"
+      },
+      "default_account_number": {
+        "type": "string"
+      },
+      "default_account_name": {
+        "type": "string"
+      },
+      "is_asset": {
+        "type": "boolean",
+        "default": false
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "category"
+    ],
+    "source": "PurchaseItem.jsonc"
+  },
+  "PurchaseOrder": {
+    "table": "purchase_order",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "po_number": {
+        "type": "string"
+      },
+      "supplier_id": {
+        "type": "string"
+      },
+      "supplier_name": {
+        "type": "string"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "requested_department_id": {
+        "type": "string"
+      },
+      "requested_department_name": {
+        "type": "string"
+      },
+      "requested_by_id": {
+        "type": "string"
+      },
+      "requested_by_name": {
+        "type": "string"
+      },
+      "requested_by_title": {
+        "type": "string"
+      },
+      "request_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "order_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "expected_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "payment_terms": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "credit"
+        ],
+        "default": "cash"
+      },
+      "cash_disbursed": {
+        "type": "boolean",
+        "default": false
+      },
+      "cash_treasury_account_id": {
+        "type": "string"
+      },
+      "cash_treasury_account_name": {
+        "type": "string"
+      },
+      "cash_disbursed_at": {
+        "type": "string"
+      },
+      "cash_disbursed_by": {
+        "type": "string"
+      },
+      "cash_journal_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "partially_received",
+          "received",
+          "billed",
+          "cancelled"
+        ],
+        "default": "draft"
+      },
+      "subtotal": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_total": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "notes": {
+        "type": "string"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "supplier_id",
+      "order_date"
+    ],
+    "source": "PurchaseOrder.jsonc"
+  },
+  "PurchaseOrderLine": {
+    "table": "purchase_order_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "po_id": {
+        "type": "string"
+      },
+      "supplier_id": {
+        "type": "string"
+      },
+      "supplier_name": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "quantity": {
+        "type": "number"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "unit_price": {
+        "type": "number"
+      },
+      "tax_rate": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "received_quantity": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "required": [
+      "po_id",
+      "product_id",
+      "quantity",
+      "unit_price"
+    ],
+    "source": "PurchaseOrderLine.jsonc"
+  },
+  "QualityCheck": {
+    "table": "quality_check",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "production_order_id": {
+        "type": "string"
+      },
+      "batch_number": {
+        "type": "string"
+      },
+      "check_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "inspector_id": {
+        "type": "string"
+      },
+      "inspector_name": {
+        "type": "string"
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "ph_level": {
+        "type": "number"
+      },
+      "taste": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "acceptable"
+        ]
+      },
+      "texture": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "acceptable"
+        ]
+      },
+      "appearance": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "acceptable"
+        ]
+      },
+      "smell": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "acceptable"
+        ]
+      },
+      "seal_quality": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "acceptable"
+        ]
+      },
+      "packaging_integrity": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "acceptable"
+        ]
+      },
+      "overall_status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "approved_with_deviation",
+          "quarantined",
+          "rework",
+          "rejected",
+          "destroyed"
+        ],
+        "default": "pending"
+      },
+      "comments": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "production_order_id",
+      "check_date"
+    ],
+    "source": "QualityCheck.jsonc"
+  },
+  "Recipe": {
+    "table": "recipe",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "recipe_name": {
+        "type": "string"
+      },
+      "version": {
+        "type": "number",
+        "default": 1
+      },
+      "effective_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "batch_output": {
+        "type": "number"
+      },
+      "output_unit": {
+        "type": "string"
+      },
+      "expected_yield_pct": {
+        "type": "number",
+        "default": 100
+      },
+      "wastage_limit_pct": {
+        "type": "number",
+        "default": 2
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "superseded",
+          "archived"
+        ],
+        "default": "draft"
+      },
+      "approved_by": {
+        "type": "string"
+      },
+      "approved_at": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "change_reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "product_id",
+      "recipe_name",
+      "batch_output"
+    ],
+    "source": "Recipe.jsonc"
+  },
+  "RecipeLine": {
+    "table": "recipe_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "material_id": {
+        "type": "string"
+      },
+      "material_name": {
+        "type": "string"
+      },
+      "material_type": {
+        "type": "string",
+        "enum": [
+          "ingredient",
+          "primary_packaging",
+          "secondary_packaging",
+          "consumable"
+        ]
+      },
+      "quantity": {
+        "type": "number"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "expected_wastage_pct": {
+        "type": "number",
+        "default": 0
+      },
+      "allow_substitution": {
+        "type": "boolean",
+        "default": false
+      },
+      "substitute_material_id": {
+        "type": "string"
+      },
+      "sequence": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "required": [
+      "recipe_id",
+      "material_id",
+      "quantity",
+      "unit"
+    ],
+    "source": "RecipeLine.jsonc"
+  },
+  "Route": {
+    "table": "route",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "code": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "default_vehicle_id": {
+        "type": "string"
+      },
+      "default_driver_id": {
+        "type": "string"
+      },
+      "default_salesperson_id": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "code"
+    ],
+    "source": "Route.jsonc"
+  },
+  "SalesOrder": {
+    "table": "sales_order",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "order_number": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "location_id": {
+        "type": "string"
+      },
+      "location_name": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "vehicle_id": {
+        "type": "string"
+      },
+      "vehicle_name": {
+        "type": "string"
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "salesperson_id": {
+        "type": "string"
+      },
+      "salesperson_name": {
+        "type": "string"
+      },
+      "route_id": {
+        "type": "string"
+      },
+      "dispatch_id": {
+        "type": "string"
+      },
+      "order_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "delivery_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "payment_type": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "credit"
+        ],
+        "default": "cash"
+      },
+      "payment_terms_days": {
+        "type": "number",
+        "default": 0
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "confirmed",
+          "credit_hold",
+          "ready",
+          "dispatched",
+          "partially_delivered",
+          "delivered",
+          "invoiced",
+          "cancelled"
+        ],
+        "default": "draft"
+      },
+      "subtotal": {
+        "type": "number",
+        "default": 0
+      },
+      "discount_total": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_total": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "notes": {
+        "type": "string"
+      },
+      "credit_override_by": {
+        "type": "string"
+      },
+      "credit_override_reason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "customer_id",
+      "order_date"
+    ],
+    "source": "SalesOrder.jsonc"
+  },
+  "SalesOrderLine": {
+    "table": "sales_order_line",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "order_id": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "quantity": {
+        "type": "number"
+      },
+      "unit": {
+        "type": "string"
+      },
+      "unit_price": {
+        "type": "number"
+      },
+      "discount_pct": {
+        "type": "number",
+        "default": 0
+      },
+      "discount_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_rate": {
+        "type": "number",
+        "default": 0
+      },
+      "tax_amount": {
+        "type": "number",
+        "default": 0
+      },
+      "total": {
+        "type": "number",
+        "default": 0
+      },
+      "delivered_quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "lot_number": {
+        "type": "string"
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      }
+    },
+    "required": [
+      "order_id",
+      "product_id",
+      "quantity",
+      "unit_price"
+    ],
+    "source": "SalesOrderLine.jsonc"
+  },
+  "SpoilageRecord": {
+    "table": "spoilage_record",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "record_number": {
+        "type": "string"
+      },
+      "customer_id": {
+        "type": "string"
+      },
+      "customer_name": {
+        "type": "string"
+      },
+      "location_id": {
+        "type": "string"
+      },
+      "location_name": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "unit": {
+        "type": "string"
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "total_value": {
+        "type": "number",
+        "default": 0
+      },
+      "reported_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "dispatch_id": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string",
+        "enum": [
+          "expired",
+          "damaged_in_transit",
+          "damaged_at_store",
+          "packaging_defect",
+          "quality_issue",
+          "other"
+        ],
+        "default": "expired"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "reported",
+          "replaced",
+          "credited",
+          "written_off"
+        ],
+        "default": "reported"
+      },
+      "replaced_by": {
+        "type": "string"
+      },
+      "replaced_at": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "customer_id",
+      "location_id",
+      "product_id",
+      "quantity",
+      "reported_date"
+    ],
+    "source": "SpoilageRecord.jsonc"
+  },
+  "StockBalance": {
+    "table": "stock_balance",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "warehouse_name": {
+        "type": "string"
+      },
+      "lot_number": {
+        "type": "string"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "quantity": {
+        "type": "number",
+        "default": 0
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "total_value": {
+        "type": "number",
+        "default": 0
+      },
+      "qc_status": {
+        "type": "string",
+        "enum": [
+          "approved",
+          "quarantine",
+          "rejected",
+          "pending"
+        ],
+        "default": "approved"
+      },
+      "production_order_id": {
+        "type": "string"
+      },
+      "qc_released_by": {
+        "type": "string"
+      },
+      "qc_released_at": {
+        "type": "string"
+      },
+      "qc_notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "product_id",
+      "warehouse_id"
+    ],
+    "source": "StockBalance.jsonc"
+  },
+  "StockMovement": {
+    "table": "stock_movement",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "product_id": {
+        "type": "string"
+      },
+      "product_name": {
+        "type": "string"
+      },
+      "quantity": {
+        "type": "number"
+      },
+      "movement_type": {
+        "type": "string",
+        "enum": [
+          "purchase_receipt",
+          "supplier_return",
+          "production_issue",
+          "production_return",
+          "production_consumption",
+          "production_output",
+          "warehouse_transfer",
+          "vehicle_load",
+          "customer_delivery",
+          "customer_return",
+          "damage",
+          "expiry",
+          "quality_quarantine",
+          "quality_release",
+          "stock_adjustment",
+          "stock_count_variance",
+          "promotional_issue",
+          "sample_issue",
+          "commercial_issue",
+          "commercial_return",
+          "field_delivery",
+          "field_delivery_return"
+        ]
+      },
+      "source_warehouse_id": {
+        "type": "string"
+      },
+      "destination_warehouse_id": {
+        "type": "string"
+      },
+      "lot_number": {
+        "type": "string"
+      },
+      "expiry_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "unit_cost": {
+        "type": "number",
+        "default": 0
+      },
+      "total_value": {
+        "type": "number",
+        "default": 0
+      },
+      "document_type": {
+        "type": "string"
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "reversed"
+        ],
+        "default": "approved"
+      },
+      "movement_date": {
+        "type": "string",
+        "format": "date"
+      }
+    },
+    "required": [
+      "product_id",
+      "quantity",
+      "movement_type"
+    ],
+    "source": "StockMovement.jsonc"
+  },
+  "Supplier": {
+    "table": "supplier",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "supplier_number": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "contact_person": {
+        "type": "string"
+      },
+      "phone": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "city": {
+        "type": "string"
+      },
+      "tax_id": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string"
+      },
+      "payment_terms_days": {
+        "type": "number",
+        "default": 30
+      },
+      "balance": {
+        "type": "number",
+        "default": 0
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      },
+      "notes": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "source": "Supplier.jsonc"
+  },
+  "TreasuryAccount": {
+    "table": "treasury_account",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "account_type": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank",
+          "mobile_money",
+          "petty_cash"
+        ]
+      },
+      "gl_account_id": {
+        "type": "string"
+      },
+      "gl_account_number": {
+        "type": "string"
+      },
+      "gl_account_name": {
+        "type": "string"
+      },
+      "balance": {
+        "type": "number",
+        "default": 0
+      },
+      "float_limit": {
+        "type": "number",
+        "default": 0
+      },
+      "custodian": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "account_type",
+      "gl_account_id"
+    ],
+    "source": "TreasuryAccount.jsonc"
+  },
+  "TreasuryTransaction": {
+    "table": "treasury_transaction",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "transaction_number": {
+        "type": "string"
+      },
+      "treasury_account_id": {
+        "type": "string"
+      },
+      "treasury_account_name": {
+        "type": "string"
+      },
+      "transaction_type": {
+        "type": "string",
+        "enum": [
+          "receipt",
+          "expense",
+          "transfer_in",
+          "transfer_out"
+        ]
+      },
+      "counterparty_account_id": {
+        "type": "string"
+      },
+      "counterparty_account_name": {
+        "type": "string"
+      },
+      "expense_account_id": {
+        "type": "string"
+      },
+      "expense_account_number": {
+        "type": "string"
+      },
+      "expense_account_name": {
+        "type": "string"
+      },
+      "category": {
+        "type": "string"
+      },
+      "payee": {
+        "type": "string"
+      },
+      "department_id": {
+        "type": "string"
+      },
+      "department_name": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "source_document_id": {
+        "type": "string"
+      },
+      "source_document_number": {
+        "type": "string"
+      },
+      "amount": {
+        "type": "number"
+      },
+      "transaction_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "description": {
+        "type": "string"
+      },
+      "reference": {
+        "type": "string"
+      },
+      "journal_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "treasury_account_id",
+      "transaction_type",
+      "amount",
+      "transaction_date"
+    ],
+    "source": "TreasuryTransaction.jsonc"
+  },
+  "User": {
+    "table": "user",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "role": {
+        "type": "string",
+        "description": "The role of the user in the app",
+        "enum": [
+          "admin",
+          "user"
+        ]
+      },
+      "full_name": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string"
+      },
+      "auth_user_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "role"
+    ],
+    "source": "User.jsonc"
+  },
+  "Vehicle": {
+    "table": "vehicle",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "registration": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "vehicle_type": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "warehouse_id": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "registration",
+      "name"
+    ],
+    "source": "Vehicle.jsonc"
+  },
+  "Warehouse": {
+    "table": "warehouse",
+    "fields": {
+      "id": {
+        "type": "string"
+      },
+      "created_date": {
+        "type": "string"
+      },
+      "updated_date": {
+        "type": "string"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "code": {
+        "type": "string"
+      },
+      "branch_id": {
+        "type": "string"
+      },
+      "warehouse_type": {
+        "type": "string",
+        "enum": [
+          "raw_material",
+          "packaging",
+          "wip",
+          "finished_goods",
+          "cold_room",
+          "quarantine",
+          "damaged",
+          "vehicle",
+          "general",
+          "commercial_custody",
+          "field_delivery_pending"
+        ]
+      },
+      "custodian_employee_id": {
+        "type": "string"
+      },
+      "custodian_name": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "code",
+      "warehouse_type"
+    ],
+    "source": "Warehouse.jsonc"
+  }
+}

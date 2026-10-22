@@ -1,3 +1,14 @@
+
+/* localized-interface */
+import { ui } from './i18n.js';
+import { ACCOUNTING_REPORT_PATHS } from './management-access.js';
+import { normalizeRole, effectiveRole, hasRoleAccess, MANAGEMENT_HIERARCHY } from '../server/domain/roles.js';
+import { INVENTORY_ROLES } from './inventory-navigation.js';
+import { QUALITY_ROLES } from './quality-workspace.js';
+import { PURCHASE_ROLES } from './purchase-workspace.js';
+import { COMPANY_SALES_ROLES, COMMERCIAL_REPORT_ROLES, DISPATCH_MANAGER_ROLES } from './operations-access.js';
+export { normalizeRole, hasRoleAccess };
+
 // Role-based access control for SOEICAM ERP
 // Roles: admin (GM), procurement, warehouse_manager, cashier, production_manager, employee
 
@@ -10,17 +21,20 @@ export const ROLES = {
   EMPLOYEE: 'employee',
   COMMERCIAL: 'commercial',
   HOTESSE: 'hotesse',
+  DRIVER: 'driver',
 };
 
 export const ROLE_LABELS = {
-  admin: 'General Manager',
+  get admin(){return ui("General Manager");},
+  get supply_chain_manager(){return ui("Supply Chain Manager");},
   procurement: 'Procurement',
-  warehouse_manager: 'Warehouse Manager',
+  get warehouse_manager(){return ui("Warehouse Manager");},
   cashier: 'Cashier',
-  production_manager: 'Production Manager',
+  get production_manager(){return ui("Operations / Production Manager");},
   employee: 'Employee',
-  commercial: 'Commercial (Field Sales)',
-  hotesse: 'Hotesse (Outlet Reporting)',
+  get commercial(){return ui("Commercial (Field Sales)");},
+  get hotesse(){return ui("Hotesse (Outlet Reporting)");},
+  get driver(){return ui("Driver (Deliveries)");},
 };
 
 // The system roles: how each one is grouped, what it is responsible for, and
@@ -28,21 +42,49 @@ export const ROLE_LABELS = {
 export const ROLE_DEFINITIONS = [
   {
     key: 'admin',
-    label: 'General Manager',
+    ...MANAGEMENT_HIERARCHY.admin,
+    get label(){return ui("General Manager");},
     category: 'Management',
-    summary: 'Owns the operation and gives final approval.',
+    get summary(){return ui("Full ERP administration across every dashboard, department and management function.");},
     duties: [
       'Final approval of purchase orders, production orders and field sales',
       'Reviews financial statements, budgets and the business cockpit',
       'Manages employees, user accounts and company settings',
-      'Full access to every module',
+      'Full administration of every ERP module and staff dashboard',
+    ],
+  },
+  {
+    key: 'production_manager',
+    ...MANAGEMENT_HIERARCHY.production_manager,
+    label: ROLE_LABELS.production_manager,
+    category: 'Management',
+    get summary(){return ui("Leads daily operations and production, with company sales and delivery oversight.");},
+    duties: [
+      'Plans production, requests materials and records output',
+      'Views company sales and Commercial performance across all agents',
+      'Manages inventory, delivery teams, dispatch loading and returns',
+      'Oversees quality control, batch release, expiry and traceability',
+      'Reviews recipes and expense requests within the existing approval workflow',
+      'Provides the Operations / Production Manager cheque signature',
+      'Submits production and purchase orders for General Manager approval',
+    ],
+  },
+  {
+    key: 'supply_chain_manager',
+    get label(){return ui("Supply Chain Manager");},
+    category: 'Management',
+    get summary(){return ui("Coordinates suppliers, purchasing, receiving, inventory, quality and deliveries.");},
+    duties: [
+      'Maintains suppliers and plans replenishment orders',
+      'Oversees receiving, stock and batch quality',
+      'Coordinates vehicle loads, returns and deliveries',
     ],
   },
   {
     key: 'cashier',
-    label: 'Cashier',
+    get label(){return ui("Cashier");},
     category: 'Finance',
-    summary: 'Handles money in and money out.',
+    get summary(){return ui("Handles money in and money out.");},
     duties: [
       'Disburses payments and records treasury receipts and expenses',
       'Confirms cash physically received from Commercials',
@@ -52,9 +94,9 @@ export const ROLE_DEFINITIONS = [
   },
   {
     key: 'procurement',
-    label: 'Procurement Officer',
+    get label(){return ui("Procurement Officer");},
     category: 'Operations',
-    summary: 'Buys what the factory and sales need.',
+    get summary(){return ui("Buys what the factory and sales need.");},
     duties: [
       'Creates purchase orders and follows them through to receipt',
       'Maintains supplier accounts and price agreements',
@@ -64,33 +106,21 @@ export const ROLE_DEFINITIONS = [
   },
   {
     key: 'warehouse_manager',
-    label: 'Warehouse Manager',
+    get label(){return ui("Warehouse Manager");},
     category: 'Operations',
-    summary: 'Controls everything that moves in and out of storage.',
+    get summary(){return ui("Controls everything that moves in and out of storage.");},
     duties: [
       'Receives goods and manages stock, transfers and cold room',
-      'Issues goods into a Commercial custody location',
+      'Loads finished goods onto paired Commercial delivery vehicles and receives counted returns',
       'Monitors expiry, quarantine and batch traceability',
       'Approves stock corrections and warehouse movements',
     ],
   },
   {
-    key: 'production_manager',
-    label: 'Production Manager',
-    category: 'Operations',
-    summary: 'Runs the factory floor.',
-    duties: [
-      'Plans and runs production batches, recipes and yield',
-      'Requests materials and records production output',
-      'Owns quality control and batch release',
-      'Second signature on cheques with the General Manager',
-    ],
-  },
-  {
     key: 'employee',
-    label: 'Employee (General Staff)',
+    get label(){return ui("Employee (General Staff)");},
     category: 'Operations',
-    summary: 'General staff with day-to-day operational access.',
+    get summary(){return ui("General staff with day-to-day operational access.");},
     duties: [
       'Raises expense requests and records their own activity',
       'Sees sales, customers, procurement and stock screens',
@@ -100,9 +130,9 @@ export const ROLE_DEFINITIONS = [
   },
   {
     key: 'commercial',
-    label: 'Commercial (Field Sales)',
+    get label(){return ui("Commercial (Field Sales)");},
     category: 'Commercial',
-    summary: 'Sells in the field and holds company stock in custody.',
+    get summary(){return ui("Sells in the field and holds company stock in custody.");},
     duties: [
       'Holds issued stock in custody and sells on the road',
       'Records deliveries with customer receipt evidence',
@@ -111,14 +141,21 @@ export const ROLE_DEFINITIONS = [
     ],
   },
   {
+    key: 'driver',
+    get label(){return ui("Driver (Deliveries)");},
+    category: 'Operations',
+    get summary(){return ui("Delivers assigned goods and reports progress from the road.");},
+    duties: ['Views only assigned runs, load manifests and customer stops', 'Opens customer directions and calls delivery contacts', 'Records departure, delivery outcomes, incidents and return to base', 'Leaves stock reconciliation, invoicing and approvals to authorized staff'],
+  },
+  {
     key: 'hotesse',
-    label: 'Hotesse (Outlet Reporting)',
+    get label(){return ui("Hotesse (Outlet Reporting)");},
     category: 'Commercial',
-    summary: 'Reports on outlets and shelf activity.',
+    get summary(){return ui("Records daily retail sales and stock counts at assigned points of sale.");},
     duties: [
-      'Reports outlet visits and product availability',
-      'Flags out-of-stock, expiry and pricing issues at outlets',
-      'Supports Commercials with customer information',
+      'Reports units sold, retail prices and closing stock each day',
+      'Sees only finished products confirmed supplied to assigned outlets',
+      'Flags count differences, damage and replenishment needs',
       'No financial posting rights',
     ],
   },
@@ -127,31 +164,11 @@ export const ROLE_DEFINITIONS = [
 export const ROLE_CATEGORIES = ['Management', 'Finance', 'Operations', 'Commercial'];
 
 export function roleDefinition(role) {
-  return ROLE_DEFINITIONS.find(r => r.key === role) || null;
+  return ROLE_DEFINITIONS.find(r => r.key === (normalizeRole(role) || role)) || null;
 }
 
 export function roleLabel(role) {
   return roleDefinition(role)?.label || ROLE_LABELS[role] || role || 'Unassigned';
-}
-
-// Older employee records stored the role as free text (e.g. "Cashier"). Map those
-// labels onto the system roles so every employee opens with a usable role.
-const LEGACY_ROLE_ALIASES = {
-  'managing director': 'admin', 'general manager': 'admin', 'gm': 'admin',
-  'cashier': 'cashier', 'accountant': 'cashier', 'treasurer': 'cashier',
-  'procurement': 'procurement', 'procurement officer': 'procurement', 'buyer': 'procurement',
-  'warehouse manager': 'warehouse_manager', 'storekeeper': 'warehouse_manager', 'store keeper': 'warehouse_manager',
-  'production manager': 'production_manager', 'quality-control officer': 'production_manager',
-  'quality control officer': 'production_manager', 'quality officer': 'production_manager',
-  'commercial': 'commercial', 'salesperson': 'commercial', 'sales person': 'commercial',
-  'hotesse': 'hotesse', 'hostess': 'hotesse',
-  'employee': 'employee', 'driver': 'employee', 'worker': 'employee', 'staff': 'employee',
-};
-
-export function normalizeRole(role) {
-  if (!role) return '';
-  if (roleDefinition(role)) return role;
-  return LEGACY_ROLE_ALIASES[String(role).trim().toLowerCase()] || '';
 }
 
 // Who can approve purchase orders (GM only — procurement/production manager submit, GM approves)
@@ -164,15 +181,13 @@ export const PAYMENT_DISBURSERS = ['admin', 'cashier'];
 export const PRODUCTION_APPROVERS = ['admin'];
 // Who can issue materials from warehouse
 export const WAREHOUSE_ISSUERS = ['admin', 'warehouse_manager'];
-// Who signs cheques (dual signature required: GM + Production Manager)
+// Who signs cheques (dual signature required: GM + Operations / Production Manager)
 export const CHEQUE_GM_SIGNERS = ['admin'];
 export const CHEQUE_PM_SIGNERS = ['production_manager'];
 
 // Determine effective role from user + employee records
 export function getEffectiveRole(user, employee) {
-  if (!user) return null;
-  if (user.role === 'admin') return 'admin';
-  return employee?.role || 'employee';
+  return effectiveRole(user, employee);
 }
 
 export function canApprovePO(role) {
@@ -206,24 +221,32 @@ export const HANDOVER_RECEIVERS = ['admin', 'cashier'];
 export const NAV_ROLE_ACCESS = {
   '/': null,
   '/cockpit': ['admin'],
-  '/accounting': ['admin', 'cashier'],
-  '/purchases': ['admin', 'procurement', 'production_manager', 'warehouse_manager', 'employee'],
-  '/suppliers': ['admin', 'procurement'],
-  '/inventory': ['admin', 'warehouse_manager', 'procurement'],
-  '/manufacturing': ['admin', 'production_manager', 'warehouse_manager'],
-  '/quality': ['admin', 'production_manager'],
+  '/accounting': ['admin', 'cashier','production_manager','warehouse_manager'],
+  '/purchases': PURCHASE_ROLES,
+  '/suppliers': ['admin', 'procurement', 'cashier'],
+  '/inventory': INVENTORY_ROLES,
+  '/items': INVENTORY_ROLES,
+  '/manufacturing': QUALITY_ROLES,
+  '/quality': QUALITY_ROLES,
   '/expiry': ['admin', 'warehouse_manager', 'production_manager', 'employee'],
   '/traceability': ['admin', 'production_manager', 'warehouse_manager'],
-  '/sales': ['admin', 'employee'],
-  '/customers': ['admin', 'employee'],
-  '/distribution': ['admin', 'employee', 'warehouse_manager'],
+  '/sales': [...COMPANY_SALES_ROLES,'warehouse_manager'],
+  '/customers': ['admin', 'employee', 'commercial'],
+  '/distribution': [...DISPATCH_MANAGER_ROLES, 'employee', 'driver'],
   '/employees': ['admin'],
-  '/payroll': ['admin'],
+  '/payroll': ['admin','cashier'],
   '/cashier': ['admin', 'cashier', 'production_manager'],
   '/expenses': null,
   '/reports': ['admin'],
   '/approvals': ['admin', 'procurement', 'production_manager', 'warehouse_manager'],
   '/admin': ['admin'],
+  '/team-workspaces': ['admin','cashier'],
+  '/commercial': ['admin', 'commercial', 'production_manager'],
+  '/driver': ['admin', 'driver'],
+  '/hotesse': ['admin', 'hotesse'],
+  '/outlet-reports': ['admin', 'hotesse'],
+  '/field-customers': ['admin', 'commercial'],
+  '/commercial-performance': COMMERCIAL_REPORT_ROLES,
   '/field-sales': ['admin', 'commercial'],
   '/field-review': ['admin'],
   '/custody': ['admin', 'warehouse_manager'],
@@ -240,4 +263,28 @@ export function canApproveFieldSale(role) {
 
 export function canReceiveHandover(role) {
   return HANDOVER_RECEIVERS.includes(role);
+}
+// Field staff use dedicated workspaces; hiding navigation alone is insufficient.
+export function canOpenFieldPath(role, path) {
+  const [pathname,query='']=String(path||'').split('?');path=pathname;
+  role = normalizeRole(role);
+  if (!role) return false;
+  if (role === 'admin') return true;
+  if (path === '/profile' || path === '/profile/') return true;
+  if (path === '/sales-reports') return true;
+  const isWithin = root => root === '/' ? path === '/' : path === root || path.startsWith(root + '/');
+  if (isWithin('/team-workspaces')) return role === 'admin'||role==='cashier'&&new URLSearchParams(query).get('section')==='payroll';
+  if (isWithin('/commercial')) return ['commercial', 'production_manager'].includes(role) && path.replace(/\/+$/, '') === '/commercial';
+  if (role === 'driver' && isWithin('/distribution')) return path.replace(/\/+$/, '') === '/distribution';
+  if (isWithin('/outlet-reports')) return ['admin', 'hotesse'].includes(role);
+  if (['production_manager','warehouse_manager'].includes(role) && isWithin('/accounting')) return ACCOUNTING_REPORT_PATHS.includes(path.replace(/\/+$/, ''));
+  if (['production_manager','warehouse_manager'].includes(role) && isWithin('/sales')) return path.replace(/\/+$/, '') === '/sales';
+  const scopes = {
+    commercial: ['/', '/customers', '/commercial', '/field-sales', '/field-customers', '/commercial-performance', '/cash-handovers'],
+    driver: ['/', '/driver', '/distribution'],
+    hotesse: ['/', '/hotesse', '/outlet-reports'],
+    cashier: ['/', '/payroll', '/cashier', '/cash-handovers', '/accounting', '/expenses', '/finance-pulse', '/purchases', '/suppliers'],
+    production_manager: ['/', '/inventory', '/items', '/manufacturing', '/quality', '/expiry', '/traceability', '/purchases', '/cashier', '/expenses', '/approvals', '/finance-pulse', '/distribution', '/commercial-performance'],
+  };
+  return scopes[role] ? scopes[role].some(isWithin) : true;
 }

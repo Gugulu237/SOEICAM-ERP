@@ -1,55 +1,44 @@
-import React from "react";
-import { formatNumber } from "@/lib/formatters";
 
-// Pivot of stock on hand: one row per product, one column per warehouse.
-export default function WarehouseStockGrid({ products, warehouses, balances }) {
-  const activeWarehouses = warehouses.filter(w => balances.some(b => b.warehouse_id === w.id));
-  const cellMap = {};
-  balances.forEach(b => {
-    cellMap[`${b.product_id}|${b.warehouse_id}`] = (cellMap[`${b.product_id}|${b.warehouse_id}`] || 0) + (b.quantity || 0);
-  });
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import ProductThumb from '@/components/shared/ProductThumb';
+import { formatNumber } from '@/lib/formatters';
+import { warehouseItemStock } from '@/lib/warehouse-stock';
 
-  const rows = products.filter(p => balances.some(b => b.product_id === p.id));
+// Use the same catalogue + recorded-balance union as an individual warehouse.
+export default function WarehouseStockGrid({ products, warehouses, balances, onEditItem }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  if (!rows.length) {
-    return <div className="rounded-lg border border-slate-200 bg-white px-4 py-12 text-center text-slate-400">No stock on hand yet.</div>;
+  const locations = warehouses.filter(w => w.is_active !== false || balances.some(b => b.warehouse_id === w.id));
+  const cells = new Map(), items = new Map();
+  for (const warehouse of locations) {
+    for (const row of warehouseItemStock(warehouse, products, balances)) {
+      cells.set(`${row.id}|${warehouse.id}`, row);
+      items.set(row.id, row);
+    }
   }
-
-  return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-slate-50 border-b border-slate-200">
-            <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Product</th>
-            {activeWarehouses.map(w => (
-              <th key={w.id} className="px-4 py-3 text-right font-semibold text-slate-600 whitespace-nowrap">{w.name}</th>
-            ))}
-            <th className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(p => {
-            const total = activeWarehouses.reduce((s, w) => s + (cellMap[`${p.id}|${w.id}`] || 0), 0);
-            return (
-              <tr key={p.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-3">
-                  <div className="font-medium text-slate-900">{p.name}</div>
-                  <div className="text-xs text-slate-500">{p.sku} · {p.storage_unit || ""}</div>
-                </td>
-                {activeWarehouses.map(w => {
-                  const qty = cellMap[`${p.id}|${w.id}`] || 0;
-                  return (
-                    <td key={w.id} className={`px-4 py-3 text-right ${qty ? "text-slate-800" : "text-slate-300"}`}>
-                      {qty ? formatNumber(qty, 2) : "—"}
-                    </td>
-                  );
-                })}
-                <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatNumber(total, 2)}</td>
-              </tr>
-            );
+  const rows = [...items.values()].sort((a, b) => a.name.localeCompare(b.name));
+  if (!rows.length) return <p className="rounded-lg border bg-white p-8 text-sm text-slate-500">{ui("No warehouse items to display.")}</p>;
+  return <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <table className="w-full text-sm">
+      <caption className="border-b px-4 py-3 text-left text-xs text-slate-500">{ui("Zero means no quantity is recorded here. A dash means this item has no catalogue or stock association with that warehouse.")}</caption>
+      <thead><tr className="border-b bg-slate-50">
+        <th scope="col" className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Item")}</th>
+        {locations.map(w => <th scope="col" key={w.id} className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-600">{w.name}</th>)}
+        <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-900">{ui("Total")}</th>
+      </tr></thead>
+      <tbody>{rows.map(item => {
+        const total = locations.reduce((sum, w) => sum + (cells.get(`${item.id}|${w.id}`)?.quantity || 0), 0);
+        return <tr key={item.id} className="border-b border-slate-100 last:border-0">
+          <th scope="row" className="min-w-60 px-4 py-3 text-left font-normal"><div className="flex items-center gap-3"><ProductThumb product={item.product} name={item.name} size={44} /><div>{item.product && onEditItem ? <button type="button" aria-label={ui('Edit {0}',item.name)} onClick={()=>onEditItem(item.product)} className="text-left font-medium text-green-800 underline-offset-2 hover:underline">{item.name}</button> : <p className="font-medium text-slate-900">{item.name}</p>}<p className="text-xs text-slate-500">{item.product?.sku || ui("No code")} · {item.unit}</p></div></div></th>
+          {locations.map(w => {
+            const row = cells.get(`${item.id}|${w.id}`);
+            return <td key={w.id} title={row && !row.hasRecordedBalance ? ui("No stock recorded here") : undefined} className={`px-4 py-3 text-right tabular-nums ${row?.quantity ? 'text-slate-800' : 'text-slate-400'}`}>{row ? formatNumber(row.quantity, 3) : '—'}</td>;
           })}
-        </tbody>
-      </table>
-    </div>
-  );
+          <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{formatNumber(total, 3)}</td>
+        </tr>;
+      })}</tbody>
+    </table>
+  </div>;
 }

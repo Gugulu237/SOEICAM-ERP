@@ -1,16 +1,16 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 
 // Colour-tinted icon plate, so a figure is recognisable at a glance.
 const ACCENTS = {
   slate: "from-slate-100 to-slate-50 text-slate-500 ring-slate-200/60",
-  amber: "from-amber-100 to-orange-50 text-amber-600 ring-amber-200/60",
+  amber: "from-sky-100 to-blue-50 text-sky-700 ring-sky-200/60",
   green: "from-green-100 to-emerald-50 text-green-600 ring-green-200/60",
   blue: "from-blue-100 to-sky-50 text-blue-600 ring-blue-200/60",
   sky: "from-sky-100 to-cyan-50 text-sky-600 ring-sky-200/60",
   red: "from-red-100 to-rose-50 text-red-600 ring-red-200/60",
-  purple: "from-purple-100 to-violet-50 text-purple-600 ring-purple-200/60",
-  orange: "from-orange-100 to-amber-50 text-orange-600 ring-orange-200/60",
+  purple: "from-blue-100 to-sky-50 text-blue-700 ring-blue-200/60",
+  orange: "from-cyan-100 to-sky-50 text-cyan-700 ring-cyan-200/60",
 };
 
 export default function KPICard({ title, value, subtitle, icon: Icon, to, color = "text-slate-600", accent = "slate" }) {

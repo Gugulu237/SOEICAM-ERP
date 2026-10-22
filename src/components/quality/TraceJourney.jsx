@@ -1,17 +1,23 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import { Wheat, Factory, ShieldCheck, Warehouse, Truck, Store } from "lucide-react";
 
 const STEPS = [
-  { key: "materials", label: "Ingredients", icon: Wheat },
-  { key: "production", label: "Production", icon: Factory },
-  { key: "quality", label: "Quality", icon: ShieldCheck },
-  { key: "store", label: "In Store", icon: Warehouse },
-  { key: "transit", label: "On Truck", icon: Truck },
-  { key: "customer", label: "Customer", icon: Store },
+  { key: "materials", get label(){return ui("Ingredients");}, icon: Wheat },
+  { key: "production", get label(){return ui("Production");}, icon: Factory },
+  { key: "quality", get label(){return ui("Quality");}, icon: ShieldCheck },
+  { key: "store", get label(){return ui("In Store");}, icon: Warehouse },
+  { key: "transit", get label(){return ui("On Truck");}, icon: Truck },
+  { key: "customer", get label(){return ui("Customer");}, icon: Store },
 ];
 
 // Horizontal journey strip showing how far a batch has travelled.
 export default function TraceJourney({ reached, detail = {} }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 overflow-x-auto">
       <div className="flex items-center min-w-[40rem]">

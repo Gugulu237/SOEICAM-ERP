@@ -1,5 +1,9 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import DataTable from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +16,8 @@ import { Plus } from "lucide-react";
 
 // Budget vs actuals per department and accounting period.
 export default function BudgetManager() {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const { toast } = useToast();
   const [budgets, setBudgets] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -23,39 +29,39 @@ export default function BudgetManager() {
 
   async function load() {
     const [b, d, p] = await Promise.all([
-      base44.entities.Budget.filter({}),
-      base44.entities.Department.filter({ is_active: true }),
-      base44.entities.AccountingPeriod.filter({}),
+      erp.entities.Budget.filter({}),
+      erp.entities.Department.filter({ is_active: true }),
+      erp.entities.AccountingPeriod.filter({}),
     ]);
     setBudgets(b); setDepartments(d); setPeriods(p);
   }
 
   async function handleSave() {
     if (!form.department_id || !form.period_id || !Number(form.budget_amount)) {
-      toast({ title: "Fill in department, period and amount", variant: "destructive" });
+      toast({ title: ui("Fill in department, period and amount"), variant: "destructive" });
       return;
     }
     const dept = departments.find(d => d.id === form.department_id);
     const period = periods.find(p => p.id === form.period_id);
     const amount = Number(form.budget_amount);
-    await base44.entities.Budget.create({
+    await erp.entities.Budget.create({
       department_id: form.department_id, department_name: dept?.name || "",
       period_id: form.period_id, period_name: period?.name || "",
       budget_amount: amount, actual_spent: 0, remaining_amount: amount,
     });
-    toast({ title: "Budget set" });
+    toast({ title: ui("Budget set") });
     setForm({ department_id: "", period_id: "", budget_amount: "" });
     setOpen(false);
     load();
   }
 
   const cols = [
-    { key: "department_name", label: "Department" },
-    { key: "period_name", label: "Period" },
-    { key: "budget_amount", label: "Budget", render: v => formatXAF(v), className: "text-right" },
-    { key: "actual_spent", label: "Spent", render: v => formatXAF(v), className: "text-right" },
+    { key: "department_name", label: ui("Department") },
+    { key: "period_name", label: ui("Period") },
+    { key: "budget_amount", label: ui("Budget"), render: v => formatXAF(v), className: "text-right" },
+    { key: "actual_spent", label: ui("Spent"), render: v => formatXAF(v), className: "text-right" },
     {
-      key: "remaining_amount", label: "Remaining",
+      key: "remaining_amount", label: ui("Remaining"),
       render: (v, row) => {
         const remaining = (row.budget_amount || 0) - (row.actual_spent || 0);
         return <span className={remaining < 0 ? "text-red-600 font-semibold" : "text-green-700 font-medium"}>{formatXAF(remaining)}</span>;
@@ -63,7 +69,7 @@ export default function BudgetManager() {
       className: "text-right",
     },
     {
-      key: "id", label: "Usage",
+      key: "id", label: ui("Usage"),
       render: (_v, row) => {
         const pct = row.budget_amount > 0 ? Math.min(100, ((row.actual_spent || 0) / row.budget_amount) * 100) : 0;
         const over = (row.actual_spent || 0) > (row.budget_amount || 0);
@@ -82,34 +88,34 @@ export default function BudgetManager() {
   return (
     <div>
       <div className="flex justify-end mb-3">
-        <Button size="sm" onClick={() => setOpen(true)}><Plus size={14} className="mr-1" /> Set Budget</Button>
+        <Button size="sm" onClick={() => setOpen(true)}><Plus size={14} className="mr-1" />{ui(" Set Budget")}</Button>
       </div>
       <DataTable columns={cols} data={budgets} searchFields={["department_name", "period_name"]} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Set Department Budget</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{ui("Set Department Budget")}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Department *</Label>
+              <Label>{ui("Department *")}</Label>
               <Select value={form.department_id} onValueChange={v => setForm(f => ({ ...f, department_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={ui("Select")} /></SelectTrigger>
                 <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Period *</Label>
+              <Label>{ui("Period *")}</Label>
               <Select value={form.period_id} onValueChange={v => setForm(f => ({ ...f, period_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={ui("Select")} /></SelectTrigger>
                 <SelectContent>{periods.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Budget Amount (XAF) *</Label>
+              <Label>{ui("Budget Amount (XAF) *")}</Label>
               <Input type="number" value={form.budget_amount} onChange={e => setForm(f => ({ ...f, budget_amount: e.target.value }))} />
             </div>
           </div>
-          <DialogFooter><Button onClick={handleSave}>Save Budget</Button></DialogFooter>
+          <DialogFooter><Button onClick={handleSave}>{ui("Save Budget")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,17 +1,23 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/lib/router";
 import BatchCard from "@/components/manufacturing/BatchCard";
 
 const COLUMNS = [
-  { key: "planning", label: "Planning", statuses: ["draft", "awaiting_approval"], dot: "bg-slate-400" },
-  { key: "materials", label: "Materials", statuses: ["approved", "materials_reserved", "materials_issued"], dot: "bg-indigo-500" },
-  { key: "production", label: "In Production", statuses: ["in_production"], dot: "bg-purple-500" },
-  { key: "qc", label: "Awaiting QC", statuses: ["awaiting_qc"], dot: "bg-orange-500" },
-  { key: "done", label: "Completed", statuses: ["completed", "released"], dot: "bg-green-500" },
+  { key: "planning", get label(){return ui("Planning");}, statuses: ["draft", "awaiting_approval"], dot: "bg-slate-400" },
+  { key: "materials", get label(){return ui("Materials");}, statuses: ["approved", "materials_reserved", "materials_issued"], dot: "bg-indigo-500" },
+  { key: "production", get label(){return ui("Production");}, statuses: ["in_production"], dot: "bg-purple-500" },
+  { key: "qc", get label(){return ui("Awaiting QC");}, statuses: ["awaiting_qc"], dot: "bg-orange-500" },
+  { key: "done", get label(){return ui("Completed");}, statuses: ["completed", "released", "rejected"], dot: "bg-green-500" },
 ];
 
 // Kanban-style board of production batches by stage.
-export default function ProductionBoard({ orders }) {
+export default function ProductionBoard({ orders, products = [] }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const navigate = useNavigate();
 
   return (
@@ -27,10 +33,10 @@ export default function ProductionBoard({ orders }) {
             </div>
             <div className="space-y-3">
               {items.map(o => (
-                <BatchCard key={o.id} order={o} onClick={() => navigate(`/manufacturing/${o.id}`)} />
+                <BatchCard key={o.id} order={o} product={products.find((p) => p.id === o.product_id)} onClick={() => navigate(`/manufacturing/${o.id}`)} />
               ))}
               {items.length === 0 && (
-                <p className="text-xs text-slate-400 text-center py-6">Nothing here</p>
+                <p className="text-xs text-slate-400 text-center py-6">{ui("Nothing here")}</p>
               )}
             </div>
           </div>

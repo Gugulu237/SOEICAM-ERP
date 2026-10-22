@@ -1,29 +1,31 @@
+import { readAll } from '@/lib/field-pos';
+import { businessDate } from '@/lib/business-date';
 // Central inventory engine for SOEICAM ERP.
 // Every stock change must go through here so StockMovement stays an immutable
 // ledger and StockBalance always reflects it (per product / warehouse / lot).
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 
 export const round3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = businessDate;
 
 async function warehouseName(warehouseId) {
   if (!warehouseId) return "";
-  const w = await base44.entities.Warehouse.get(warehouseId);
+  const w = await erp.entities.Warehouse.get(warehouseId);
   return w?.name || "";
 }
 
 // Recompute a product's weighted average cost from all remaining stock.
 async function refreshProductCost(productId) {
-  const balances = await base44.entities.StockBalance.filter({ product_id: productId });
+  const balances = await erp.entities.StockBalance.filter({ product_id: productId });
   const qty = balances.reduce((s, b) => s + (b.quantity || 0), 0);
   const value = balances.reduce((s, b) => s + (b.total_value || 0), 0);
-  if (qty > 0) await base44.entities.Product.update(productId, { current_cost: round2(value / qty) });
+  if (qty > 0) await erp.entities.Product.update(productId, { current_cost: round2(value / qty) });
 }
 
 async function logMovement(m) {
-  return base44.entities.StockMovement.create({
+  return erp.entities.StockMovement.create({
     movement_date: m.movement_date || today(),
     status: "approved",
     ...m,
@@ -33,7 +35,7 @@ async function logMovement(m) {
 // Stock on hand for a product, optionally in one warehouse.
 export async function getStockOnHand(productId, warehouseId = null) {
   const query = warehouseId ? { product_id: productId, warehouse_id: warehouseId } : { product_id: productId };
-  const balances = await base44.entities.StockBalance.filter(query);
+  const balances = await erp.entities.StockBalance.filter(query);
   return round3(balances.reduce((s, b) => s + (b.quantity || 0), 0));
 }
 
@@ -49,7 +51,7 @@ export async function receiveStock({
   if (!warehouseId) throw new Error("A destination warehouse is required");
 
   const whName = await warehouseName(warehouseId);
-  const existing = (await base44.entities.StockBalance.filter({
+  const existing = (await erp.entities.StockBalance.filter({
     product_id: productId, warehouse_id: warehouseId, lot_number: lotNumber || "",
     qc_status: qcStatus,
   }))[0];
@@ -57,14 +59,14 @@ export async function receiveStock({
   if (existing) {
     const newQty = round3((existing.quantity || 0) + qty);
     const newValue = round2((existing.total_value || 0) + qty * unitCost);
-    await base44.entities.StockBalance.update(existing.id, {
+    await erp.entities.StockBalance.update(existing.id, {
       quantity: newQty,
       total_value: newValue,
       unit_cost: newQty > 0 ? round2(newValue / newQty) : 0,
       expiry_date: expiryDate || existing.expiry_date || "",
     });
   } else {
-    await base44.entities.StockBalance.create({
+    await erp.entities.StockBalance.create({
       product_id: productId, product_name: productName, warehouse_id: warehouseId, warehouse_name: whName,
       lot_number: lotNumber || "", expiry_date: expiryDate || "",
       quantity: qty, unit_cost: round2(unitCost), total_value: round2(qty * unitCost),
@@ -94,7 +96,7 @@ export async function issueStock({
   if (remaining <= 0) throw new Error("Issue quantity must be greater than zero");
   if (!warehouseId) throw new Error("A source warehouse is required");
 
-  const all = await base44.entities.StockBalance.filter({ product_id: productId, warehouse_id: warehouseId });
+  const all = await erp.entities.StockBalance.filter({ product_id: productId, warehouse_id: warehouseId });
   // Only released, in-date stock may leave for a customer or a delivery vehicle.
   const balances = all
     .filter((b) => (b.quantity || 0) > 0)
@@ -118,7 +120,7 @@ export async function issueStock({
     if (remaining <= 0) break;
     const take = Math.min(round3(b.quantity), remaining);
     const newQty = round3(b.quantity - take);
-    await base44.entities.StockBalance.update(b.id, {
+    await erp.entities.StockBalance.update(b.id, {
       quantity: newQty,
       total_value: round2(newQty * (b.unit_cost || 0)),
     });
@@ -177,13 +179,13 @@ export async function transferStock({
 export async function adjustStock({
   balanceId, countedQuantity, reason = "", movementDate, movementType = "stock_adjustment",
 }) {
-  const balance = await base44.entities.StockBalance.get(balanceId);
+  const balance = await erp.entities.StockBalance.get(balanceId);
   if (!balance) throw new Error("Stock balance not found");
   const counted = round3(countedQuantity);
   const diff = round3(counted - (balance.quantity || 0));
   if (diff === 0) throw new Error("Counted quantity matches the system quantity — nothing to adjust");
 
-  await base44.entities.StockBalance.update(balance.id, {
+  await erp.entities.StockBalance.update(balance.id, {
     quantity: counted,
     total_value: round2(counted * (balance.unit_cost || 0)),
   });
@@ -205,11 +207,11 @@ export async function adjustStock({
 // Quality gate: release a lot for sale, quarantine it, or reject it outright.
 // The change is logged in the ledger so batch release is fully auditable.
 export async function setLotQcStatus({ balanceId, status, userName = "", notes = "" }) {
-  const balance = await base44.entities.StockBalance.get(balanceId);
+  const balance = await erp.entities.StockBalance.get(balanceId);
   if (!balance) throw new Error("Stock lot not found");
   if (!["approved", "quarantine", "rejected", "pending"].includes(status)) throw new Error("Unknown quality status");
 
-  await base44.entities.StockBalance.update(balanceId, {
+  await erp.entities.StockBalance.update(balanceId, {
     qc_status: status,
     qc_notes: notes,
     qc_released_by: status === "approved" ? userName : balance.qc_released_by || "",
@@ -226,7 +228,7 @@ export async function setLotQcStatus({ balanceId, status, userName = "", notes =
     reason: `${status} by ${userName || "user"}${notes ? ` — ${notes}` : ""}`,
   });
 
-  await base44.entities.AuditLog.create({
+  await erp.entities.AuditLog.create({
     action: `batch_${status}`, module: "quality", entity_type: "StockBalance", entity_id: balanceId,
     description: `Batch ${balance.lot_number || "(no lot)"} of ${balance.product_name} set to ${status}${notes ? `: ${notes}` : ""}`,
   });
@@ -236,7 +238,7 @@ export async function setLotQcStatus({ balanceId, status, userName = "", notes =
 
 // Lots at risk: expiring within `days`, already expired, or held by quality.
 export async function getExpiryRisk(days = 30) {
-  const balances = await base44.entities.StockBalance.list("expiry_date", 500);
+  const balances = await readAll(erp.entities.StockBalance, {}, "expiry_date");
   const now = new Date(today());
   return balances
     .filter((b) => (b.quantity || 0) > 0)
@@ -259,7 +261,7 @@ export async function getExpiryRisk(days = 30) {
 
 // Write off damaged or expired stock from a lot.
 export async function writeOffStock({ balanceId, quantity, movementType = "damage", reason = "", movementDate }) {
-  const balance = await base44.entities.StockBalance.get(balanceId);
+  const balance = await erp.entities.StockBalance.get(balanceId);
   if (!balance) throw new Error("Stock balance not found");
   const qty = round3(quantity);
   if (qty <= 0 || qty > (balance.quantity || 0)) throw new Error("Write-off quantity exceeds the stock in this lot");

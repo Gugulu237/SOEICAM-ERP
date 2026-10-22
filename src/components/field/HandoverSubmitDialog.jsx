@@ -1,5 +1,9 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +15,8 @@ import { formatXAF } from "@/lib/formatters";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function HandoverSubmitDialog({ open, onClose, collections, employee, onDone }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const { toast } = useToast();
   const [staff, setStaff] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -24,7 +30,7 @@ export default function HandoverSubmitDialog({ open, onClose, collections, emplo
     if (!open) return;
     setSelected(collections.map((c) => c.id));
     setOffered(String(collections.reduce((s, c) => s + (c.outstanding_amount || 0), 0)));
-    base44.entities.Employee.list("-created_date", 200).then((rows) => setStaff(rows));
+    erp.entities.Employee.list("-created_date", 200).then((rows) => setStaff(rows));
   }, [open, collections]);
 
   const toggle = (id) =>
@@ -47,11 +53,11 @@ export default function HandoverSubmitDialog({ open, onClose, collections, emplo
         notes,
         idempotencyKey: newIdempotencyKey(),
       });
-      toast({ title: `Handover ${res.data.handoverNumber} submitted`, description: "The cashier must confirm receipt before the money clears." });
+      toast({ title: ui("Handover {0} submitted", res.data.handoverNumber), description: ui("The cashier must confirm receipt before the money clears.") });
       onClose();
       onDone();
     } catch (e) {
-      toast({ title: "Handover not submitted", description: errorMessage(e), variant: "destructive" });
+      toast({ title: ui("Handover not submitted"), description: errorMessage(e), variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -60,11 +66,11 @@ export default function HandoverSubmitDialog({ open, onClose, collections, emplo
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Hand over cash to a cashier</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{ui("Hand over cash to a cashier")}</DialogTitle></DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label>Collections included</Label>
+            <Label>{ui("Collections included")}</Label>
             <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
               {collections.map((c) => (
                 <label key={c.id} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
@@ -80,28 +86,28 @@ export default function HandoverSubmitDialog({ open, onClose, collections, emplo
           </div>
 
           <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-            <span className="text-sm text-slate-600">Expected from these collections</span>
+            <span className="text-sm text-slate-600">{ui("Expected from these collections")}</span>
             <span className="font-semibold">{formatXAF(expected)}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Amount handed over</Label>
+              <Label>{ui("Amount handed over")}</Label>
               <Input type="number" value={offered} onChange={(e) => setOffered(e.target.value)} />
               {Number(offered) < expected && (
-                <p className="text-xs text-amber-600 mt-1">Short by {formatXAF(expected - Number(offered))}</p>
+                <p className="text-xs text-amber-600 mt-1">{ui("Short by ")}{formatXAF(expected - Number(offered))}</p>
               )}
             </div>
             <div>
-              <Label>Date</Label>
+              <Label>{ui("Date")}</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
           </div>
 
           <div>
-            <Label>Receiving cashier</Label>
+            <Label>{ui("Receiving cashier")}</Label>
             <Select value={cashierId} onValueChange={setCashierId}>
-              <SelectTrigger><SelectValue placeholder="Select staff member" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={ui("Select staff member")} /></SelectTrigger>
               <SelectContent>
                 {staff.filter((s) => s.id !== employee?.id).map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.full_name}{s.role ? ` — ${s.role}` : ""}</SelectItem>
@@ -111,15 +117,15 @@ export default function HandoverSubmitDialog({ open, onClose, collections, emplo
           </div>
 
           <div>
-            <Label>Notes</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+            <Label>{ui("Notes")}</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={ui("Optional")} />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{ui("Cancel")}</Button>
           <Button onClick={submit} disabled={busy || !selected.length || !cashierId}>
-            {busy ? "Submitting…" : "Submit handover"}
+            {busy ? ui("Submitting…") : ui("Submit handover")}
           </Button>
         </DialogFooter>
       </DialogContent>

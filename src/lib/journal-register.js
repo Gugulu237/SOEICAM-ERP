@@ -1,14 +1,17 @@
+import { readAll } from '@/lib/field-pos';
+/* localized-metadata */
+import {ui} from './i18n.js';
 // Journal register: server-side filtering, reporting totals and CSV export
 // for the accounting journal entries. Every number comes from the server —
 // the register never filters or totals a loaded page in the browser.
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { formatDate, formatDateTime } from "@/lib/formatters";
 
 export const JOURNAL_STATUSES = [
-  { value: "all", label: "All statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "posted", label: "Posted" },
-  { value: "reversed", label: "Reversed" },
+  { value: "all", get label(){return ui("All statuses");} },
+  { value: "draft", get label(){return ui("Draft");} },
+  { value: "posted", get label(){return ui("Posted");} },
+  { value: "reversed", get label(){return ui("Reversed");} },
 ];
 
 const PAGE_SIZE = 50;
@@ -38,7 +41,7 @@ export function buildJournalQuery(filters) {
 // One aggregate call answers the whole report: journals per status, plus the
 // debit and credit totals of everything actually posted.
 export async function loadJournalReport(filters) {
-  const res = await base44.entities.JournalEntry.aggregate({
+  const res = await erp.entities.JournalEntry.aggregate({
     query: buildJournalQuery(filters),
     groupBy: "status",
     sum: ["total_debit", "total_credit"],
@@ -67,11 +70,11 @@ export async function loadJournalReport(filters) {
 export async function loadJournalPage(filters, cursor) {
   const options = { sort: "-created_date", limit: PAGE_SIZE };
   if (cursor) options.cursor = cursor;
-  return base44.entities.JournalEntry.filter(buildJournalQuery(filters), options);
+  return erp.entities.JournalEntry.filter(buildJournalQuery(filters), options);
 }
 
 export async function loadJournalSources() {
-  const res = await base44.entities.JournalEntry.list({ distinct: "source_module" });
+  const res = await erp.entities.JournalEntry.list({ distinct: "source_module" });
   return (res.items || []).filter(Boolean).sort();
 }
 
@@ -84,19 +87,9 @@ const csvCell = (value) => `"${String(value == null ? "" : value).replace(/"/g, 
 
 // Full register export — walks the cursor so the report covers every match.
 export async function exportJournalsCsv(filters) {
-  const query = buildJournalQuery(filters);
-  const rows = [];
-  let cursor;
-  for (let i = 0; i < 25; i++) {
-    const options = { sort: "-created_date", limit: 200 };
-    if (cursor) options.cursor = cursor;
-    const page = await base44.entities.JournalEntry.filter(query, options);
-    rows.push(...page.items);
-    if (!page.has_more) break;
-    cursor = page.next_cursor;
-  }
+  const rows = await loadJournalExport(filters);
 
-  const lines = [CSV_HEADERS.join(",")];
+  const lines = [CSV_HEADERS.map(value=>ui(value)).join(",")];
   rows.forEach((j) => {
     lines.push([
       j.journal_number,
@@ -104,8 +97,8 @@ export async function exportJournalsCsv(filters) {
       j.description,
       j.source_module || "manual",
       j.source_document_type || "",
-      Math.round(j.total_debit || 0),
-      Math.round(j.total_credit || 0),
+      Number(j.total_debit || 0),
+      Number(j.total_credit || 0),
       j.status,
       formatDateTime(j.created_date),
       formatDateTime(j.posted_at),
@@ -122,3 +115,5 @@ export async function exportJournalsCsv(filters) {
   URL.revokeObjectURL(url);
   return rows.length;
 }
+
+export const loadJournalExport = filters => readAll(erp.entities.JournalEntry, buildJournalQuery(filters), "-created_date");

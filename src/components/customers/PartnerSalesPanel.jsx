@@ -1,5 +1,9 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { erp } from "@/api/erpClient";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { ShoppingCart, Receipt } from "lucide-react";
@@ -7,6 +11,8 @@ import { ShoppingCart, Receipt } from "lucide-react";
 const DELIVERED = ["delivered", "partially_delivered", "invoiced"];
 
 function Tile({ label, value, hint }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-3">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
@@ -17,6 +23,8 @@ function Tile({ label, value, hint }) {
 }
 
 function Table({ head, children, empty }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <table className="w-full text-sm">
@@ -32,6 +40,8 @@ function Table({ head, children, empty }) {
 
 // Sales performance of a partner and its branches: orders taken, invoiced, still owed.
 export default function PartnerSalesPanel({ partner, subPartners = [] }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   const [data, setData] = useState(null);
   const idsKey = [partner.id, ...subPartners.map(s => s.id)].join(",");
 
@@ -39,10 +49,10 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
     let cancelled = false;
     const ids = idsKey.split(",");
     Promise.all([
-      base44.entities.SalesOrder.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total"] }),
-      base44.entities.Invoice.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total", "balance"] }),
-      base44.entities.SalesOrder.filter({ customer_id: { $in: ids } }, { sort: "-order_date", limit: 15 }),
-      base44.entities.Invoice.filter({ customer_id: { $in: ids } }, { sort: "-invoice_date", limit: 15 }),
+      erp.entities.SalesOrder.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total"] }),
+      erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total", "balance"] }),
+      erp.entities.SalesOrder.filter({ customer_id: { $in: ids } }, { sort: "-order_date", limit: 15, include_total: false }),
+      erp.entities.Invoice.filter({ customer_id: { $in: ids } }, { sort: "-invoice_date", limit: 15, include_total: false }),
     ]).then(([orders, invoices, orderList, invoiceList]) => {
       if (cancelled) return;
       setData({ orders: orders.rows, invoices: invoices.rows, orderList: orderList.items, invoiceList: invoiceList.items });
@@ -60,14 +70,14 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile label="Orders" value={orderCount} hint={subPartners.length ? `Across ${subPartners.length + 1} branches` : "This partner"} />
-        <Tile label="Delivered value" value={formatXAF(delivered)} hint="Delivered & invoiced orders" />
-        <Tile label="Invoiced" value={formatXAF(invoiced)} hint={`${data.invoiceList.length} recent invoices`} />
-        <Tile label="Outstanding" value={formatXAF(outstanding)} hint="Unpaid invoice balance" />
+        <Tile label={ui("Orders")} value={orderCount} hint={subPartners.length ? `Across ${subPartners.length + 1} branches` : "This partner"} />
+        <Tile label={ui("Delivered value")} value={formatXAF(delivered)} hint="Delivered & invoiced orders" />
+        <Tile label={ui("Invoiced")} value={formatXAF(invoiced)} hint={`${data.invoiceList.length} recent invoices`} />
+        <Tile label={ui("Outstanding")} value={formatXAF(outstanding)} hint="Unpaid invoice balance" />
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-slate-900 mb-2 inline-flex items-center gap-1.5"><ShoppingCart size={14} /> Recent orders</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-2 inline-flex items-center gap-1.5"><ShoppingCart size={14} />{ui(" Recent orders")}</h3>
         <Table head={["Order", "Date", "Status", "Total"]} empty={data.orderList.length === 0 ? "No orders yet." : null}>
           {data.orderList.map(o => (
             <tr key={o.id}>
@@ -84,7 +94,7 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-slate-900 mb-2 inline-flex items-center gap-1.5"><Receipt size={14} /> Recent invoices</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-2 inline-flex items-center gap-1.5"><Receipt size={14} />{ui(" Recent invoices")}</h3>
         <Table head={["Invoice", "Date", "Status", "Total", "Balance"]} empty={data.invoiceList.length === 0 ? "No invoices yet." : null}>
           {data.invoiceList.map(i => (
             <tr key={i.id}>

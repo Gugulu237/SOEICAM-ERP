@@ -1,22 +1,28 @@
+
+/* localized-interface */
+import { ui } from '@/lib/i18n';
+import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import { Package, Wrench, Boxes } from "lucide-react";
 
 export const ITEM_TYPES = [
   {
-    key: "inventory_item", label: "Inventory Item", icon: Package,
-    hint: "Goods you buy, make, store and sell — stock is tracked.",
+    key: "inventory_item", get label(){return ui("Inventory Part");}, icon: Package,
+    hint: "Ingredients, packaging and other stocked components.",
   },
   {
-    key: "service", label: "Service", icon: Wrench,
-    hint: "Work you charge for — no stock is tracked.",
+    key: "service", get label(){return ui("Service");}, icon: Wrench,
+    get hint(){return ui("Work you charge for — no stock is tracked.");},
   },
   {
-    key: "assembly", label: "Assembly", icon: Boxes,
-    hint: "An item built from other items — sold as one unit.",
+    key: "assembly", get label(){return ui("Finished Product / Assembly");}, icon: Boxes,
+    get hint(){return ui("All SOEICAM finished products combine components and track inventory.");},
   },
 ];
 
 export default function ItemTypeChooser({ value, onChange }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       {ITEM_TYPES.map(t => {

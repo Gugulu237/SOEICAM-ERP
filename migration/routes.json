@@ -1,0 +1,282 @@
+[
+  {
+    "path": "/login",
+    "component": "Login"
+  },
+  {
+    "path": "/register",
+    "component": "Register"
+  },
+  {
+    "path": "/forgot-password",
+    "component": "ForgotPassword"
+  },
+  {
+    "path": "/reset-password",
+    "component": "ResetPassword"
+  },
+  {
+    "path": "/",
+    "component": "Home"
+  },
+  {
+    "path": "/team-workspaces",
+    "component": "EmployeeDashboard"
+  },
+  {
+    "path": "/commercial",
+    "component": "CommercialWorkspace"
+  },
+  {
+    "path": "/driver",
+    "component": "EmployeeDashboard"
+  },
+  {
+    "path": "/hotesse",
+    "component": "EmployeeDashboard"
+  },
+  {
+    "path": "/outlet-reports",
+    "component": "OutletReports"
+  },
+  {
+    "path": "/cockpit",
+    "component": "Dashboard"
+  },
+  {
+    "path": "/accounting",
+    "component": "Accounting"
+  },
+  {
+    "path": "/accounting/payments/new",
+    "component": "PaymentForm"
+  },
+  {
+    "path": "/accounting/journals/new",
+    "component": "JournalEntryForm"
+  },
+  {
+    "path": "/accounting/journals/:id",
+    "component": "JournalDetail"
+  },
+  {
+    "path": "/accounting/ledger",
+    "component": "GeneralLedger"
+  },
+  {
+    "path": "/accounting/trial-balance",
+    "component": "TrialBalance"
+  },
+  {
+    "path": "/accounting/receivables",
+    "component": "Receivables"
+  },
+  {
+    "path": "/accounting/payables",
+    "component": "Payables"
+  },
+  {
+    "path": "/accounting/treasury",
+    "component": "Treasury"
+  },
+  {
+    "path": "/accounting/statements",
+    "component": "FinancialStatements"
+  },
+  {
+    "path": "/accounting/assets",
+    "component": "FixedAssets"
+  },
+  {
+    "path": "/purchases",
+    "component": "Purchases"
+  },
+  {
+    "path": "/purchases/new",
+    "component": "PurchaseOrderForm"
+  },
+  {
+    "path": "/purchases/:id",
+    "component": "PurchaseOrderForm"
+  },
+  {
+    "path": "/purchases/:id/receive",
+    "component": "GoodsReceiptForm"
+  },
+  {
+    "path": "/purchases/receive",
+    "component": "Purchases"
+  },
+  {
+    "path": "/suppliers",
+    "component": "Suppliers"
+  },
+  {
+    "path": "/inventory",
+    "component": "Inventory"
+  },
+  {
+    "path": "/items",
+    "component": "Items"
+  },
+  {
+    "path": "/items/new",
+    "component": "ItemForm"
+  },
+  {
+    "path": "/items/:id",
+    "component": "ItemForm"
+  },
+  {
+    "path": "/inventory/products/new",
+    "component": "ItemForm"
+  },
+  {
+    "path": "/inventory/products/:id",
+    "component": "ItemForm"
+  },
+  {
+    "path": "/manufacturing",
+    "component": "Manufacturing"
+  },
+  {
+    "path": "/manufacturing/new",
+    "component": "ProductionOrderForm"
+  },
+  {
+    "path": "/manufacturing/:id",
+    "component": "ProductionOrderForm"
+  },
+  {
+    "path": "/manufacturing/recipes/new",
+    "component": "RecipeForm"
+  },
+  {
+    "path": "/manufacturing/recipes/:id",
+    "component": "RecipeForm"
+  },
+  {
+    "path": "/quality",
+    "component": "QualityControl"
+  },
+  {
+    "path": "/traceability",
+    "component": "BatchTrace"
+  },
+  {
+    "path": "/expiry",
+    "component": "ExpiryRisk"
+  },
+  {
+    "path": "/sales",
+    "component": "Sales"
+  },
+  {
+    "path": "/sales/new",
+    "component": "SalesOrderForm"
+  },
+  {
+    "path": "/sales/:id",
+    "component": "SalesOrderForm"
+  },
+  {
+    "path": "/customers",
+    "component": "Customers"
+  },
+  {
+    "path": "/customers/new",
+    "component": "CustomerForm"
+  },
+  {
+    "path": "/customers/:id",
+    "component": "CustomerForm"
+  },
+  {
+    "path": "/distribution",
+    "component": "Distribution"
+  },
+  {
+    "path": "/distribution/requests/new",
+    "component": "DispatchRequestForm"
+  },
+  {
+    "path": "/distribution/requests/:id",
+    "component": "DispatchRequestForm"
+  },
+  {
+    "path": "/distribution/dispatches/new",
+    "component": "DispatchForm"
+  },
+  {
+    "path": "/distribution/dispatches/:id",
+    "component": "DispatchForm"
+  },
+  {
+    "path": "/employees",
+    "component": "Employees"
+  },
+  {
+    "path": "/payroll",
+    "component": "Payroll"
+  },
+  {
+    "path": "/reports",
+    "component": "Reports"
+  },
+  {
+    "path": "/approvals",
+    "component": "Approvals"
+  },
+  {
+    "path": "/admin",
+    "component": "Administration"
+  },
+  {
+    "path": "/cashier",
+    "component": "CashierDashboard"
+  },
+  {
+    "path": "/finance-pulse",
+    "component": "FinancePulse"
+  },
+  {
+    "path": "/expenses",
+    "component": "Expenses"
+  },
+  {
+    "path": "/field-customers",
+    "component": "FieldCustomers"
+  },
+  {
+    "path": "/commercial-performance",
+    "component": "CommercialPerformance"
+  },
+  {
+    "path": "/field-sales",
+    "component": "FieldSales"
+  },
+  {
+    "path": "/field-sales/new",
+    "component": "FieldSaleForm"
+  },
+  {
+    "path": "/field-sales/:id",
+    "component": "FieldSaleForm"
+  },
+  {
+    "path": "/field-review",
+    "component": "FieldSaleReview"
+  },
+  {
+    "path": "/field-review/:id",
+    "component": "FieldSaleReview"
+  },
+  {
+    "path": "/custody",
+    "component": "CustodyIssue"
+  },
+  {
+    "path": "/cash-handovers",
+    "component": "CashHandovers"
+  }
+]
