@@ -1,3 +1,4 @@
+import { assertEmployeeNotRemoved } from '../lib/employee-lifecycle.js';
 import 'server-only';
 import { supabaseServer } from './supabase.js';
 import { database, transaction } from './db.js';
@@ -49,10 +50,12 @@ export async function authenticateRequest() {
   if (usesClerk()) {
     const context = await authenticateClerk();
     const roleCatalogue = context.roleCatalogue || await loadRoleCatalogue();
+    assertEmployeeNotRemoved(context.employee);
     const employee = decorateEmployee(context.user,context.employee,roleCatalogue);
     return { ...context, employee, roleCatalogue, role:effectiveRole(context.user,employee) };
   }
   const { user, authUserId, employee: linkedEmployee, roleCatalogue } = await authenticateSupabase();
+  assertEmployeeNotRemoved(linkedEmployee);
   const employee = decorateEmployee(user,linkedEmployee,roleCatalogue);
   return { user, employee, authUserId, roleCatalogue, role:effectiveRole(user,employee) };
 }

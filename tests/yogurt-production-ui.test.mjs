@@ -1,5 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+
+test('Production Manager submits a pending yogurt plan with the selected sources and sees the warehouse handoff',async()=>{
+  const render=await renderer(),r=runtime(),data=productionFixture(),calls=[];
+  Object.assign(data.order,{status:'awaiting_approval',material_warehouses:{milk:'raw'},yogurt_issued_stages:{}});
+  data.materials=[{material_id:'milk',material_name:'Milk',yogurt_stage:'fermentation'}];
+  globalThis.__yogurtUI=r;
+  r.client={functions:{invoke:async(_,body)=>{
+    calls.push(body);
+    if(body.action==='approveProductionOrder'){
+      data.order={...data.order,status:'approved',approved_by:'production-lead',approved_at:'2026-10-22',production_authorization_role:'production_manager'};
+      return {data:{order:data.order}};
+    }
+    return {data};
+  }}};
+  const draw=()=>{r.beforeRender();return render('production',{initialOrder:data.order});};
+  try{
+    draw();await r.flush();draw();
+    assert.equal(r.fields.find(f=>f['aria-label']==='Source for Milk').disabled,false);
+    assert.equal(r.buttons.some(b=>b.label==='Approve production'),false);
+    await r.buttons.find(b=>b.label==='Submit production order').onClick();
+    assert.equal(calls.find(c=>c.action==='approveProductionOrder').sourceWarehouses.milk,'raw');
+    const html=draw();assert.match(html,/Warehouse/);
+    assert.equal(r.buttons.some(b=>b.label==='Submit production order'||b.label.startsWith('Issue ')),false);
+  }finally{r.cleanup();delete globalThis.__yogurtUI;}
+});
 import { build } from 'esbuild';
 import { createRequire } from 'node:module';
 import { hookRuntime } from './helpers/commercial-ui.mjs';
@@ -68,7 +93,7 @@ test('completed batches retain all flavour-size outputs, including zero actual c
 
 test('Warehouse Manager can enter above-standard actual output but cannot take over fermentation or recipe planning',async()=>{
  const render=await renderer(),r=runtime(),data=productionFixture('packaging'),calls=[];r.session={role:'warehouse_manager'};globalThis.__yogurtUI=r;r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(body.action==='completeYogurtPackaging')throw Error('Fixture save retained');return {data};}}};const draw=()=>{r.beforeRender();return render('production',{initialOrder:data.order});};
- try{draw();await r.flush();draw();change(r,'Drinkable Nature 250 g','104');draw();r.fields.find(f=>f.tag==='textarea').onChange({target:{value:'Higher actual yield, filling residue'}});change(r,'Process-loss expense account','loss');draw();const finish=r.buttons.find(b=>b.label==='Complete production & record inventory');assert.ok(finish);assert.equal(finish.disabled,false);await finish.onClick();assert.equal(calls.find(c=>c.action==='completeYogurtPackaging').outputs[0].quantity,'104');assert.equal(r.buttons.some(b=>b.label==='Submit for GM approval'),false);assert.equal(r.buttons.some(b=>b.label.startsWith('Verify fermentation')),false);
+ try{draw();await r.flush();draw();change(r,'Drinkable Nature 250 g','104');draw();r.fields.find(f=>f.tag==='textarea').onChange({target:{value:'Higher actual yield, filling residue'}});change(r,'Process-loss expense account','loss');draw();const finish=r.buttons.find(b=>b.label==='Complete production & record inventory');assert.ok(finish);assert.equal(finish.disabled,false);await finish.onClick();assert.equal(calls.find(c=>c.action==='completeYogurtPackaging').outputs[0].quantity,'104');assert.equal(r.buttons.some(b=>b.label==='Submit production order'),false);assert.equal(r.buttons.some(b=>b.label.startsWith('Verify fermentation')),false);
  }finally{r.cleanup();delete globalThis.__yogurtUI;}
 });
 
@@ -79,8 +104,8 @@ test('production planning exposes sweetened bucket counts and submits sugar only
  data.order=null;data.recipes=[{id:'recipe',recipe_name:'Nature drinkable',version:1,yogurt_config:config}];r.search='recipe=recipe';
  r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(body.action==='saveYogurtPlan')throw Error('Fixture retained');return {data};}}};
  const draw=()=>{r.beforeRender();return render('production');};
- try{draw();await r.flush();draw();change(r,'30 L buckets','3');draw();change(r,'Nature — sweetened buckets','2');draw();change(r,'Drinkable Nature 250 g','300');let html=draw();assert.match(html,/Sugar.*5 kg/);const submit=r.buttons.find(b=>b.label==='Submit for GM approval');assert.equal(submit.disabled,false);await submit.onClick();const plan=calls.find(c=>c.action==='saveYogurtPlan').plan;assert.equal(plan.allocations[0].sweetened_buckets,'2');assert.equal(plan.allocations[0].buckets,'3');assert.match(draw(),/Fixture retained/);
- change(r,'Nature — sweetened buckets','4');html=draw();assert.match(html,/Sweetened buckets must fit/);assert.equal(r.buttons.find(b=>b.label==='Submit for GM approval').disabled,true);
+ try{draw();await r.flush();draw();change(r,'30 L buckets','3');draw();change(r,'Nature — sweetened buckets','2');draw();change(r,'Drinkable Nature 250 g','300');let html=draw();assert.match(html,/Sugar.*5 kg/);const submit=r.buttons.find(b=>b.label==='Submit production order');assert.equal(submit.disabled,false);await submit.onClick();const plan=calls.find(c=>c.action==='saveYogurtPlan').plan;assert.equal(plan.allocations[0].sweetened_buckets,'2');assert.equal(plan.allocations[0].buckets,'3');assert.match(draw(),/Fixture retained/);
+ change(r,'Nature — sweetened buckets','4');html=draw();assert.match(html,/Sweetened buckets must fit/);assert.equal(r.buttons.find(b=>b.label==='Submit production order').disabled,true);
  }finally{r.cleanup();delete globalThis.__yogurtUI;}
 });
 
@@ -89,7 +114,7 @@ test('production opens with the saved product recipe quantities and scales the c
  const render=await renderer(),r=runtime(),data=productionFixture(),calls=[];globalThis.__yogurtUI=r;
  const config=structuredClone(data.order.yogurt_config);Object.assign(config,{product_bucket_recipe:true,planned_buckets:10});config.outputs[0].buckets=10;config.outputs[0].standard_units_per_bucket=100;config.blends[0].materials=[{recipe_role:'sugar',material_id:'sugar',quantity:2.5,unit:'kg'}];config.fermentation=config.fermentation.map(line=>({...line,quantity:line.role==='milk'?2.5:10,material_id:line.role}));
  data.order=null;data.recipes=[{id:'recipe',recipe_name:'Ten bucket template',version:1,yogurt_config:config}];r.search='recipe=recipe';r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(body.action==='saveYogurtPlan')throw Error('Retained fixture');return {data};}}};const draw=()=>{r.beforeRender();return render('production');};
- try{draw();await r.flush();draw();assert.equal(r.fields.find(f=>f['aria-label']==='30 L buckets').value,10);assert.equal(r.fields.find(f=>f['aria-label']==='Drinkable Nature 250 g').value,1000);assert.equal(r.fields.find(f=>f['aria-label']==='Nature — sweetened buckets').disabled,true);change(r,'30 L buckets','20');draw();assert.equal(r.fields.find(f=>f['aria-label']==='Drinkable Nature 250 g').value,2000);await r.buttons.find(b=>b.label==='Submit for GM approval').onClick();assert.equal(calls.find(c=>c.action==='saveYogurtPlan').plan.allocations[0].sweetened_buckets,20);
+ try{draw();await r.flush();draw();assert.equal(r.fields.find(f=>f['aria-label']==='30 L buckets').value,10);assert.equal(r.fields.find(f=>f['aria-label']==='Drinkable Nature 250 g').value,1000);assert.equal(r.fields.find(f=>f['aria-label']==='Nature — sweetened buckets').disabled,true);change(r,'30 L buckets','20');draw();assert.equal(r.fields.find(f=>f['aria-label']==='Drinkable Nature 250 g').value,2000);await r.buttons.find(b=>b.label==='Submit production order').onClick();assert.equal(calls.find(c=>c.action==='saveYogurtPlan').plan.allocations[0].sweetened_buckets,20);
  }finally{r.cleanup();delete globalThis.__yogurtUI;}
 });
 
@@ -107,7 +132,7 @@ test('planning retains a packaging source choice for stock checks without exposi
  const render=await renderer(),r=runtime(),data=productionFixture(),calls=[];globalThis.__yogurtUI=r;
  const c=structuredClone(data.order.yogurt_config);c.product_bucket_recipe=true;c.planned_buckets=1;c.fermentation=c.fermentation.map(line=>({...line,quantity:line.role==='milk'?2.5:10,material_id:line.role}));c.blends[0].materials=[{recipe_role:'sugar',material_id:'sugar',quantity:2.5,unit:'kg'}];c.outputs[0].buckets=1;c.outputs[0].standard_units_per_bucket=100;
  data.order=null;data.recipes=[{id:'recipe',recipe_name:'Stock check template',version:1,yogurt_config:c}];data.warehouses.push({id:'pack-one',name:'Packaging A',warehouse_type:'packaging'},{id:'pack-two',name:'Packaging B',warehouse_type:'packaging'});r.search='recipe=recipe';r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(body.action==='saveYogurtPlan')throw Error('Saved inputs retained');return {data};}}};const draw=()=>{r.beforeRender();return render('production');};
- try{draw();await r.flush();let html=draw();assert.match(html,/Packaging stock check/);assert.doesNotMatch(html,/Timer: 8 hours/);change(r,'Source for Cups','pack-two');draw();await r.buttons.find(b=>b.label==='Submit for GM approval').onClick();assert.equal(calls.find(c=>c.action==='saveYogurtPlan').plan.material_warehouses.cups,'pack-two');assert.equal(r.buttons.some(b=>b.label==='Issue Packaging materials'),false);
+ try{draw();await r.flush();let html=draw();assert.match(html,/Packaging stock check/);assert.doesNotMatch(html,/Timer: 8 hours/);change(r,'Source for Cups','pack-two');draw();await r.buttons.find(b=>b.label==='Submit production order').onClick();assert.equal(calls.find(c=>c.action==='saveYogurtPlan').plan.material_warehouses.cups,'pack-two');assert.equal(r.buttons.some(b=>b.label==='Issue Packaging materials'),false);
  }finally{r.cleanup();delete globalThis.__yogurtUI;}
 });
 

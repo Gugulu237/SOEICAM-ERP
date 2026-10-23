@@ -74,7 +74,7 @@ export default function GroupReport({ partners, childrenByParent = {} }) {
     URL.revokeObjectURL(url);
   }
 
-  if (!metrics) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (!metrics) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   const cell = "px-4 py-3 text-right whitespace-nowrap";
 

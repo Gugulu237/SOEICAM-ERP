@@ -36,6 +36,6 @@ export default function AccountPosition({accounts,balances,date,title=ui("Assets
         <div className="mt-auto flex justify-between gap-3 border-y-2 border-slate-800 bg-slate-50 px-3 py-4 font-bold"><span>{ui("Total liabilities & equity")}</span><span className="whitespace-nowrap tabular-nums">{formatXAF(p.funding)}</span></div>
       </div>
     </div>
-    <footer className={'border-t px-5 py-4 text-sm sm:px-7 '+(balanced?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-900')}><strong>{balanced?ui("Assets equal liabilities plus equity."):'Difference: '+formatXAF(p.difference)}</strong>{!balanced&&<p className="mt-1 text-xs">{ui("Review the ledger and account classifications. No balancing amount has been added.")}</p>}{p.unclassified>0&&<p className="mt-1 text-xs">{p.unclassified}{ui(" posted account balances need a valid account classification.")}</p>}</footer>
+    <footer className={'border-t px-5 py-4 text-sm sm:px-7 '+(balanced?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-slate-200 bg-slate-50 text-slate-900')}><strong>{balanced?ui("Assets equal liabilities plus equity."):'Difference: '+formatXAF(p.difference)}</strong>{!balanced&&<p className="mt-1 text-xs">{ui("Review the ledger and account classifications. No balancing amount has been added.")}</p>}{p.unclassified>0&&<p className="mt-1 text-xs">{p.unclassified}{ui(" posted account balances need a valid account classification.")}</p>}</footer>
   </section>;
 }

@@ -1,3 +1,4 @@
+import { YOGURT_YIELD_FIELDS } from '../../lib/assembly-yield.js';
 import { recordScope, guardMutation } from '../access.js';
 import { validateQuickItemChanges } from '../../lib/item-quick-edit.js';
 import { validateItemDefinition } from './item-settings.js';
@@ -6,7 +7,7 @@ import { ITEM_METADATA_FIELDS } from '../../lib/item-attributes.js';
 import { recordItemMetadataChange } from './item-metadata-audit.js';
 import { correctionIdentity, checkCorrectionVersion, correctItemReferences } from './item-unit-correction.js';
 
-const FULL_FIELDS = ['attributes','product_family','material_group','image_url','size','flavor','sku','name','description','category','inventory_type','unit_of_measure','costing_method','purchase_price','current_cost','standard_cost','selling_price','cogs_account_id','revenue_account_id','inventory_account_id','preferred_supplier_id','reorder_level','min_stock','max_stock','lot_tracking','expiry_tracking','shelf_life_days','tax_rate','is_active','components'];
+const FULL_FIELDS = [...YOGURT_YIELD_FIELDS,'attributes','product_family','material_group','image_url','size','flavor','sku','name','description','category','inventory_type','unit_of_measure','costing_method','purchase_price','current_cost','standard_cost','selling_price','cogs_account_id','revenue_account_id','inventory_account_id','preferred_supplier_id','reorder_level','min_stock','max_stock','lot_tracking','expiry_tracking','shelf_life_days','tax_rate','is_active','components'];
 // Called only inside an authenticated serializable API transaction. Confirmation
 // is request metadata, never a writable Product field or a generic API bypass.
 export async function saveItem(context, stores, input, { quick = false } = {}) {
@@ -23,7 +24,7 @@ export async function saveItem(context, stores, input, { quick = false } = {}) {
     }
     checkCorrectionVersion(existing,input.unitChange);
   }
-  if ((!quick || input.updatedDate != null || ITEM_METADATA_FIELDS.some(k=>Object.hasOwn(input.changes || {},k))) && input.updatedDate !== existing.updated_date) throw Object.assign(new Error('This item changed in another window. Reload before saving'),{status:409});
+  if ((!quick || input.updatedDate != null || [...ITEM_METADATA_FIELDS,...YOGURT_YIELD_FIELDS].some(k=>Object.hasOwn(input.changes || {},k))) && input.updatedDate !== existing.updated_date) throw Object.assign(new Error('This item changed in another window. Reload before saving'),{status:409});
   const changes = quick ? validateQuickItemChanges(existing,input.changes) : input.changes;
   if (!quick && (!changes || typeof changes !== 'object' || Array.isArray(changes) || !Object.keys(changes).length || Object.keys(changes).some(k=>!FULL_FIELDS.includes(k)))) throw new Error('Change only editable item details');
   guardMutation(context,'Product','update',changes,existing);

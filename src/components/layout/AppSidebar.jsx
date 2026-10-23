@@ -20,9 +20,13 @@ import { permitsWorkspace,workspacePath } from '@/lib/workspace-navigation';
 
 const navItems = [
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
-  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"] },
+  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"], children: [
+    { get label(){return ui("Payroll");}, path: "/team-workspaces?section=payroll", roles: ["admin","cashier"] },
+  ] },
   { get label(){return ui("Supply Chain Dashboard");}, icon: Truck, path: "/supply-chain", roles: ["warehouse_manager"], assignedRole: "supply_chain_manager" },
-  { get label(){return ui("Commercial Dashboard");}, icon: ShoppingBag, path: "/commercial", roles: ["commercial"], personalCommercial: true },
+  { get label(){return ui("Commercial Dashboard");}, icon: ShoppingBag, path: "/commercial", roles: ["commercial"], personalCommercial: true, children: [
+    { get label(){return ui("Record sale");}, path: "/commercial?section=pos&new=1", roles: ["commercial"] },
+  ] },
   { get label(){return ui("Expenses");}, icon: Wallet, path: "/expenses", roles: ["admin", "cashier", "production_manager", "procurement", "warehouse_manager", "employee"] },
   { get label(){return ui("Business Cockpit");}, icon: BarChart3, path: "/cockpit", roles: ["admin"] },
   { get label(){return ui("Accounting");}, icon: BookOpen, path: "/accounting", roles: ["admin", "cashier","production_manager","warehouse_manager"] },
@@ -95,7 +99,7 @@ export default function AppSidebar() {
             {!collapsed && <span>{item.label}</span>}
           </Link>
           }
-          {(item.children || []).filter(child => hasRoleAccess(role, child.roles) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} onClick={() => setMobileOpen(false)} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (collapsed ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!collapsed && child.label}</Link>)}
+          {(item.children || []).filter(child => child.path !== targetPath(item.path) && hasRoleAccess(role, child.roles) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} onClick={() => setMobileOpen(false)} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (collapsed ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!collapsed && child.label}</Link>)}
           </React.Fragment>
         ))}
       </nav>

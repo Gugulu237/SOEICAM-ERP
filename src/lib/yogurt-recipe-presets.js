@@ -1,3 +1,4 @@
+import { assemblyRecipeYield } from './assembly-yield.js';
 import {isStickerItem,isPackagingItem} from './inventory-packaging.js';
 import { PRODUCT_FLAVOURS, canonicalFlavour, variantFamily } from './product-variants.js';
 import { normalizeProductText } from './product-images.js';
@@ -73,6 +74,7 @@ export function productRecipeDraft(item,config,items) {
     catch {identity={product_id:item.id,product_name:item.name,flavor:'',size:'',kg_per_unit:null,variant_override:{family:config.family,flavor:'',size:''}};}
     output={...identity,buckets:1,standard_units_per_bucket:standardBucketUnits(config.family,identity.size),packaging:yogurtAssemblyPackaging(item,items)};
   }
+  output={...output,...assemblyRecipeYield(item,config.family,output)};
   if(fourStageYogurt(config)){
     output={...output,require_sticker:true,packaging:yogurtAssemblyPackaging(item,items,{...output,family:config.family,require_sticker:true,allowMissingSticker:true})};
     output.sticker_material_id=output.packaging.find(line=>isStickerItem(items.find(p=>p.id===line.material_id)))?.material_id || '';
@@ -90,9 +92,10 @@ export function commitProductDraft(config,draft) {
 // A local editable preview refreshes packaging; approved production snapshots are untouched.
 export function refreshRecipePackaging(config,items){
   if(!fourStageYogurt(config))return config;
-  return {...config,outputs:config.outputs.map(output=>{
+  const outputs=config.outputs.map(output=>{
     const product=items.find(item=>item.id===output.product_id);if(!product)return output;
     const packaging=yogurtAssemblyPackaging(product,items,{...output,family:config.family,require_sticker:true,allowMissingSticker:true});
-    return {...output,require_sticker:true,packaging,sticker_material_id:packaging.find(line=>isStickerItem(items.find(item=>item.id===line.material_id)))?.material_id || ''};
-  })};
+    return {...output,...assemblyRecipeYield(product,config.family,output),require_sticker:true,packaging,sticker_material_id:packaging.find(line=>isStickerItem(items.find(item=>item.id===line.material_id)))?.material_id || ''};
+  });
+  return {...config,outputs,expected_kg_per_bucket:Math.max(Number(config.expected_kg_per_bucket),...outputs.map(o=>Number(o.standard_units_per_bucket || 0)*Number(o.kg_per_unit || 0)))};
 }

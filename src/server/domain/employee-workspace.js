@@ -104,12 +104,13 @@ export async function employeeWorkspaceAction(base44, user, body) {
   const staff = role === 'admin' && mode !== 'admin' ? (await readRecords(svc.entities.Employee)).map(person=>decorateEmployee({role:'user'},person,catalogue)).filter(person=>(person.assigned_role || person.role)===mode) : [];
   const choices = staff.map((s) => pick(s, ['id', 'full_name', 'status']));
   const needsEmployee = ['commercial','driver','hotesse'].includes(template);
-  if (!id && needsEmployee) return { mode, template, choices, employee: null, allowedModules };
+  const reportAccess = role === 'admin' && mode !== 'admin' ? { readOnly:true } : {};
+  if (!id && needsEmployee) return { mode, template, choices, employee: null, allowedModules, ...reportAccess };
   const subject = mode === 'admin' ? { id: user.id, full_name: user.full_name || user.email || 'General Manager', role: 'admin' }
     : role === 'admin' ? id ? decorateEmployee({role:'user'},await svc.entities.Employee.get(id),catalogue) : null : employee;
   if (id && mode !== 'admin' && (!subject || (subject.assigned_role || subject.role) !== mode)) throw new Error('Select a staff member with the matching role');
   const date = businessDate(), monthStart = date.slice(0, 8) + '01';
-  const shared = { mode, template, allowedModules, roleLabel: profile?.label || employee?.role_label || 'General Manager', choices, date, monthStart, employee: subject ? pick(subject, ['id', 'full_name', 'status', 'bonus_plan', 'monthly_customer_target', 'monthly_supply_target', 'commission_rate_percent', 'new_customer_bonus']) : null };
+  const shared = { mode, template, allowedModules, ...reportAccess, roleLabel: profile?.label || employee?.role_label || 'General Manager', choices, date, monthStart, employee: subject ? pick(subject, ['id', 'full_name', 'status', 'bonus_plan', 'monthly_customer_target', 'monthly_supply_target', 'commission_rate_percent', 'new_customer_bonus']) : null };
 
   if (!needsEmployee) return { ...shared, ...await staffDashboardData(svc, dashboardMode, date, allowedModules, subject, role) };
   if (template === 'hotesse') return { ...shared, ...await hotesseData(svc, id, date) };

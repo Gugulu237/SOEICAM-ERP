@@ -35,7 +35,7 @@ test('submission with missing components makes no order or material; the draft c
   const queue=await productionAction(f.client,user,{action:'productionAuditRequests'});assert.equal(queue.requests.length,1);
   await s.StockBalance.create({product_id:blocked.shortages[0].material_id,warehouse_id:raw.id,quantity:10,qc_status:'approved'});
   const submitted=await productionAction(f.client,user,{...submit,orderId:draft.order.id});
-  assert.equal(submitted.order.status,'awaiting_approval');assert.equal(submitted.shortages.length,0);
+  assert.equal(submitted.order.status,'approved');assert.equal(submitted.order.production_authorization_role,'production_manager');assert.equal(submitted.shortages.length,0);
   const context={user,employee:{id:'production-staff',role:'production_manager',status:'active'}};
   assert.throws(()=>guardMutation(context,'ProductionOrder','update',{status:'awaiting_approval'},draft.order),/checked manufacturing workflow/);
   await productionAction(f.client,user,{action:'resolveProductionAudit',requestId:queue.requests[0].id});

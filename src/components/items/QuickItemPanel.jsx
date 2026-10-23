@@ -1,3 +1,4 @@
+import AssemblyYieldFields from './AssemblyYieldFields';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -44,7 +45,7 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
   const asOf = current?.as_of && new Date(current.as_of);
 
   return <form id={formId} onSubmit={onSubmit} noValidate aria-label={ui("Quick edit {0}", item.name)} aria-busy={saving}>
-    {(item.configuration_status==='draft'||item.is_active===false)&&<div className="border-b bg-amber-50 px-5 py-3 text-sm text-amber-900"><strong>{ui(itemAvailabilityLabel(item))}</strong><p className="mt-1">{ui(item.configuration_status==='draft'?'Complete assembly setup and activate this product to use it in recipes.':'Activate this item to make it available for new operations.')}</p>{finishedItemSetupIssues(item).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues(item).map(label=>ui(label)).join(', ')}</p>}</div>}
+    {(item.configuration_status==='draft'||item.is_active===false)&&<div className="border-b bg-slate-50 px-5 py-3 text-sm text-slate-900"><strong>{ui(itemAvailabilityLabel(item))}</strong><p className="mt-1">{ui(item.configuration_status==='draft'?'Complete assembly setup and activate this product to use it in recipes.':'Activate this item to make it available for new operations.')}</p>{finishedItemSetupIssues(item).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues(item).map(label=>ui(label)).join(', ')}</p>}</div>}
     <div className="bg-slate-50 px-5 py-4 sm:px-6">
       <dl aria-label={ui("Current item summary")} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label={ui("Recorded stock on hand")} value={!inventory ? 'Not stocked' : current ? `${number(current.quantity_on_hand)} ${stockUnit}` : '—'}
@@ -83,9 +84,9 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
               disabled={saving} onChange={event => onChange('reorder_level', event.target.value)} />
           </label>}
         </div>
-        {!changedUnit && (prices.purchaseUnit !== prices.unit || sellingUnit !== prices.unit) && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-900">{ui("Existing prices use the purchase and sales units shown above. Stock is counted in ")}{prices.unit}.</p>}
+        {!changedUnit && (prices.purchaseUnit !== prices.unit || sellingUnit !== prices.unit) && <p className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-900">{ui("Existing prices use the purchase and sales units shown above. Stock is counted in ")}{prices.unit}.</p>}
         <p className="text-[11px] leading-5 text-slate-500">{ui("Changing an existing unit requires confirmation of its effect across the app, including items with stock history.")}</p>
-        {changedUnit && inventory && <p className="text-[11px] leading-5 text-amber-900">{ui("The stock report still uses the recorded unit (")}{stockUnit}{ui("). Your new unit applies after a successful save.")}</p>}
+        {changedUnit && inventory && <p className="text-[11px] leading-5 text-slate-900">{ui("The stock report still uses the recorded unit (")}{stockUnit}{ui("). Your new unit applies after a successful save.")}</p>}
       </section>
       <section aria-labelledby={`${formId}-stock`} aria-busy={inventory && stock.status === 'loading'} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -93,7 +94,7 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
           {inventory && <Button type="button" variant="ghost" size="sm" aria-label={ui("Refresh current stock")} onClick={onRefresh} disabled={stock.status === 'loading' || saving} className="h-8 gap-1.5 px-2 text-xs"><RefreshCw size={13} className={stock.status === 'loading' ? 'animate-spin' : ''} />{ui("Refresh")}</Button>}
         </div>
         {!inventory ? <p className="py-8 text-center text-sm text-slate-500">{ui("Service items are not stocked.")}</p>
-          : stock.status === 'error' ? <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"><p>{uiMessage(stock.error)}</p><Button type="button" variant="outline" size="sm" disabled={saving} onClick={onRefresh} className="mt-2 h-8 text-xs">{ui("Retry stock report")}</Button></div>
+          : stock.status === 'error' ? <div role="alert" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-900"><p>{uiMessage(stock.error)}</p><Button type="button" variant="outline" size="sm" disabled={saving} onClick={onRefresh} className="mt-2 h-8 text-xs">{ui("Retry stock report")}</Button></div>
             : !current ? <p role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />{ui("Loading current stock...")}</p>
               : <>
                 <div className="max-h-48 overflow-auto rounded-lg border border-slate-200 bg-white">
@@ -103,7 +104,7 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
                   </table>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
-                  <div><dt className="text-slate-500">{ui("Recorded reorder point")}</dt><dd className="mt-0.5 font-medium tabular-nums text-slate-700">{number(current.reorder_level)} {stockUnit}{current.below_reorder && <span className="ml-1.5 text-amber-800">{ui("Below reorder point")}</span>}</dd></div>
+                  <div><dt className="text-slate-500">{ui("Recorded reorder point")}</dt><dd className="mt-0.5 font-medium tabular-nums text-slate-700">{number(current.reorder_level)} {stockUnit}{current.below_reorder && <span className="ml-1.5 text-slate-800">{ui("Below reorder point")}</span>}</dd></div>
                   <div><dt className="text-slate-500">{ui("Recorded stock value")}</dt><dd className="mt-0.5 font-medium tabular-nums text-slate-700">{money(current.stock_value)}</dd></div>
                   <div className="col-span-2"><dt className="inline text-slate-500">{ui("Held or expired stock: ")}</dt><dd className="inline font-medium tabular-nums text-slate-700">{number(current.blocked_quantity)} {stockUnit}</dd></div>
                 </dl>
@@ -117,6 +118,7 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
         <label className="space-y-1 text-xs font-medium">{prices.isAssembly ? ui('Product family') : ui('Material group')}<Input list={`${formId}-groups`} value={(prices.isAssembly ? draft.product_family : draft.material_group) || ''} disabled={saving} maxLength={80} placeholder={ui('Choose or add a group')} onChange={e=>onChange(prices.isAssembly ? 'product_family' : 'material_group',e.target.value)}/><datalist id={`${formId}-groups`}>{(prices.isAssembly ? PRODUCT_FAMILIES : MATERIAL_GROUPS).map(value=><option key={value} value={value}/>)}</datalist></label>
         {prices.isAssembly ? <ProductVariantFields item={item} values={draft} onChange={onChange} disabled={saving}/> : <label className="space-y-1 text-xs font-medium">{ui('Size')}<Input aria-label={ui('Item size')} value={draft.size || ''} disabled={saving} maxLength={80} onChange={e=>onChange('size',e.target.value)}/></label>}
       </div>
+      {prices.isAssembly&&<AssemblyYieldFields item={item} values={draft} onChange={onChange} disabled={saving}/>}
       <ItemAttributesEditor value={draft.attributes} onChange={value=>onChange('attributes',value)} disabled={saving} suggestions={attributeOptions}/>
     </section>}
     <div className="border-t border-slate-200 px-5 py-4 sm:px-6">

@@ -10,7 +10,7 @@ const COLUMNS = [
   { key: "planning", get label(){return ui("Planning");}, statuses: ["draft", "awaiting_approval"], dot: "bg-slate-400" },
   { key: "materials", get label(){return ui("Materials");}, statuses: ["approved", "materials_reserved", "materials_issued"], dot: "bg-indigo-500" },
   { key: "production", get label(){return ui("Production");}, statuses: ["in_production"], dot: "bg-purple-500" },
-  { key: "qc", get label(){return ui("Awaiting QC");}, statuses: ["awaiting_qc"], dot: "bg-orange-500" },
+  { key: "qc", get label(){return ui("Awaiting QC");}, statuses: ["awaiting_qc"], dot: "bg-slate-500" },
   { key: "done", get label(){return ui("Completed");}, statuses: ["completed", "released", "rejected"], dot: "bg-green-500" },
 ];
 

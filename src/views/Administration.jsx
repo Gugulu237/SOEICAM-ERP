@@ -74,7 +74,7 @@ export default function Administration() {
     { key: "id", label: "", render: (_, row) => <button onClick={e => { e.stopPropagation(); setDepartmentDialog({ open: true, record: row }); }} className="p-1 text-slate-400 hover:text-slate-700"><Pencil size={14} /></button> },
   ];
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>

@@ -64,7 +64,7 @@ export default function StockAlerts({ products, balances, onCount }) {
         )}
       </Section>
 
-      <Section icon={AlertTriangle} title={ui("Below reorder level ({0})", lowStock.length)} tone="text-amber-600">
+      <Section icon={AlertTriangle} title={ui("Below reorder level ({0})", lowStock.length)} tone="text-slate-600">
         {lowStock.length === 0 ? <p className="px-4 py-6 text-sm text-slate-400">{ui("All stocked items are above their reorder level.")}</p> : (
           <ul className="divide-y divide-slate-100">
             {lowStock.map(p => (
@@ -77,13 +77,13 @@ export default function StockAlerts({ products, balances, onCount }) {
         )}
       </Section>
 
-      <Section icon={CalendarClock} title={ui("Expiring within 30 days ({0})", expiring.length)} tone="text-orange-600">
+      <Section icon={CalendarClock} title={ui("Expiring within 30 days ({0})", expiring.length)} tone="text-slate-600">
         {expiring.length === 0 ? <p className="px-4 py-6 text-sm text-slate-400">{ui("No lots expiring soon.")}</p> : (
           <ul className="divide-y divide-slate-100">
             {expiring.map(b => (
               <li key={b.id} className="px-4 py-3 text-sm flex justify-between">
                 <span>{b.product_name} <span className="text-slate-400">· {b.warehouse_name}{b.lot_number ? ` · ${b.lot_number}` : ""}</span></span>
-                <span className="text-orange-600">{formatNumber(b.quantity, 2)}{ui(" — exp. ")}{formatDate(b.expiry_date)}</span>
+                <span className="text-slate-600">{formatNumber(b.quantity, 2)}{ui(" — exp. ")}{formatDate(b.expiry_date)}</span>
               </li>
             ))}
           </ul>

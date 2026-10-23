@@ -130,12 +130,12 @@ export default function PettyCashExpenseDialog({ accounts, userId, userName, onC
           <ReceiptField fileUri={form.receipt} onChange={uri => setForm(f => ({ ...f, receipt: uri }))} label={ui("Receipt (can be filed later)")} />
 
           {overLimit && (
-            <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="flex gap-2 rounded-lg border border-slate-300 bg-slate-50 p-3 text-sm text-slate-800">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
               <span>{ui("Above the ")}{formatXAF(PETTY_CASH_LIMIT)}{ui(" petty cash limit. Raise an expense request so the General Manager can approve it first.")}</span>
             </div>
           )}
-          {issue && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{issue}</p>}
+          {issue && <p role="alert" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900">{issue}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{ui("Cancel")}</Button>

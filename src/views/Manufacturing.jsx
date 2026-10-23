@@ -102,7 +102,7 @@ function ManufacturingProduction({section}) {
     {key:'actions',label:ui('Actions'),sortable:false,render:(_,recipe)=><div className="flex flex-wrap gap-2" onClick={event=>event.stopPropagation()}><Button size="sm" variant="outline" onClick={()=>navigate('/manufacturing/recipes/'+recipe.id)}>{ui(canPlan?'Edit recipe':'Open recipe')}</Button>{canPlan&&<RecipeDeleteButton recipe={recipe} onDeleted={loadData}/>}</div>},
   ];
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>

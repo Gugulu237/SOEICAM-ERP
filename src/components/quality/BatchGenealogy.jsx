@@ -140,7 +140,7 @@ export default function BatchGenealogy({ direction, lot, data }) {
         <ol className="relative border-l border-slate-200 ml-2">
           {movements.map(m => (
             <li key={m.id} className="ml-4 pb-4">
-              <span className="absolute -left-1.5 w-3 h-3 bg-amber-400 rounded-full" />
+              <span className="absolute -left-1.5 w-3 h-3 bg-slate-400 rounded-full" />
               <p className="text-sm font-medium text-slate-900">{m.movement_type.replace(/_/g, " ")}</p>
               <p className="text-xs text-slate-500">
                 {formatDate(m.movement_date)} · {formatNumber(m.quantity, 2)}{ui(" units")}{m.source_name ? ui(" · from {0}", m.source_name) : ""}

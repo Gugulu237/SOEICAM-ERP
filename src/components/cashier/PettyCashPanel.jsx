@@ -47,7 +47,7 @@ export default function PettyCashPanel({ accounts, canManage, userId, userName, 
     <div className="mb-8">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-          <Wallet size={15} className="text-amber-600" />{ui(" Petty Cash")}</h3>
+          <Wallet size={15} className="text-slate-600" />{ui(" Petty Cash")}</h3>
         {canManage && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => setReplenish(true)}>
@@ -66,7 +66,7 @@ export default function PettyCashPanel({ accounts, canManage, userId, userName, 
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-700">{f.name}</span>
                 {health.low && (
-                  <span className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                  <span className="flex items-center gap-1 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
                     <AlertTriangle size={11} />{ui(" Low float")}</span>
                 )}
               </div>
@@ -151,7 +151,7 @@ export default function PettyCashPanel({ accounts, canManage, userId, userName, 
                   ) : canManage ? (
                     <Button size="sm" variant="outline" onClick={() => setCollecting(v)}>
                       <Paperclip size={14} className="mr-1" />{ui(" File receipt")}</Button>
-                  ) : <span className="text-xs text-amber-600">{ui("Missing")}</span>}
+                  ) : <span className="text-xs text-slate-600">{ui("Missing")}</span>}
                 </td>
               </tr>
             ))}

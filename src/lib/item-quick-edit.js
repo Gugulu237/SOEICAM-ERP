@@ -1,9 +1,10 @@
+import { YOGURT_YIELD_FIELDS, validateAssemblyYieldChanges } from './assembly-yield.js';
 import { isAssemblyInventoryType } from './item-types.js';
 import { validateFinishedVariantChanges } from './product-variants.js';
 import { stockUnit } from './item-units.js';
 import { ITEM_METADATA_FIELDS, itemAttributes, validateItemMetadata } from './item-attributes.js';
 
-export const QUICK_ITEM_FIELDS = ['selling_price', 'purchase_price', 'unit_of_measure', 'reorder_level', ...ITEM_METADATA_FIELDS];
+export const QUICK_ITEM_FIELDS = [...YOGURT_YIELD_FIELDS,'selling_price', 'purchase_price', 'unit_of_measure', 'reorder_level', ...ITEM_METADATA_FIELDS];
 const numericFields = ['selling_price', 'purchase_price', 'reorder_level'];
 const has = (object, key) => Object.hasOwn(object, key);
 const numberValue = value => ['number', 'string'].includes(typeof value) && !(typeof value === 'string' && !value.trim()) && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1e12;
@@ -46,6 +47,7 @@ export function quickItemDraft(item) {
     purchase_price: String(itemPurchasePrice(item) ?? ''),
     unit_of_measure: catalogueDraft && !item.unit_of_measure ? '' : stockUnit(item),
     reorder_level: String(item.reorder_level ?? 0),
+    ...Object.fromEntries(YOGURT_YIELD_FIELDS.map(k=>[k,item[k] ?? ''])),
     ...Object.fromEntries(ITEM_METADATA_FIELDS.filter(k=>k!=='attributes').map(k=>[k,item[k] ?? ''])),
     attributes: itemAttributes(item),
   };
@@ -57,7 +59,7 @@ export function validateQuickItemChanges(item, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.keys(input).length || Object.keys(input).some(field => !QUICK_ITEM_FIELDS.includes(field))) throw new Error('Change only prices, Unit of Measure, reorder point or item attributes');
   if (!isAssemblyInventoryType(item.inventory_type) && has(input, 'selling_price')) throw new Error('Only finished products carry a selling price');
   if (isAssemblyInventoryType(item.inventory_type) && has(input, 'purchase_price')) throw new Error('Manufacturing cost is calculated from assembly components');
-  const changes = { ...input, ...validateItemMetadata(input), ...validateFinishedVariantChanges(input,item) };
+  const changes = { ...input, ...validateItemMetadata(input), ...validateFinishedVariantChanges(input,item), ...validateAssemblyYieldChanges(input,item) };
   for (const field of numericFields) if (has(input, field)) {
     if (!numberValue(input[field])) throw new Error('Enter a valid non-negative ' + field.replaceAll('_', ' '));
     changes[field] = Number(input[field]);
@@ -74,7 +76,7 @@ export function buildQuickItemChanges(item, draft) {
   const previous = quickItemDraft(item), dirty = {};
   for (const field of QUICK_ITEM_FIELDS) {
     if (!has(draft, field)) continue;
-    const same = JSON.stringify(draft[field]) === JSON.stringify(previous[field]) || (numericFields.includes(field) && numberValue(draft[field]) && Number(draft[field]) === Number(previous[field]));
+    const same = JSON.stringify(draft[field]) === JSON.stringify(previous[field]) || ([...numericFields,...YOGURT_YIELD_FIELDS].includes(field) && numberValue(draft[field]) && Number(draft[field]) === Number(previous[field]));
     if (!same) dirty[field] = draft[field];
   }
   return Object.keys(dirty).length ? validateQuickItemChanges(item, dirty) : {};

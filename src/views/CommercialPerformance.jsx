@@ -108,7 +108,7 @@ export default function CommercialPerformance({ embedded = false, selectedAgentI
         </article>)}
       </div> : <div className="grid gap-4 lg:grid-cols-2">
         {!data.registrations.filter((c) => matches(c.business_name)).length && <p className="py-8 text-slate-500">{ui("No registrations match this period and search.")}</p>}
-        {data.registrations.filter((c) => matches(c.business_name)).map((c) => <article key={c.id} className="space-y-2 rounded-xl border bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold">{c.business_name}</h3><span className={'rounded-full px-2 py-1 text-xs ' + (c.acquisition_verified === 'verified_unique' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800')}>{statusLabel(c.acquisition_verified)}</span></div>
+        {data.registrations.filter((c) => matches(c.business_name)).map((c) => <article key={c.id} className="space-y-2 rounded-xl border bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold">{c.business_name}</h3><span className={'rounded-full px-2 py-1 text-xs ' + (c.acquisition_verified === 'verified_unique' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-50 text-slate-800')}>{statusLabel(c.acquisition_verified)}</span></div>
           <p className="text-sm text-slate-500">{c.acquired_by_name} · {c.acquisition_date}</p><p className="text-sm">{c.phone} · {[c.neighbourhood, c.town].filter(Boolean).join(', ')}</p><CustomerMapLinks customer={c} />
           {c.registered_by_name && <p className="text-xs text-slate-500">{ui("Registered by ")}{c.registered_by_name}</p>}
           {c.acquisition_notes && <p className="text-xs text-slate-600">{ui("Review: ")}{c.acquisition_notes}</p>}

@@ -39,7 +39,7 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
       </div>
       {families.length > 1 && <div className="flex flex-wrap gap-2" aria-label={ui("Product categories")}>
         {['All', ...families].map((f) => <button type="button" key={f} aria-pressed={family === f} onClick={() => setFamily(f)}
-          className={`min-h-10 rounded-full border px-4 text-sm font-medium transition-colors ${family === f ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>{f}</button>)}
+          className={`min-h-10 rounded-full border px-4 text-sm font-medium transition-colors ${family === f ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>{f}</button>)}
       </div>}
       <div className="flex items-center justify-between text-xs text-slate-500"><span>{filtered.length}{ui(" product")}{filtered.length !== 1 ? 's' : ''}</span>{picking && <span>{ui("Tap a photo to add")}</span>}</div>
       {!filtered.length ? <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center">
@@ -50,13 +50,13 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
           const quantity = Number(lines.find((line) => line.product_id === product.id)?.quantity) || 0;
           const remaining = Math.max(0, Math.round(((product.quantity || 0) - quantity) * 1000) / 1000);
           const unavailable = picking && (remaining <= 0 || (selling && !(Number(product.selling_price) > 0)));
-          return <article key={product.id} className={`group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white transition-shadow hover:shadow-md ${quantity ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
+          return <article key={product.id} className={`group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white transition-shadow hover:shadow-md ${quantity ? 'border-slate-400 ring-1 ring-primary' : 'border-slate-200'}`}>
             <button type="button" disabled={disabled || unavailable} onClick={() => onSelect(product)} aria-label={picking ? ui("Add {0} to {1}", product.name, selling ? 'sale' : 'selection') : ui("Open {0}", product.name)}
-              className="flex flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500 disabled:cursor-default">
+              className="flex flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-default">
               <div className="relative w-full">
                 <ProductPhoto product={product} className="aspect-[4/3] w-full" imageClassName="p-2 transition-transform group-hover:scale-105" />
                 {size && <span className="absolute left-2 top-2 rounded-full bg-white/95 px-2 py-1 text-[11px] font-semibold text-slate-800 shadow-sm">{size}</span>}
-                {quantity > 0 && <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-amber-400 px-2 py-1 text-xs font-bold text-slate-900"><Check size={12} />{quantity} {selecting ? ui("selected") : ui("in cart")}</span>}
+                {quantity > 0 && <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-primary px-2 py-1 text-xs font-bold text-primary-foreground"><Check size={12} />{quantity} {selecting ? ui("selected") : ui("in cart")}</span>}
               </div>
               <div className="flex w-full flex-1 flex-col p-3">
                 <span className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{productFlavor || product.category || product.inventory_type?.replaceAll('_', ' ') || ui("Product")}</span>
@@ -68,7 +68,7 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
                     {!picking && product.quantity != null && <p className="mt-1 text-xs text-slate-500">{product.quantity} {product.storage_unit || ui("units")}{ui(" on hand")}</p>}
                     {!picking && product.is_active === false && <span className="text-xs text-slate-500">{ui("Inactive")}</span>}
                   </div>
-                  {picking && <span className={`flex h-9 w-9 items-center justify-center rounded-full ${unavailable ? 'bg-slate-100 text-slate-400' : 'bg-amber-400 text-slate-900'}`}><Plus size={18} /></span>}
+                  {picking && <span className={`flex h-9 w-9 items-center justify-center rounded-full ${unavailable ? 'bg-slate-100 text-slate-400' : 'bg-primary text-primary-foreground'}`}><Plus size={18} /></span>}
                 </div>
               </div>
             </button>

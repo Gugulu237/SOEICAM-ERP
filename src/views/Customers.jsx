@@ -109,7 +109,7 @@ function CustomerDirectory({view,setView,selectedId,options}) {
     ] : []),
   ];
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>
@@ -158,7 +158,7 @@ function CustomerDirectory({view,setView,selectedId,options}) {
           <div>
             {selected ? (
               <>
-        {(isAdmin || isCommercial) && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><div><p className="text-sm font-semibold text-slate-900">{ui("Make a delivery to ")}{selected.business_name}</p><p className="mt-1 text-xs text-slate-600">{ui("Pick products by photo in the field POS.")}</p></div><Button disabled={selected.is_active === false} onClick={() => navigate(`/commercial?section=pos&new=1&customer=${encodeURIComponent(selected.id)}`)}><ShoppingBag size={16} className="mr-2" />{ui("Record sale")}</Button></div>}
+        {(isAdmin || isCommercial) && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4"><div><p className="text-sm font-semibold text-slate-900">{ui("Make a delivery to ")}{selected.business_name}</p><p className="mt-1 text-xs text-slate-600">{ui("Pick products by photo in the field POS.")}</p></div><Button disabled={selected.is_active === false} onClick={() => navigate(`/commercial?section=pos&new=1&customer=${encodeURIComponent(selected.id)}`)}><ShoppingBag size={16} className="mr-2" />{ui("Record sale")}</Button></div>}
               {isAdmin && selected.acquired_by_name && <section className="mb-4 rounded-xl border bg-white p-4 text-sm"><p>{ui("Acquired by ")}<strong>{selected.acquired_by_name}</strong> / {selected.acquisition_date}</p>{selected.registered_by_name && <p className="mt-1 text-xs text-slate-500">{ui("Registered by ")}{selected.registered_by_name}</p>}<p className="mt-1 text-xs text-slate-500">{ui("Acquisition: ")}{(selected.acquisition_verified || 'pending').replaceAll('_', ' ')}</p></section>}
               {isAdmin && <CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onReceive={setReceiptCustomer} onRetry={() => paymentStatus.refetch()} />}
               <PartnerDetail

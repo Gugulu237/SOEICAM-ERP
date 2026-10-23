@@ -1,4 +1,5 @@
-const numeric = new Set(['purchase_price','selling_price','reorder_level','min_stock','max_stock','shelf_life_days','tax_rate']);
+import { YOGURT_YIELD_FIELDS } from './assembly-yield.js';
+const numeric = new Set([...YOGURT_YIELD_FIELDS,'purchase_price','selling_price','reorder_level','min_stock','max_stock','shelf_life_days','tax_rate']);
 const number = value => ['number','string'].includes(typeof value) && String(value).trim() && Number.isFinite(Number(value));
 
 // A full editor must not resubmit unrelated legacy defaults or read-only stock

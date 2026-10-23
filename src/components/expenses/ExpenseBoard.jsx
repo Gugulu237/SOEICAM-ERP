@@ -8,7 +8,7 @@ import { formatXAF } from "@/lib/formatters";
 
 const COLUMNS = [
   { key: "draft", get label(){return ui("Draft");}, tone: "bg-slate-100 text-slate-600" },
-  { key: "pending_approval", get label(){return ui("Pending Approval");}, tone: "bg-yellow-100 text-yellow-800" },
+  { key: "pending_approval", get label(){return ui("Pending Approval");}, tone: "bg-slate-100 text-slate-800" },
   { key: "approved", get label(){return ui("Approved — To Pay");}, tone: "bg-blue-100 text-blue-800" },
   { key: "paid", get label(){return ui("Paid");}, tone: "bg-green-100 text-green-800" },
 ];

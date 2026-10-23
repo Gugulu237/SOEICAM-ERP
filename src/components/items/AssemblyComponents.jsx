@@ -70,7 +70,7 @@ export default function AssemblyComponents({ components, setComponents, products
         </div>
         {type === 'fixed_asset' && <p className="rounded-lg bg-purple-50 p-3 text-xs leading-5 text-purple-800">{ui("Equipment stays in the asset register. Enter only the usage cost allocated to this assembly, if applicable. Its purchase value and depreciation are managed separately.")}</p>}
         {selected && itemAttributes(selected).length>0 && <dl className="flex flex-wrap gap-2 text-[11px] text-slate-600">{itemAttributes(selected).map(attr=><div key={attr.name} className="rounded-md bg-slate-50 px-2 py-1"><dt className="inline font-medium">{attr.name}: </dt><dd className="inline">{attr.value}</dd></div>)}</dl>}
-        {selected?.is_active === false && <p className="text-xs text-amber-800">{ui("This existing component is inactive. You can retain the link or choose an active replacement.")}</p>}
+        {selected?.is_active === false && <p className="text-xs text-slate-800">{ui("This existing component is inactive. You can retain the link or choose an active replacement.")}</p>}
       </fieldset>;
     })}</div>
     <div className="rounded-xl bg-slate-50 p-4 text-right text-sm">{ui("Component cost per finished-product U/M: ")}<span className="font-bold">{formatXAF(Number.isFinite(total) ? total : 0)}</span></div>

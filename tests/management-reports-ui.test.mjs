@@ -52,6 +52,10 @@ test('manager launcher omits personal Commercial tools and exposes a separate Qu
   try {
     for(const role of ['admin','production_manager','warehouse_manager'])assert.equal(ui.modulesForRole(role).some(row=>row.key==='commercial_workspace'),false);
     assert.equal(ui.modulesForRole('commercial').some(row=>row.key==='commercial_workspace'),true);
+    globalThis.__reportParams='';
+    const overview=ui.render('manager',{data:{date:'2026-10-21'}});
+    assert.doesNotMatch(overview,/aria-label="Management roles"/);
+    assert.match(overview,/View employee dashboards/);
     globalThis.__reportParams='section=quick-reports';
     const report=ui.render('manager',{data:{date:'2026-10-21'}});
     assert.match(report,/Employee reports/);

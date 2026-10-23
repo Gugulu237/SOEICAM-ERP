@@ -1,7 +1,7 @@
 import {ui} from './i18n.js';
 import { hasCustomerLocation } from './customer-location.js';
 export const DELIVERY_DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-export const ZONE_COLOURS={amber:'bg-amber-50 border-amber-200 text-amber-900',blue:'bg-blue-50 border-blue-200 text-blue-900',green:'bg-emerald-50 border-emerald-200 text-emerald-900',purple:'bg-violet-50 border-violet-200 text-violet-900',slate:'bg-slate-50 border-slate-200 text-slate-900'};
+export const ZONE_COLOURS={amber:'bg-slate-50 border-slate-200 text-slate-900',blue:'bg-blue-50 border-blue-200 text-blue-900',green:'bg-emerald-50 border-emerald-200 text-emerald-900',purple:'bg-violet-50 border-violet-200 text-violet-900',slate:'bg-slate-50 border-slate-200 text-slate-900'};
 export function deliveryGpsPolicy(settings={}) {
   const accuracy=Number(settings.gps_max_accuracy_m),age=Number(settings.gps_max_age_seconds);
   return {maxAccuracy:Number.isFinite(accuracy)&&accuracy>=5&&accuracy<=100?accuracy:30,maxAgeSeconds:Number.isFinite(age)&&age>=30&&age<=600?age:120};

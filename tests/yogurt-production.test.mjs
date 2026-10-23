@@ -107,7 +107,7 @@ test('GM approval and warehouse issue recheck usable stock and source selection;
   const lot=(await f.entities.StockBalance.filter({product_id:f.culture.id}))[0];await f.entities.StockBalance.update(lot.id,{quantity:0});
   const before=structuredClone(f.rows);const blocked=await call(f,'issueYogurtStage',{stage:'fermentation'});assert.equal(blocked.blocked,true);assert.deepEqual(f.rows,before);
   await f.entities.StockBalance.create({product_id:f.culture.id,warehouse_id:f.raw.id,quantity:1000,qc_status:'quarantine'});assert.equal((await call(f,'issueYogurtStage',{stage:'fermentation'})).blocked,true);
-  await staff(f,'production_manager');await assert.rejects(call(f,'issueYogurtStage',{stage:'fermentation'}),/role/);await assert.rejects(call(f,'approveProductionOrder'),/role/);
+  await staff(f,'production_manager');await assert.rejects(call(f,'issueYogurtStage',{stage:'fermentation'}),/role/);assert.equal((await call(f,'approveProductionOrder')).reused,true);await assert.rejects(call(f,'rejectProductionOrder',{reason:'Forged management rejection'}),/role/);
 });
 
 test('packaging posts actual SKU inventory, lot expiry, unused packaging returns, process loss and balanced WIP exactly once',async()=>{
@@ -185,7 +185,7 @@ test('HTTP completion rolls stock, returns, product cost, all journals and ledge
 test('standard bucket estimates use 52 Brassé 500 g cups or 100 drinkable 330 g units without guessing other sizes',()=>{
  assert.equal(emptyYogurtConfig('brasse').expected_kg_per_bucket,26);assert.equal(emptyYogurtConfig('boire').expected_kg_per_bucket,33);
  assert.equal(emptyYogurtConfig('boire').fermentation.find(r=>r.role==='milk').quantity,2.5);assert.equal(emptyYogurtConfig().fermentation.some(r=>r.role==='sugar'),false);
- assert.equal(standardBucketUnits('brasse','500 g'),52);assert.equal(standardBucketUnits('boire','330 g'),100);assert.equal(standardBucketUnits('boire','500 g'),'');
+ assert.equal(standardBucketUnits('brasse','500 g'),52);assert.equal(standardBucketUnits('boire','330 g'),100);assert.equal(standardBucketUnits('boire','500 g'),66);
  const c={family:'brasse',outputs:[{product_id:'sku',flavor:'Nature',size:'500 g',standard_units_per_bucket:52}]};assert.deepEqual(standardOutputPlan(c,[{flavor:'Nature',buckets:3}]),[{product_id:'sku',quantity:156}]);
  c.outputs.push({product_id:'other',flavor:'Nature',size:'250 g'});assert.deepEqual(standardOutputPlan(c,[{flavor:'Nature',buckets:3}]),[]);
  assert.deepEqual(yogurtAssemblyPackaging({components:[{product_id:'cup',quantity:1,unit:'ea'},{product_id:'milk',quantity:0.1,unit:'kg'}]},[{id:'cup',inventory_type:'packaging'},{id:'milk',inventory_type:'raw_material'}]),[{material_id:'cup',quantity:1,unit:'ea'}]);
@@ -275,7 +275,8 @@ test('ten bucket product recipe forecasts five 104-cup outputs and phases milk, 
 test('product bucket forecast separates two pack sizes of the same flavour and drinkable standards',()=>{
  const c={...emptyYogurtConfig('boire'),planned_buckets:3,outputs:[{product_id:'a',flavor:'Vanille',size:'330 g',buckets:2,standard_units_per_bucket:100},{product_id:'b',flavor:'Vanille',size:'500 g',buckets:1,standard_units_per_bucket:66}]};
  const plan=recipeBucketPlan(c);assert.deepEqual(plan.outputs,[{product_id:'a',quantity:200},{product_id:'b',quantity:66}]);assert.deepEqual(plan.allocations,[{flavor:'Vanille',buckets:3,sweetened_buckets:3}]);assert.deepEqual(standardOutputPlan(c,plan.allocations),plan.outputs);
- assert.throws(()=>recipeBucketPlan({...c,outputs:[{...c.outputs[0],buckets:3,size:'250 g',standard_units_per_bucket:''}]}),/standard units/);
+ assert.equal(recipeBucketPlan({...c,outputs:[{...c.outputs[0],buckets:3,size:'250 g',standard_units_per_bucket:''}]}).outputs[0].quantity,396);
+ assert.throws(()=>recipeBucketPlan({...c,outputs:[{...c.outputs[0],buckets:3,size:'unconfigured',standard_units_per_bucket:''}]}),/standard units/);
 });
 
 
@@ -294,7 +295,7 @@ test('submission and GM approval check every projected ingredient and packaging 
  // Expired and quarantine inventory cannot conceal missing usable packaging.
  await s.StockBalance.create({product_id:f.cups.id,warehouse_id:f.packs.id,quantity:1000,qc_status:'quarantine'});await s.StockBalance.create({product_id:f.cups.id,warehouse_id:f.packs.id,quantity:1000,qc_status:'approved',expiry_date:'2000-01-01'});
  const before=structuredClone(f.rows);const blocked=await yogurtAction(f.client,user,{action:'saveYogurtPlan',plan:f.plan,status:'awaiting_approval',requestKey:crypto.randomUUID()});assert.equal(blocked.blocked,true);assert.equal(blocked.shortages.find(r=>r.material_id===f.milk.id).required,8);assert.equal(blocked.shortages.find(r=>r.material_id===f.cups.id).required,160);assert.deepEqual(f.rows,before);
- await staff(f,'admin');const snapshot=structuredClone(f.rows);assert.equal((await call(f,'approveProductionOrder')).blocked,true);assert.deepEqual(f.rows,snapshot);
+ await s.ProductionOrder.update(f.order.id,{status:'awaiting_approval',approved_by:'',approved_at:''});await staff(f,'admin');const snapshot=structuredClone(f.rows);assert.equal((await call(f,'approveProductionOrder')).blocked,true);assert.deepEqual(f.rows,snapshot);
 });
 
 

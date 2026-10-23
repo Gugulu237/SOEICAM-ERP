@@ -111,7 +111,7 @@ export default function Approvals({ embedded = false, preview = false, onDecisio
 
   if (!embedded && role === 'admin') return <Navigate to="/?section=approvals" replace />;
   if (preview) return <section className="rounded-2xl border bg-white p-6"><h2 className="text-xl font-semibold">{ui("Approvals")}</h2><p className="mt-2 text-sm text-slate-500">{ui("Open the live General Manager dashboard to review and decide approval requests.")}</p></section>;
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>

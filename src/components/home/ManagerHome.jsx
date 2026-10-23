@@ -7,7 +7,6 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from '@/lib/router';
 import { BriefcaseBusiness, CheckSquare, Users, Store, ArrowUpRight } from 'lucide-react';
 import { APP_MODULES } from '@/lib/appModules';
-import ManagementHierarchy from '@/components/employees/ManagementHierarchy';
 import ManagementQuickReports from './ManagementQuickReports';
 import { formatXAF } from '@/lib/formatters';
 import { managerSnapshot, cashierSnapshot, productionSnapshot } from '@/lib/staff-dashboard';
@@ -33,10 +32,9 @@ export default function ManagerHome({ data, loading, preview, onRefresh }) {
       {[['overview', 'Overview'], ['approvals', 'Approvals'], ['quick-reports', 'Quick reports']].map(([value, label]) => <button key={value} type="button" aria-current={section === value ? 'page' : undefined} onClick={() => selectSection(value)} className={'rounded-lg px-4 py-2 text-sm font-semibold ' + (section === value ? 'bg-primary text-primary-foreground' : 'bg-white text-slate-700 hover:bg-sky-50')}>{ui(label)}</button>)}
     </nav>
     {section === 'approvals' ? <Approvals embedded preview={preview} onDecision={onRefresh} /> : section === 'quick-reports' ? <ManagementQuickReports preview={preview}/> : <>
-    <WorkspaceHero eyebrow="General Manager" title={ui("A clear view of SOEICAM")} description={ui("Full administration of every ERP dashboard and department. Review decisions, manage employee access and oversee cash, production and field teams.")} icon={BriefcaseBusiness} color="amber">
-      <WorkspaceButton path="/?section=approvals" preview={preview}>{ui("Review approvals")}<ArrowUpRight size={17} className="ml-3" /></WorkspaceButton><WorkspaceButton path="/team-workspaces" preview={preview} variant="outline">{ui("Preview staff dashboards")}</WorkspaceButton>
+    <WorkspaceHero eyebrow="General Manager" title={ui("A clear view of SOEICAM")} description={ui("Full administration of every ERP dashboard and department. Review decisions, manage employee access and oversee cash, production and field teams.")} icon={BriefcaseBusiness}>
+      <WorkspaceButton path="/?section=approvals" preview={preview}>{ui("Review approvals")}<ArrowUpRight size={17} className="ml-3" /></WorkspaceButton><WorkspaceButton path="/team-workspaces?section=reports" preview={preview} variant="outline">{ui("View employee dashboards")}</WorkspaceButton>
     </WorkspaceHero>
-    <ManagementHierarchy currentRole="admin" />
     <WorkspaceMetrics ready={ready} metrics={[
       { label: 'Invoiced sales today', value: formatXAF(summary.today), note: 'Posted sales including tax; drafts excluded' },
       { label: 'Invoiced sales this month', value: formatXAF(summary.month), note: 'Posted invoices including tax' },

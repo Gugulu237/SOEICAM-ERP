@@ -62,7 +62,7 @@ export default function Treasury() {
     { key: "amount", label: ui("Amount"), render: (v, t) => <span className={`font-semibold ${t.transaction_type === "transfer_in" ? "text-green-700" : "text-red-600"}`}>{t.transaction_type === "transfer_in" ? "+" : "−"}{formatXAF(v)}</span> },
   ];
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   if(error) return <p role="alert">{error}</p>;
   return (
@@ -90,7 +90,7 @@ export default function Treasury() {
             <div key={a.id} className="bg-white rounded-lg border border-slate-200 p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 text-slate-500 text-sm"><Icon size={16} /> {TYPE_LABEL[a.account_type]}</div>
-                {lowFloat && <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">{ui("Low float")}</span>}
+                {lowFloat && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">{ui("Low float")}</span>}
               </div>
               <p className="font-semibold text-slate-900">{a.name}</p>
               <p className="text-xl font-bold mt-1">{formatXAF(a.balance)}</p>

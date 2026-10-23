@@ -52,7 +52,7 @@ export default function ReceiptField({ fileUri, onChange, label = "Receipt" }) {
             </button>
           </div>
         ) : (
-          <label className="h-16 w-16 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-500 cursor-pointer hover:border-amber-400">
+          <label className="h-16 w-16 rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-500 cursor-pointer hover:border-slate-400">
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-5 h-5" />}
             <input
               type="file"

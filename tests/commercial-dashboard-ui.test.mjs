@@ -35,6 +35,15 @@ test('own Commercial dashboard exposes entry while management reports remain rea
     const sale = globalThis.__commercialButtons.find(button => label(button.children) === 'Record sale');
     assert.equal(sale.disabled,false); sale.onClick();
     assert.equal(globalThis.__commercialNavigation,undefined,'own sale stays inside the dashboard');
+    globalThis.__commercialButtons = [];
+    module.exports.render({ data:null, actorEmployee:data.employee, loading:true });
+    assert.equal(globalThis.__commercialButtons.find(button => label(button.children)==='Record sale').disabled,false,'a slow dashboard does not block the linked Commercial from entering a customer sale');
+    globalThis.__commercialButtons = [];
+    module.exports.render({ data:null, actorEmployee:{...data.employee,status:'inactive'}, loading:true });
+    assert.equal(globalThis.__commercialButtons.find(button => label(button.children)==='Record sale').disabled,true);
+    globalThis.__commercialButtons = [];
+    module.exports.render({ data:null, loading:false });
+    assert.equal(globalThis.__commercialButtons.find(button => label(button.children)==='Record sale').disabled,true,'an unlinked account cannot enter an employee sale');
     for(const section of ['workspace','pos']) {
       globalThis.__commercialButtons = [];
       const report=module.exports.render({data,managing:true,section,openFromLink:true,initialCustomerId:'forged'});

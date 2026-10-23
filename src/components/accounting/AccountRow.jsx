@@ -16,7 +16,7 @@ export function balanceLabel(net) {
 const TONES = {
   slate: "bg-slate-100 text-slate-600",
   blue: "bg-blue-100 text-blue-700",
-  amber: "bg-amber-100 text-amber-800",
+  amber: "bg-slate-100 text-slate-800",
   rose: "bg-rose-100 text-rose-700",
 };
 

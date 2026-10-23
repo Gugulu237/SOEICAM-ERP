@@ -1,6 +1,5 @@
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from 'react';
 import { useNavigate } from '@/lib/router';
@@ -9,11 +8,10 @@ import { Button } from '@/components/ui/button';
 import ProductThumb from '@/components/shared/ProductThumb';
 import { useWorkspaceAccess } from './WorkspaceAccess';
 
-export function WorkspaceHero({ eyebrow, title, description, icon: Icon, color = 'amber', children }) {
+export function WorkspaceHero({ eyebrow, title, description, icon: Icon, children }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const colors = { amber: 'from-green-50 to-lime-50 border-green-200 text-green-800', emerald: 'from-green-50 to-teal-50 border-green-200 text-green-800', violet: 'from-green-50 to-sky-50 border-green-200 text-green-800', rose: 'from-green-50 to-cyan-50 border-green-200 text-green-800' };
-  return <section className={'relative overflow-hidden rounded-3xl border bg-gradient-to-br via-white p-6 sm:p-8 ' + colors[color]}>
+  return <section className="relative overflow-hidden rounded-3xl border border-border bg-secondary/50 p-6 text-primary sm:p-8">
     <div className="relative z-10 max-w-2xl"><p className="text-xs font-semibold uppercase tracking-widest">{eyebrow}</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{description}</p>{children && <div className="mt-5 flex flex-wrap gap-3">{children}</div>}</div>
     {Icon && <Icon className="absolute bottom-6 right-8 hidden h-32 w-32 opacity-10 xl:block" strokeWidth={1} aria-hidden="true" />}
   </section>;
@@ -37,7 +35,7 @@ export function WorkspaceActions({ actions, preview }) {
   const navigate = useNavigate();
   const { canOpen } = useWorkspaceAccess();
   actions = actions.filter(action => canOpen(action.path));
-  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{actions.map(({ title, detail, path, icon: Icon, color = ui("bg-green-50 text-green-800") }) => <button key={title} disabled={preview} onClick={() => { if (!preview) navigate(path); }} className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left transition hover:border-green-300 disabled:cursor-default disabled:opacity-70"><span className={'rounded-xl p-3 ' + color}><Icon size={21} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{detail}</span></span></button>)}</div>;
+  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{actions.map(({ title, detail, path, icon: Icon }) => <button key={title} disabled={preview} onClick={() => { if (!preview) navigate(path); }} className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left transition hover:border-primary/40 disabled:cursor-default disabled:opacity-70"><span className="rounded-xl bg-secondary p-3 text-primary"><Icon size={21} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{detail}</span></span></button>)}</div>;
 }
 export function WorkspacePanel({ title, subtitle, children, className = '' }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

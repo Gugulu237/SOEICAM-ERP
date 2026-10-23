@@ -73,7 +73,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
@@ -88,17 +88,17 @@ export default function Dashboard() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard title={ui("Today's Sales")} value={formatXAF(s.todaySales)} icon={Receipt} to="/sales" color="text-green-600" accent="green" />
-        <KPICard title={ui("Month-to-Date Sales")} value={formatXAF(s.mtdSales)} icon={TrendingUp} to="/reports" color="text-blue-600" accent="blue" />
-        <KPICard title={ui("Customer Receivables")} value={formatXAF(s.totalReceivables)} icon={Users} to="/customers" accent="sky" />
-        <KPICard title={ui("Overdue Receivables")} value={formatXAF(s.overdueAmount)} subtitle={`${s.overdueCount} invoice(s)`} icon={AlertTriangle} to="/customers" color="text-red-600" accent="red" />
+        <KPICard title={ui("Today's Sales")} value={formatXAF(s.todaySales)} icon={Receipt} to="/sales" />
+        <KPICard title={ui("Month-to-Date Sales")} value={formatXAF(s.mtdSales)} icon={TrendingUp} to="/reports" />
+        <KPICard title={ui("Customer Receivables")} value={formatXAF(s.totalReceivables)} icon={Users} to="/customers" />
+        <KPICard title={ui("Overdue Receivables")} value={formatXAF(s.overdueAmount)} subtitle={`${s.overdueCount} invoice(s)`} icon={AlertTriangle} to="/customers" tone="danger" />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KPICard title={ui("Inventory Value")} value={formatXAF(s.inventoryValue)} icon={Package} to="/inventory" accent="amber" />
-        <KPICard title={ui("Active Production")} value={formatNumber(s.activeProductionCount)} subtitle={ui("orders in progress")} icon={Factory} to="/manufacturing" color="text-purple-600" accent="purple" />
-        <KPICard title={ui("Pending Orders")} value={formatNumber(s.pendingOrders)} subtitle={ui("awaiting dispatch")} icon={Truck} to="/sales" color="text-orange-600" accent="orange" />
-        <KPICard title={ui("MTD Collections")} value={formatXAF(s.mtdCollections)} icon={Wallet} to="/accounting" color="text-green-600" accent="green" />
+        <KPICard title={ui("Inventory Value")} value={formatXAF(s.inventoryValue)} icon={Package} to="/inventory" />
+        <KPICard title={ui("Active Production")} value={formatNumber(s.activeProductionCount)} subtitle={ui("orders in progress")} icon={Factory} to="/manufacturing" />
+        <KPICard title={ui("Pending Orders")} value={formatNumber(s.pendingOrders)} subtitle={ui("awaiting dispatch")} icon={Truck} to="/sales" />
+        <KPICard title={ui("MTD Collections")} value={formatXAF(s.mtdCollections)} icon={Wallet} to="/accounting" />
       </div>
 
       {s.finishedProducts?.length > 0 && (
@@ -108,7 +108,7 @@ export default function Dashboard() {
               <h3 className="font-semibold text-slate-900">{ui("YOLA Product Range")}</h3>
               <p className="text-xs text-slate-500 mt-0.5">{ui("Your finished goods — open a product for its stock and pricing")}</p>
             </div>
-            <Link to="/inventory" className="text-xs font-medium text-amber-600 hover:text-amber-700">{ui("View inventory →")}</Link>
+            <Link to="/inventory" className="text-xs font-medium text-slate-600 hover:text-slate-700">{ui("View inventory →")}</Link>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {s.finishedProducts.map(p => (
@@ -120,7 +120,7 @@ export default function Dashboard() {
                 <ProductPhoto product={p} className="aspect-[4/3] w-full" imageClassName="transition-transform group-hover:scale-105" />
                 <div className="p-3">
                   <p className="text-sm font-medium text-slate-900 leading-tight">{p.name}</p>
-                  <p className="text-xs font-semibold text-amber-600 mt-1">{formatXAF(p.selling_price)}</p>
+                  <p className="text-xs font-semibold text-slate-600 mt-1">{formatXAF(p.selling_price)}</p>
                 </div>
               </Link>
             ))}
@@ -140,7 +140,7 @@ export default function Dashboard() {
               { label: ui("New Customer"), to: "/customers/new" },
               { label: ui("Record Expense"), to: "/accounting/expenses" },
             ].map(a => (
-              <a key={a.to} href={a.to} className="block text-center py-3 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 transition-colors">
+              <a key={a.to} href={a.to} className="block text-center py-3 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-700 transition-colors">
                 {a.label}
               </a>
             ))}

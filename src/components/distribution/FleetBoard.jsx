@@ -11,7 +11,7 @@ const VEHICLE_STATUS = {
   available: { get label(){return ui("AVAILABLE");}, chip: "bg-slate-100 text-slate-600", accent: "border-slate-200" },
   loading: { get label(){return ui("LOADING");}, chip: "bg-blue-100 text-blue-700", accent: "border-blue-300" },
   on_route: { get label(){return ui("ON ROUTE");}, chip: "bg-green-100 text-green-700", accent: "border-green-300" },
-  reconciliation: { get label(){return ui("RECONCILIATION");}, chip: "bg-orange-100 text-orange-700", accent: "border-orange-300" },
+  reconciliation: { get label(){return ui("RECONCILIATION");}, chip: "bg-slate-100 text-slate-700", accent: "border-slate-300" },
 };
 
 function vehicleState(vehicle, dispatches) {

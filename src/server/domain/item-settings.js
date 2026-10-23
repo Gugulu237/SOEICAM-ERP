@@ -1,3 +1,4 @@
+import { validateAssemblyYieldChanges } from '../../lib/assembly-yield.js';
 import { readRecords } from './commercial-workspace.js';
 import { itemUnits, stockUnit } from '../../lib/item-units.js';
 import { ITEM_ACCOUNT_FIELDS, availableItemAccount } from '../../lib/item-accounts.js';
@@ -30,7 +31,7 @@ export async function addItemUnit(stores, input) {
   return { unit, units: [...units, unit] };
 }
 export async function validateItemDefinition(stores, input, existing = null, { partialUnitAccounts = false, allowUnitCorrection = false } = {}) {
-  let result = { ...input, ...validateItemMetadata(input), ...validateFinishedVariantChanges(input,existing || {}) };
+  let result = { ...input, ...validateItemMetadata(input), ...validateFinishedVariantChanges(input,existing || {}), ...validateAssemblyYieldChanges(input,existing || {}) };
   if (['quantity_on_hand', 'opening_quantity', 'on_hand'].some(key => Object.hasOwn(input, key))) throw new Error('Quantity on hand is calculated from stock receipts and adjustments');
   const type = input.inventory_type ?? existing?.inventory_type;
   if (!isAssemblyInventoryType(type)) {

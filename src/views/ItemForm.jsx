@@ -1,3 +1,5 @@
+import AssemblyYieldFields from '@/components/items/AssemblyYieldFields';
+import { validateAssemblyYieldChanges } from '@/lib/assembly-yield';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -58,7 +60,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const [legacyUnits, setLegacyUnits] = useState(null);
   const [saving, setSaving] = useState(false), [unitBusy, setUnitBusy] = useState(false);
   const [form, setForm] = useState({
-    attributes: [], product_family: "", material_group: "", image_url: "", size: "", flavor: "", sku: "", name: "", description: "", category: "",
+    yogurt_units_per_bucket: '', yogurt_net_weight_g: '', attributes: [], product_family: "", material_group: "", image_url: "", size: "", flavor: "", sku: "", name: "", description: "", category: "",
     inventory_type: requestedType === "assembly" ? "assembly" : requestedType === "service" ? "service" : initialInventoryType,
     unit_of_measure: requestedType === "service" ? "hr" : requestedType === "inventory_item" && initialInventoryType === "raw_material" ? "kg" : "ea",
     costing_method: "average", purchase_price: 0, current_cost: 0, standard_cost: 0, selling_price: 0,
@@ -110,7 +112,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     if (key === "inventory_type") {
       setItemType(itemFormType(value));
       setForm(previous => ({ ...previous, inventory_type: isAssemblyInventoryType(value) ? "assembly" : value }));
-    } else setForm(previous => ({ ...previous, [key]: value }));
+    } else setForm(previous => {const next={...previous,[key]:value};return {...next,...(['product_family','size','name','category'].includes(key)?validateAssemblyYieldChanges({[key]:value},previous):{})};});
   };
   const changeType = type => set("inventory_type", type === "inventory_item" ? itemFormType(form.inventory_type) === "inventory_item" ? form.inventory_type : initialInventoryType : type);
   const productById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
@@ -135,9 +137,9 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
         inventory_type:itemType==='inventory_item' ? form.inventory_type : itemType,
         components:itemType==='assembly' ? isEdit && JSON.stringify(components)===JSON.stringify(originalForm.current?.components) ? components : pricedComponents : [],
       };
-      if (itemType!=='assembly') {delete payload.selling_price;delete payload.revenue_account_id;}
+      if (itemType!=='assembly') {delete payload.selling_price;delete payload.revenue_account_id;delete payload.yogurt_units_per_bucket;delete payload.yogurt_net_weight_g;}
       changes = isEdit ? itemFormChanges(originalForm.current,payload) : payload;
-      changes = {...changes,...validateItemMetadata(changes),...validateFinishedVariantChanges(changes,savedItem || {})};
+      changes = {...changes,...validateItemMetadata(changes),...validateFinishedVariantChanges(changes,savedItem || {}),...validateAssemblyYieldChanges(changes,savedItem || {})};
       if(!isEdit)payload=changes;
       for (const { field, label, types } of ITEM_ACCOUNT_FIELDS) {
         if (itemType!=="assembly" && (field==="revenue_account_id" || itemType==="service")) continue;
@@ -185,7 +187,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   return <div>
     {!embedded && <PageHeader title={isEdit ? ui("Edit Item") : ui("New Item")} subtitle={ui("Set up the item, its accounts and its stock settings.")} actions={<Button variant="outline" disabled={saving || unitBusy} onClick={cancel}><ArrowLeft size={16} className="mr-1" />{ui("Back")}</Button>} />}
     <fieldset disabled={saving} className={embedded ? "space-y-5" : "max-w-5xl space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"}>
-      {savedItem&&(savedItem.configuration_status==='draft'||savedItem.is_active===false)&&<div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><strong>{ui(itemAvailabilityLabel(savedItem))}</strong><p className="mt-1">{ui('Complete the required details and turn on Active item before saving.')}</p>{finishedItemSetupIssues({...form,components}).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues({...form,components}).map(label=>ui(label)).join(', ')}</p>}</div>}
+      {savedItem&&(savedItem.configuration_status==='draft'||savedItem.is_active===false)&&<div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900"><strong>{ui(itemAvailabilityLabel(savedItem))}</strong><p className="mt-1">{ui('Complete the required details and turn on Active item before saving.')}</p>{finishedItemSetupIssues({...form,components}).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues({...form,components}).map(label=>ui(label)).join(', ')}</p>}</div>}
       <div className="flex flex-wrap items-center justify-between gap-3"><ItemTypeChooser value={itemType} onChange={changeType} /><label className="flex items-center gap-2 text-sm"><Switch aria-label={ui("Active item")} checked={form.is_active} onCheckedChange={value => set("is_active", value)} />{ui("Active item")}</label></div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.5fr]">
         <label className="space-y-1.5 text-sm font-medium">{ui("Item name *")}<Input value={form.name} onChange={event => set("name", event.target.value)} placeholder={ui("e.g. YOLA Natural Yogurt 500ml")} /></label>
@@ -197,9 +199,10 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
         <label className="space-y-1.5 text-sm font-medium">{itemType==='assembly'?ui('Product family'):ui('Material group')}<Input list="inventory-groups" value={(itemType==='assembly'?form.product_family:form.material_group) || inventoryGroup(form)} onChange={e=>set(itemType==='assembly'?'product_family':'material_group',e.target.value)} placeholder={ui('Choose or add a group')}/><datalist id="inventory-groups">{[...new Set([...(itemType==='assembly'?PRODUCT_FAMILIES:MATERIAL_GROUPS),...inventoryGroups(products,itemType==='assembly')])].map(value=><option key={value} value={value}/>)}</datalist><span className="block text-xs font-normal text-slate-500">{ui('Type a new name to add another group.')}</span></label>
         {itemType==='assembly' && <ProductVariantFields item={form} values={form} onChange={set} disabled={saving}/>}
       </div>}
+      {itemType==='assembly' && <AssemblyYieldFields item={savedItem || {}} values={form} onChange={set} disabled={saving}/>}
       {itemType!=="service" && <div className="rounded-xl border border-slate-200 p-4"><ItemAttributesEditor value={form.attributes} onChange={value=>set("attributes",value)} disabled={saving} suggestions={attributeOptions}/></div>}
       {itemType === "service" ? <ServiceFields form={form} set={set} accounts={accounts} /> : <InventoryFields form={form} set={set} accounts={accounts} suppliers={suppliers} isAssembly={itemType === "assembly"} estimatedCost={Number.isFinite(estimatedCost) ? estimatedCost : 0} quantityOnHand={stockLoading ? "Loading…" : stockError ? "Unavailable" : quantityOnHand} purchaseUnit={legacyUnits?.stock === form.unit_of_measure ? legacyUnits.purchase : form.unit_of_measure} />}
-      {itemType !== "service" && stockError && <p role="alert" className="text-xs text-amber-800">{stockError}.<button type="button" className="ml-2 underline" onClick={() => setStockReload(value => value + 1)}>{ui("Retry stock quantity")}</button></p>}
+      {itemType !== "service" && stockError && <p role="alert" className="text-xs text-slate-800">{stockError}.<button type="button" className="ml-2 underline" onClick={() => setStockReload(value => value + 1)}>{ui("Retry stock quantity")}</button></p>}
       {itemType === "assembly" && <AssemblyFields components={pricedComponents} setComponents={setComponents} products={products} assets={assets} units={units} excludedProductIds={exclusions} onCatalogChange={catalogChanged} disabled={saving} />}
       <details className="rounded-xl border border-slate-200"><summary className="flex cursor-pointer list-none items-center justify-between p-4 text-sm font-semibold">{ui("Photo and extra settings")}<ChevronDown size={16} /></summary><div className="space-y-4 border-t p-4">
         {itemType !== "service" && <ProductPhotoPicker product={form} onChange={value => set("image_url", value)} />}

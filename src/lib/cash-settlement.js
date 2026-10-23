@@ -3,11 +3,11 @@ import {ui} from './i18n.js';
 const money = value => Math.round(Number(value || 0) * 100) / 100;
 
 export const CASH_SETTLEMENT_STATUS = {
-  outstanding: { get label(){return ui("Cash to hand over");}, tone: 'bg-amber-50 text-amber-800 border-amber-200' },
+  outstanding: { get label(){return ui("Cash to hand over");}, tone: 'bg-slate-50 text-slate-800 border-slate-200' },
   requested: { get label(){return ui("Requested by cashier");}, tone: 'bg-blue-50 text-blue-700 border-blue-200' },
   deposit_reported: { get label(){return ui("Deposit reported; awaiting cashier");}, tone: 'bg-blue-50 text-blue-700 border-blue-200' },
   awaiting_receipt: { get label(){return ui("Awaiting cashier receipt");}, tone: 'bg-blue-50 text-blue-700 border-blue-200' },
-  partial: { get label(){return ui("Partly settled");}, tone: 'bg-orange-50 text-orange-700 border-orange-200' },
+  partial: { get label(){return ui("Partly settled");}, tone: 'bg-slate-50 text-slate-700 border-slate-200' },
   settled: { get label(){return ui("Settled");}, tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   disputed: { get label(){return ui("Needs reconciliation");}, tone: 'bg-red-50 text-red-700 border-red-200' },
 };

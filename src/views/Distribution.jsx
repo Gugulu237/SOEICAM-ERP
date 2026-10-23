@@ -116,13 +116,13 @@ function DistributionManagement() {
     { key: "vehicle_type", label: ui("Type") },
     { key: "warehouse_id", label: ui("Delivery stock location"), render: (_, vehicle) => {
       const location = vehicleLocation(vehicle);
-      return <span className={location.ready ? 'text-slate-600' : 'font-medium text-amber-700'}>{location.label}</span>;
+      return <span className={location.ready ? 'text-slate-600' : 'font-medium text-slate-700'}>{location.label}</span>;
     } },
     { key: "is_active", label: ui("Status"), render: v => <StatusBadge status={v !== false ? "active" : "inactive"} /> },
     ...(canManageVehicles ? [{ key: "id", label: ui("Setup"), sortable: false, render: (_, vehicle) => <Button size="sm" variant="outline" onClick={() => setVehicleDialog({ open: true, record: vehicle })}><Pencil size={14} className="mr-1" /> {vehicleLocation(vehicle).ready ? ui("Edit vehicle") : ui("Set up location")}</Button> }] : []),
   ];
 
-  if (!['stock', 'exchanges'].includes(selectedTab)&&loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (!['stock', 'exchanges'].includes(selectedTab)&&loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!['stock', 'exchanges'].includes(selectedTab)&&loadError) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">{uiMessage(loadError)}<Button className="mt-4 block" variant="outline" onClick={loadData}>{ui("Try again")}</Button></div>;
 
   return (
@@ -145,7 +145,7 @@ function DistributionManagement() {
           <TabsTrigger value="fleet">{ui("Fleet")}</TabsTrigger>
           <TabsTrigger value="dispatches">{ui("Dispatches")}</TabsTrigger>
           <TabsTrigger value="requests">{ui("Issue records")}{pendingRequests > 0 && (
-              <span className="ml-2 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-semibold">{pendingRequests}{ui(" pending")}</span>
+              <span className="ml-2 rounded-full bg-slate-100 text-slate-800 px-2 py-0.5 text-xs font-semibold">{pendingRequests}{ui(" pending")}</span>
             )}
           </TabsTrigger>
           <TabsTrigger value="routes">{ui("Routes")}</TabsTrigger>

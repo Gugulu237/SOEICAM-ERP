@@ -53,7 +53,7 @@ export default function WarehouseVehicles({ entries, onBack, onSelect }) {
       <div className="border-b bg-slate-50/60 p-5 lg:border-b-0 lg:border-r">
         <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium tracking-wide text-slate-500">{entry.registration || ui("Registration not recorded")}</p><h3 className="mt-1 text-lg font-semibold text-slate-900">{entry.name}</h3></div><span className={`rounded-full px-2 py-1 text-[11px] font-medium ${entry.active ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-600'}`}>{entry.active ? ui("Active") : ui("Inactive")}</span></div>
         {entry.warehouse && <p className="mt-2 text-xs text-slate-500">{ui("Stock location: ")}{entry.warehouse.name}</p>}
-        {entry.issue && <p className="mt-3 text-xs leading-5 text-amber-800">{entry.issue}</p>}
+        {entry.issue && <p className="mt-3 text-xs leading-5 text-slate-800">{entry.issue}</p>}
         {entry.snapshot && <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-500">{entry.snapshot.products}{ui(" items in stock")}</span><span className="text-sm font-semibold text-green-800">{formatXAF(entry.snapshot.value)}</span></div>}
         {entry.warehouse && <Button variant="outline" size="sm" className="mt-4 w-full justify-between" onClick={() => onSelect(entry.warehouse.id, 'stock', 'vehicles')} aria-label={ui("View inventory for {0}", entry.name)}>{ui("View inventory")}<ArrowRight size={15} /></Button>}
       </div>
@@ -61,7 +61,7 @@ export default function WarehouseVehicles({ entries, onBack, onSelect }) {
         <p className="mb-3 text-xs font-medium text-slate-500">{ui("Current inventory")}{entry.vehicles.length > 1 ? ui(" · shared location") : ''}</p>
         {entry.items.length ? <><ul className="divide-y">{entry.items.slice(0, 3).map(item => <li key={item.id} className="flex items-center gap-3 py-3 first:pt-0">
           <ProductThumb product={item.product} name={item.name} size={40} /><span className="min-w-0 flex-1 text-sm font-medium text-slate-800">{item.name}</span>
-          <div className="shrink-0 text-right"><p className="text-sm font-semibold tabular-nums">{formatNumber(item.quantity, 3)} {item.unit}</p>{item.blocked > 0 && <p className="mt-1 text-[11px] text-amber-800">{formatNumber(item.blocked, 3)}{ui(" held / expired")}</p>}</div>
+          <div className="shrink-0 text-right"><p className="text-sm font-semibold tabular-nums">{formatNumber(item.quantity, 3)} {item.unit}</p>{item.blocked > 0 && <p className="mt-1 text-[11px] text-slate-800">{formatNumber(item.blocked, 3)}{ui(" held / expired")}</p>}</div>
         </li>)}</ul>{entry.items.length > 3 && <button type="button" onClick={() => onSelect(entry.warehouse.id, 'stock', 'vehicles')} className="mt-2 text-xs font-medium text-green-800 underline">{ui("View all ")}{entry.items.length}{ui(" items")}</button>}</> : <p className="py-6 text-sm text-slate-500">{entry.warehouse ? ui("No stock currently recorded in this van.") : ui("Inventory unavailable until a vehicle stock location is assigned.")}</p>}
       </div>
     </article>)}</div>

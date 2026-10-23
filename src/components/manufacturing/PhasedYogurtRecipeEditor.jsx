@@ -1,3 +1,4 @@
+import { assemblyRecipeYield } from '@/lib/assembly-yield';
 import RecipeDeleteButton from './RecipeDeleteButton';
 import RecipeStickerField from './RecipeStickerField';
 import React,{useEffect,useRef,useState} from 'react';
@@ -58,7 +59,7 @@ export default function PhasedYogurtRecipeEditor({initialRecipe=null,upgradeRequ
     const old=editing.output,override={family:config.family,flavor:old.flavor,size:old.size,...old.variant_override,...fields};
     let output={...old,...fields,variant_override:override};
     try {output={...output,...yogurtProductIdentity(items.find(p=>p.id===old.product_id),config.family,{variant_override:override})};}catch{/* Incomplete setup stays editable. */}
-    output.standard_units_per_bucket=standardBucketUnits(config.family,output.size);
+    Object.assign(output,assemblyRecipeYield(items.find(p=>p.id===output.product_id),config.family,output));
     const blend=output.flavor==='Non sucré'?{flavor:output.flavor,materials:[]}:output.flavor===editing.blend.flavor?editing.blend:structuredClone(config.blends.find(b=>b.flavor===output.flavor) || presetBlend(items,output.flavor,config));
     setEditing({...editing,output,blend});setSetupError('');
   }
@@ -121,9 +122,9 @@ export default function PhasedYogurtRecipeEditor({initialRecipe=null,upgradeRequ
           <Button variant="outline" size="sm" aria-label={ui('Edit {0}',o.product_name)} onClick={()=>openProduct(items.find(p=>p.id===o.product_id))}>{ui('Edit')}</Button>
           <Button variant="ghost" size="sm" aria-label={ui('Remove {0}',o.product_name)} onClick={()=>removeProduct(o.product_id)}>{ui('Remove')}</Button>
         </div>)}</div>
-        {missingPackaging&&<p role="status" className="mt-3 text-sm text-amber-700">{ui('Configure assembly packaging in Inventory for each selected finished product.')}</p>}
-        {projectionError&&<p role="status" className="mt-3 text-sm text-amber-700">{uiMessage(projectionError)}</p>}
-        {missingMaterials&&<p role="status" className="mt-3 text-sm text-amber-700">{ui('Complete the ingredient links and units in the relevant recipe step before saving.')}</p>}
+        {missingPackaging&&<p role="status" className="mt-3 text-sm text-slate-700">{ui('Configure assembly packaging in Inventory for each selected finished product.')}</p>}
+        {projectionError&&<p role="status" className="mt-3 text-sm text-slate-700">{uiMessage(projectionError)}</p>}
+        {missingMaterials&&<p role="status" className="mt-3 text-sm text-slate-700">{ui('Complete the ingredient links and units in the relevant recipe step before saving.')}</p>}
         <p className="mt-3 text-xs text-slate-500">{ui('Packaging comes from each product assembly and is deducted only from actual finished units at completion.')}</p>
         <details open className="mt-3 border-t pt-3"><summary className="cursor-pointer text-sm font-medium">{ui('Required inventory')}</summary>
           {required.map((r,i)=><p key={i} className="mt-2 text-sm">{items.find(p=>p.id===r.material_id)?.name || ui('Select material')} · {r.quantity} {r.unit}{r.flavor?' · '+r.flavor:''}</p>)}
@@ -141,8 +142,9 @@ export default function PhasedYogurtRecipeEditor({initialRecipe=null,upgradeRequ
           {setupError&&<p role="alert" className="mb-3 text-sm text-red-700">{uiMessage(setupError)}</p>}
           <div className="grid grid-cols-2 gap-3">
             <NumberField label={ui('Product buckets')} value={editing.output.buckets} min={0.01} onChange={buckets=>setOutput({buckets})}/>
-            <NumberField label={ui('Expected units per bucket')} value={editing.output.standard_units_per_bucket} min={1} step="1" onChange={standard_units_per_bucket=>setOutput({standard_units_per_bucket})}/>
+            <NumberField disabled label={ui('Expected units per bucket')} value={editing.output.standard_units_per_bucket} min={1} step="1" onChange={standard_units_per_bucket=>setOutput({standard_units_per_bucket})}/>
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">{ui('Yield comes from the finished-product assembly in Inventory. Update the assembly to change this estimate.')}</p>
           <p className="my-3 rounded-md bg-emerald-50 p-3 text-sm">{ui('Expected output')}: <strong>{Number(editing.output.buckets)*Number(editing.output.standard_units_per_bucket) || 0} {ui(config.family==='brasse'?'cups':'bottles')}</strong></p>
           {editing.output.variant_override&&<div className="mb-3 grid grid-cols-2 gap-3"><NativeSelect label={ui('Flavour')} value={editing.output.flavor} onChange={flavor=>classifyOutput({flavor})}>{PRODUCT_FLAVOURS.map(f=><option key={f.value} value={f.value}>{ui(f.label)}</option>)}</NativeSelect><NativeSelect label={ui('Size')} value={editing.output.size} onChange={size=>classifyOutput({size})}>{PRODUCT_SIZES[config.family].map(size=><option key={size} value={size}>{size}</option>)}</NativeSelect></div>}
           {/ml$/i.test(editing.output.size)&&<div className="mb-3"><NumberField label={ui('Net grams per finished unit')} value={editing.output.net_weight_g ?? ''} min={0.001} onChange={net_weight_g=>setOutput({net_weight_g})}/></div>}

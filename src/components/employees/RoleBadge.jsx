@@ -8,7 +8,7 @@ import { roleDefinition } from "@/lib/permissions";
 
 const CATEGORY_STYLES = {
   Management: "bg-blue-100 text-blue-800 border-blue-200",
-  Finance: "bg-amber-100 text-amber-700 border-amber-200",
+  Finance: "bg-slate-100 text-slate-700 border-slate-200",
   Operations: "bg-sky-100 text-sky-700 border-sky-200",
   Commercial: "bg-teal-100 text-teal-700 border-teal-200",
 };

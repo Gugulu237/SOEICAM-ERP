@@ -47,7 +47,7 @@ export function useSearchParams() {
     announceNavigation(target, options);
     // These query parameters select client-rendered ERP panels and filters.
     // Next's patched History API updates useSearchParams without an RSC trip.
-    (options.replace ? window.history.replaceState : window.history.pushState).call(window.history, null, '', target);
+    (options.replace ? window.history.replaceState : window.history.pushState).call(window.history, options.replace?window.history.state:null, '', target);
   }, [search, pathname]);
   return [params, set];
 }

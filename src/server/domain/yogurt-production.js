@@ -1,4 +1,6 @@
+import { assemblyRecipeYield } from '../../lib/assembly-yield.js';
 import {yogurtRecipeHasStickers} from '../../lib/yogurt-product-materials.js';
+import { productionAuthorization, directProductionSubmission } from './production-authorization.js';
 import {removeManufacturingRecipe} from './recipe-lifecycle.js';
 import { YOGURT_KIND, yogurtBase, yogurtNumber, yogurtVariant, yogurtRequirements, packagingReport, isYogurt, sharedYogurtMaterial, recipeBucketPlan, yogurtAssemblyPackaging, fourStageYogurt } from '../../lib/yogurt-production.js';
 import { isStickerItem,isPackagingItem } from '../../lib/inventory-packaging.js';
@@ -95,15 +97,16 @@ async function configFor(stores,input,{resolveAssembly=false}={}) {
     for(const line of blend.materials.filter(row=>row.recipe_role==='flavour'))Object.assign(line,measuredFormula(line,line,'bottle'));
   }
   const outputs=list(input.outputs,50,'packaged products').map(row=>{
-    const product=map.get(row.product_id),variant=yogurtVariant(product,family,row),requireSticker=phased&&(resolveAssembly||row.require_sticker===true);
+    const product=map.get(row.product_id),yieldSettings=resolveAssembly?{...row,...assemblyRecipeYield(product,family,row)}:row,variant=yogurtVariant(product,family,yieldSettings),requireSticker=phased&&(resolveAssembly||row.require_sticker===true);
     const packaging=list(input.packaging_from_assembly&&resolveAssembly?yogurtAssemblyPackaging(product,products,{...row,...variant,family,require_sticker:requireSticker}):row.packaging,20,'packaging materials').map(r=>material(r,true));
     const stickers=packaging.filter(line=>isStickerItem(map.get(line.material_id)));
     if(requireSticker&&(stickers.length!==1||Math.abs(stickers[0].quantity*unitFactor(stickers[0].unit,'ea')-1)>1e-9))throw Error('Each finished unit must have one matching sticker.');
     if(input.packaging_from_assembly&&resolveAssembly&&!packaging.some(line=>!isStickerItem(map.get(line.material_id))))throw Error('Configure assembly packaging in Inventory for '+(product?.name||'each finished product')+'.');
-    return {...variant,...(requireSticker?{require_sticker:true,sticker_material_id:stickers[0].material_id}:{}),...(input.product_bucket_recipe?{buckets:yogurtNumber(row.buckets,'product buckets')}:{}),...(row.standard_units_per_bucket!=null&&row.standard_units_per_bucket!==''?{standard_units_per_bucket:yogurtNumber(row.standard_units_per_bucket,'standard units per bucket',{integer:true})}:{}),packaging};
+    return {...variant,...(requireSticker?{require_sticker:true,sticker_material_id:stickers[0].material_id}:{}),...(input.product_bucket_recipe?{buckets:yogurtNumber(row.buckets,'product buckets')}:{}),...(yieldSettings.standard_units_per_bucket!=null&&yieldSettings.standard_units_per_bucket!==''?{standard_units_per_bucket:yogurtNumber(yieldSettings.standard_units_per_bucket,'standard units per bucket',{integer:true})}:{}),packaging};
   });
   if(!outputs.length || new Set(outputs.map(o=>o.product_id)).size!==outputs.length || outputs.some(o=>!blends.some(b=>b.flavor===o.flavor) || !o.packaging.length || new Set(o.packaging.map(r=>r.material_id)).size!==o.packaging.length))throw Error('Choose distinct finished items, configure their flavours, and add packaging for each.');
   if(modern&&blends.some(b=>!outputs.some(o=>o.flavor===b.flavor)))throw Error('Each flavour must match a selected finished product.');
+  const expectedWeight=resolveAssembly&&input.product_bucket_recipe?Math.max(Number(input.expected_kg_per_bucket),...outputs.map(o=>Number(o.standard_units_per_bucket || 0)*Number(o.kg_per_unit || 0))):input.expected_kg_per_bucket;
   if(input.product_bucket_recipe){
     if(!modern)throw Error('Product bucket recipes require the post-fermentation formula.');
     for(const b of blends){
@@ -113,9 +116,9 @@ async function configFor(stores,input,{resolveAssembly=false}={}) {
       if(['Nature','Non sucré'].includes(b.flavor)&&flavour.length)throw Error('Nature and unsweetened products do not use flavour additives.');
       for(const line of flavour){const item=map.get(line.material_id);if(item.flavor&&canonicalFlavour(item.flavor)!==b.flavor)throw Error('Flavour ingredient must match the finished product.');if(['ea','each','unit','units','bottle','bottles','bouteille','bouteilles'].includes(line.unit.toLowerCase())&&line.quantity!==2)throw Error('Use two flavour bottles per bucket.');}
     }
-    const preview={...input,outputs,blends,fermentation:base,...(phased?{additives}:{})};const plan=recipeBucketPlan(preview);yogurtRequirements(preview,plan);
+    const preview={...input,expected_kg_per_bucket:expectedWeight,outputs,blends,fermentation:base,...(phased?{additives}:{})};const plan=recipeBucketPlan(preview);yogurtRequirements(preview,plan);
   }
-  return {...(input.packaging_from_assembly?{packaging_from_assembly:true}:{}),...(input.product_bucket_recipe?{product_bucket_recipe:true,planned_buckets:yogurtNumber(input.planned_buckets,'whole recipe bucket count',{integer:true,max:10000})}:{}),...(modern?{formula_version:input.formula_version}:{}),...(phased?{additives}:{}),family,bucket_litres:30,milk_kg_per_bucket:yogurtBase(family).milk,expected_kg_per_bucket:yogurtNumber(input.expected_kg_per_bucket,'expected finished blend kg per bucket',{max:1000}),fermentation:base,blends,outputs};
+  return {...(input.packaging_from_assembly?{packaging_from_assembly:true}:{}),...(input.product_bucket_recipe?{product_bucket_recipe:true,planned_buckets:yogurtNumber(input.planned_buckets,'whole recipe bucket count',{integer:true,max:10000})}:{}),...(modern?{formula_version:input.formula_version}:{}),...(phased?{additives}:{}),family,bucket_litres:30,milk_kg_per_bucket:yogurtBase(family).milk,expected_kg_per_bucket:yogurtNumber(expectedWeight,'expected finished blend kg per bucket',{max:1000}),fermentation:base,blends,outputs};
 }
 function planFor(config,input) {
   const plan={buckets:yogurtNumber(input?.buckets,'whole bucket count',{integer:true,max:10000}),allocations:list(input?.allocations,5,'flavour allocations').map(a=>({flavor:canonicalFlavour(a.flavor),buckets:yogurtNumber(a.buckets,'flavour allocation'),...(config.formula_version>=2?{sweetened_buckets:yogurtNumber(a.sweetened_buckets ?? 0,'sweetened bucket count',{zero:true})}:{})})),outputs:list(input?.outputs,50,'output quantities').map(o=>({product_id:limited(o.product_id,'output item',100),quantity:yogurtNumber(o.quantity,'whole output quantity',{integer:true})}))};
@@ -262,9 +265,11 @@ export async function yogurtAction(client,user,body) {
     if(status==='awaiting_approval' && shortages.length)return {blocked:true,availability,shortages};
     const value={product_id:config.outputs[0].product_id,product_name:yogurtBase(config.family).label+' · '+plan.buckets+' × 30 L',recipe_id:recipe.id,recipe_kind:YOGURT_KIND,yogurt_config:config,yogurt_plan:plan,yogurt_phase:'fermentation',yogurt_issued_stages:{},planned_output:plan.outputs.reduce((sum,o)=>sum+o.quantity,0),production_date:productionDate,status,material_warehouses:input.material_warehouses || {},notes:limited(input.notes || '','production notes',4000),production_requested_by_user_id:user.id,production_requested_by_employee_id:employee?.id || '',production_requester_role:role,production_requested_by_name:employee?.full_name || user.full_name || user.email,production_request_key:requestKey,production_request_payload:payload};
     value.yogurt_expiries=expiries;
+    const authorization=directProductionSubmission(role,user,employee,status);
+    Object.assign(value,authorization,authorization.status==='approved'?{material_warehouses:Object.fromEntries(availability.map(row=>[row.material_id,row.warehouse_id]))}:{});
     if(order){await s.ProductionMaterial.deleteMany({production_order_id:order.id});order=await s.ProductionOrder.update(order.id,value);}else order=await s.ProductionOrder.create({...value,order_number:await nextSequence(svc,'next_production_number','PRO',5),batch_number:`Y-${productionDate.replaceAll('-','')}-${crypto.randomUUID().replaceAll('-','').slice(0,12).toUpperCase()}`});
     await s.ProductionMaterial.bulkCreate(materials.map(m=>({...m,production_order_id:order.id})));
-    await note(svc,user,order,'save_yogurt_plan',`Saved ${order.order_number}: ${plan.buckets} buckets, ${30*plan.buckets} L, ${status}.`);return {order,availability};
+    await note(svc,user,order,'save_yogurt_plan',`Saved ${order.order_number}: ${plan.buckets} buckets, ${30*plan.buckets} L, ${authorization.status==='approved'?'submitted by Production Manager directly to Warehouse':status}.`);return {order,availability};
   }
   if(body.action==='releaseYogurtLot') {
     planner();const lot=await s.StockBalance.get(body.balanceId),order=lot?.production_order_id?await s.ProductionOrder.get(lot.production_order_id):null;
@@ -282,11 +287,11 @@ export async function yogurtAction(client,user,body) {
   const materials=await readRecords(s.ProductionMaterial,{production_order_id:order.id});
   if(body.action==='checkProductionMaterials') {const availability=await available(s,materials.filter(m=>!order.yogurt_issued_stages?.[m.yogurt_stage]),{...order.material_warehouses,...body.sourceWarehouses});return {availability,shortages:availability.filter(r=>r.missing>0 || !r.warehouse_id)};}
   if(['approveProductionOrder','rejectProductionOrder'].includes(body.action)) {
-    if(role!=='admin')denied();if(order.status==='approved' && body.action==='approveProductionOrder')return {order,reused:true};if(order.status!=='awaiting_approval')throw Error('This plan is not awaiting approval.');
+    if(role!=='admin' && !(role==='production_manager' && body.action==='approveProductionOrder'))denied();if(order.status==='approved' && body.action==='approveProductionOrder')return {order,reused:true};if(order.status!=='awaiting_approval')throw Error('This plan is not awaiting submission or review.');
     if(body.action==='rejectProductionOrder'){const reason=limited(body.reason || '','rejection reason',2000);if(!reason)throw Error('Explain the rejection.');const saved=await s.ProductionOrder.update(order.id,{status:'rejected',yogurt_rejection_reason:reason});await note(svc,user,order,'reject_yogurt_plan',reason);return {order:saved};}
     await requirePlannedStickers(s,order.yogurt_config);
     const availability=await available(s,materials,{...order.material_warehouses,...body.sourceWarehouses}),shortages=availability.filter(r=>r.missing>0 || !r.warehouse_id);if(shortages.length)return {blocked:true,availability,shortages};
-    const saved=await s.ProductionOrder.update(order.id,{status:'approved',approved_by:user.id,approved_at:now(),material_warehouses:Object.fromEntries(availability.map(r=>[r.material_id,r.warehouse_id]))});await note(svc,user,order,'approve_yogurt_plan',`Approved ${order.order_number}.`);return {order:saved};
+    const saved=await s.ProductionOrder.update(order.id,{status:'approved',...productionAuthorization(role,user,employee),material_warehouses:Object.fromEntries(availability.map(r=>[r.material_id,r.warehouse_id]))});await note(svc,user,order,role==='production_manager'?'submit_yogurt_plan':'approve_yogurt_plan',role==='production_manager'?`Production Manager submitted ${order.order_number} directly to Warehouse.`:`Approved ${order.order_number}.`);return {order:saved};
   }
   if(body.action==='issueProductionMaterials' || body.action==='issueYogurtStage') {
     warehouse();const stage=body.stage || 'fermentation';if(order.yogurt_issued_stages?.[stage])return {order,reused:true};

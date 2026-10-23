@@ -47,7 +47,7 @@ export default function GpsCapture({ value, onChange, disabled = false, onBusyCh
     {busy && <p role="status" className="flex items-center gap-2 text-xs font-medium text-emerald-800"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />{ui("Live GPS is updating. Stops automatically after two minutes.")}</p>}
     {located && <div className="space-y-2 text-sm"><p className="font-mono text-slate-700">{Number(value.gps_lat).toFixed(6)}, {Number(value.gps_lng).toFixed(6)}</p>
       {value.gps_accuracy_m != null && <p className="text-xs text-slate-500">{ui("Reported accuracy: +/- ")}{Math.ceil(value.gps_accuracy_m)} m{value.gps_captured_at ? ' / ' + new Date(value.gps_captured_at).toLocaleString() : ''}</p>}
-      {Number(value.gps_accuracy_m) > maxAccuracy && <p className="text-xs text-amber-800">{ui("This pin is approximate. Wait for accuracy within ")}{maxAccuracy}{ui(" m, or retry outdoors near the entrance.")}</p>}
+      {Number(value.gps_accuracy_m) > maxAccuracy && <p className="text-xs text-slate-800">{ui("This pin is approximate. Wait for accuracy within ")}{maxAccuracy}{ui(" m, or retry outdoors near the entrance.")}</p>}
       <GoogleCustomerMap customers={[{ ...value, id: 'capture', business_name: value.business_name || 'Customer delivery entrance' }]} live={busy} />
       <CustomerMapLinks customer={value} /></div>}
     {error && <p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}

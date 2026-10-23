@@ -60,7 +60,7 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
     return () => { cancelled = true; };
   }, [idsKey]);
 
-  if (!data) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (!data) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   const orderCount = data.orders.reduce((s, r) => s + (r.count || 0), 0);
   const delivered = data.orders.filter(r => DELIVERED.includes(r.status)).reduce((s, r) => s + (r.sum_total || 0), 0);

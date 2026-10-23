@@ -52,15 +52,15 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
                     <span className="block text-xs text-slate-400">{j.source_document_type}</span>
                   )}
                 </td>
-                <td className={`px-4 py-3 text-right tabular-nums ${out ? "font-semibold text-amber-700" : ""}`}>
+                <td className={`px-4 py-3 text-right tabular-nums ${out ? "font-semibold text-slate-700" : ""}`}>
                   {j.total_debit ? formatXAF(j.total_debit) : ""}
                 </td>
-                <td className={`px-4 py-3 text-right tabular-nums ${out ? "font-semibold text-amber-700" : ""}`}>
+                <td className={`px-4 py-3 text-right tabular-nums ${out ? "font-semibold text-slate-700" : ""}`}>
                   {j.total_credit ? formatXAF(j.total_credit) : ""}
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={j.reversed_by_journal ? "reversed" : j.status} />
-                  {out && <span className="ml-1 text-[10px] font-semibold uppercase text-amber-700">{ui("one-sided")}</span>}
+                  {out && <span className="ml-1 text-[10px] font-semibold uppercase text-slate-700">{ui("one-sided")}</span>}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{formatDateTime(j.created_date)}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{j.posted_at ? formatDateTime(j.posted_at) : "—"}</td>

@@ -1,3 +1,4 @@
+import { employeeRemoved } from './employee-lifecycle.js';
 import { normalizeRole } from '../server/domain/roles.js';
 
 // Extra duties belong to the same staff/payroll identity. They never combine permissions.
@@ -19,7 +20,7 @@ export function assignmentState(assignment,today) {
 }
 export const dutyAssignments = employee => Array.isArray(employee?.staff_role_assignments)?employee.staff_role_assignments:[];
 export function occupiesRole(employee,key,today) {
-  return primaryRoleKey(employee)===key || dutyAssignments(employee).some(a=>a.role_key===key && ['active','scheduled'].includes(assignmentState(a,today)));
+  return !employeeRemoved(employee) && (primaryRoleKey(employee)===key || dutyAssignments(employee).some(a=>a.role_key===key && ['active','scheduled'].includes(assignmentState(a,today))));
 }
 export function selectableStaffRoles(employee,catalogue,today) {
   const primary=staffRoleProfile(catalogue,primaryRoleKey(employee)),result=primary?[primary]:[];

@@ -19,6 +19,7 @@ import QuickItemPanel from './QuickItemPanel';
 import UnitChangeDialog from './UnitChangeDialog';
 import { stockUnit } from '@/lib/item-units';
 import { attributeFacets } from '@/lib/item-attributes';
+import { validateAssemblyYieldChanges } from '@/lib/assembly-yield';
 
 export default function QuickItemEditor({ item, units = [], unitsLoading = false, onOpen, onSaved, onEditDetails, catalogueItems = [], className = '' }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -69,7 +70,7 @@ export default function QuickItemEditor({ item, units = [], unitsLoading = false
   }
 
   function change(field, value) {
-    setDraft(current => ({ ...current, [field]: value }));
+    setDraft(current => ({ ...current, [field]: value, ...(['product_family','size'].includes(field)?validateAssemblyYieldChanges({[field]:value},{...baseItem,...current}):{}) }));
     setError('');
   }
 

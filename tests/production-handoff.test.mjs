@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { productionReadyForIssue } from '../src/lib/production-handoff.js';
+import { productionReadyForIssue, productionHandoff } from '../src/lib/production-handoff.js';
 
 const approved={approved_by:'gm',approved_at:'2026-10-22T10:00:00Z'};
 const yogurt=(status,yogurt_phase,yogurt_issued_stages={})=>({...approved,recipe_kind:'yogurt_phased_v1',status,yogurt_phase,yogurt_issued_stages});
+
+test('pending production is handed back to Production for submission',()=>{
+  assert.equal(productionHandoff('awaiting_approval').owner,'Operations / Production');
+  assert.equal(productionHandoff('approved').owner,'Warehouse');
+});
 
 test('yogurt warehouse queue retains initial ingredients and the unissued flavouring phase',()=>{
   assert.equal(productionReadyForIssue(yogurt('approved','fermentation')),true);

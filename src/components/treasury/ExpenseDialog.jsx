@@ -129,7 +129,7 @@ export default function ExpenseDialog({ accounts, onClose, onDone }) {
             <Label>{ui("Receipt Reference")}</Label>
             <Input value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} placeholder={ui("Receipt / voucher number")} />
           </div>
-          {(overLimit || issue) && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{overLimit ? ui("Above the {0} petty cash limit. Use New Expense Request in Expenses & Budgets.", formatXAF(PETTY_CASH_LIMIT)) : issue}</p>}
+          {(overLimit || issue) && <p role="alert" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900">{overLimit ? ui("Above the {0} petty cash limit. Use New Expense Request in Expenses & Budgets.", formatXAF(PETTY_CASH_LIMIT)) : issue}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{ui("Cancel")}</Button>

@@ -6,7 +6,7 @@ const pick = (row, fields) => Object.fromEntries(fields.map(key => [key, row?.[k
 const view = (rows, fields) => rows.map(row => pick(row, fields));
 const plusDays = (date, days) => { const value = new Date(date + 'T12:00:00Z'); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const productFields = ['id', 'name', 'inventory_type', 'image_url', 'storage_unit', 'size', 'flavor', 'is_active'];
-const issueFields = ['id','order_number','product_name','status','planned_output','production_date','batch_number','approved_by','approved_at','production_requested_by_name','recipe_kind','yogurt_phase','yogurt_issued_stages'];
+const issueFields = ['id','order_number','product_name','status','planned_output','production_date','batch_number','approved_by','approved_at','production_authorization_role','production_authorization_name','production_requested_by_name','recipe_kind','yogurt_phase','yogurt_issued_stages'];
 async function productsFor(svc, ids) {
   const unique = [...new Set(ids)].filter(Boolean), products = [];
   for (let i = 0; i < unique.length; i += 100) products.push(...await readRecords(svc.entities.Product, { id: { $in: unique.slice(i, i + 100) } }));

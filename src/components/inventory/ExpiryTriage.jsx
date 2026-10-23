@@ -7,8 +7,8 @@ import { formatDate, formatNumber, formatXAF } from "@/lib/formatters";
 
 const LANES = [
   { key: "expired", get label(){return ui("Expired — Write Off");}, risks: ["expired"], head: "bg-red-600", card: "border-red-200 bg-red-50/40" },
-  { key: "critical", get label(){return ui("Sell Today");}, risks: ["critical"], head: "bg-orange-500", card: "border-orange-200 bg-orange-50/40" },
-  { key: "warning", get label(){return ui("Prioritise This Week");}, risks: ["warning"], head: "bg-amber-500", card: "border-amber-200 bg-amber-50/40" },
+  { key: "critical", get label(){return ui("Sell Today");}, risks: ["critical"], head: "bg-slate-500", card: "border-slate-200 bg-slate-50/40" },
+  { key: "warning", get label(){return ui("Prioritise This Week");}, risks: ["warning"], head: "bg-slate-500", card: "border-slate-200 bg-slate-50/40" },
   { key: "held", get label(){return ui("Held by Quality");}, risks: ["held", "rejected"], head: "bg-blue-600", card: "border-blue-200 bg-blue-50/40" },
 ];
 

@@ -1,3 +1,4 @@
+import {assertEmployeeNotRemoved} from '../../lib/employee-lifecycle.js';
 import {employeeRoleChange} from './employee-role-change.js';
 import { catalogueFromStored,parseStoredRoleCatalogue,validateRoleProfile } from './role-catalogue.js';
 import { normalizeOrganigramLayout } from '../../lib/role-organigram.js';
@@ -11,7 +12,7 @@ const version=value=>{if(!Number.isSafeInteger(value)||value<0)throw Error('Refr
 const bounded=(value,label)=>{if(typeof value!=='string'||value.trim().length>500)throw Error('Enter valid '+label+'.');return value.trim();};
 async function allEmployees(store){const result=[];for(let skip=0;;skip+=200){const page=await store.filter({},'id',200,skip);if(!Array.isArray(page))throw Error('Could not read all employee records.');result.push(...page);if(page.length<200)return result;}}
 const revisionOf=employee=>Number(employee.staff_roles_revision || 0);
-function active(context){if(!context.user || context.employee?.status && context.employee.status!=='active' || context.role!=='admin'&&!context.employee)throw forbidden('An active signed-in staff account is required.');}
+function active(context){assertEmployeeNotRemoved(context.employee);if(!context.user || context.employee?.status && context.employee.status!=='active' || context.role!=='admin'&&!context.employee)throw forbidden('An active signed-in staff account is required.');}
 async function audit(stores,context,action,entity,id,details={}){await stores.AuditLog.create({action,module:'employees',entity_type:entity,entity_id:id,user_id:context.user.id,user_name:context.employee?.full_name || context.user.full_name || context.user.email || '',actor_employee_id:context.employee?.id || '',audit_source:'server_verified',...details});}
 function rawCatalogue(settings){const raw=parseStoredRoleCatalogue(settings.staff_role_catalogue) || {};return {raw,catalogue:catalogueFromStored(raw)};}
 export function ownRoleWorkspace(employee,catalogue,today=businessDate()){
@@ -66,7 +67,7 @@ export async function staffRoleAction(stores,context,body,{loadSettings,saveSett
     return {catalogue:catalogueFromStored(next)};
   }
   if(!['saveDuties','renewContract','changePrimaryRole'].includes(body.action))throw Error('Unknown staff role action.');
-  const employee=await stores.Employee.get(body.employeeId);if(!employee)throw Error('Employee not found.');
+  const employee=await stores.Employee.get(body.employeeId);if(!employee)throw Error('Employee not found.');assertEmployeeNotRemoved(employee);
   if(body.action==='changePrimaryRole'){
     const target=catalogue.roles[body.roleKey],reason=bounded(body.reason,'reassignment reason');
     if(!target||!reason)throw Error('Choose an existing role and explain the reassignment.');

@@ -95,7 +95,7 @@ export default function HandoverSubmitDialog({ open, onClose, collections, emplo
               <Label>{ui("Amount handed over")}</Label>
               <Input type="number" value={offered} onChange={(e) => setOffered(e.target.value)} />
               {Number(offered) < expected && (
-                <p className="text-xs text-amber-600 mt-1">{ui("Short by ")}{formatXAF(expected - Number(offered))}</p>
+                <p className="text-xs text-slate-600 mt-1">{ui("Short by ")}{formatXAF(expected - Number(offered))}</p>
               )}
             </div>
             <div>

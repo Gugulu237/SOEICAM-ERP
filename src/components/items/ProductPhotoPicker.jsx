@@ -32,10 +32,10 @@ export default function ProductPhotoPicker({ product, onChange }) {
       <Input aria-label={ui("Search product photos")} placeholder={ui("Search flavor or size…")} value={search} onChange={(e) => setSearch(e.target.value)} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {photos.map((photo) => <button key={photo.id} type="button" onClick={() => { onChange(photo.src); setOpen(false); }}
-          className={`overflow-hidden rounded-xl border text-left focus-visible:ring-2 focus-visible:ring-amber-500 ${current.src === photo.src ? 'border-amber-500 ring-2 ring-amber-400' : 'border-slate-200'}`}>
+          className={`overflow-hidden rounded-xl border text-left focus-visible:ring-2 focus-visible:ring-primary ${current.src === photo.src ? 'border-slate-500 ring-2 ring-primary' : 'border-slate-200'}`}>
           <ProductPhoto src={photo.src} name={photo.name} className="aspect-square w-full" imageClassName="p-2" />
           <div className="p-3"><div className="flex items-center justify-between text-xs font-semibold">{photo.size}{current.src === photo.src && <Check size={14} />}</div>
-            <p className="mt-1 text-sm">{photo.name}</p>{photo.manualOnly && <p className="mt-1 text-xs text-amber-700">{ui("Filename says 330 ml; label reads 220 g. Verify before selecting.")}</p>}</div>
+            <p className="mt-1 text-sm">{photo.name}</p>{photo.manualOnly && <p className="mt-1 text-xs text-slate-700">{ui("Filename says 330 ml; label reads 220 g. Verify before selecting.")}</p>}</div>
         </button>)}
       </div>
       {!photos.length && <p className="py-8 text-center text-sm text-slate-500">{ui("No matching photos.")}</p>}

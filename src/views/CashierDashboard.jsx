@@ -175,14 +175,14 @@ function ChequeDesk() {
     } catch (e) { toast({ title: ui("Error"), description: e.message, variant: "destructive" }); }
   }
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>
       <PageHeader title={ui("Cashier Dashboard")} subtitle={ui("Approved purchase orders awaiting disbursement")} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KPICard title={ui("Pending Disbursement")} value={stats.pending} icon={Clock} color="text-amber-600" />
+        <KPICard title={ui("Pending Disbursement")} value={stats.pending} icon={Clock} color="text-slate-600" />
         <KPICard title={ui("Total Due")} value={formatXAF(stats.totalDue)} icon={DollarSign} color="text-red-600" />
         <KPICard title={ui("Payments Today")} value={stats.paidToday} icon={CheckCircle2} color="text-green-600" />
         <KPICard title={ui("Total Paid")} value={formatXAF(stats.paidAmount)} icon={Banknote} color="text-blue-600" />
@@ -254,10 +254,10 @@ function ChequeDesk() {
       {pendingCheques.length > 0 && (
         <div className="mb-8">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">{ui("Pending Cheque Signatures (GM + Operations / Production Manager)")}</h3>
-          <div className="bg-amber-50 rounded-lg border border-amber-200 overflow-hidden">
+          <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-amber-100/60 border-b border-amber-200">
+                <tr className="bg-slate-100/60 border-b border-slate-200">
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Cheque #")}</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">{ui("Supplier")}</th>
                   <th className="px-4 py-3 text-right font-semibold text-slate-600">{ui("Amount")}</th>
@@ -268,7 +268,7 @@ function ChequeDesk() {
               </thead>
               <tbody>
                 {pendingCheques.map(p => (
-                  <tr key={p.id} className="border-b border-amber-100 last:border-0">
+                  <tr key={p.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-medium">{p.payment_number}</td>
                     <td className="px-4 py-3">{p.party_name}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatXAF(p.amount)}</td>

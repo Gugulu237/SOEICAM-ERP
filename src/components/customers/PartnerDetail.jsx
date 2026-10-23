@@ -132,10 +132,10 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
               <div key={l.id} className="bg-white border border-slate-200 rounded-xl p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2 min-w-0">
-                    <MapPin size={15} className={`mt-0.5 flex-shrink-0 ${l.is_headquarters ? "text-amber-500" : "text-slate-400"}`} />
+                    <MapPin size={15} className={`mt-0.5 flex-shrink-0 ${l.is_headquarters ? "text-slate-500" : "text-slate-400"}`} />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-900 truncate">
-                        {l.name} {l.is_headquarters && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 rounded-full align-middle">{ui("HQ")}</span>}
+                        {l.name} {l.is_headquarters && <span className="text-[10px] font-medium text-slate-600 bg-slate-50 px-1.5 rounded-full align-middle">{ui("HQ")}</span>}
                       </p>
                       <p className="text-xs text-slate-500 truncate">{[l.town, l.neighbourhood].filter(Boolean).join(" · ") || ui("No address")}</p>
                       {l.route_name && <p className="text-xs text-slate-400 inline-flex items-center gap-1 mt-0.5"><Truck size={11} /> {l.route_name}{l.delivery_days ? ` · ${l.delivery_days}` : ""}</p>}

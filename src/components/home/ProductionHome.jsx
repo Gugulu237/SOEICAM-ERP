@@ -7,7 +7,6 @@ import { Factory, FlaskConical, ClipboardCheck, Plus, Receipt, Package, Truck, B
 import { useNavigate } from '@/lib/router';
 import { Button } from '@/components/ui/button';
 import ProductThumb from '@/components/shared/ProductThumb';
-import ManagementHierarchy from '@/components/employees/ManagementHierarchy';
 import { productionSnapshot } from '@/lib/staff-dashboard';
 import { useWorkspaceAccess } from './WorkspaceAccess';
 import { WorkspaceHero, WorkspaceButton, WorkspaceMetrics, WorkspaceActions, WorkspacePanel, WorkspaceQueue, ProductRange } from './WorkspaceParts';
@@ -25,7 +24,6 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
       <WorkspaceButton path="/inventory?section=items&filter=materials&area=all&panel=stock" preview={preview} variant="outline">{ui("View warehouse materials")}</WorkspaceButton>
       <WorkspaceButton path="/manufacturing/new" preview={preview}><Plus size={17} className="mr-2" />{ui("Plan production")}</WorkspaceButton><WorkspaceButton path="/manufacturing?section=quality" preview={preview} variant="outline">{ui("Open quality control")}</WorkspaceButton>
     </WorkspaceHero>
-    <ManagementHierarchy currentRole="production_manager" />
     <WorkspaceMetrics ready={ready} metrics={[
       can('manufacturing') && { label: 'Batches planned today', value: summary.plannedToday.length, note: 'Scheduled production orders' },
       can('manufacturing') && { label: 'Batches in progress', value: summary.running.length, note: 'Materials issued or production running' },
@@ -52,12 +50,12 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
       </WorkspacePanel>}
       <aside className="space-y-5"><WorkspacePanel title={ui("Needs your attention")}><WorkspaceQueue preview={preview} empty="No checks to display." rows={[
         { id: 'warehouse-issue', title: ui('Approved — awaiting warehouse issue'), value: ready ? (source.orders || []).filter(order=>order.status==='approved').length : '-', path: '/manufacturing' },
-        { id: 'gm', title: 'Awaiting GM approval', value: ready ? summary.awaitingGM.length : '—', path: '/manufacturing' },
+        { id: 'gm', title: 'Pending production submissions', value: ready ? summary.awaitingGM.length : '-', path: '/manufacturing' },
         { id: 'expiring', title: 'Lots expiring in 7 days', value: ready ? summary.expiring.length : '—', path: '/manufacturing?section=quality&quality=expiry' },
         { id: 'expired', title: 'Expired lots still in stock', value: ready ? summary.expired.length : '—', path: '/manufacturing?section=quality&quality=expiry' },
         ...(source.productionApprovals || []).map(q => ({ id: q.key, title: q.title, value: q.count, path: q.path })),
         { id: 'cheques', title: 'Your cheque signature', value: ready ? (source.cheques || []).length : '—', path: '/cashier' },
-      ]} /></WorkspacePanel><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5"><h2 className="font-semibold text-blue-950">{ui("Release with confidence")}</h2><p className="mt-2 text-sm leading-6 text-blue-900">{ui("Production orders go to the General Manager for approval. Review quality results before releasing a batch to saleable stock.")}</p><WorkspaceButton path="/quality?section=traceability" preview={preview} variant="outline">{ui("Trace a batch")}</WorkspaceButton></div></aside>
+      ]} /></WorkspacePanel><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5"><h2 className="font-semibold text-blue-950">{ui("Release with confidence")}</h2><p className="mt-2 text-sm leading-6 text-blue-900">{ui("Production Managers submit directly to Warehouse. Review quality results before releasing a batch to saleable stock.")}</p><WorkspaceButton path="/quality?section=traceability" preview={preview} variant="outline">{ui("Trace a batch")}</WorkspaceButton></div></aside>
     </div>
     <ProductRange products={source.products} />
   </div>;

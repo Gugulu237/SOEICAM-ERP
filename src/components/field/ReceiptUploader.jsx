@@ -102,7 +102,7 @@ export default function ReceiptUploader({ fileUris, onChange, reference, onRefer
             </div>
           ))}
 
-          <label className={`h-20 min-w-24 rounded-lg border-2 border-dashed border-slate-300 px-3 flex flex-col items-center justify-center gap-1 text-slate-500 ${disabled || busy ? 'opacity-50' : 'cursor-pointer hover:border-amber-400'}`}>
+          <label className={`h-20 min-w-24 rounded-lg border-2 border-dashed border-slate-300 px-3 flex flex-col items-center justify-center gap-1 text-slate-500 ${disabled || busy ? 'opacity-50' : 'cursor-pointer hover:border-slate-400'}`}>
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-5 h-5" />}
             <span className="text-[11px] font-medium">{busy ? ui("Uploading...") : ui("Take photo")}</span>
             <input

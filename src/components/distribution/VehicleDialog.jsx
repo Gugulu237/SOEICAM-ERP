@@ -80,7 +80,7 @@ export default function VehicleDialog({ open, onOpenChange, vehicle, vehicles = 
             </SelectContent>
           </Select>
           <p className="mt-2 text-xs leading-5 text-slate-500">{ui("Choose an active vehicle location that belongs to no other vehicle, or let the system create an empty one. Saving vehicle setup does not issue or move any goods.")}</p>
-          {unavailableCurrentLocation && <p role="alert" className="mt-2 text-xs text-amber-800">{ui("The current location is missing, inactive, shared or is not a vehicle location. Choose a dedicated location. Existing stock and open runs must be reconciled before changing their location.")}</p>}
+          {unavailableCurrentLocation && <p role="alert" className="mt-2 text-xs text-slate-800">{ui("The current location is missing, inactive, shared or is not a vehicle location. Choose a dedicated location. Existing stock and open runs must be reconciled before changing their location.")}</p>}
         </div>
         <div className="flex items-center gap-2"><Switch id="vehicle-active" checked={form.is_active !== false} disabled={saving} onCheckedChange={value => setForm(previous => ({ ...previous, is_active: value }))} /><Label htmlFor="vehicle-active">{ui("Active delivery vehicle")}</Label></div>
       </div>

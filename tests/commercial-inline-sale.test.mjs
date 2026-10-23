@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { commercialUI, hookRuntime } from './helpers/commercial-ui.mjs';
 import { fixture, fieldHandler, request, staff, date, user, validSupply } from './helpers/commercial-supply.mjs';
 
-async function inlineSupply(role, photo = false) {
+async function inlineSupply(role, photo = false, dashboardPending = false) {
   const render = await commercialUI(), handler = await fieldHandler(), { client, tables } = fixture();
   tables.Invoice = [];
   tables.Product.push({ id: 'not-loaded', name: 'Factory-only finished product', inventory_type: 'assembly', is_active: true, selling_price: 600 });
@@ -27,6 +27,7 @@ async function inlineSupply(role, photo = false) {
   globalThis.requestAnimationFrame = callback => callback();
   let refreshed = 0;
   const props = { data: { employee: staff, date, monthStart: date.slice(0, 8) + '01', products: [tables.Product[0]], balances: [tables.StockBalance[0]] }, managing: role === 'admin', onRefresh: () => { refreshed++; } };
+  if (dashboardPending) Object.assign(props, { data:null, actorEmployee:staff, loading:true });
   const draw = () => { ui.beforeRender(); return render(props); };
   try {
     draw(); if (photo) ui.catalog.onSelect(ui.catalog.products[0]); else ui.buttons.find(button => button.label === 'Record sale').onClick();
@@ -91,5 +92,7 @@ test('GM viewing a selected employee remains in reports even when an old link re
   }
 });
 test('Commercial records a receipt-backed sale inside their own dashboard and it appears once in company Sales', () => inlineSupply('commercial'));
+
+test('Commercial records a customer sale even while the dashboard report is unavailable', () => inlineSupply('commercial', false, true));
 
 test('tapping a dashboard product photo carries that product into the sale once, without duplication on refresh', () => inlineSupply('commercial', true));

@@ -224,7 +224,7 @@ export default function DispatchRequestForm() {
               <SelectContent>{commercials.map(commercial => <SelectItem key={commercial.id} value={commercial.id}>{commercial.full_name}</SelectItem>)}</SelectContent>
             </Select> : <p className="mt-2 text-sm">{request?.salesperson_name || request?.commercial_name || ui("No Commercial agent recorded")}</p>}
           </div>
-          {request?.status === 'pending_approval' && <p className="sm:col-span-2 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900">{ui("Confirm both staff members before approval. The driver receives the loaded stock; the Commercial agent reports exact customer supplies, receipt photos and cash or credit payments.")}</p>}
+          {request?.status === 'pending_approval' && <p className="sm:col-span-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-900">{ui("Confirm both staff members before approval. The driver receives the loaded stock; the Commercial agent reports exact customer supplies, receipt photos and cash or credit payments.")}</p>}
           <div className="sm:col-span-2">
             <Label>{ui("Collect From *")}</Label>
             <Select value={form.source_warehouse_id} disabled={!editable || busy} onValueChange={v => setForm(f => ({ ...f, source_warehouse_id: v }))}>

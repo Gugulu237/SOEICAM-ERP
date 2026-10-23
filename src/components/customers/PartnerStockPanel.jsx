@@ -82,7 +82,7 @@ export default function PartnerStockPanel({ partner, subPartners = [] }) {
     return () => { cancelled = true; };
   }, [idsKey]);
 
-  if (!rows) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (!rows) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   const totalUnits = rows.reduce((s, r) => s + Math.max(0, r.stillWith), 0);
   const spoiled = rows.reduce((s, r) => s + r.spoiled, 0);
@@ -92,7 +92,7 @@ export default function PartnerStockPanel({ partner, subPartners = [] }) {
     if (r.days === null) return <span className="text-xs text-slate-400">{ui("No expiry recorded")}</span>;
     if (r.days < 0) return <span className="text-xs font-medium text-red-600">{ui("Expired ")}{formatDate(r.earliest)}</span>;
     if (r.days <= 7) return <span className="text-xs font-medium text-red-600">{r.days}{ui(" days left")}</span>;
-    if (r.days <= 30) return <span className="text-xs font-medium text-amber-600">{r.days}{ui(" days left")}</span>;
+    if (r.days <= 30) return <span className="text-xs font-medium text-slate-600">{r.days}{ui(" days left")}</span>;
     return <span className="text-xs text-slate-500">{formatDate(r.earliest)}</span>;
   };
 
@@ -138,7 +138,7 @@ export default function PartnerStockPanel({ partner, subPartners = [] }) {
       <p className="text-xs text-slate-400 inline-flex items-center gap-1.5">
         <Clock size={12} />{ui(" Still with them = delivered on completed orders minus returns and reported spoilage. Expiry comes from the batch each delivery was drawn from.")}</p>
       {spoiled > 0 && (
-        <p className="text-xs text-amber-600 inline-flex items-center gap-1.5">
+        <p className="text-xs text-slate-600 inline-flex items-center gap-1.5">
           <AlertTriangle size={12} />{ui(" Spoilage is logged per branch in the Overview tab.")}</p>
       )}
     </div>

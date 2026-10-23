@@ -17,7 +17,8 @@ test('drivers have a distinct role and field routes deny direct ERP access', () 
   assert.equal(getEffectiveRole({ role: 'admin' }, driver), 'admin');
   for (const role of ['commercial', 'driver']) {
     assert.equal(canOpenFieldPath(role, '/'), true);
-    for (const path of ['/accounting', '/sales/new', '/customers/new', '/employees', '/distribution/dispatches/new', '/team-workspaces']) assert.equal(canOpenFieldPath(role, path), false);
+    for (const path of ['/accounting', '/sales/new', '/employees', '/distribution/dispatches/new', '/team-workspaces']) assert.equal(canOpenFieldPath(role, path), false);
+    assert.equal(canOpenFieldPath(role, '/customers/new'), role === 'commercial');
   }
   assert.equal(canOpenFieldPath('commercial', '/field-sales/new'), true);
   assert.equal(canOpenFieldPath('commercial', '/cash-handovers'), true);

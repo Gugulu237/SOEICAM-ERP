@@ -1,10 +1,11 @@
 import * as React from "react"
+import HistoryDialog from "./history-dialog"
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 
-const AlertDialog = AlertDialogPrimitive.Root
+const AlertDialog = props => <HistoryDialog root={AlertDialogPrimitive.Root} {...props}/>
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 

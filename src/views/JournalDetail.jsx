@@ -60,7 +60,7 @@ export default function JournalDetail() {
     finally { setWorking(false); }
   }
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!journal) return <div className="text-center py-20 text-slate-500">{ui("Journal not found")}</div>;
 
   const sourceLink = journal.source_document_id && SOURCE_LINKS[journal.source_document_type]

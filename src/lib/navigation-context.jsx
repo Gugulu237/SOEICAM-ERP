@@ -2,6 +2,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { createNavigationSession, NAVIGATION_EVENT, NAVIGATION_MARKER, pageMemoryKey } from './navigation-session';
+import { OVERLAY_EVENT, browserOverlayHistory } from './overlay-history';
 
 const NavigationContext = createContext(null);
 const emptyHistory = { entries: [], cursor: -1, recent: [], canBack: false, canForward: false };
@@ -47,9 +48,12 @@ export function NavigationProvider({ identity, children }) {
     window.history.scrollRestoration = 'manual';
     const save = () => { if (current.current && !restoring.current && !intent.current && !traversal.current) store.saveScroll(current.current, [window.scrollX, window.scrollY]); };
     const prepare = event => { save(); intent.current = event.detail; };
-    const pop = event => { save(); traversal.current = { href: window.location.pathname + window.location.search, marker: event.state?.[NAVIGATION_MARKER] }; };
+    const pop = event => { save(); const target=window.location.pathname+window.location.search;traversal.current=target===current.current?null:{href:target,marker:event.state?.[NAVIGATION_MARKER]}; };
+    const overlay=event=>store.setOverlayDepth(event.detail.depth);
+    store.setOverlayDepth(browserOverlayHistory()?.depth()||0);
     const leave = () => { save(); store.flush(); };
     window.addEventListener(NAVIGATION_EVENT, prepare);
+    window.addEventListener(OVERLAY_EVENT,overlay);
     // Capture the native entry before a router listener can synchronously render.
     window.addEventListener('popstate', pop, true);
     window.addEventListener('scroll', save, { passive: true });
@@ -57,6 +61,7 @@ export function NavigationProvider({ identity, children }) {
     return () => {
       window.history.scrollRestoration = previousRestoration;
       window.removeEventListener(NAVIGATION_EVENT, prepare); window.removeEventListener('popstate', pop, true);
+      window.removeEventListener(OVERLAY_EVENT,overlay);
       window.removeEventListener('scroll', save); window.removeEventListener('pagehide', leave); store.flush();
     };
   }, [store]);

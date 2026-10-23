@@ -9,6 +9,7 @@ import { purchaseItemPostings } from '../../lib/item-posting.js';
 import { productionColdRoom } from '../../lib/finished-product-storage.js';
 import { isYogurt } from '../../lib/yogurt-production.js';
 import { yogurtAction,yogurtMaterialRequirements } from './yogurt-production.js';
+import { productionAuthorization, directProductionSubmission } from './production-authorization.js';
 const managers = ['admin', 'production_manager', 'warehouse_manager'];
 const productionAuditEvents=async(stores,action,extra={})=>(await readRecords(stores.AuditLog,{module:'inventory',action,...extra})).filter(event=>event.audit_source!=='client_reported');
 const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') && Number.isFinite(Date.parse(value)) && new Date(value + 'T12:00:00Z').toISOString().slice(0, 10) === value;
@@ -83,7 +84,7 @@ export async function productionAction(client, user, body) {
     return { availability: plan.availability, shortages: plan.availability.filter(row => row.missing > 0), warehouse: plan.warehouse && { id: plan.warehouse.id, name: plan.warehouse.name } };
   }
   if (['approveProductionOrder','rejectProductionOrder'].includes(body.action)) {
-    if (role !== 'admin') throw Error('Production decisions require General Manager approval');
+    if (role !== 'admin' && !(role === 'production_manager' && body.action === 'approveProductionOrder')) throw Error('Production submission requires production management; rejection requires the General Manager.');
     const order=await stores.ProductionOrder.get(body.orderId), approving=body.action==='approveProductionOrder';
     if (!order) throw Error('Production order not found');
     if (order.status===(approving?'approved':'rejected') && order[approving?'approved_by':'rejected_by']===user.id) return {order,reused:true};
@@ -96,8 +97,8 @@ export async function productionAction(client, user, body) {
       materialWarehouses=Object.fromEntries(plan.availability.map(row=>[row.material_id,row.warehouse_id]));
     }
     const now=new Date().toISOString();
-    const saved=await stores.ProductionOrder.update(order.id,approving?{status:'approved',approved_by:user.id,approved_at:now,material_warehouses:materialWarehouses}:{status:'rejected',rejected_by:user.id,rejected_at:now,rejection_reason:String(body.reason || '').slice(0,2000)});
-    await audit(svc,{action:approving?'approve_production':'reject_production',module:'manufacturing',entityType:'ProductionOrder',entityId:order.id,userId:user.id,description:`General Manager ${approving?'approved':'rejected'} ${order.order_number}`});
+    const saved=await stores.ProductionOrder.update(order.id,approving?{status:'approved',...productionAuthorization(role,user,employee),material_warehouses:materialWarehouses}:{status:'rejected',rejected_by:user.id,rejected_at:now,rejection_reason:String(body.reason || '').slice(0,2000)});
+    await audit(svc,{action:approving?(role==='production_manager'?'submit_production':'approve_production'):'reject_production',module:'manufacturing',entityType:'ProductionOrder',entityId:order.id,userId:user.id,description:role==='production_manager'?`Production Manager submitted ${order.order_number} directly to Warehouse`:`General Manager ${approving?'approved':'rejected'} ${order.order_number}`});
     return {order:saved};
   }
   if (body.action === 'issueProductionMaterials') {
@@ -105,7 +106,7 @@ export async function productionAction(client, user, body) {
     const order = await stores.ProductionOrder.get(body.orderId);
     if (!order) throw Error('Production order not found');
     if (order.status === 'materials_issued' && order.materials_issued_at) return { order, reused: true };
-    if (order.status !== 'approved' || !order.approved_by || !order.approved_at) throw Error('General Manager approval is required before issuing materials');
+    if (order.status !== 'approved' || !order.approved_by || !order.approved_at) throw Error('Submit the production order before issuing materials');
     const plan = await productionRequirements(stores, body), shortages = plan.availability.filter(row => row.missing > 0);
     if (plan.availability.some(row=>!row.warehouse_id)) throw Error('Select the source warehouse for every material');
     if (shortages.length) return { blocked: true, availability: plan.availability, shortages, warehouse: plan.warehouse && { id: plan.warehouse.id, name: plan.warehouse.name } };
@@ -176,11 +177,11 @@ export async function productionAction(client, user, body) {
     const product = await stores.Product.get(recipe.product_id);
     if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw Error('The recipe must produce an active, configured finished product');
     if (form.warehouse_id) { const warehouse = await stores.Warehouse.get(form.warehouse_id); if (!warehouse || warehouse.is_active === false) throw Error('Choose an active warehouse'); }
-    if (!['draft', 'awaiting_approval'].includes(body.status)) throw Error('Save a draft or submit the plan for General Manager approval');
+    if (!['draft', 'awaiting_approval'].includes(body.status)) throw Error('Save a draft or submit the production order');
     const recipeLines = await readRecords(stores.RecipeLine, { recipe_id: recipe.id });
     if (!recipeLines.length) throw Error('Add recipe components before planning production');
     const availability = await productionMaterials(stores, form, recipe, recipeLines);
-    const shortages = availability.availability.filter(row => row.missing > 0);
+    const shortages = availability.availability.filter(row => row.missing > 0 || !row.warehouse_id);
     if (body.status === 'awaiting_approval' && shortages.length) return { blocked: true, shortages, availability: availability.availability, warehouse: availability.warehouse && { id: availability.warehouse.id, name: availability.warehouse.name } };
     const materials = [];
     for (const row of recipeLines) {
@@ -195,11 +196,12 @@ export async function productionAction(client, user, body) {
     const totalCost = round2(materials.reduce((sum, row) => sum + row.total_cost, 0));
     const attribution = {production_requested_by_user_id:existing?.production_requested_by_user_id || user.id,production_requested_by_employee_id:existing?.production_requested_by_employee_id || employee?.id || '',production_requested_by_name:existing?.production_requested_by_name || employee?.full_name || user.full_name || user.email || '',production_requester_role:existing?.production_requester_role || role};
     const plan = { ...attribution, recipe_id: recipe.id, product_id: product.id, product_name: product.name, planned_output: round3(quantity), production_date: form.production_date, expiry_date: form.expiry_date || '', warehouse_id: form.warehouse_id || '', material_warehouses:Object.fromEntries(availability.availability.filter(row=>row.warehouse_id).map(row=>[row.material_id,row.warehouse_id])), notes: String(form.notes || '').slice(0, 4000), status: body.status, total_material_cost: totalCost, standard_cost_per_unit: totalCost / quantity };
-    const prepared = await prepareProductionBatch(stores, plan, existing);
+    const authorization = directProductionSubmission(role,user,employee,body.status);
+    const prepared = await prepareProductionBatch(stores, { ...plan, ...authorization }, existing);
     const order = existing ? await stores.ProductionOrder.update(existing.id, prepared) : await stores.ProductionOrder.create({ ...prepared, order_number: await nextSequence(svc, 'next_production_number', 'PRD', 5), production_request_key: key, production_request_payload:snapshot });
     if (existing) await stores.ProductionMaterial.deleteMany({ production_order_id: order.id });
     await stores.ProductionMaterial.bulkCreate(materials.map(row => ({ ...row, production_order_id: order.id })));
-    await audit(svc, { action: body.status === 'draft' ? 'save_production_plan' : 'submit_production', module: 'manufacturing', entityType: 'ProductionOrder', entityId: order.id, userId: user.id, description: `${order.order_number}: batch ${order.batch_number} ${body.status === 'draft' ? 'saved' : 'submitted for General Manager approval'}` });
+    await audit(svc, { action: body.status === 'draft' ? 'save_production_plan' : 'submit_production', module: 'manufacturing', entityType: 'ProductionOrder', entityId: order.id, userId: user.id, description: `${order.order_number}: batch ${order.batch_number} ${body.status === 'draft' ? 'saved' : authorization.status==='approved' ? 'submitted by Production Manager directly to Warehouse' : 'submitted for General Manager approval'}` });
     return { order, shortages };
   }
   if (body.action !== 'completeProduction') throw Error('Unknown production action');
@@ -212,7 +214,7 @@ export async function productionAction(client, user, body) {
   if (!['materials_issued', 'in_production'].includes(order.status)) throw Error('Issue the approved materials before completing production');
   if(!order.fermentation_started_at || !order.fermentation_due_at || order.status!=='in_production')throw Error('Start the eight-hour fermentation timer before completing production.');
   if(!Number.isFinite(Date.parse(order.fermentation_due_at)) || Date.parse(order.fermentation_due_at)>Date.now())throw Error('The eight-hour fermentation timer has not completed.');
-  if(!order.approved_by || !order.approved_at)throw Error('General Manager approval must be recorded before completing this production');
+  if(!order.approved_by || !order.approved_at)throw Error('Production submission must be recorded before completing this production');
   if(order.production_date>businessDate())throw Error('The production date is in the future; actual output cannot be received before that date');
   const qty = round3(body.quantity), product = await stores.Product.get(order.product_id);
   if (!finishedProduct(product) || product.is_active===false || product.configuration_status==='draft') throw Error('The production output must be an active configured finished product');

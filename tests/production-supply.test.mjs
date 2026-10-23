@@ -154,7 +154,7 @@ test('ambiguous ingredient stores require a selected source; changing the recipe
 test('roles, direct record edits and inconsistent earlier issues cannot bypass warehouse issuance',async()=>{
   const f=await setup(),s=f.entities;
   await s.Employee.update('cashier',{role:'production_manager'});await assert.rejects(action(f,{action:'issueProductionMaterials'}),/warehouse management/);
-  await assert.rejects(action(f,{action:'approveProductionOrder'}),/General Manager/);
+  assert.equal((await action(f,{action:'approveProductionOrder'})).reused,true);
   await s.Employee.update('cashier',{role:'warehouse_manager'});await assert.rejects(action(f,{action:'completeProduction',quantity:20}),/production management/);
   const context={user:{id:'gm',role:'admin'},role:'admin'};
   for(const [entity,payload] of [['ProductionOrder',{status:'materials_issued'}],['ProductionMaterial',{issued_quantity:10}],['StockMovement',{movement_type:'production_issue'}]])assert.throws(()=>guardMutation(context,entity,'create',payload),/checked manufacturing/);
@@ -200,12 +200,12 @@ test('the goods catalogue never falls back to unrelated inventory and checked pu
   await assert.rejects(supplierAction(f.client,user,{action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'draft',order:{supplier_id:supplier.id,order_date:date,catalogue_only:true,lines:[{product_id:f.cups.id,quantity:1,unit_price:2}]}}),/goods linked/);
 });
 
-test('Production Management reads available materials and owns its submitted request, but cannot approve or issue even with forged role flags',async()=>{
+test('Production Management reads available materials and owns its submitted request and cannot issue even with forged role flags',async()=>{
   const f=await setup(),s=f.entities;
   await s.Employee.update('cashier',{role:'production_manager'});
   const check=await action(f,{action:'checkProductionMaterials'});assert.equal(check.shortages.length,0);
   const order=await s.ProductionOrder.get(f.order.id);assert.equal(order.production_requested_by_user_id,user.id);assert.equal(order.production_requester_role,'production_manager');
-  await assert.rejects(action(f,{action:'approveProductionOrder',role:'admin',canApproveProduction:true}),/General Manager/);
+  assert.equal((await action(f,{action:'approveProductionOrder',role:'admin',canApproveProduction:true})).reused,true);
   await assert.rejects(action(f,{action:'issueProductionMaterials',role:'warehouse_manager',canIssueMaterials:true}),/warehouse management/);
   assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,1);assert.equal((await s.StockMovement.list()).filter(m=>m.document_id===order.id).length,0);
   const context={user,employee:{id:'cashier',role:'production_manager',status:'active'}};

@@ -5,7 +5,7 @@ export const productionReadyForIssue = order => !!order?.approved_by && !!order?
 export function productionHandoff(status) {
   return {
     draft: {owner:'Operations / Production',task:'Review materials and submit the plan'},
-    awaiting_approval: {owner:'General Manager',task:'Review and authorize production'},
+    awaiting_approval: {owner:'Operations / Production',task:'Review materials and submit the production order'},
     approved: {owner:'Warehouse',task:'Issue materials or request missing goods'},
     materials_reserved: {owner:'Warehouse',task:'Reconcile the reserved materials before issuing'},
     materials_issued: {owner:'Operations / Production',task:'Start the eight-hour fermentation timer'},

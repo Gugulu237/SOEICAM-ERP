@@ -47,7 +47,7 @@ export const ROLE_DEFINITIONS = [
     category: 'Management',
     get summary(){return ui("Full ERP administration across every dashboard, department and management function.");},
     duties: [
-      'Final approval of purchase orders, production orders and field sales',
+      'Final approval of purchase orders and field sales; reviews production activity',
       'Reviews financial statements, budgets and the business cockpit',
       'Manages employees, user accounts and company settings',
       'Full administration of every ERP module and staff dashboard',
@@ -66,7 +66,7 @@ export const ROLE_DEFINITIONS = [
       'Oversees quality control, batch release, expiry and traceability',
       'Reviews recipes and expense requests within the existing approval workflow',
       'Provides the Operations / Production Manager cheque signature',
-      'Submits production and purchase orders for General Manager approval',
+      'Submits production directly to Warehouse; purchases retain General Manager approval',
     ],
   },
   {

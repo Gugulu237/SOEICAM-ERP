@@ -3,7 +3,7 @@ import { formatXAF } from "@/lib/formatters";
 
 const TONE = {
   green: "bg-green-50 text-green-600",
-  orange: "bg-orange-50 text-orange-600",
+  orange: "bg-slate-50 text-slate-600",
   red: "bg-red-50 text-red-600",
   blue: "bg-blue-50 text-blue-600",
 };
@@ -22,7 +22,7 @@ export default function MoneyFlowCard({ title, amount, count, countLabel, icon: 
       <p className="text-xs text-slate-500">{count} {countLabel}</p>
       <div className="h-1.5 rounded-full bg-slate-100 mt-3 overflow-hidden">
         <div
-          className={`h-full rounded-full ${tone === "green" ? "bg-green-500" : tone === "orange" ? "bg-orange-500" : tone === "red" ? "bg-red-500" : "bg-blue-500"}`}
+          className={`h-full rounded-full ${tone === "green" ? "bg-green-500" : tone === "orange" ? "bg-slate-500" : tone === "red" ? "bg-red-500" : "bg-blue-500"}`}
           style={{ width: `${Math.min(100, Math.max(0, share))}%` }}
         />
       </div>

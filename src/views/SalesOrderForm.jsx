@@ -276,7 +276,7 @@ export default function SalesOrderForm() {
       )}
 
       {creditWarning && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4 flex items-center gap-2 text-orange-800 text-sm">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4 flex items-center gap-2 text-slate-800 text-sm">
           <AlertTriangle size={16} /> {creditWarning}
         </div>
       )}

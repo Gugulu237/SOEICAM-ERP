@@ -124,7 +124,7 @@ export default function ExpenseRegister() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>
       ) : (
         <>
           <DataTable columns={cols} data={rows} pageSize={25} emptyMessage={ui("No expenses match these filters")} />

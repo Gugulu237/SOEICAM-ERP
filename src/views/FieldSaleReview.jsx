@@ -109,7 +109,7 @@ export default function FieldSaleReview() {
         />
 
         {selected.duplicate_flag && (
-          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <div className="mb-4 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800">
             {selected.duplicate_note}
           </div>
         )}
@@ -207,7 +207,7 @@ export default function FieldSaleReview() {
                   {s.commercial_name} · {formatDate(s.transaction_date)}
                   {s.submitted_at ? ui(" · submitted {0}", formatDateTime(s.submitted_at)) : ""}
                 </div>
-                {s.duplicate_flag && <span className="text-xs text-amber-700">{ui("Possible duplicate receipt")}</span>}
+                {s.duplicate_flag && <span className="text-xs text-slate-700">{ui("Possible duplicate receipt")}</span>}
               </div>
               <div className="text-right space-y-1">
                 <div className="font-semibold tabular-nums">{formatXAF(s.total)}</div>

@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
+import { usePageState } from '@/lib/navigation-context';
 import { itemAvailabilityLabel } from '@/lib/item-readiness';
 import { ui } from '@/lib/i18n';
 import { inventoryGroup, inventoryVariants, inventoryGroups, inventoryDisplayName } from '@/lib/inventory-groups';
@@ -17,7 +18,7 @@ const normalize = value => normalizeProductText(value).trim().replace(/\s+/g,' '
 // Resolve photo-derived labels and searchable metadata once per catalogue update.
 // The page mounts at most 25 cards, including their lazy images/editors.
 export default function GroupedItems({ products, filter, quantities, onEdit, renderDetails, table = false }) {
-  const [search,setSearch] = useState(''), [group,setGroup] = useState(''), [flavor,setFlavor] = useState(''), [size,setSize] = useState(''), [attributes,setAttributes] = useState({}), [page,setPage] = useState(1);
+  const [search,setSearch] = usePageState('inventory:'+filter+':search',''), [group,setGroup] = usePageState('inventory:'+filter+':group',''), [flavor,setFlavor] = usePageState('inventory:'+filter+':flavor',''), [size,setSize] = usePageState('inventory:'+filter+':size',''), [attributes,setAttributes] = usePageState('inventory:'+filter+':attributes',{}), [page,setPage] = usePageState('inventory:'+filter+':page',1);
   const finished = filter === 'finished',packaging = filter === 'packaging';
   const rows = useMemo(() => products.map(item => {const variant=packaging?packagingVariants(item):inventoryVariants(item);return {item,variant,group:packaging?packagingGroup(item):inventoryGroup(item),search:normalize(itemSearchText(item)+' '+variant.flavor+' '+(flavourChoice(variant.flavor)?.label || '')+' '+variant.size)};}),[products,packaging]);
   const groups = useMemo(() => packaging?[...new Set(rows.map(row=>row.group))].sort((a,b)=>a.localeCompare(b)):filter==='all'?[...inventoryGroups(products,true),...inventoryGroups(products,false)]:inventoryGroups(products, finished).filter(group=>rows.some(row=>row.group===group)), [products,finished,filter,packaging,rows]);
@@ -56,7 +57,7 @@ export default function GroupedItems({ products, filter, quantities, onEdit, ren
           </button>
           <div className={table?'min-w-40':'flex flex-1 flex-col px-2 pb-3 sm:px-3'}>
             {item.inventory_type!=='service' && <p aria-label={ui('Quantity for {0}',item.name)} className="mb-3 flex items-baseline gap-1.5 text-2xl font-bold tabular-nums leading-tight text-green-800"><span>{formatQuantity(quantities.get(item.id)||0)}</span>{' '}<span className="text-sm font-normal text-slate-500">{stockUnit(item)}</span></p>}
-            {(item.configuration_status==='draft'||item.is_active===false)&&<p className="mb-2 text-xs text-amber-800">{ui(itemAvailabilityLabel(item))}</p>}
+            {(item.configuration_status==='draft'||item.is_active===false)&&<p className="mb-2 text-xs text-slate-800">{ui(itemAvailabilityLabel(item))}</p>}
             <div className={table?'min-w-56':'mt-auto border-t border-slate-100 pt-3'}>{renderDetails?.(item)}</div>
           </div>
         </article>;

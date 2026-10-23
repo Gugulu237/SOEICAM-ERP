@@ -4,7 +4,7 @@ import { auditProvenance } from '@/lib/audit-provenance';
 
 const colors = {
   verified: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  reported: 'border-amber-200 bg-amber-50 text-amber-800',
+  reported: 'border-slate-200 bg-slate-50 text-slate-800',
   unknown: 'border-slate-200 bg-slate-50 text-slate-600',
 };
 export default function AuditSourceBadge({ event }) {

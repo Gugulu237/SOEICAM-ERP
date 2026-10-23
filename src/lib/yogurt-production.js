@@ -1,3 +1,4 @@
+import { bucketYieldWeight, estimatedBucketUnits } from './assembly-yield.js';
 import {yogurtItemFlavour,yogurtItemSize,yogurtPackingMaterials} from './yogurt-product-materials.js';
 import { PRODUCT_FLAVOURS, PRODUCT_SIZES, canonicalFlavour, canonicalSize, variantFamily } from './product-variants.js';
 import { isPackagingItem } from './inventory-packaging.js';
@@ -11,8 +12,8 @@ export const yogurtStages=config=>fourStageYogurt(config)?YOGURT_STAGES:['fermen
 export const yogurtBase = family => YOGURT_BASES.find(base=>base.value===family);
 export const isYogurt = row => row?.recipe_kind===YOGURT_KIND;
 // These are net saleable-yield estimates, not a litre-to-mass conversion or an output cap.
-export const standardBucketWeight = family => family==='brasse'?26:33;
-export const standardBucketUnits = (family,size) => family==='brasse'&&canonicalSize(size)==='500 g'?52:family==='boire'&&['330 g','330 ml'].includes(canonicalSize(size))?100:'';
+export const standardBucketWeight = family => bucketYieldWeight(family) || 33;
+export const standardBucketUnits = (family,size) => estimatedBucketUnits(family,size) || (family==='boire'&&canonicalSize(size)==='330 ml'?100:'');
 export function yogurtAssemblyPackaging(product,products,options={}){return yogurtPackingMaterials(product,products,options);}
 export function recipeBucketPlan(config,total=config.planned_buckets){
   const buckets=yogurtNumber(total,'whole recipe bucket count',{integer:true,max:10000});
@@ -49,7 +50,7 @@ export function yogurtProductIdentity(product,family,options={}){
 }
 export function yogurtVariant(product,family,options={}){
   const variant=yogurtProductIdentity(product,family,options);
-  if(variant.kg_per_unit==null){const grams=yogurtNumber(options.net_weight_g,'net weight in grams per finished unit',{max:100000});return {...variant,net_weight_g:grams,kg_per_unit:grams/1000};}
+  if(variant.kg_per_unit==null){const grams=yogurtNumber(options.net_weight_g ?? product.yogurt_net_weight_g,'net weight in grams per finished unit',{max:100000});return {...variant,net_weight_g:grams,kg_per_unit:grams/1000};}
   return variant;
 }
 export function emptyYogurtConfig(family='brasse') {

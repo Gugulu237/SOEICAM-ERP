@@ -1,6 +1,7 @@
+import { YOGURT_YIELD_FIELDS } from '../../lib/assembly-yield.js';
 import { ITEM_METADATA_FIELDS } from '../../lib/item-attributes.js';
 
-const metadata = item => Object.fromEntries(ITEM_METADATA_FIELDS.map(key => [key,item?.[key] ?? (key==='attributes' ? [] : '')]));
+const metadata = item => Object.fromEntries([...ITEM_METADATA_FIELDS,...YOGURT_YIELD_FIELDS].map(key => [key,item?.[key] ?? (key==='attributes' ? [] : '')]));
 export async function recordItemMetadataChange(stores, context, before, after) {
   const previous = metadata(before), next = metadata(after);
   if (JSON.stringify(previous) === JSON.stringify(next)) return;

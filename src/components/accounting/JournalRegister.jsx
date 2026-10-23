@@ -158,7 +158,7 @@ export default function JournalRegister() {
       {error && <p role="alert" className="mb-3 text-sm text-red-700">{error}</p>}
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-amber-500" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-primary" />
         </div>
       ) : (
         <>

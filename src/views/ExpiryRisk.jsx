@@ -26,7 +26,7 @@ const WINDOWS = [1, 3, 7, 14, 30];
 const RISK_STYLE = {
   expired: "bg-red-100 text-red-700",
   critical: "bg-red-50 text-red-600",
-  warning: "bg-amber-100 text-amber-800",
+  warning: "bg-slate-100 text-slate-800",
   held: "bg-blue-100 text-blue-700",
   rejected: "bg-slate-200 text-slate-700",
 };
@@ -116,7 +116,7 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
         <KPICard title={ui("Value at Risk")} value={formatXAF(atRiskValue)} subtitle={ui("within {0} days", days)} icon={Clock} color="amber" />
       </div>
 
-      {canTrace && <section className="mb-6 rounded-2xl border bg-white p-5"><h2 className="font-semibold">{ui("Supplied batches to review")}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{ui("Batches supplied to customers that expire within ")}{days}{ui(" days or have already expired. Recorded supply quantities are historical; customer shelf stock must be confirmed separately.")}</p>{supplyError && <p role="alert" className="mt-3 text-sm text-red-700">{supplyError}</p>}<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{suppliedRisk.map(batch => <button key={batch.key} type="button" onClick={() => trace(batch)} className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-left"><p className="font-mono text-sm font-semibold">{batch.lot_number}</p><p className="mt-1 text-sm">{batch.product_name}</p><p className="mt-2 text-xs text-slate-600">{batch.expiry_date ? 'Expires ' + formatDate(batch.expiry_date) : ui("Expiry not recorded")}{ui(" · Supplied ")}{formatNumber(batch.supplied_quantity, 3)} {batch.unit}</p><span className="mt-3 inline-block text-xs font-semibold text-blue-700 underline">{ui("Find customers and outlets")}</span></button>)}</div>{supplyLoading && <p role="status" className="mt-3 text-sm text-slate-500">{ui("Checking supplied batches...")}</p>}{!supplyLoading && !supplyError && !suppliedRisk.length && <p className="mt-3 text-sm text-slate-400">{ui("No dated supplied batches in this risk window.")}</p>}</section>}
+      {canTrace && <section className="mb-6 rounded-2xl border bg-white p-5"><h2 className="font-semibold">{ui("Supplied batches to review")}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{ui("Batches supplied to customers that expire within ")}{days}{ui(" days or have already expired. Recorded supply quantities are historical; customer shelf stock must be confirmed separately.")}</p>{supplyError && <p role="alert" className="mt-3 text-sm text-red-700">{supplyError}</p>}<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{suppliedRisk.map(batch => <button key={batch.key} type="button" onClick={() => trace(batch)} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left"><p className="font-mono text-sm font-semibold">{batch.lot_number}</p><p className="mt-1 text-sm">{batch.product_name}</p><p className="mt-2 text-xs text-slate-600">{batch.expiry_date ? 'Expires ' + formatDate(batch.expiry_date) : ui("Expiry not recorded")}{ui(" · Supplied ")}{formatNumber(batch.supplied_quantity, 3)} {batch.unit}</p><span className="mt-3 inline-block text-xs font-semibold text-blue-700 underline">{ui("Find customers and outlets")}</span></button>)}</div>{supplyLoading && <p role="status" className="mt-3 text-sm text-slate-500">{ui("Checking supplied batches...")}</p>}{!supplyLoading && !supplyError && !suppliedRisk.length && <p className="mt-3 text-sm text-slate-400">{ui("No dated supplied batches in this risk window.")}</p>}</section>}
 
       <div className="flex justify-end mb-3">
         <ViewToggle
@@ -131,7 +131,7 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
 
       {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
       {loading
-        ? <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>
+        ? <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>
         : view === "board"
         ? <ExpiryTriage rows={rows} onTrace={canTrace ? trace : undefined} />
         : <DataTable columns={cols} data={rows} onRowClick={canTrace ? trace : undefined} searchFields={["product_name", "lot_number", "warehouse_name"]} emptyMessage={ui("No stock at risk — every batch is in date and released.")} />

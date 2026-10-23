@@ -19,7 +19,7 @@ export function DeliveryDayPicker({value='',onChange,disabled=false}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const selected=String(value || '').split(/[,;\s]+/);
-  return <fieldset disabled={disabled}><legend className="mb-2 text-xs text-slate-600">{ui("Delivery days")}</legend><div className="flex flex-wrap gap-2">{DELIVERY_DAYS.map(day=><label key={day} className={'inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs '+(selected.includes(day)?'border-amber-300 bg-amber-50':'bg-white')}><input type="checkbox" checked={selected.includes(day)} onChange={e=>onChange(DELIVERY_DAYS.filter(d=>d===day?e.target.checked:selected.includes(d)).join(', '))}/>{day}</label>)}</div></fieldset>;
+  return <fieldset disabled={disabled}><legend className="mb-2 text-xs text-slate-600">{ui("Delivery days")}</legend><div className="flex flex-wrap gap-2">{DELIVERY_DAYS.map(day=><label key={day} className={'inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs '+(selected.includes(day)?'border-slate-300 bg-slate-50':'bg-white')}><input type="checkbox" checked={selected.includes(day)} onChange={e=>onChange(DELIVERY_DAYS.filter(d=>d===day?e.target.checked:selected.includes(d)).join(', '))}/>{day}</label>)}</div></fieldset>;
 }
 export default function DeliverySetupFields({value,onChange,disabled=false,onBusyChange}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

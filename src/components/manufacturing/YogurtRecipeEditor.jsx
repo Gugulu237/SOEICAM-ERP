@@ -112,8 +112,8 @@ export function VisualYogurtRecipeEditor({initialRecipe=null}) {
           <Button variant="outline" size="sm" aria-label={ui('Edit {0}',o.product_name)} onClick={()=>openProduct(items.find(p=>p.id===o.product_id))}>{ui('Edit')}</Button>
           <Button variant="ghost" size="sm" aria-label={ui('Remove {0}',o.product_name)} onClick={()=>removeProduct(o.product_id)}>{ui('Remove')}</Button>
         </div>)}</div>
-        {projectionError&&<p role="status" className="mt-3 text-sm text-amber-700">{uiMessage(projectionError)}</p>}
-        {missingMaterials&&<p role="status" className="mt-3 text-sm text-amber-700">{ui('Link the missing ingredients in product setup before saving.')}</p>}
+        {projectionError&&<p role="status" className="mt-3 text-sm text-slate-700">{uiMessage(projectionError)}</p>}
+        {missingMaterials&&<p role="status" className="mt-3 text-sm text-slate-700">{ui('Link the missing ingredients in product setup before saving.')}</p>}
         <details className="mt-3 border-t pt-3"><summary className="cursor-pointer text-sm font-medium">{ui('Material totals')}</summary>
           {required.filter(r=>r.stage!=='packaging').map((r,i)=><p key={i} className="mt-2 text-sm">{items.find(p=>p.id===r.material_id)?.name || ui('Select material')} · {r.quantity} {r.unit}{r.flavor?' · '+r.flavor:''}</p>)}
         </details>

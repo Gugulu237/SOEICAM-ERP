@@ -67,7 +67,7 @@ export default function ExpenseReport() {
       <div className="mb-4"><ReportExport disabled={loading || !!error || !!(filters.from && filters.to && filters.from>filters.to)} getReport={()=>expenseReportDocument(query,filters)}/></div>
       {error&&<p role="alert" className="mb-4 text-red-700">{error}</p>}
       {loading || !report ? (
-        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">

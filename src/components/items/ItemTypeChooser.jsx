@@ -31,14 +31,15 @@ export default function ItemTypeChooser({ value, onChange }) {
           <button
             key={t.key}
             type="button"
+            aria-pressed={active}
             onClick={() => onChange(t.key)}
             className={`text-left rounded-xl border p-4 transition-colors ${
-              active ? "border-amber-400 bg-amber-50 ring-1 ring-amber-300" : "border-slate-200 bg-white hover:border-slate-300"
+              active ? "border-primary bg-primary text-primary-foreground ring-1 ring-primary" : "border-slate-200 bg-white hover:border-slate-300"
             }`}
           >
-            <t.icon size={20} className={active ? "text-amber-600" : "text-slate-400"} />
-            <p className={`mt-2 font-semibold ${active ? "text-amber-800" : "text-slate-800"}`}>{t.label}</p>
-            <p className="text-xs text-slate-500 mt-1 leading-snug">{t.hint}</p>
+            <t.icon size={20} className={active ? "text-primary-foreground" : "text-slate-400"} />
+            <p className={`mt-2 font-semibold ${active ? "text-primary-foreground" : "text-slate-800"}`}>{t.label}</p>
+            <p className={"text-xs mt-1 leading-snug "+(active?"text-primary-foreground/80":"text-slate-500")}>{t.hint}</p>
           </button>
         );
       })}

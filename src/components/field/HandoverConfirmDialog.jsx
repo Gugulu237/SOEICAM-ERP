@@ -93,7 +93,7 @@ export default function HandoverConfirmDialog({ handover, onClose, onDone }) {
             <Label>{ui("Amount physically received")}</Label>
             <Input type="number" value={received} onChange={(e) => setReceived(e.target.value)} />
             {shortfall !== 0 && (
-              <p className={`text-xs mt-1 ${shortfall < 0 ? "text-red-600" : "text-amber-600"}`}>
+              <p className={`text-xs mt-1 ${shortfall < 0 ? "text-red-600" : "text-slate-600"}`}>
                 {shortfall < 0 ? ui("Short by {0}", formatXAF(Math.abs(shortfall))) : ui("Over by {0}", formatXAF(shortfall))}
               </p>
             )}

@@ -8,7 +8,7 @@ import { warehouseStockLevel } from '@/lib/warehouse-stock';
 const tones = {
   negative: ['bg-red-500', 'text-red-700', 'Check negative balance'],
   empty: ['bg-red-500', 'text-red-700', 'Out of stock'],
-  low: ['bg-amber-500', 'text-amber-800', 'Low stock'],
+  low: ['bg-slate-500', 'text-slate-800', 'Low stock'],
   available: ['bg-green-600', 'text-green-700', 'In stock'],
 };
 

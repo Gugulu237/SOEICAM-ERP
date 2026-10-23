@@ -88,13 +88,17 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
   const employeeId = managing ? params.get('employee') || '' : employee?.id || '';
   const needsEmployee = ['driver','hotesse','commercial'].includes(template);
   const scope = [user?.id,mode,employeeId,managing].join(':');
-  const [showPerformance,setShowPerformance]=useState(false);
+  const showPerformance=params.get('performance')==='1';
+  const setShowPerformance=next=>setParams(old=>{const p=new URLSearchParams(old);if(typeof next==='function'?next(showPerformance):next)p.set('performance','1');else p.delete('performance');return p;});
   const [result,setResult] = useState(null), [loading,setLoading] = useState(true), [error,setError] = useState(''), [reload,setReload] = useState(0);
   const requestInFlight = useRef(null);
   const data = result?.scope === scope ? result.data : null;
+  const readOnly = managing || data?.readOnly === true;
   const modules = managing ? profile.modules : allowedModules;
   const requiredModule = {cashier:'cashier',commercial:'commercial',driver:'distribution',hotesse:'outlets'}[template];
-  const disabled = requiredModule && modules && !modules.includes(requiredModule);
+  // Staff operating permissions never prevent the GM from reviewing a
+  // dashboard. Management previews still disable every submission control.
+  const disabled = !managing && requiredModule && modules && !modules.includes(requiredModule);
   const independent = template === 'cashier' && !managing;
   useEffect(() => {
     if (!Component || disabled || independent) { setLoading(false); return; }
@@ -136,7 +140,7 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
       {needsEmployee && !employeeId ? <p className="rounded-2xl border bg-white p-6 text-sm text-slate-600">{ui("Choose an employee to see their assigned work and reports.")}{data?.choices?.length === 0 && <>{ui(" No employees have this role yet. ")}<Link to="/team-workspaces?section=people" className="font-semibold text-green-800 underline">{ui("Add an employee")}</Link></>}</p> : <>
 {managing && <ReadOnlyWorkspaceNotice employeeName={needsEmployee ? data?.employee?.full_name : undefined} sharedDepartment={!needsEmployee}/>}
         {managing&&template==='commercial'&&employeeId&&<section className="rounded-xl border bg-white p-4"><Button variant="outline" aria-expanded={showPerformance} onClick={()=>setShowPerformance(value=>!value)}>{ui('Performance report')}</Button>{showPerformance&&<CommercialPerformance embedded readOnly selectedAgentId={employeeId}/>}</section>}
-        {Component && <Component key={scope} data={data} loading={!data && loading} mode={profile.template_role} roleLabel={title} managing={managing} preview={managing} onRefresh={refresh} />}
+        {Component && <Component key={scope} data={data} loading={!data && loading} mode={profile.template_role} roleLabel={title} managing={managing} preview={readOnly} onRefresh={refresh} />}
       </>}
     </>}
   </div></WorkspaceAccess>;

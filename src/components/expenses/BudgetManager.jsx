@@ -76,7 +76,7 @@ export default function BudgetManager() {
         return (
           <div className="w-32">
             <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className={`h-full rounded-full ${over ? "bg-red-500" : pct > 80 ? "bg-orange-500" : "bg-green-500"}`} style={{ width: `${pct}%` }} />
+              <div className={`h-full rounded-full ${over ? "bg-red-500" : pct > 80 ? "bg-slate-500" : "bg-green-500"}`} style={{ width: `${pct}%` }} />
             </div>
             <span className="text-xs text-slate-500">{pct.toFixed(0)}%</span>
           </div>

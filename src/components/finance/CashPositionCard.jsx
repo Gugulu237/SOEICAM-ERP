@@ -9,8 +9,8 @@ import { formatXAF } from "@/lib/formatters";
 const TYPE_META = {
   cash: { get label(){return ui("Cash Box");}, icon: Coins, color: "text-lime-600 bg-lime-50" },
   bank: { get label(){return ui("Bank");}, icon: Landmark, color: "text-blue-600 bg-blue-50" },
-  mobile_money: { get label(){return ui("Mobile Money");}, icon: Smartphone, color: "text-orange-600 bg-orange-50" },
-  petty_cash: { get label(){return ui("Petty Cash");}, icon: Wallet, color: "text-amber-600 bg-amber-50" },
+  mobile_money: { get label(){return ui("Mobile Money");}, icon: Smartphone, color: "text-slate-600 bg-slate-50" },
+  petty_cash: { get label(){return ui("Petty Cash");}, icon: Wallet, color: "text-slate-600 bg-slate-50" },
 };
 
 // Headline cash position with a breakdown per treasury account type.

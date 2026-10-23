@@ -20,7 +20,7 @@ export default function JournalStats({ report, ledger }) {
   const balanced = ledger ? Math.abs(ledger.difference) < 1 : null;
   const tone = balanced === null
     ? "border-slate-200 bg-white"
-    : balanced ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50";
+    : balanced ? "border-green-200 bg-green-50" : "border-slate-200 bg-slate-50";
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -41,7 +41,7 @@ export default function JournalStats({ report, ledger }) {
       />
       <div className={`rounded-lg border p-3 ${tone}`}>
         <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Posted ledger")}</p>
-        <div className={`flex items-center gap-1.5 font-semibold ${balanced === null ? "text-slate-500" : balanced ? "text-green-700" : "text-amber-800"}`}>
+        <div className={`flex items-center gap-1.5 font-semibold ${balanced === null ? "text-slate-500" : balanced ? "text-green-700" : "text-slate-800"}`}>
           {balanced === null ? ui("Checking…") : balanced ? (
             <><CheckCircle2 size={16} />{ui(" Debits equal credits")}</>
           ) : (

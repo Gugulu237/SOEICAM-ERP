@@ -122,7 +122,7 @@ export default function AssetDialog({ onClose, onDone }) {
               <Input type="number" min="1" max="1200" step="1" value={form.useful_life_months || ""} onChange={(e) => set("useful_life_months")(e.target.value)} />
             </div>
             <div><Label>{ui("In-service date")}</Label><Input type="date" value={form.in_service_date} onChange={e=>set("in_service_date")(e.target.value)} /></div>
-            <div className="col-span-2 rounded-lg bg-amber-50 p-3 text-sm">
+            <div className="col-span-2 rounded-lg bg-slate-50 p-3 text-sm">
               <strong>{ui("Flat rate / straight-line depreciation")}</strong>
               <p>{ui("(Cost − residual value) ÷ months. A full monthly charge starts in the in-service month; the final charge adjusts for rounding.")}</p>
               <p>{ui("Each asset can have a different useful life. The company selects the months for this asset.")}</p>

@@ -10,7 +10,7 @@ import PageHeader from "@/components/shared/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-const COLORS = ["#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#8b5cf6", "#ec4899"];
+const COLORS = ["#347623", "#3b82f6", "#10b981", "#ef4444", "#8b5cf6", "#ec4899"];
 
 export default function Reports() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -59,7 +59,7 @@ export default function Reports() {
 
   const typeBreakdown = accounts.filter(a => ["expense", "other_expense"].includes(a.account_type) && a.balance > 0).map(a => ({ name: a.name, value: a.balance }));
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-amber-500 rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>
@@ -78,7 +78,7 @@ export default function Reports() {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between py-2 border-b"><span className="font-semibold">{ui("Net Sales Revenue")}</span><span className="font-bold text-green-700">{formatXAF(revenue)}</span></div>
               <div className="flex justify-between py-2 border-b"><span>{ui("Less: Direct Material Cost of Goods Sold")}</span><span className="text-red-600">({formatXAF(cogs)})</span></div>
-              <div className="flex justify-between py-2 border-b bg-amber-50 px-2 rounded"><span className="font-semibold text-amber-800">{ui("Material Gross Margin")}</span><span className="font-bold text-amber-800">{formatXAF(materialMargin)}</span></div>
+              <div className="flex justify-between py-2 border-b bg-slate-50 px-2 rounded"><span className="font-semibold text-slate-800">{ui("Material Gross Margin")}</span><span className="font-bold text-slate-800">{formatXAF(materialMargin)}</span></div>
               {revenue > 0 && <div className="text-right text-xs text-slate-500">{ui("Margin: ")}{formatNumber(materialMargin / revenue * 100, 1)}%</div>}
               <div className="flex justify-between py-2 border-b"><span>{ui("Less: Operating Expenses")}</span><span className="text-red-600">({formatXAF(expenses)})</span></div>
               {accounts.filter(a => ["expense", "other_expense"].includes(a.account_type) && a.balance > 0).map(a => (
@@ -161,7 +161,7 @@ export default function Reports() {
                   <XAxis dataKey="month" />
                   <YAxis tickFormatter={v => `${Math.round(v / 1000)}k`} />
                   <Tooltip formatter={v => formatXAF(v)} />
-                  <Bar dataKey="sales" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="sales" fill="#347623" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

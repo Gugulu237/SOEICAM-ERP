@@ -1,5 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+
+test('Production Manager pending assembly submission reports the warehouse handoff without a GM action',async()=>{
+  const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;
+  r.params={id:'pending'};r.session={role:'production_manager'};r.client=approvalClient(calls);
+  let order={...pendingOrder};r.client.entities.ProductionOrder.get=async()=>order;
+  r.client.functions.invoke=async(_,body)=>{
+    calls.push(body);
+    if(body.action==='approveProductionOrder')order={...order,status:'approved',approved_by:'production-lead',approved_at:'2026-10-22'};
+    return {data:body.action==='approveProductionOrder'?{order}:{availability:[],shortages:[]}};
+  };
+  const draw=()=>{r.beforeRender();return render('production');};
+  try{
+    draw();await r.flush();draw();await r.flush();draw();
+    await r.buttons.find(b=>b.label.trim()==='Submit production order').onClick();draw();
+    assert.equal(r.notifications.at(-1).description,'Production order submitted to Warehouse');
+    assert.equal(calls.find(c=>c.action==='approveProductionOrder').sourceWarehouses.milk,'raw');
+    assert.equal(r.buttons.some(b=>['Approve','Submit production order','Issue Materials'].includes(b.label.trim())),false);
+  }finally{r.cleanup();delete globalThis.__productionUI;}
+});
 import { build } from 'esbuild';
 import { createRequire } from 'node:module';
 import { hookRuntime } from './helpers/commercial-ui.mjs';
@@ -95,14 +114,14 @@ test('approved production exposes warehouse stock checks and purchase recovery; 
 });
 
 
-test('Production Manager sees material availability and the warehouse handoff, without approval or issue buttons even if client flags are wrong',async()=>{
+test('Production Manager sees material availability and the warehouse handoff, with a submission action and no issue button even if client flags are wrong',async()=>{
   const render=await renderer(),r=runtime();globalThis.__productionUI=r;
   const order={id:'own-order',order_number:'OWN-PLAN',recipe_id:'recipe',planned_output:20,production_date:'2026-10-20',status:'approved'};
   r.params={id:order.id};r.session={role:'production_manager',canIssueMaterials:true,canApproveProduction:true};
   const read=rows=>({filter:async()=>rows});
   r.client={entities:{Recipe:read([]),Warehouse:read([{id:'raw',name:'Ingredients',warehouse_type:'raw_material'}]),ProductionOrder:{get:async()=>order},ProductionMaterial:read([])},functions:{invoke:async()=>({data:{availability:[{material_id:'milk',material_name:'Milk powder',unit:'kg',required:1,available:5,missing:0,warehouse_id:'raw'}],shortages:[]}})}};
   const draw=()=>{r.beforeRender();return render('production');};
-  try{draw();await r.flush();draw();await r.flush();await new Promise(resolve=>setTimeout(resolve,380));const html=draw();assert.match(html,/Milk powder/);assert.match(html,/The General Manager approves; Warehouse Management issues/);assert.equal(r.buttons.some(b=>['Approve','Issue Materials'].includes(b.label.trim())),false);order.status='awaiting_approval';draw();assert.equal(r.buttons.some(b=>b.label.trim()==='Approve'),false);}finally{r.cleanup();delete globalThis.__productionUI;}
+  try{draw();await r.flush();draw();await r.flush();await new Promise(resolve=>setTimeout(resolve,380));const html=draw();assert.match(html,/Milk powder/);assert.match(html,/submit your production order directly to Warehouse/);assert.equal(r.buttons.some(b=>['Approve','Issue Materials'].includes(b.label.trim())),false);order.status='awaiting_approval';draw();assert.equal(r.buttons.some(b=>b.label.trim()==='Approve'),false);assert.equal(r.buttons.some(b=>b.label.trim()==='Submit production order'),true);}finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
 test('warehouse issue queue shows approved orders and opens their material issue screen, excluding drafts and incomplete approvals',async()=>{

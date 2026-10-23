@@ -14,7 +14,7 @@ const Toast = React.forwardRef(({ className, variant, ...props }, ref) => (
 ));
 Toast.displayName = "Toast";
 const ToastClose = React.forwardRef(({ className, ...props }, ref) => (
-  <ToastPrimitive.Close ref={ref} type="button" aria-label="Dismiss notification" className={cn("absolute right-1 top-1 flex h-10 w-10 items-center justify-center rounded-lg text-current opacity-80 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500", className)} {...props}><X className="h-4 w-4" /></ToastPrimitive.Close>
+  <ToastPrimitive.Close ref={ref} type="button" aria-label="Dismiss notification" className={cn("absolute right-1 top-1 flex h-10 w-10 items-center justify-center rounded-lg text-current opacity-80 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", className)} {...props}><X className="h-4 w-4" /></ToastPrimitive.Close>
 ));
 ToastClose.displayName = "ToastClose";
 const ToastTitle = React.forwardRef(({ className, ...props }, ref) => <ToastPrimitive.Title ref={ref} className={cn("text-sm font-semibold", className)} {...props} />);

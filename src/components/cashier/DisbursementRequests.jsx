@@ -71,8 +71,8 @@ export default function DisbursementRequests({ requests, ready, treasuryAccounts
       {requests.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-            <ShieldCheck size={15} className="text-amber-600" />{ui(" Cash Requests Awaiting Approval")}</h3>
-          <div className="bg-amber-50 rounded-lg border border-amber-200 overflow-hidden">
+            <ShieldCheck size={15} className="text-slate-600" />{ui(" Cash Requests Awaiting Approval")}</h3>
+          <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
             <table className="w-full text-sm">
               <thead>{head}</thead>
               <tbody>

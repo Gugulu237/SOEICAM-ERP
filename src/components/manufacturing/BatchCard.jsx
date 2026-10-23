@@ -25,7 +25,7 @@ const STAGE = {
 };
 
 const BAR = {
-  awaiting_qc: "bg-orange-400",
+  awaiting_qc: "bg-slate-400",
   rejected: "bg-red-500",
   completed: "bg-green-500",
   released: "bg-green-500",

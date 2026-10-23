@@ -9,7 +9,7 @@ export default function ViewToggle({ value, onChange, options }) {
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-            value === opt.value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            value === opt.value ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-500 hover:text-slate-700"
           }`}
         >
           {opt.icon && <opt.icon size={14} />}

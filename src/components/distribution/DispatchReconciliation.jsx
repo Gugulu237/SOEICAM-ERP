@@ -66,7 +66,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
         <Stat label={ui("Unpaid / credit balance")} value={formatXAF(data.creditSales)} />
       </div>
       {data.hasVariance && (
-        <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
           <AlertTriangle size={16} />{ui(" Physical stock on the vehicle does not match expected quantities - investigate before closing.")}</div>
       )}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -107,7 +107,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
         </table>
       </div>
       {canReturn&&<p className="text-xs text-slate-500">{ui("Count each product physically, including zero when none remains. A changed or mismatched count must be reconciled before the warehouse receives it.")}</p>}
-      {canReturn&&counted&&!countsMatch&&<p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{ui("The physical count differs from recorded vehicle stock. Investigate the difference before receiving the return.")}</p>}
+      {canReturn&&counted&&!countsMatch&&<p role="alert" className="rounded-lg bg-slate-50 p-3 text-sm text-slate-900">{ui("The physical count differs from recorded vehicle stock. Investigate the difference before receiving the return.")}</p>}
       {canReturn && (
         <Button variant="outline" onClick={handleReturn} disabled={busy || !countsMatch}>
           <Undo2 size={16} className="mr-1" /> {busy ? ui("Recording return...") : data.remainingQty > 0 ? ui("Receive unsold stock at warehouse") : ui("Confirm empty vehicle return")}

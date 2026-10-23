@@ -5,8 +5,9 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import HistoryDialog from './history-dialog';
 
-const Dialog = DialogPrimitive.Root
+const Dialog = props => <HistoryDialog root={DialogPrimitive.Root} {...props}/>
 
 const DialogTrigger = DialogPrimitive.Trigger
 

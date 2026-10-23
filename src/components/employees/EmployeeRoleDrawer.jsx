@@ -1,4 +1,6 @@
 'use client';
+import { HistoryStep } from '@/components/ui/history-dialog';
+import EmployeeRemovalAction from './EmployeeRemovalAction';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Link} from '@/lib/router';
 import {employeeReportPath} from '@/lib/workspace-navigation';
@@ -41,7 +43,7 @@ export default function EmployeeRoleDrawer({open,onOpenChange,role,definitions,e
   const person=people.find(p=>p.id===selectedId) || (!selectedId&&people.length===1?people[0]:null);
   async function changed(employee){setChanges(old=>({...old,[employee.id]:employee}));setNotice('Employee changes saved.');await onSaved?.();}
   async function remove(){setBusy(true);setError('');try{await saveStaffRoleAction({action:'deleteRole',roleKey:role.key,revision:catalogue.revision,reason});await onSaved?.();onOpenChange(false);}catch(e){setError(e.message);}finally{setBusy(false);}}
-  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl"><SheetHeader className="pr-7 text-left"><SheetTitle>{ui(role.label)}</SheetTitle><SheetDescription>{ui('People, responsibilities and salaries')}</SheetDescription></SheetHeader>
+  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl"><HistoryStep active={open&&!!selectedId} onBack={()=>setSelectedId('')}/><SheetHeader className="pr-7 text-left"><SheetTitle>{ui(role.label)}</SheetTitle><SheetDescription>{ui('People, responsibilities and salaries')}</SheetDescription></SheetHeader>
     <div className="mt-5 space-y-5">{loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p>}{notice&&<p role="status" className="text-sm text-green-800">{ui(notice)}</p>}
       {person?<>
         {people.length>1&&<Button variant="outline" size="sm" onClick={()=>{setSelectedId('');setNotice('');}}>{ui('Back to workers')}</Button>}
@@ -49,6 +51,7 @@ export default function EmployeeRoleDrawer({open,onOpenChange,role,definitions,e
           <dl className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm"><div><dt className="text-slate-500">{ui('Base salary')}</dt><dd className="mt-1 font-semibold">{person.base_salary==null?ui('Restricted'):formatXAF(person.base_salary)}</dd></div><div><dt className="text-slate-500">{ui('Contract')}</dt><dd className="mt-1">{ui(person.contract_type || 'Not recorded')}</dd></div><div><dt className="text-slate-500">{ui('Contract end')}</dt><dd className="mt-1">{person.staff_contract_end?formatDate(person.staff_contract_end):ui('Not recorded')}</dd></div><div><dt className="text-slate-500">{ui('Status')}</dt><dd className="mt-1">{ui(person.status || 'active')}</dd></div>{person.phone&&<div className="min-w-0"><dt className="text-slate-500">{ui('Phone')}</dt><dd className="mt-1 break-words">{person.phone}</dd></div>}{person.email&&<div className="min-w-0"><dt className="text-slate-500">{ui('Email')}</dt><dd className="mt-1 break-all">{person.email}</dd></div>}</dl>
           <section><h4 className="mb-2 text-sm font-semibold">{ui('Responsibilities')}</h4>{primaryRoleKey(person)===role.key&&person.responsibilities?<p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{person.responsibilities}</p>:<ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">{(role.duties || []).map((d,i)=><li key={i}>{ui(d)}</li>)}</ul>}{dutyAssignments(person).filter(a=>a.role_key===role.key).map(a=><p key={a.role_key} className="mt-2 text-xs text-slate-500">{formatDate(a.from_date)} — {a.to_date?formatDate(a.to_date):ui('Ongoing')} · {ui(assignmentState(a,today))}{a.notes?' · '+a.notes:''}</p>)}</section>
           {canManage&&<Button asChild><Link to={employeeReportPath(activeStaffRole(person,catalogue,today)?.key || role.key,person.id)}>{ui('Reports & dashboard')}</Link></Button>}
+          {canManage&&<EmployeeRemovalAction employee={person} onSaved={async value=>{await changed(value);setSelectedId('');}}/>}
           {onEditEmployee&&<Button variant="outline" onClick={()=>{onOpenChange(false);onEditEmployee(person);}}>{ui('Edit employee')}</Button>}
           {canManage&&onInvite&&<Button variant="outline" disabled={!!inviting||person.status!=='active'||!person.email||!person.role} onClick={()=>onInvite(person)}>{inviting===person.id?ui('Sending…'):ui('Invite / check account')}</Button>}
         </section>

@@ -1,3 +1,4 @@
+import EmployeeRemovalAction from './EmployeeRemovalAction';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
@@ -217,6 +218,7 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
         <Button className="mt-4" onClick={save} disabled={!valid || saving}>
           <Save size={16} className="mr-1" /> {saving ? ui("Saving…") : employee ? ui("Save changes") : ui("Create employee")}
         </Button>
+        {employee&&<div className="mt-4 border-t pt-3"><EmployeeRemovalAction employee={employee} onSaved={async()=>{await onSaved?.();onOpenChange(false);}}/></div>}
       </DialogContent>
     </Dialog>
   );

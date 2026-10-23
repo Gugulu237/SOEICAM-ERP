@@ -11,6 +11,8 @@ try{
   const pkg=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
   const lock=JSON.parse(await readFile(path.join(root,'package-lock.json'),'utf8'));
   if(pkg.name!=='soeicam-erp'||!pkg.dependencies?.next||!/^next build(?:\s|$)/.test(pkg.scripts?.build||''))errors.push('The production package must build SOEICAM with Next.js.');
+  const stableNext=/^(\d+)\.(\d+)\.(\d+)$/.exec(pkg.dependencies?.next||'');
+  if(!stableNext||Number(stableNext[1])<16||Number(stableNext[1])===16&&(Number(stableNext[2])<4||Number(stableNext[2])===4&&Number(stableNext[3])<1))errors.push('Pin a stable Next.js release at 16.4.1 or later, including the October 14 security fixes.');
   const dependencies={...pkg.dependencies,...pkg.devDependencies};
   if(Object.keys(dependencies).some(name=>name==='vite'||name.startsWith('@vitejs/')||name.startsWith('@base44/')))errors.push('Remove Vite and Base44 runtime dependencies from the production package.');
   for(const key of ['dependencies','devDependencies','engines']){

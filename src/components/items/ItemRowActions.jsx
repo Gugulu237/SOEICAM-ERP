@@ -52,14 +52,14 @@ export default function ItemRowActions({ item, onChanged, editPath, onBuild, onE
 
   return (
     <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-      {onBuild && active && !draft && <Button variant="outline" size="sm" onClick={onBuild}><Factory size={14} className="mr-1"/>{ui('Build assembly')}</Button>}
+      {onBuild && active && !draft && <Button size="sm" onClick={onBuild}><Factory size={14} className="mr-1"/>{ui('Build assembly')}</Button>}
       <Button variant="ghost" size="sm" title={ui("Edit")} aria-label={ui('Edit {0}',item.name)} onClick={() => onEdit ? onEdit(item) : navigate(editPath || `/items/${item.id}`)}>
         <Pencil size={15} />
       </Button>
       <Button
         variant="ghost" size="sm" disabled={busy}
         title={draft ? ui("Finish assembly setup") : active ? ui("Deactivate") : ui("Activate")}
-        className={active ? "text-slate-500 hover:text-amber-600" : "text-emerald-600 hover:text-emerald-700"}
+        className={active ? "text-slate-500 hover:text-slate-600" : "text-emerald-600 hover:text-emerald-700"}
         onClick={toggleActive}
       >
         <Power size={15} />

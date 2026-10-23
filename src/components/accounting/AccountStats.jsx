@@ -28,9 +28,9 @@ export default function AccountStats({ accounts, balances, totals }) {
       <Card label={ui("Accounts")} value={accounts.length} hint={`${posting} posting · ${headers} header`} />
       <Card label={ui("Posted lines")} value={postings} hint="Posted journals only" />
       <Card label={ui("Control accounts")} value={control} hint="Locked from manual journals" />
-      <div className={`rounded-lg border p-3 ${balanced ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+      <div className={`rounded-lg border p-3 ${balanced ? "border-green-200 bg-green-50" : "border-slate-200 bg-slate-50"}`}>
         <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Ledger integrity")}</p>
-        <div className={`flex items-center gap-1.5 font-semibold ${balanced ? "text-green-700" : "text-amber-800"}`}>
+        <div className={`flex items-center gap-1.5 font-semibold ${balanced ? "text-green-700" : "text-slate-800"}`}>
           {balanced ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {balanced ? ui("Debits equal credits") : ui("Out by {0}", formatXAF(Math.abs(totals.difference)))}
         </div>

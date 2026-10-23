@@ -32,7 +32,7 @@ export default function AssetPlanDialog({asset,accounts,onClose,onDone}) {
       <AccountSelect label={ui("Accumulated depreciation (credit-normal asset)")} accounts={accounts.filter(a=>a.account_type==='asset'&&a.normal_balance==='credit')} value={accum} onChange={setAccum} />
       <AccountSelect label={ui("Depreciation expense")} accounts={accounts.filter(a=>['expense','other_expense'].includes(a.account_type)&&a.normal_balance==='debit')} value={expense} onChange={setExpense} />
       <label className="flex gap-2 text-sm"><input type="checkbox" checked={fund} onChange={e=>setFund(e.target.checked)} />{ui(" Track replacement funding for future charges")}</label>
-      <div className="rounded bg-amber-50 p-3 text-sm">{ui("Remaining depreciable value: ")}{formatXAF(basis)}<br />{ui("Monthly expense: ")}{Number(months)>0?formatXAF(basis/Number(months)):ui("Choose the months")}</div>
+      <div className="rounded bg-slate-50 p-3 text-sm">{ui("Remaining depreciable value: ")}{formatXAF(basis)}<br />{ui("Monthly expense: ")}{Number(months)>0?formatXAF(basis/Number(months)):ui("Choose the months")}</div>
     </fieldset>{error&&<p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
     <DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>{ui("Cancel")}</Button><Button disabled={busy||!months||salvage===''} onClick={save}>{busy?ui("Saving…"):ui("Save schedule")}</Button></DialogFooter>
   </DialogContent></Dialog>;

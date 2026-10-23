@@ -51,7 +51,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
   return (
     <div className="mb-8">
       <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-        <HandCoins size={15} className="text-amber-600" />{ui(" Cash Sales Received from Commercials")}</h3>
+        <HandCoins size={15} className="text-slate-600" />{ui(" Cash Sales Received from Commercials")}</h3>
 
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">

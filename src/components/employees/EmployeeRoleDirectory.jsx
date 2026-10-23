@@ -1,5 +1,6 @@
 'use client';
-import React,{useMemo,useState} from 'react';
+import React,{useMemo} from 'react';
+import { usePageState } from '@/lib/navigation-context';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender } from '@/lib/localization';
 import { businessDate } from '@/lib/business-date';
@@ -7,7 +8,7 @@ import { roleHierarchyRank } from '@/lib/role-organigram';
 import { occupiesRole } from '@/lib/staff-role-assignments';
 import { Input } from '@/components/ui/input';
 export default function EmployeeRoleDirectory({definitions,employees,onOpen,category='All',roleFilter='all'}){
-  useLocaleRender();const [search,setSearch]=useState(''),today=businessDate();
+  useLocaleRender();const [search,setSearch]=usePageState('employees:search',''),today=businessDate();
   const roles=useMemo(()=>definitions.filter(role=>(category==='All'||role.category===category)&&(roleFilter==='all'||role.key===roleFilter)).sort((a,b)=>roleHierarchyRank(a)-roleHierarchyRank(b)||a.label.localeCompare(b.label)),[definitions,category,roleFilter]);
   const term=search.trim().toLocaleLowerCase();
   const visible=roles.filter(role=>!term||ui(role.label).toLocaleLowerCase().includes(term)||employees.some(person=>occupiesRole(person,role.key,today)&&String(person.full_name||'').toLocaleLowerCase().includes(term)));

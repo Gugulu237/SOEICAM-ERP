@@ -36,7 +36,7 @@ export function createNavigationSession({ storage, key, makeId = () => globalThi
   const pages = new Map(Array.isArray(saved?.pages) ? saved.pages.filter(pair => Array.isArray(pair) && typeof pair[0] === 'string').slice(-160) : []);
   const positions = new Map(Array.isArray(saved?.positions) ? saved.positions.filter(pair => Array.isArray(pair) && workspaceHref(pair[0]) && Array.isArray(pair[1]) && pair[1].length === 2 && pair[1].every(n => Number.isFinite(n) && n >= 0)).slice(-LIMIT) : []);
   const listeners = new Set(), stateListeners = new Set();
-  let snapshot = { entries: [], cursor: -1, recent, canBack: false, canForward: false }, timer;
+  let snapshot = { entries: [], cursor: -1, recent, canBack: false, canForward: false }, timer, overlayDepth=0;
   const flush = () => {
     clearTimeout(timer);
     try { storage?.setItem(key, JSON.stringify({ entries, recent, pages: [...pages], positions: [...positions] })); } catch { /* Navigation works even when storage is full or disabled. */ }
@@ -47,6 +47,7 @@ export function createNavigationSession({ storage, key, makeId = () => globalThi
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
     subscribeState: listener => { stateListeners.add(listener); return () => stateListeners.delete(listener); },
     getSnapshot: () => snapshot,
+    setOverlayDepth(depth){overlayDepth=depth;snapshot={...snapshot,canBack:cursor>0||depth>0,canForward:depth===0&&cursor>=0&&cursor<entries.length-1};listeners.forEach(listener=>listener());},
     commit(href, { kind = 'push', entryId } = {}) {
       href = workspaceHref(href);
       if (!href) return null;
@@ -59,7 +60,7 @@ export function createNavigationSession({ storage, key, makeId = () => globalThi
       }
       started = true;
       recent = [href, ...recent.filter(value => value !== href)].slice(0, 15);
-      snapshot = { entries, cursor, recent, canBack: cursor > 0, canForward: cursor >= 0 && cursor < entries.length - 1 };
+      snapshot = { entries, cursor, recent, canBack: cursor > 0 || overlayDepth>0, canForward: overlayDepth===0 && cursor >= 0 && cursor < entries.length - 1 };
       flush(); listeners.forEach(listener => listener());
       return { owner: key, id: entries[cursor].id };
     },

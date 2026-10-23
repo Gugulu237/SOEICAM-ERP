@@ -10,8 +10,8 @@ const verifier=fileURLToPath(new URL('../scripts/verify-deployment-source.mjs',i
 test('deployment rejects framework drift, missing server entry points and dependency lock drift before building',async()=>{
   const root=await mkdtemp(path.join(tmpdir(),'soeicam-deployment-source-'));
   assert.equal(path.dirname(root),path.resolve(tmpdir()));
-  const pkg={name:'soeicam-erp',scripts:{build:'next build --webpack'},dependencies:{next:'16.4.0'},devDependencies:{},engines:{node:'>=22.0.0'}};
-  const lock={packages:{'':{dependencies:pkg.dependencies,devDependencies:{},engines:pkg.engines},'node_modules/next':{version:'16.4.0'}}};
+  const pkg={name:'soeicam-erp',scripts:{build:'next build --webpack'},dependencies:{next:'16.4.1'},devDependencies:{},engines:{node:'>=22.0.0'}};
+  const lock={packages:{'':{dependencies:pkg.dependencies,devDependencies:{},engines:pkg.engines},'node_modules/next':{version:'16.4.1'}}};
   const save=(file,value)=>writeFile(path.join(root,file),typeof value==='string'?value:JSON.stringify(value));
   const run=()=>spawnSync(process.execPath,[verifier,root],{encoding:'utf8',windowsHide:true});
   try{
@@ -20,6 +20,13 @@ test('deployment rejects framework drift, missing server entry points and depend
     await save('src/server/generated/schema.json',Object.fromEntries(Array.from({length:56},(_,i)=>['Entity'+i,{}])));
     for(let i=0;i<56;i++)await save('migration/entities/Entity'+i+'.jsonc',{name:'Entity'+i,properties:{}});
     assert.equal(run().status,0);
+    for(const next of ['16.4.0','16.5.0-canary.23','^16.4.1']){
+      const dependencies={next};
+      await save('package.json',{...pkg,dependencies});
+      await save('package-lock.json',{...lock,packages:{'':{...lock.packages[''],dependencies},'node_modules/next':{version:next}}});
+      assert.notEqual(run().status,0,'reject an unpatched, prerelease or unpinned Next version: '+next);
+    }
+    await save('package.json',pkg);await save('package-lock.json',lock);
     await save('package.json',{...pkg,scripts:{build:'vite build'}});assert.notEqual(run().status,0);await save('package.json',pkg);
     await save('package.json',{...pkg,dependencies:{...pkg.dependencies,vite:'6.4.3'}});assert.notEqual(run().status,0);await save('package.json',pkg);
     await save('package.json',{...pkg,dependencies:{...pkg.dependencies,'@base44/sdk':'0.8.54'}});assert.notEqual(run().status,0);await save('package.json',pkg);
