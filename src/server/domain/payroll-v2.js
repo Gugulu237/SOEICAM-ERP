@@ -1,3 +1,4 @@
+import {canUseTreasury,assertTreasuryAccess,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import {payrollEmployeeData,employeePayrollChanged,payrollHierarchy} from './payroll-employees.js';
 import { createHash } from 'node:crypto';
 import { requireActiveContext, forbidden } from '../access.js';
@@ -45,8 +46,8 @@ export async function payrollWorkspace(stores,context,runId='') {
   const paid=settlement(lines,payments),treasuryIds=new Set(treasury.map(t=>t.gl_account_id));
   paid.lines=paid.lines.map(line=>{const current=staff.byId.get(line.employee_id)?.snapshot;return {...line,employee_role:current?.employee_role||line.employee_role,employee_role_label:current?.employee_role_label||line.employee_role_label,employee_role_rank:current?.employee_role_rank??line.employee_role_rank,employee_current_name:current?.employee_name||line.employee_name,employee_current_base_salary:current?.employee_source_base_salary??line.employee_source_base_salary,employee_current_fingerprint:current?.employee_source_fingerprint,employee_data_changed:employeePayrollChanged(line,current)};}).sort(payrollHierarchy);
 
-  return {role,runs,employee_count:staff.rows.length,run:run?{...run,total_paid:paid.total_paid,total_outstanding:paid.total_outstanding}:null,lines:paid.lines,payments,
-    treasury_accounts:treasury.filter(t=>t.is_active===true && ['cash','petty_cash','bank','mobile_money'].includes(t.account_type)).map(t=>({id:t.id,name:t.name,account_type:t.account_type,balance:t.balance})),
+  return {role,runs,employee_count:staff.rows.length,run:run?{...run,total_paid:paid.total_paid,total_outstanding:paid.total_outstanding}:null,lines:paid.lines,payments:visibleTreasuryDocuments(role,payments,treasury).map(p=>role==='admin'?p:({...p,receipt_posting_snapshot:undefined})),
+    treasury_accounts:treasury.filter(t=>canUseTreasury(role,t) && t.is_active===true && ['cash','petty_cash','bank','mobile_money'].includes(t.account_type)).map(t=>({id:t.id,name:t.name,account_type:t.account_type,balance:t.balance})),
     accounts:accounts.filter(a=>active(a) && !treasuryIds.has(a.id) && !a.is_treasury && a.account_number!=='1050' && ['asset','liability'].includes(a.account_type)).map(a=>({id:a.id,name:a.name,account_number:a.account_number,account_type:a.account_type})),
     history:history.filter(e=>e.audit_source!=='client_reported').map(e=>({id:e.id,action:e.action,description:e.description,reason:e.reason,user_id:e.user_id,user_name:e.user_name,created_date:e.created_date}))};
 }
@@ -92,11 +93,12 @@ async function bookPayroll(stores,context,run,body) {
   return saved;
 }
 async function paySalary(stores,context,body) {
-  if(access(context)!=='cashier')throw forbidden('Only the Cashier can record salary payments after GM approval.');
+  const role=access(context);
+  if(role!=='cashier')throw forbidden('Only the Cashier can record salary payments after GM approval.');
   assertModule(context,'cashier');
   if(!/^[\w-]{16,80}$/.test(body.requestKey || ''))throw Error('Reopen the salary payment form for a valid save reference.');
   const key=context.user.id+':'+body.requestKey,payload=hash(body),previous=(await stores.Payment.filter({payroll_payment_key:key},'id',1))[0];
-  if(previous){if(previous.payroll_payment_payload!==payload)throw conflict('This salary payment reference belongs to different details.');return {payment:previous,reused:true};}
+  if(previous){assertTreasuryAccess(role,await stores.TreasuryAccount.get(previous.treasury_account_id));if(previous.payroll_payment_payload!==payload)throw conflict('This salary payment reference belongs to different details.');return {payment:previous,reused:true};}
   const line=await stores.PayrollLine.get(String(body.lineId || '')),run=line && await stores.PayrollRun.get(line.payroll_id);
   if(!run || run.status!=='posted' || run.payroll_workflow_version!==2 || !run.approved_by || !line.payroll_approved_by || !run.journal_id)throw Error('Choose a GM-approved payslip with a recorded employee payable. Legacy postings require accounting reconciliation.');
   const source=await stores.JournalEntry.get(run.journal_id);
@@ -107,6 +109,7 @@ async function paySalary(stores,context,body) {
   const paid=settlement([line],await paymentsFor(stores,run.id)).lines[0];
   if(amount>paid.outstanding_amount)throw conflict('This payment exceeds the employee outstanding salary. Reload the payslip.');
   const account=await stores.TreasuryAccount.get(String(body.accountId || '')),cash=account && await stores.Account.get(account.gl_account_id),payable=await stores.Account.get(run.payroll_payable_account_id);
+  assertTreasuryAccess(role,account);
   if(!account || account.is_active!==true || !['cash','petty_cash','bank','mobile_money'].includes(account.account_type) || !active(cash) || cash.account_type!=='asset' || cash.normal_balance!=='debit' || !active(payable) || payable.account_type!=='liability' || payable.normal_balance!=='credit' || line.payroll_payable_account_id!==payable.id || cash.id===payable.id)throw Error('Choose an active treasury account with its own cash/bank asset account and a valid salary payable account.');
   if(amount>payrollMoney(account.balance) || amount>payrollMoney(cash.balance))throw Error('Insufficient available funds in the selected treasury account. You can record a smaller partial payment.');
   const referenceKey=hash([line.id,account.id,reference.toUpperCase()]);

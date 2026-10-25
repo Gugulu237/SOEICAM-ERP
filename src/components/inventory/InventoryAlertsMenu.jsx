@@ -1,0 +1,10 @@
+'use client';
+import React from 'react';
+import {Bell} from 'lucide-react';
+import {ui} from '@/lib/i18n';
+import {formatQuantity} from '@/lib/formatters';
+import {Button} from '@/components/ui/button';
+import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuLabel,DropdownMenuItem} from '@/components/ui/dropdown-menu';
+export default function InventoryAlertsMenu({items,loading,open,onOpenChange,onOpenItem}) {
+ return <DropdownMenu modal={false} open={open} onOpenChange={onOpenChange}><DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="relative h-11 w-11 rounded-xl" aria-label={ui('Stock alerts ({0})',items.length)} title={ui('Stock alerts')}><Bell size={19}/>{!loading&&items.length>0&&<span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">{items.length>99?'99+':items.length}</span>}</Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-[min(22rem,calc(100vw_-_1rem))] p-2" aria-label={ui('Stock alerts')}><DropdownMenuLabel>{ui('Stock alerts')} · {items.length}</DropdownMenuLabel><div className="max-h-[min(24rem,65svh)] overflow-y-auto">{loading?<p role="status" className="p-3 text-xs text-slate-500">{ui('Loading stock alerts...')}</p>:items.length===0?<p role="status" className="p-3 text-sm text-slate-500">{ui('No low-stock alerts.')}</p>:items.map(item=><DropdownMenuItem key={item.id} className="block cursor-pointer whitespace-normal rounded-lg px-3 py-3" onSelect={()=>onOpenItem?.(item)}><span className="block text-sm font-medium">{item.name}</span><span className="mt-1 flex items-center justify-between gap-3 text-xs text-slate-500"><span className={item.stock<=0?'font-medium text-red-700':''}>{ui('Available: {0}',formatQuantity(item.stock))}</span><span>{ui('Minimum: {0}',formatQuantity(item.reorder))}</span></span></DropdownMenuItem>)}</div></DropdownMenuContent></DropdownMenu>;
+}

@@ -47,7 +47,8 @@ test('new roles have their own routes and cannot open management or another staf
   assert.equal(canOpenFieldPath('hotesse', '/outlet-reports'), true);
   assert.equal(canOpenFieldPath('hotesse', '/customers'), false);
   assert.equal(canOpenFieldPath('hotesse', '/hotesse-forged'), false);
-  assert.equal(canOpenFieldPath('cashier', '/accounting/treasury'), true);
+  assert.equal(canOpenFieldPath('cashier', '/accounting/treasury'), false);
+  assert.equal(canOpenFieldPath('cashier', '/accounting/payments/new'), true);
   assert.equal(canOpenFieldPath('production_manager', '/manufacturing/new'), true);
   assert.equal(canOpenFieldPath('production_manager', '/cashier'), true);
   assert.equal(canOpenFieldPath('cashier', '/outlet-reports'), false);

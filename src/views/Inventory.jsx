@@ -27,14 +27,14 @@ import QuickItemEditor from "@/components/items/QuickItemEditor";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, Bell, PackageCheck, MoreHorizontal } from "lucide-react";
+import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal } from "lucide-react";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 const ProductionCountRequests = lazy(() => import('@/components/inventory/ProductionCountRequests'));
 const WarehouseDialog = lazy(() => import("@/components/admin/WarehouseDialog"));
 const ExpiryRecovery = lazy(() => import("@/components/inventory/ExpiryRecovery"));
-const StockAlerts = lazy(() => import("@/components/inventory/StockAlerts"));
+import InventoryAlertsMenu from '@/components/inventory/InventoryAlertsMenu';
 const MovementLedger = lazy(() => import("@/components/inventory/MovementLedger"));
 const StockTransferDialog = lazy(() => import("@/components/inventory/StockTransferDialog"));
 const StockAdjustmentDialog = lazy(() => import("@/components/inventory/StockAdjustmentDialog"));
@@ -60,6 +60,7 @@ export default function Inventory() {
   const [view, setView] = usePageState("inventory:view", "visual", { scope: "path" });
   const [locationDialog,setLocationDialog] = useState(null);
   const [countsOpen,setCountsOpen]=useState(false);
+  const [alertsOpen,setAlertsOpen]=useState(false);
   const [showIssue, setShowIssue] = useState(false), [showRecoveryReceipt, setShowRecoveryReceipt] = useState(false);
   const lowStock = useMemo(() => inventoryLowStock(products, balances), [products, balances]);
   const stockArea = workspace.stockArea;
@@ -157,9 +158,7 @@ export default function Inventory() {
     <header className="flex items-center justify-between gap-2">
       <h1 className="min-w-0 text-xl font-bold tracking-tight sm:text-2xl">{ui('Inventory')}</h1>
       <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="icon" className="relative h-11 w-11 rounded-xl" aria-label={ui('Stock alerts ({0})', lowStock.length)} title={ui('Stock alerts')} onClick={() => changeWorkspace({ section: 'alerts' })}>
-          <Bell size={19}/>{!loading && lowStock.length > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">{lowStock.length > 99 ? '99+' : lowStock.length}</span>}
-        </Button>
+        <InventoryAlertsMenu items={lowStock} loading={loading} open={alertsOpen || workspace.section==='alerts'} onOpenChange={open=>{setAlertsOpen(open);if(!open && workspace.section==='alerts')setParams(q=>{q.set('section','items');q.delete('tab');return q;},{replace:true});}} onOpenItem={canEdit?item=>{setAlertsOpen(false);if(workspace.section==='alerts')closePanel();editItem(item);}:undefined}/>
         {canEdit && <Button className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/>{ui('New item')}</Button>}
       </div>
     </header>
@@ -185,7 +184,7 @@ export default function Inventory() {
       </DropdownMenu>
     </div>
     {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{quickEditor(item)}{canEdit && <ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
-    <Dialog open={['stock','movements','alerts'].includes(workspace.section)} onOpenChange={open => { if (!open) closePanel(); }}>
+    <Dialog open={['stock','movements'].includes(workspace.section)} onOpenChange={open => { if (!open) closePanel(); }}>
       <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
         <DialogHeader><DialogTitle>{SECTIONS[workspace.section] || ui('Inventory')}</DialogTitle><DialogDescription className="sr-only">{ui('Inventory details')}</DialogDescription></DialogHeader>
         {workspace.section === 'stock' && <div className="space-y-4">
@@ -205,7 +204,7 @@ export default function Inventory() {
         {loading ? <Pending /> : <Suspense fallback={<Pending />}><MovementLedger warehouseId={params.get('warehouse') || undefined} reportMode={params.get('panel')==='report'} warehouses={warehouses} products={products} refreshKey={movementVersion} /></Suspense>}
 
         </div>}
-        {workspace.section === 'alerts' && (loading ? <Pending/> : <Suspense fallback={<Pending/>}><StockAlerts products={products} balances={balances} onEdit={canEdit ? item => { closePanel(); editItem(item); } : undefined}/></Suspense>)}
+
       </DialogContent>
     </Dialog>
     {showRecoveryReceipt && <Dialog open onOpenChange={setShowRecoveryReceipt}><DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{ui('Recovered packaging')}</DialogTitle><DialogDescription>{ui('Receive recovered packaging after accounting treatment. Quality inspection is required before reuse.')}</DialogDescription></DialogHeader><Suspense fallback={<Pending/>}><ExpiryRecovery mode="warehouse" onSaved={loadData}/></Suspense></DialogContent></Dialog>}

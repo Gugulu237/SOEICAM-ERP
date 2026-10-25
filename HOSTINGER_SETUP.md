@@ -88,3 +88,7 @@ Provider references:
 - https://developers.google.com/maps/documentation/javascript/advanced-markers/start
 - https://developers.google.com/maps/documentation/javascript/shapes
 - https://operations.osmfoundation.org/policies/tiles/
+
+## Customer pins and landmark map style
+
+Use the ready-to-import [SOEICAM Delivery style](docs/google-maps/SOEICAM-Delivery-Map-Style.json) to hide ordinary Google POIs while retaining landmark categories, airport references and normal road/neighbourhood labels. The [style setup guide](docs/google-maps/README.md) covers importing, reducing POI density and publishing to the existing map ID. ERP customer pins and delivery zones remain application overlays. The Cloud style must be published in Google Cloud before it changes the live map.

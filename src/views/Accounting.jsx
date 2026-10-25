@@ -4,6 +4,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
+import {Navigate} from "@/lib/router";
 import { useNavigate } from "@/lib/router";
 import PageHeader from "@/components/shared/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,6 +24,7 @@ export default function Accounting() {
   const navigate = useNavigate();
   const { role } = useCurrentUser();
 
+  if(role==='cashier')return <Navigate to="/cashier" replace/>;
   if (!['admin','cashier'].includes(role)) return <ManagementAccounting/>;
 
   return (

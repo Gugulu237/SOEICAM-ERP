@@ -8,6 +8,7 @@ import { stockUnit } from '../../lib/item-units.js';
 import { INVOICE_COMPANY_FIELDS, invoiceCompany, invoiceDefaults, cleanInvoiceOptions, safeInvoiceLogo } from '../../lib/invoice-documents.js';
 import { postedInvoiceStatuses } from '../../lib/company-sales.js';
 
+export const CASHIER_INVOICE_ACTIONS=['invoiceWorkspace','invoiceDetail','customizeSalesInvoice'];
 export const INVOICE_ACTIONS = ['invoiceWorkspace','invoiceDetail','invoiceSource','createSalesInvoice','customizeSalesInvoice','saveInvoiceCompany'];
 const pick = (row, keys) => Object.fromEntries(keys.split(' ').map(key=>[key,row?.[key]]));
 const addDays = (date,days) => new Date(Date.parse(date+'T00:00:00Z')+Number(days || 0)*86400000).toISOString().slice(0,10);
@@ -43,14 +44,14 @@ async function detail(stores,id) {
   const accountingVerified=journal?.status==='posted' && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
   return {invoice:{...pick(invoice,'id invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
 }
-async function workspace(stores) {
-  const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),readRecords(stores.Customer),readRecords(stores.CompanySettings)]);
+async function workspace(stores,role) {
+  const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),role==='cashier'?[]:readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),role==='cashier'?[]:readRecords(stores.Customer),readRecords(stores.CompanySettings)]);
   const active=invoices.filter(issued),orderIds=new Set(active.map(i=>i.sales_order_id).filter(Boolean)),fieldIds=new Set(active.map(i=>i.field_sale_id).filter(Boolean));
   const journals=new Map((await recordsByIds(stores.JournalEntry,[...fields,...invoices].map(f=>f.journal_id))).map(j=>[j.id,j]));
   const eligibleFields=fields.filter(f=>{const j=journals.get(f.journal_id);return !fieldIds.has(f.id)&&j?.status==='posted'&&j.source_document_id===f.id&&j.source_document_type==='FieldSale';});
-  return {company:invoiceCompany(settings[0]),customers:customers.map(c=>pick(c,'id business_name address town tax_id email is_active payment_terms_days financial_centralization_mode invoice_defaults')),
+  return {permissions:{can_create:role!=='cashier'},company:invoiceCompany(settings[0]),customers:customers.map(c=>pick(c,'id business_name address town tax_id email is_active payment_terms_days financial_centralization_mode invoice_defaults')),
     invoices:invoices.map(i=>{const j=journals.get(i.journal_id);return {...pick(i,'id invoice_number customer_id customer_name invoice_date due_date total balance amount_paid status payment_type sales_order_id field_sale_id source_number'),accounting_verified:j?.status==='posted'&&j.source_document_id===(i.field_sale_id || i.id)&&j.source_document_type===(i.field_sale_id?'FieldSale':'Invoice'),customer_balance:i.field_sale_id?round2(fields.find(f=>f.id===i.field_sale_id)?.amount_due ?? i.balance):i.payment_type==='cash'?0:round2(i.balance)};}).sort((a,b)=>String(b.invoice_date).localeCompare(String(a.invoice_date)) || String(b.invoice_number).localeCompare(String(a.invoice_number))),
-    sources:[...orders.filter(o=>!orderIds.has(o.id)).map(o=>({...pick(o,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'order',number:o.order_number,date:o.order_date})),...eligibleFields.map(f=>({...pick(f,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'field',number:f.sale_number,date:f.transaction_date}))]};
+    sources:role==='cashier'?[]:[...orders.filter(o=>!orderIds.has(o.id)).map(o=>({...pick(o,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'order',number:o.order_number,date:o.order_date})),...eligibleFields.map(f=>({...pick(f,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'field',number:f.sale_number,date:f.transaction_date}))]};
 }
 async function uniqueNumber(svc) {
   // Imported settings may lag behind existing invoice numbers. Advance over
@@ -69,11 +70,12 @@ async function saveClientDefaults(stores,customerId,options) {
   await stores.Customer.update(customerId,{invoice_defaults:pick(options,'terms payment_instructions footer layout accent')});
 }
 export async function invoiceAction(client,user,body) {
-  const allowed=body.action==='saveInvoiceCompany'?['admin']:['admin','employee'];
+  const allowed=body.action==='saveInvoiceCompany'?['admin']:CASHIER_INVOICE_ACTIONS.includes(body.action)?['admin','employee','cashier']:['admin','employee'];
   const {role,employee}=await requireStaff(client,user,allowed,'customer invoicing');
   if(role!=='admin' && employee?.status!=='active')throw Error('An active sales staff account is required.');
+  client.auth.assertModule?.(role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;
-  if(body.action==='invoiceWorkspace')return workspace(s);
+  if(body.action==='invoiceWorkspace')return workspace(s,role);
   if(body.action==='invoiceDetail')return detail(s,body.invoiceId);
   if(body.action==='invoiceSource') {
     if(!['order','field'].includes(body.sourceType))throw Error('Choose an invoice source.');

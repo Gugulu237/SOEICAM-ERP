@@ -4,6 +4,7 @@ import { fieldInventoryAction } from '../domain/field-stock-inventory.js';
 import { isTransactionConflict } from '../transaction-errors.js';
 import { INVENTORY_AUDIT_ACTIONS, inventoryAuditAction } from '../domain/inventory-audit.js';
 import { WAREHOUSE_ADJUSTMENT_ACTIONS, warehouseAdjustmentAction } from '../domain/warehouse-adjustment.js';
+import {businessOverview} from '../domain/business-overview.js';
 import { cashFlowReport } from '../domain/cash-flow.js';
 import { ASSET_ACTIONS, fixedAssetAction } from '../domain/fixed-assets.js';
 import { cashierAction, CASHIER_ACTIONS } from '../domain/cashier-workspace.js';
@@ -151,6 +152,7 @@ export default async function (req) {
     if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)) return Response.json(await customerRegistrationAction(base44, user, body));
     if (action === 'fieldStockInventory') return Response.json(await fieldInventoryAction(base44, user, body));
     if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)) return Response.json(await commercialReturnAction(base44, user, body));
+    if(INVOICE_ACTIONS.includes(action))return Response.json(await invoiceAction(base44,user,body));
     const module = action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
       : CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'
       : SUPPLIER_ACTIONS.includes(action) || inActions(['purchasesWorkspace','approvePurchasePayment','rejectPurchasePayment']) ? 'purchases'
@@ -158,6 +160,7 @@ export default async function (req) {
       : CASHIER_ACTIONS.includes(action) || action === 'submitHandover' ? 'cashier'
       : inActions(['startFermentation','saveProductionPlan','completeProduction','approveProductionOrder','rejectProductionOrder','issueProductionMaterials','productionPurchaseOptions','requestProductionPurchase','checkProductionMaterials','requestProductionAudit','productionAuditRequests','resolveProductionAudit']) ? 'manufacturing'
       : inActions(['batchCatalogue','batchTrace']) ? 'quality'
+      : action === 'businessOverview' ? 'reports'
       : ['accountPosition', 'cashFlowReport'].includes(action) ? 'accounting'
       : inActions(['submitOutletVisit','submitDeliveryShelfCheck','outletShelfOverview','outletReports','outletRoster','assignHotesse','createAssignedOutlet','reviewOutletVisit']) ? 'outlets'
       : inActions(['commercialDepositCash','commercialCashiers','registerCustomer','fieldCustomers','commercialPerformance','verifyFieldCustomer','commercialDailySupplies','updateCustomerGps','commercialReturns','recordExpiredReturn','replaceExpiredReturn','saveSale','proposedJournal','approveSale','returnSale','rejectSale']) ? 'commercial'
@@ -169,7 +172,6 @@ export default async function (req) {
     if (ASSET_ACTIONS.includes(action)) return Response.json(await fixedAssetAction(base44,user,body));
     if (INVENTORY_AUDIT_ACTIONS.includes(action)) return Response.json(await inventoryAuditAction(base44,user,body));
     if (SALES_ORDER_ACTIONS.includes(action)) return Response.json(await salesOrderAction(base44,user,body));
-    if (INVOICE_ACTIONS.includes(action)) return Response.json(await invoiceAction(base44,user,body));
     if (CUSTOMER_DELIVERY_ACTIONS.includes(action)) return Response.json(await customerDeliveryAction(base44,user,body));
     if (SUPPLIER_ACTIONS.includes(action)) return Response.json(await supplierAction(base44, user, body));
     if (action === 'purchasesWorkspace') return Response.json(await purchaseWorkspace(base44,user,body));
@@ -179,6 +181,7 @@ export default async function (req) {
     if (['productionPurchaseOptions','requestProductionPurchase'].includes(action)) return Response.json(await productionPurchaseAction(base44,user,body));
     if (['startFermentation','saveProductionPlan', 'completeProduction','approveProductionOrder','rejectProductionOrder','issueProductionMaterials','checkProductionMaterials','requestProductionAudit','productionAuditRequests','resolveProductionAudit'].includes(action)) return Response.json(await productionAction(base44, user, body));
     if (['batchCatalogue', 'batchTrace'].includes(action)) return Response.json(await batchTraceAction(base44, user, body));
+    if (action === 'businessOverview') return Response.json(await businessOverview(base44,user,body));
     if (action === 'accountPosition') return Response.json(await accountPosition(base44, user, body));
     if (action === 'cashFlowReport') return Response.json(await cashFlowReport(base44, user, body));
     if (action === 'companySales') return Response.json(await companySalesAction(base44, user, body));

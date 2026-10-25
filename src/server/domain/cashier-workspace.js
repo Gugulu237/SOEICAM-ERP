@@ -1,14 +1,15 @@
+import {canUseTreasury,assertTreasuryAccess,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, today, postJournal, getAccountByNumber, audit } from './field-ops.js';
 import { smallOperatingExpenseIssue } from '../../lib/small-operating-expenses.js';
-import { reconcileDailyCash } from '../../lib/cash-settlement.js';
+import { reconcileDailyCash, dailyCashSettlements } from '../../lib/cash-settlement.js';
 import { effectiveRole } from './roles.js';
 import { requestDailyCash } from './daily-cash-handover.js';
 
 // All mutations run in the API route's serializable transaction. Request keys
 // survive lost responses; balances, journals and source documents commit once.
 export const PETTY_CASH_LIMIT = 50000;
-export const CASHIER_ACTIONS = ['cashierWorkspace', 'cashierRequestHandover', 'cashierHandoverHistory', 'cashierTransfer', 'cashierPettyExpense', 'cashierPayExpense', 'cashierRequestPayment', 'cashierReleasePayment', 'cashierAttachReceipt', 'cashierResolveHandover', 'confirmHandover'];
+export const CASHIER_ACTIONS = ['cashierWorkspace', 'cashierReceiveDailyCash', 'cashierRequestHandover', 'cashierHandoverHistory', 'cashierTransfer', 'cashierPettyExpense', 'cashierPayExpense', 'cashierRequestPayment', 'cashierReleasePayment', 'cashierAttachReceipt', 'cashierResolveHandover', 'confirmHandover'];
 const pick = (row, fields) => Object.fromEntries(fields.map(field => [field, row[field]]));
 const rows = (records, fields) => records.map(row => pick(row, fields.split(' ')));
 const amountOf = value => {
@@ -29,9 +30,10 @@ async function ledger(svc, id, expense = false) {
   if (!account || account.is_active !== true || account.is_posting === false || (expense && account.account_type !== 'expense')) throw Error(expense ? 'Select an active posting expense account' : 'The treasury ledger account must be active for posting');
   return account;
 }
-async function treasury(svc, id) {
+async function treasury(svc, id, role) {
   const account = id ? await svc.entities.TreasuryAccount.get(id) : null;
   if (!account || account.is_active !== true || !['cash', 'petty_cash', 'bank', 'mobile_money'].includes(account.account_type)) throw Error('Select an active cash, bank or mobile money account');
+  assertTreasuryAccess(role,account);
   const gl = await ledger(svc, account.gl_account_id);
   if (gl.account_type !== 'asset') throw Error('The treasury account must be linked to an asset ledger account');
   return { ...account, ledger: gl };
@@ -53,9 +55,9 @@ async function budgetUse(svc, departmentId, date, amount) {
   return budget.id;
 }
 
-async function workspace(svc, date) {
+async function workspace(svc, date, role) {
   const [accounts, movements, handovers, collections, invoices, receipts, payments, expenses, gl, departments, customers, orders, sales, employees] = await Promise.all([
-    readRecords(svc.entities.TreasuryAccount, { is_active: true }),
+    readRecords(svc.entities.TreasuryAccount),
     readRecords(svc.entities.TreasuryTransaction, { transaction_date: date }),
     readRecords(svc.entities.CashHandover, { $or: [{ status: { $in: ['submitted', 'partially_received', 'disputed'] } }, { status: 'received', $or: [{ handover_date: date }, { received_date: date }] }] }),
     readRecords(svc.entities.CashCollection, { $or: [{ collection_date: date }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
@@ -77,20 +79,21 @@ async function workspace(svc, date) {
     ...collections.filter(c => c.collection_date === date && c.method === 'cash' && c.status !== 'cancelled' && !linkedCollections.has(c.id)).map(c => ({ id: 'collection-' + c.id, customer_name: c.customer_name, document_number: c.sale_number || c.invoice_number || c.collection_number, amount: c.amount_collected, received: c.received_amount || 0, collector: c.commercial_name, status: c.status, date: c.collection_date })),
     ...receipts.filter(p => p.payment_date === date && p.payment_method === 'cash').map(p => ({ id: 'payment-' + p.id, customer_name: p.party_name, document_number: p.invoice_numbers || p.payment_number, amount: p.amount, received: p.status === 'posted' ? p.amount : 0, collector: p.cashier_confirmed_name || 'Cash desk', status: p.status, date: p.payment_date })),
   ];
-  return { date, pettyCashLimit: PETTY_CASH_LIMIT,
-    accounts: rows(accounts, 'id name account_type balance gl_account_id'),
-    movements: rows(movements, 'id transaction_number treasury_account_name transaction_type amount transaction_date description reference source source_document_number journal_id'),
-    handovers: rows(handovers, 'id handover_number handover_date commercial_id commercial_name status expected_amount offered_amount received_amount variance variance_reason treasury_account_name acknowledgement_reference requested_by_cashier requested_at cashier_name agent_deposit_reported_at agent_deposit_reported_amount agent_deposit_cashier_name'),
+  return { role, date, pettyCashLimit: PETTY_CASH_LIMIT,
+    accounts: rows(accounts.filter(a=>a.is_active===true&&canUseTreasury(role,a)), 'id name account_type balance gl_account_id float_limit custodian'),
+    movements: rows(movements.filter(m=>role==='admin'||accounts.some(a=>a.id===m.treasury_account_id&&canUseTreasury(role,a))), 'id transaction_number treasury_account_id treasury_account_name transaction_type amount transaction_date description reference source source_document_number journal_id'),
+    handovers: rows(visibleTreasuryDocuments(role,handovers,accounts), 'id handover_number handover_date commercial_id commercial_name status expected_amount offered_amount received_amount variance variance_reason treasury_account_name acknowledgement_reference requested_by_cashier requested_at cashier_name agent_deposit_reported_at agent_deposit_reported_amount agent_deposit_cashier_name'),
+    depositDays: dailyCashSettlements(collections.filter(c=>!linkedCollections.has(c.id)),handovers),
     dailyCash: reconcileDailyCash(collections.filter(c => c.collection_date === date && !linkedCollections.has(c.id)), handovers, sales),
     commercials: rows(employees.filter(e => e.status === 'active' && effectiveRole({ role: 'user' }, e) === 'commercial'), 'id full_name'),
     collections: rows(collections.filter(c => !linkedCollections.has(c.id) && c.status !== 'cancelled' && Number(c.outstanding_amount) > 0), 'id commercial_id commercial_name collection_date collection_number customer_name sale_number amount_collected received_amount outstanding_amount status'),
     cashCustomers,
-    invoices: invoices.filter(i => Number(i.balance) > 0).map(i => ({ ...pick(i, 'id invoice_number customer_id customer_name invoice_date due_date balance payment_type'.split(' ')), pending_amount: reserved(i), available_amount: Math.max(0, round2(i.balance - reserved(i))) })),
+    invoices: invoices.filter(i => Number(i.balance) > 0).map(i => ({ ...pick(i, 'id invoice_number customer_id customer_name invoice_date due_date balance payment_type salesperson_name stock_holder_name'.split(' ')), pending_amount: reserved(i), available_amount: Math.max(0, round2(i.balance - reserved(i))) })),
     customerBalances: rows(customers, 'id business_name balance'),
-    receipts: rows(receipts.filter(p => ['pending_approval', 'approved'].includes(p.status)), 'id payment_number party_name amount payment_date invoice_numbers status treasury_account_name'),
-    payments: rows(payments, 'id payment_number party_name amount payment_date status payment_method treasury_account_id treasury_account_name po_id cheque_gm_signed_at cheque_pm_signed_at'),
+    receipts: rows(visibleTreasuryDocuments(role,receipts.filter(p => ['pending_approval', 'approved'].includes(p.status)),accounts), 'id payment_number party_name amount payment_date invoice_numbers status treasury_account_name'),
+    payments: rows(visibleTreasuryDocuments(role,payments,accounts), 'id payment_number party_name amount payment_date status payment_method treasury_account_id treasury_account_name po_id cheque_gm_signed_at cheque_pm_signed_at'),
     orders: rows(orders.filter(po => !payments.some(p => p.po_id === po.id && ['draft', 'pending_approval', 'approved', 'confirmed'].includes(p.status))).map(po => ({ ...po, total: Math.max(0, round2(Number(po.total) - paidOrders.filter(p => p.po_id === po.id).reduce((sum, p) => sum + Number(p.amount || 0), 0))) })).filter(po => po.total > 0), 'id po_number supplier_name total'),
-    expenses: rows(expenses, 'id request_number title amount status payee department_name department_id expense_account_id treasury_account_name receipt_url'),
+    expenses: rows(visibleTreasuryDocuments(role,expenses,accounts), 'id request_number title amount status payee department_name department_id expense_account_id treasury_account_name receipt_url'),
     expenseAccounts: rows(gl.filter(a => a.is_posting !== false), 'id account_number name'),
     departments: rows(departments, 'id name'),
   };
@@ -100,7 +103,14 @@ export async function cashierAction(base44, user, body) {
   const { employee, role } = await requireStaff(base44, user, ['admin', 'cashier'], 'cash desk operations');
   if (role !== 'admin' && (!employee || employee.status !== 'active')) throw Error('An active Cashier staff account is required');
   const svc = base44.asServiceRole, action = body.action, date = dateOf(body.date), actor = employee?.full_name || user.full_name || user.email;
-  if (action === 'cashierWorkspace') return workspace(svc, date);
+  if (action === 'cashierWorkspace') return workspace(svc, date, role);
+  for(const id of [body.accountId,body.treasuryAccountId,body.toAccountId].filter(Boolean))assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(id));
+  if(action==='cashierReceiveDailyCash'){
+    const collectionDate=dateOf(body.collectionDate);
+    if(date<collectionDate)throw Error('Receipt date cannot precede the customer cash collection date');
+    const prepared=await requestDailyCash(svc,user,employee,body,collectionDate);
+    return cashierAction(base44,user,{...body,action:'confirmHandover',handoverId:prepared.handover.id,date});
+  }
   if (action === 'cashierRequestHandover') return requestDailyCash(svc, user, employee, body, date);
   if (action === 'cashierHandoverHistory') {
     const offset=body.cursor==null?0:Number(body.cursor);
@@ -111,11 +121,12 @@ export async function cashierAction(base44, user, body) {
     if(from && to && from>to)throw Error('Handover history end date must be on or after its start date');
     if(from || to)query.handover_date={...(from?{$gte:from}:{}),...(to?{$lte:to}:{})};
     const records=await svc.entities.CashHandover.filter(query,'-confirmed_at',51,offset),hasMore=records.length>50;
-    return {records:rows(records.slice(0,50),'id handover_number handover_date commercial_id commercial_name status expected_amount offered_amount received_amount variance variance_reason cashier_name treasury_account_name received_date confirmed_at acknowledgement_reference journal_number'),has_more:hasMore,next_cursor:hasMore?String(offset+50):null};
+    return {records:rows(visibleTreasuryDocuments(role,records.slice(0,50),await readRecords(svc.entities.TreasuryAccount)),'id handover_number handover_date commercial_id commercial_name status expected_amount offered_amount received_amount variance variance_reason cashier_name treasury_account_name received_date confirmed_at acknowledgement_reference journal_number'),has_more:hasMore,next_cursor:hasMore?String(offset+50):null};
   }
   if (action === 'cashierAttachReceipt') {
     const expense = await svc.entities.ExpenseRequest.get(body.expenseId);
     if (!expense || !['approved', 'paid'].includes(expense.status)) throw Error('Select an approved or paid expense voucher');
+    if(expense.treasury_account_id)assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(expense.treasury_account_id));
     const receipt = await base44.validateExpenseReceipt(body.receiptFileUri);
     await svc.entities.ExpenseRequest.update(expense.id, { receipt_url: receipt, receipt_collected_at: new Date().toISOString() });
     await audit(svc, { action: 'collect_receipt', module: 'cashier', entityType: 'ExpenseRequest', entityId: expense.id, userId: user.id, description: `${actor} filed the receipt for ${expense.request_number}` });
@@ -123,6 +134,7 @@ export async function cashierAction(base44, user, body) {
   }
   if (action === 'cashierResolveHandover') {
     const handover = await svc.entities.CashHandover.get(body.handoverId);
+    if(handover?.treasury_account_id)assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(handover.treasury_account_id));
     if (handover?.status === 'received') return { reused: true };
     if (!handover || handover.status !== 'disputed' || round2(handover.expected_amount) !== round2(handover.received_amount)) throw Error('Only a fully received disputed handover can be resolved without receiving more cash');
     const reason = textOf(body.varianceReason, 'a resolution explanation');
@@ -134,6 +146,7 @@ export async function cashierAction(base44, user, body) {
   const key = `${user.id}:${action}:${body.requestKey}`;
   const entity = action === 'cashierRequestPayment' ? svc.entities.Payment : svc.entities.TreasuryTransaction;
   const previous = (await readRecords(entity, { cashier_request_key: key }))[0];
+  if (previous) assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(previous.treasury_account_id));
   if (previous) return { transaction: previous, reused: true, ...(action === 'confirmHandover' ? { acknowledgementReference: previous.transaction_number, received: previous.amount } : {}) };
   const now = new Date().toISOString();
 
@@ -141,7 +154,7 @@ export async function cashierAction(base44, user, body) {
     const bill = body.billId ? await svc.entities.Bill.get(body.billId) : null;
     if (body.billId && (!bill || !['open','partially_paid','overdue'].includes(bill.status) || !(Number(bill.balance)>0))) throw Error('Select an unpaid supplier bill');
     if (bill && round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance)) throw Error('Reconcile the bill total, amount paid and balance before requesting another payment');
-    const po = await svc.entities.PurchaseOrder.get(bill?.po_id || body.orderId), account = await treasury(svc, body.accountId), amount = amountOf(body.amount);
+    const po = await svc.entities.PurchaseOrder.get(bill?.po_id || body.orderId), account = await treasury(svc, body.accountId, role), amount = amountOf(body.amount);
     if (!po || (bill ? !['approved','partially_received','received','billed'].includes(po.status) || bill.supplier_id!==po.supplier_id : po.status !== 'approved' || po.cash_disbursed)) throw Error('Select an approved, unpaid purchase order');
     if (bill && amount>round2(bill.balance)) throw Error('The amount exceeds the unpaid bill balance');
     const pending = await readRecords(svc.entities.Payment, { po_id: po.id, status: { $in: ['draft', 'pending_approval', 'approved', 'confirmed', 'posted'] } });
@@ -156,9 +169,10 @@ export async function cashierAction(base44, user, body) {
   if (action === 'confirmHandover') {
     const handover = await svc.entities.CashHandover.get(body.handoverId);
     if (!handover || !['submitted', 'partially_received', 'disputed', 'received'].includes(handover.status)) throw Error('Select a submitted Commercial handover');
+    if(handover.treasury_account_id)assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(handover.treasury_account_id));
     if (handover.status === 'received') return { handover, alreadyReceived: true, acknowledgementReference: handover.acknowledgement_reference, outstandingAgainstCommercial: 0 };
     if (employee?.id === handover.commercial_id) throw Error('The Commercial cannot confirm receipt of their own handover');
-    const account = await treasury(svc, body.treasuryAccountId), amount = amountOf(body.receivedAmount);
+    const account = await treasury(svc, body.treasuryAccountId, role), amount = amountOf(body.receivedAmount);
     const remaining = round2(Number(handover.expected_amount || 0) - Number(handover.received_amount || 0));
     if (amount > remaining) throw Error('The amount exceeds the remaining handover balance; reconcile the excess separately');
     if (amount !== remaining && !String(body.varianceReason || '').trim()) throw Error('Explain the cash shortfall before confirming');
@@ -190,17 +204,20 @@ export async function cashierAction(base44, user, body) {
     return { status, received: amount, acknowledgementReference: tx.transaction_number, outstandingAgainstCommercial: outstanding, journalNumber: journal.journal_number };
   }
 
-  const account = await treasury(svc, body.accountId);
+  const account = await treasury(svc, body.accountId, role);
   let amount, description, debit, document, expenseAccount, department, po;
   if (action === 'cashierTransfer') {
     amount = amountOf(body.amount); description = textOf(body.description, 'a transfer purpose');
-    const destination = await treasury(svc, body.toAccountId);
+    const destination = await treasury(svc, body.toAccountId, role);
+    if(body.purpose && !['daily_savings','petty_cash_replenishment'].includes(body.purpose))throw Error('Choose a valid transfer purpose');
+    if(body.purpose==='daily_savings' && [account.account_type,destination.account_type].includes('petty_cash'))throw Error('Daily savings cannot use the petty cash float');
+    if(body.purpose==='petty_cash_replenishment' && (destination.account_type!=='petty_cash'||account.account_type==='petty_cash'))throw Error('Choose an operating cash account and a petty cash destination');
     if (account.id === destination.id) throw Error('Select different source and destination accounts');
     funds(account, amount);
-    const tx = await svc.entities.TreasuryTransaction.create({ transaction_number: number('TRF'), treasury_account_id: account.id, treasury_account_name: account.name, counterparty_account_id: destination.id, counterparty_account_name: destination.name, transaction_type: 'transfer_out', amount, transaction_date: date, description, reference: textOf(body.reference, 'a transfer reference'), cashier_request_key: key, created_by: user.id });
+    const tx = await svc.entities.TreasuryTransaction.create({ transaction_number: number('TRF'), treasury_account_id: account.id, treasury_account_name: account.name, counterparty_account_id: destination.id, counterparty_account_name: destination.name, source: body.purpose || 'cash_transfer', transaction_type: 'transfer_out', amount, transaction_date: date, description, reference: textOf(body.reference, 'a transfer reference'), cashier_request_key: key, created_by: user.id });
     const { journal } = await postJournal(svc, { entryDate: date, description: `Transfer ${account.name} to ${destination.name}: ${description}`, sourceModule: 'treasury', sourceDocumentType: 'TreasuryTransaction', sourceDocumentId: tx.id, userId: user.id, lines: [line(destination.ledger, amount, 0), line(account.ledger, 0, amount)] });
     await svc.entities.TreasuryTransaction.update(tx.id, { journal_id: journal.id });
-    await svc.entities.TreasuryTransaction.create({ transaction_number: number('TRF'), treasury_account_id: destination.id, treasury_account_name: destination.name, counterparty_account_id: account.id, counterparty_account_name: account.name, transaction_type: 'transfer_in', amount, transaction_date: date, description, reference: tx.reference, source_document_id: tx.id, journal_id: journal.id, created_by: user.id });
+    await svc.entities.TreasuryTransaction.create({ transaction_number: number('TRF'), treasury_account_id: destination.id, treasury_account_name: destination.name, counterparty_account_id: account.id, counterparty_account_name: account.name, source: body.purpose || 'cash_transfer', transaction_type: 'transfer_in', amount, transaction_date: date, description, reference: tx.reference, source_document_id: tx.id, journal_id: journal.id, created_by: user.id });
     await svc.entities.TreasuryAccount.update(account.id, { balance: round2(Number(account.balance || 0) - amount) });
     await svc.entities.TreasuryAccount.update(destination.id, { balance: round2(Number(destination.balance || 0) + amount) });
     await audit(svc, { action: 'treasury_transfer', module: 'cashier', entityType: 'TreasuryTransaction', entityId: tx.id, userId: user.id, description: `${actor} transferred ${amount} XAF from ${account.name} to ${destination.name}` });

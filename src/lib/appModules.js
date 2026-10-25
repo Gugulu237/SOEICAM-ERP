@@ -11,7 +11,7 @@ import { permitsWorkspace,workspacePath } from './workspace-navigation.js';
 import {
   Factory, Package, ShoppingCart,
   Users, Receipt, UserCheck, Truck, BookOpen, Banknote, CheckSquare,
-  BarChart3, Wallet, Settings, LineChart, Activity,
+  BarChart3, Wallet, Settings, Activity,
   ClipboardCheck
 } from "lucide-react";
 
@@ -29,7 +29,7 @@ export const APP_MODULES = [
     key: "finance_pulse", get label(){return ui("Finance Pulse");}, path: "/finance-pulse", icon: Activity,
     description: "Cash, sales, spend & losses",
     color: "bg-green-50 text-green-700", ring: "hover:border-green-300",
-    roles: ["admin", "cashier", "production_manager"],
+    roles: ["admin"],
   },
   {
     key: "production", get label(){return ui("Manufacturing");}, path: "/manufacturing", icon: Factory,
@@ -77,7 +77,7 @@ export const APP_MODULES = [
     key: "finance", get label(){return ui("Finance");}, path: "/accounting", icon: BookOpen,
     description: "Ledger, AR/AP & treasury",
     color: "bg-sky-50 text-sky-800", ring: "hover:border-sky-300",
-    roles: ["admin", "cashier","production_manager","warehouse_manager"],
+    roles: ["admin","production_manager","warehouse_manager"],
     statKey: "finance", badgeKey: "overdueInvoices",
   },
   {
@@ -99,13 +99,6 @@ export const APP_MODULES = [
     color: "bg-sky-50 text-sky-800", ring: "hover:border-sky-300",
     roles: ["admin", "procurement", "production_manager", "warehouse_manager"],
     statKey: "approvals", badgeKey: "approvals",
-  },
-  {
-    key: "cockpit", get label(){return ui("Business Cockpit");}, path: "/cockpit", icon: LineChart,
-    description: "Executive overview",
-    color: "bg-blue-50 text-blue-700", ring: "hover:border-blue-300",
-    roles: ["admin"],
-    statKey: "cockpit",
   },
   {
     key: "reports", get label(){return ui("Reports");}, path: "/reports", icon: BarChart3,

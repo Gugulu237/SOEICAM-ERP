@@ -1,9 +1,10 @@
+import {guardTreasuryReferences} from '../lib/treasury-access.js';
 import {employeeRoleChange} from './domain/employee-role-change.js';
 import 'server-only';
 import { serviceEntities, entityStore } from './entities.js';
 import { transaction,database } from './db.js';
 import { catalogueFromStored } from './domain/role-catalogue.js';
-import { recordScope, guardMutation, visibleRecord, forbidden } from './access.js';
+import { recordScope, guardMutation, visibleRecord, forbidden, requireActiveContext } from './access.js';
 import { recordItemMetadataChange } from './domain/item-metadata-audit.js';
 import { prepareProductDefinition } from './domain/product-definition.js';
 import { guardDispatchMutation } from './domain/dispatch-mutations.js';
@@ -50,6 +51,7 @@ export async function entityOperation(context,name,operation,args = []) {
       if (!Array.isArray(rows) || rows.length > 1000) throw new Error('Invalid record batch');
       for (const row of rows) {
         if (name === 'Employee' && row.role && row.role !== 'admin' && !(context.roleCatalogue?.roles?.[row.role] || (!context.roleCatalogue && normalizeRole(row.role) === row.role))) throw forbidden('Choose a configured system role.');
+        await guardTreasuryReferences(serviceEntities,requireActiveContext(context),row);
         guardMutation(context,name,operation,row);
         if(name==='JournalLine' && ['assets','inventory_audit','inventory_adjustment'].includes((await serviceEntities.JournalEntry.get(row.journal_id))?.source_module)) throw forbidden('Asset and inventory audit journal lines are immutable.');
         await guardStockStorage(serviceEntities,name,operation,row,null);
@@ -75,6 +77,7 @@ export async function entityOperation(context,name,operation,args = []) {
     if (existing.length >= 1000) throw new Error('Split this change into smaller batches.');
     for (const row of existing) {
       if (name === 'Employee' && args[1]?.role && args[1].role !== 'admin' && !(context.roleCatalogue?.roles?.[args[1].role] || (!context.roleCatalogue && normalizeRole(args[1].role) === args[1].role))) throw forbidden('Choose a configured system role.');
+      await guardTreasuryReferences(serviceEntities,requireActiveContext(context),args[1],row);
       guardMutation(context,name,operation,args[1] || {},row);
       if(name==='JournalLine') for(const id of [row.journal_id,args[1]?.journal_id].filter(Boolean)) if(['assets','inventory_audit','inventory_adjustment'].includes((await serviceEntities.JournalEntry.get(id))?.source_module)) throw forbidden('Asset and inventory audit journal lines are immutable.');
       await guardStockStorage(serviceEntities,name,operation,args[1] || {},row);

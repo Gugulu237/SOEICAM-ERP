@@ -48,7 +48,7 @@ export const ROLE_DEFINITIONS = [
     get summary(){return ui("Full ERP administration across every dashboard, department and management function.");},
     duties: [
       'Final approval of purchase orders and field sales; reviews production activity',
-      'Reviews financial statements, budgets and the business cockpit',
+      'Reviews financial statements, budgets and company Reports',
       'Manages employees, user accounts and company settings',
       'Full administration of every ERP module and staff dashboard',
     ],
@@ -89,7 +89,7 @@ export const ROLE_DEFINITIONS = [
       'Disburses payments and records treasury receipts and expenses',
       'Confirms cash physically received from Commercials',
       'Runs the Cashier dashboard and expense payments',
-      'Sees finance and accounting',
+      'Handles cash and mobile money; bank accounts are restricted to administrators',
     ],
   },
   {
@@ -277,13 +277,14 @@ export function canOpenFieldPath(role, path) {
   if (isWithin('/commercial')) return ['commercial', 'production_manager'].includes(role) && path.replace(/\/+$/, '') === '/commercial';
   if (role === 'driver' && isWithin('/distribution')) return path.replace(/\/+$/, '') === '/distribution';
   if (isWithin('/outlet-reports')) return ['admin', 'hotesse'].includes(role);
+  if (role==='cashier' && isWithin('/accounting')) return ['/accounting/payments/new','/accounting/receivables','/accounting/payables','/accounting/recovery'].includes(path.replace(/\/+$/,''));
   if (['production_manager','warehouse_manager'].includes(role) && isWithin('/accounting')) return ACCOUNTING_REPORT_PATHS.includes(path.replace(/\/+$/, ''));
   if (['production_manager','warehouse_manager'].includes(role) && isWithin('/sales')) return path.replace(/\/+$/, '') === '/sales';
   const scopes = {
     commercial: ['/', '/customers', '/commercial', '/field-sales', '/field-customers', '/commercial-performance', '/cash-handovers'],
     driver: ['/', '/driver', '/distribution'],
     hotesse: ['/', '/hotesse', '/outlet-reports'],
-    cashier: ['/', '/payroll', '/cashier', '/cash-handovers', '/accounting', '/expenses', '/finance-pulse', '/purchases', '/suppliers'],
+    cashier: ['/', '/payroll', '/cashier', '/cash-handovers', '/accounting', '/expenses', '/purchases', '/suppliers'],
     production_manager: ['/', '/inventory', '/items', '/manufacturing', '/quality', '/expiry', '/traceability', '/purchases', '/cashier', '/expenses', '/approvals', '/finance-pulse', '/distribution', '/commercial-performance'],
   };
   return scopes[role] ? scopes[role].some(isWithin) : true;

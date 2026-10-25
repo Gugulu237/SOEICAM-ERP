@@ -73,7 +73,7 @@ test('stock shortages, issued historical orders, vehicle stock, malformed totals
 });
 
 test('invoice operations enforce role and active staff permissions before reading company records; General Manager alone changes letterhead',async()=>{
-  const f=await setup();for(const role of ['cashier','production_manager','commercial','driver','hotesse','warehouse_manager']){await f.entities.Employee.update('cashier',{role});await assert.rejects(invoiceAction(f.client,{id:'cashier-login',role:'user'},{action:'invoiceWorkspace'}),/restricted/);}
+  const f=await setup();for(const role of ['production_manager','commercial','driver','hotesse','warehouse_manager']){await f.entities.Employee.update('cashier',{role});await assert.rejects(invoiceAction(f.client,{id:'cashier-login',role:'user'},{action:'invoiceWorkspace'}),/restricted/);}
   await f.entities.Employee.update('cashier',{role:'employee',status:'active'});const employee={id:'cashier-login',role:'user'};assert.ok(await invoiceAction(f.client,employee,{action:'invoiceWorkspace'}));
   await assert.rejects(invoiceAction(f.client,employee,{action:'saveInvoiceCompany',company:invoiceCompany({company_name:'Tampered'})}),/restricted/);
   await f.entities.Employee.update('cashier',{status:'inactive'});await assert.rejects(invoiceAction(f.client,employee,{action:'invoiceWorkspace'}),/active/);
@@ -123,4 +123,17 @@ test('approved receipt on a supply invoice reduces both debts once without creat
   const paid=await approveReceipt(f.client.asServiceRole,p,admin);assert.equal(paid.status,'posted');assert.equal((await f.entities.Invoice.get(doc.invoice.id)).balance,400);assert.equal((await f.entities.FieldSale.get(sale.id)).amount_due,400);assert.equal((await f.entities.FieldSale.get(sale.id)).amount_collected,400,'initial field cash stays separate from later cashier receipt');assert.equal((await f.entities.Customer.get('customer-a')).balance,400);assert.equal((await f.entities.StockMovement.list()).length,0);assert.equal((await f.entities.JournalEntry.list()).length,2);assert.equal((await f.entities.PaymentAllocation.list()).length,1);
   await approveReceipt(f.client.asServiceRole,paid,admin);assert.equal((await f.entities.JournalEntry.list()).length,2);assert.equal((await f.entities.Customer.get('customer-a')).balance,400);
   const overview=salesOverview({invoices:await f.entities.Invoice.list(),fieldSales:await f.entities.FieldSale.list(),from:date,to:date,today:date});assert.equal(overview.pending_amount,400);assert.equal(overview.cash_sales,400);assert.equal(overview.credit_sales,600);
+});
+
+test('Cashier can customize an existing customer invoice but cannot issue sales or change company letterhead',async()=>{
+ const f=await setup(),o=await order(f),doc=await invoiceAction(f.client,admin,body(o)),cashier={id:'cashier-login',role:'user'};
+ const checks=[];f.client.auth.assertModule=module=>checks.push(module);
+ const workspace=await invoiceAction(f.client,cashier,{action:'invoiceWorkspace'});
+ assert.equal(workspace.permissions.can_create,false);assert.deepEqual(workspace.sources,[]);
+ const before=structuredClone(await f.entities.JournalEntry.list()),stock=await f.entities.StockBalance.get('stock');
+ const changed=await invoiceAction(f.client,cashier,{action:'customizeSalesInvoice',invoiceId:doc.invoice.id,revision:doc.revision,dueDate:date,options:{...doc.options,title:'Custom client invoice',reference:'CLIENT-REF',layout:'classic',terms:'Agreed terms'},total:1,saveCustomerDefaults:true});
+ assert.equal(changed.options.title,'Custom client invoice');assert.equal(changed.invoice.total,1000);assert.deepEqual(await f.entities.JournalEntry.list(),before);assert.deepEqual(await f.entities.StockBalance.get('stock'),stock);assert.ok(checks.every(module=>module==='cashier'));
+ await assert.rejects(invoiceAction(f.client,cashier,body(o)),/restricted/);
+ await assert.rejects(invoiceAction(f.client,cashier,{action:'saveInvoiceCompany',company:invoiceCompany({company_name:'Tampered'})}),/restricted/);
+ await f.entities.Employee.update('cashier',{status:'inactive'});await assert.rejects(invoiceAction(f.client,cashier,{action:'invoiceWorkspace'}),/active/);
 });

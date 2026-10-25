@@ -9,7 +9,7 @@ const fieldReads = new Set([
   'dispatchReconciliation', 'fieldCustomers', 'commercialPerformance', 'commercialDailySupplies',
   'expiredReturnReviewQueue', 'commercialReturns', 'outletReports', 'outletRoster', 'previewSale', 'proposedJournal',
   'yogurtWorkspace', 'checkProductionMaterials', 'productionPurchaseOptions', 'productionAuditRequests', 'batchCatalogue', 'batchTrace',
-  'accountPosition', 'cashFlowReport', 'outletShelfOverview', 'companySales', 'invoiceWorkspace', 'invoiceDetail',
+  'businessOverview', 'accountPosition', 'cashFlowReport', 'outletShelfOverview', 'companySales', 'invoiceWorkspace', 'invoiceDetail',
   'salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','invoiceSource', 'customerDeliveryWorkspace', 'customerMapWorkspace', 'deliveryZoneOptions',
 ]);
 export function isReadOnlyFunction(name, action) {

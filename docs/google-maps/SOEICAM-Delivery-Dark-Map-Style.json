@@ -1,0 +1,125 @@
+{
+  "variant": "dark",
+  "backgroundColor": "#0b1220",
+  "styles": [
+    {
+      "id": "natural.land",
+      "geometry": {
+        "fillColor": "#0b1220"
+      }
+    },
+    {
+      "id": "infrastructure.urbanArea",
+      "geometry": {
+        "fillColor": "#111c2b"
+      }
+    },
+    {
+      "id": "natural.water",
+      "geometry": {
+        "fillColor": "#082638"
+      },
+      "label": {
+        "textFillColor": "#8fb7c9",
+        "textStrokeColor": "#082638"
+      }
+    },
+    {
+      "id": "infrastructure.building",
+      "geometry": {
+        "fillColor": "#182638",
+        "strokeColor": "#213249"
+      }
+    },
+    {
+      "id": "pointOfInterest.recreation.park",
+      "geometry": {
+        "fillColor": "#102a24"
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork",
+      "geometry": {
+        "fillColor": "#33445a",
+        "strokeColor": "#1d2b3d"
+      },
+      "label": {
+        "textFillColor": "#cbd5e1",
+        "textStrokeColor": "#0b1220"
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.road.arterial",
+      "geometry": {
+        "fillColor": "#495f74",
+        "strokeColor": "#26394d"
+      }
+    },
+    {
+      "id": "infrastructure.roadNetwork.road.highway",
+      "geometry": {
+        "fillColor": "#6a7661",
+        "strokeColor": "#303f32"
+      },
+      "label": {
+        "textFillColor": "#f1f5eb",
+        "textStrokeColor": "#303f32"
+      }
+    },
+    {
+      "id": "political",
+      "label": {
+        "textFillColor": "#cbd5e1",
+        "textStrokeColor": "#0b1220"
+      }
+    },
+    {
+      "id": "pointOfInterest",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.transitStation",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "pointOfInterest.landmark",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#a6bbae",
+        "textFillColor": "#d3ddd8",
+        "textStrokeColor": "#0b1220"
+      }
+    },
+    {
+      "id": "pointOfInterest.entertainment.historic",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#a6bbae",
+        "textFillColor": "#d3ddd8",
+        "textStrokeColor": "#0b1220"
+      }
+    },
+    {
+      "id": "pointOfInterest.entertainment.touristAttraction",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#a6bbae",
+        "textFillColor": "#d3ddd8",
+        "textStrokeColor": "#0b1220"
+      }
+    },
+    {
+      "id": "pointOfInterest.transit.airport",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#a6bbae",
+        "textFillColor": "#d3ddd8",
+        "textStrokeColor": "#0b1220"
+      }
+    }
+  ]
+}

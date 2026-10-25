@@ -1,3 +1,4 @@
+import HelpNotice from '@/components/shared/HelpNotice';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -6,15 +7,18 @@ import { uiMessage } from '@/lib/i18n';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useRef, useState } from 'react';
-import { Banknote, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, RefreshCw, Wallet, Users, Receipt } from 'lucide-react';
+import { Banknote, ArrowUpRight, RefreshCw, Wallet, Receipt } from 'lucide-react';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import { erp } from '@/api/erpClient';
 import { businessDate } from '@/lib/business-date';
 import { formatXAF, formatDate } from '@/lib/formatters';
 import { Link, useSearchParams } from '@/lib/router';
 import { cashierSection } from '@/lib/cashier-navigation';
-import { isSmallOperatingAccount, SMALL_OPERATING_CATEGORIES, smallOperatingExpenseIssue } from '@/lib/small-operating-expenses';
+import { isSmallOperatingAccount, smallOperatingExpenseIssue } from '@/lib/small-operating-expenses';
 import CashHandoverPanel from './CashHandoverPanel';
+import CashDepositorPicker from './CashDepositorPicker';
+import {cashDepositors,receiptAllocations} from '@/lib/cashier-receipts';
+const InvoiceWorkspace=React.lazy(()=>import('@/components/sales/InvoiceWorkspace'));
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -24,12 +28,12 @@ import { WorkspaceHero, WorkspaceMetrics, WorkspacePanel } from '@/components/ho
 
 const sum = (rows, field) => rows.reduce((n, row) => n + Number(row[field] || 0), 0);
 const label = value => String(value || '').replaceAll('_', ' ');
-const tabs = [['handovers', 'Cash handovers', Banknote], ['customers', 'Customers', Users], ['expenses', 'Expenses', Receipt], ['payments', 'Supplier payments', ArrowUpRight], ['accounts', 'Accounts & transfers', Wallet]];
+const tabs = [['handovers','Receive payments',Banknote],['expenses','Petty cash',Receipt],['accounts','Daily savings',Wallet],['payments','Approved payments',ArrowUpRight]];
 const empty = 'No records in this section.';
 const fieldClass = 'h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm';
 function Status({ value }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
- return <span className="inline-block rounded-full bg-slate-100 px-2.5 py-1 text-xs capitalize text-slate-700">{label(value)}</span>; }
+ return <span className="inline-block rounded-full bg-slate-100 px-2.5 py-1 text-xs capitalize text-slate-700">{ui(label(value))}</span>; }
 function Field({ title, children }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
  return <label className="block space-y-1.5 text-sm font-medium text-slate-700"><span>{title}</span>{children}</label>; }
@@ -38,7 +42,7 @@ function Select({ value, onChange, options, placeholder = 'Select...' }) {
  return <select className={fieldClass} value={value || ''} onChange={e => onChange(e.target.value)} required><option value="">{placeholder}</option>{options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select>; }
 function Register({ columns, records, row, emptyText = empty }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
- return records.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b bg-slate-50 text-xs text-slate-500">{columns.map(c => <th key={c} className="px-3 py-3 font-medium">{c}</th>)}</tr></thead><tbody>{records.map(record => <tr key={record.id} className="border-b border-slate-100 last:border-0">{row(record).map((cell, i) => <td key={i} className="px-3 py-3 align-top">{cell}</td>)}</tr>)}</tbody></table></div> : <p className="py-6 text-sm text-slate-500">{emptyText}</p>; }
+ return records.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b bg-slate-50 text-xs text-slate-500">{columns.map(c => <th key={c} className="px-3 py-3 font-medium">{c}</th>)}</tr></thead><tbody>{records.map(record => <tr key={record.id} className="border-b border-slate-100 last:border-0">{row(record).map((cell, i) => <td key={i} className="px-3 py-3 align-top">{cell}</td>)}</tr>)}</tbody></table></div> : <p className="py-6 text-sm text-slate-500">{ui(emptyText)}</p>; }
 
 function exampleData(data) {
   return { ...data, pettyCashLimit: 50000, collections: [], orders: [], receipts: [], departments: [], expenseAccounts: [],
@@ -50,143 +54,130 @@ function exampleData(data) {
 
 export default function CashierWorkspace({ data, preview = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-
-  const { toast } = useToast();
-  const [params,setParams]=useSearchParams();
-  const [date, setDate] = useState(businessDate), [localTab, setLocalTab] = useState('handovers'), [customerTab, setCustomerTab] = useState('invoices');
+  const {toast}=useToast(),[params,setParams]=useSearchParams();
+  const [date,setDate]=useState(businessDate),[localTab,setLocalTab]=useState('handovers');
   const tab=preview?localTab:cashierSection(params.get('section'));
   const setTab=value=>{if(preview)setLocalTab(value);else setParams(q=>{q.set('section',value);return q;});};
-  const [result, setResult] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState(''), [reload, setReload] = useState(0);
-  const [dialog, setDialog] = useState(null), [search, setSearch] = useState('');
-  const flight = useRef(null), example = preview && data?.isExample;
-  useEffect(() => {
-    if (example || (preview && !data)) return;
-    let active = true;
-    const load = async () => {
-      let request = flight.current;
-      if (request?.date !== date || !request.pending) {
-        request = { date, pending: true, promise: invokeFieldOps({ action: 'cashierWorkspace', date }) };
-        flight.current = request;
-      }
-      setLoading(true);
-      try {
-        const response = await request.promise;
-        if (active) { setResult({ date, value: response.data }); setError(''); }
-      } catch (e) { if (active) setError(errorMessage(e)); }
-      finally { request.pending = false; if (active) setLoading(false); }
+  const [result,setResult]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[reload,setReload]=useState(0);
+  const [dialog,setDialog]=useState(null),[historyOpen,setHistoryOpen]=useState(params.get('handover_view')==='history'||!!params.get('commercial'));
+  const flight=useRef(null),example=preview&&data?.isExample;
+  useEffect(()=>{
+    if(example||(preview&&!data))return;let active=true;
+    const load=async()=>{
+      let request=flight.current;
+      if(request?.date!==date||!request.pending){request={date,pending:true,promise:invokeFieldOps({action:'cashierWorkspace',date})};flight.current=request;}
+      setLoading(true);try{const response=await request.promise;if(active){setResult({date,value:response.data});setError('');}}catch(e){if(active)setError(errorMessage(e));}finally{request.pending=false;if(active)setLoading(false);}
     };
-    load();
-    const timer = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 30000);
-    return () => { active = false; clearInterval(timer); };
-  }, [date, reload, example, preview, data]);
-  const source = example ? exampleData(data) : result?.date === date ? result.value : null;
-  const s = source || {}, accounts = s.accounts || [], movements = s.movements || [], handovers = s.handovers || [], invoices = s.invoices || [], payments = s.payments || [], expenses = s.expenses || [];
-  const openHandovers = handovers.filter(h => h.status !== 'received');
-  const canAct = !!source && !preview;
-  const filtered = records => records.filter(row => !search || Object.values(row).some(v => typeof v === 'string' && v.toLowerCase().includes(search.toLowerCase())));
-  const open = (kind, document) => { if (canAct) setDialog({ kind, document, requestKey: crypto.randomUUID() }); };
-  const refresh = () => setReload(n => n + 1);
-  const done = result => { const handover = dialog?.kind === 'handover'; setDialog(null); refresh(); toast(handover ? { title: ui("Cash received from {0}", dialog.document.commercial_name), description: `${result?.acknowledgementReference || ui("Receipt recorded")}. ${Number(result?.outstandingAgainstCommercial || 0) > 0 ? formatXAF(result.outstandingAgainstCommercial) + ' remains due; the day is not settled.' : result?.status === 'disputed' ? ui("Receipt recorded; reconciliation is still required.") : ui("Cashier receipt confirmed. Refresh the agent dashboard to view the updated settlement.")}` } : { title: ui("Cash desk updated") }); };
-  return <div className="space-y-5">
-    <WorkspaceHero eyebrow="Cashier workspace" title={ui("Your daily cash desk")} description={ui("Receive Commercial collections, record customer payments, pay expenses and move funds between accounts from one workspace.")} icon={Banknote} color="emerald">
-      <Button disabled={!canAct} onClick={() => setTab('handovers')}><Banknote size={16} className="mr-2" />{ui("Receive Commercial cash")}</Button>
-      <Button disabled={!canAct} onClick={() => { setTab('customers'); setCustomerTab('invoices'); }}><ArrowDownLeft size={16} className="mr-2" />{ui("Receive customer payment")}</Button>
-      <Button variant="outline" disabled={!canAct} onClick={() => open('petty')}><ArrowUpRight size={16} className="mr-2" />{ui("Small expense")}</Button>
-      <Button variant="outline" disabled={!canAct} onClick={() => open('transfer')}><ArrowLeftRight size={16} className="mr-2" />{ui("Transfer funds")}</Button>
-      {!preview && <Link className="rounded-md border bg-white px-3 py-2 text-sm font-medium text-green-800" to="/team-workspaces?section=payroll">{ui("Approved salaries")}</Link>}
+    load();const timer=setInterval(()=>{if(document.visibilityState==='visible')load();},30000);
+    return()=>{active=false;clearInterval(timer);};
+  },[date,reload,example,preview,data]);
+  const source=example?exampleData(data):result?.date===date?result.value:null;
+  const s=source||{},accounts=s.accounts||[],movements=s.movements||[],handovers=s.handovers||[],payments=s.payments||[],expenses=s.expenses||[];
+  const operatingAccounts=accounts.filter(a=>a.account_type!=='petty_cash'&&a.gl_account_id);
+  const canAct=!!source&&!preview,refresh=()=>setReload(n=>n+1);
+  const open=(kind,document)=>{if(canAct)setDialog({kind,document,requestKey:crypto.randomUUID()});};
+  const done=outcome=>{setDialog(null);refresh();toast({title:outcome?.receiptPending?ui('Receipt saved for administrator approval'):outcome?.acknowledgementReference?ui('Cash received'):ui('Cash desk updated'),description:outcome?.acknowledgementReference});};
+  const floats=accounts.filter(a=>a.account_type==='petty_cash');
+  const approved=payments.filter(p=>p.status==='approved'),approvedExpenses=expenses.filter(e=>e.status==='approved');
+  const receipts=movements.filter(m=>m.transaction_type==='receipt');
+  const savings=movements.filter(m=>m.transaction_type==='transfer_out'&&m.source==='daily_savings');
+  const pendingDeposits=cashDepositors(s);
+  return <div className="min-w-0 space-y-4">
+    <WorkspaceHero help eyebrow="Cashier workspace" title={ui('Cashier')} description={ui('Receive daily cash, manage petty cash, record savings and release approved payments.')} icon={Banknote} color="emerald">
+      <Button disabled={!canAct} onClick={()=>open('receive')}><Banknote size={17} className="mr-2"/>{ui('Receive cash')}</Button>
+      <Button variant="outline" disabled={!canAct} onClick={()=>open('petty')}><ArrowUpRight size={17} className="mr-2"/>{ui('Small expense')}</Button>
     </WorkspaceHero>
-    {preview && <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900">{example ? ui("Sample layout with example figures.") : ui("Read-only preview of the company cash desk.")}{ui(" Cash actions are disabled here. ")}<Link className="font-semibold underline" to="/cashier">{ui("Open live cash desk")}</Link></p>}
-    <div className="flex flex-wrap items-end justify-between gap-3"><Field title={ui("Cash activity date")}><Input type="date" max={businessDate()} value={date} onChange={e => { if (e.target.value) setDate(e.target.value); }} disabled={example} /></Field><div className="flex items-center gap-3"><span className="text-xs text-slate-500">{ui("Open balances and pending work cover all dates. Activity refreshes every 30 seconds.")}</span><Button variant="outline" onClick={refresh} disabled={loading || example}><RefreshCw size={15} className={'mr-2 ' + (loading ? 'animate-spin' : '')} />{ui("Refresh")}</Button></div></div>
-    {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{ui("Unable to refresh cash desk: ")}{uiMessage(error)}{ui(". Please retry.")}</p>}
-    {!source && <p role="status" className="py-8 text-slate-500">{ui("Loading cash accounts and customer balances...")}</p>}
+    {preview&&<p className="text-xs text-slate-500">{ui('Read-only preview of the company cash desk.')} <Link className="underline" to="/cashier">{ui('Open live cash desk')}</Link></p>}
+    <div className="flex flex-wrap items-end justify-between gap-3"><Field title={ui('Cash activity date')}><Input type="date" max={businessDate()} value={date} onChange={e=>{if(e.target.value)setDate(e.target.value);}} disabled={example}/></Field><div className="flex items-center gap-2"><HelpNotice title={ui('Cash activity date')}><p>{ui('Open balances and pending work cover all dates. Activity refreshes every 30 seconds.')}</p></HelpNotice><Button variant="outline" onClick={refresh} disabled={loading||example} aria-label={ui('Refresh cash desk')}><RefreshCw size={17} className={loading?'animate-spin':''}/></Button></div></div>
+    {error&&<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
+    {!source&&<p role="status" className="py-6 text-sm text-slate-500">{ui('Loading cash accounts and customer balances...')}</p>}
     <WorkspaceMetrics ready={!!source} metrics={[
-      { label: 'Available treasury balance', value: formatXAF(sum(accounts, 'balance')), note: 'Active accounts; pending customer receipts excluded' },
-      { label: 'Received on selected date', value: formatXAF(sum(movements.filter(m => m.transaction_type === 'receipt'), 'amount')), note: 'Posted receipts only; transfers excluded' },
-      { label: 'Commercial cash outstanding', value: formatXAF(sum(s.collections || [], 'outstanding_amount')), note: openHandovers.length + ' handovers awaiting confirmation' },
-      { label: 'Unpaid invoices', value: formatXAF(sum(invoices, 'balance')), note: invoices.length + ' invoices; pending approvals shown separately' },
-    ]} />
-    <div className="flex flex-wrap gap-2 rounded-2xl border bg-white p-2" role="tablist" aria-label={ui("Cash desk sections")}>{tabs.map(([key, title, Icon]) => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { setTab(key); setSearch(''); }} className={'flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium ' + (tab === key ? 'bg-emerald-700 text-white' : 'text-slate-600 hover:bg-slate-50')}><Icon size={16} />{title}</button>)}</div>
+      {label:ui('Cash received'),value:formatXAF(sum(receipts,'amount'))},
+      {label:ui('Petty cash available'),value:formatXAF(sum(floats,'balance'))},
+      {label:ui('Approved payments'),value:approved.length+approvedExpenses.length},
+    ]}/>
+    <div className="flex gap-1 overflow-x-auto rounded-xl border bg-white p-1" role="tablist" aria-label={ui('Cash desk sections')}>{tabs.map(([key,title,Icon])=><button key={key} type="button" role="tab" aria-selected={tab===key} onClick={()=>setTab(key)} className={'flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium '+(tab===key?'bg-primary text-white':'text-slate-600 hover:bg-slate-50')}><Icon size={16}/>{ui(title)}</button>)}</div>
     <div role="tabpanel">
-    {tab === 'handovers' && <CashHandoverPanel handovers={handovers} dailyCash={s.dailyCash || []} commercials={s.commercials || []} date={date} collections={s.collections || []} canAct={canAct} preview={preview} onReceive={h=>open('handover',h)} onResolve={h=>open('resolve',h)} onRefresh={refresh} refreshKey={reload}/>}
-    {tab === 'customers' && <WorkspacePanel title={ui("Customer payments and outstanding invoices")} subtitle={ui("Cash paid to a Commercial is shown separately from cash received by the company. New invoice receipts retain General Manager approval before posting.")}>
-      <div className="mb-4 flex flex-wrap gap-2">{[['invoices', ui("Pending invoices")], ['paid', ui("Customers who paid cash")], ['receipts', ui("Receipts awaiting approval")], ['balances', ui("Customer ledger balances")]].map(([key, title]) => <Button key={key} size="sm" variant={customerTab === key ? 'default' : 'outline'} onClick={() => { setCustomerTab(key); setSearch(''); }}>{title}</Button>)}</div>
-      <Input className="mb-4 max-w-md" aria-label={ui("Search customers and invoices")} placeholder={ui("Search customer, invoice or receipt...")} value={search} onChange={e => setSearch(e.target.value)} />
-      {customerTab === 'invoices' && <Register records={filtered(invoices)} columns={['Customer / invoice', 'Due date', 'Invoice balance', 'Pending approval', 'Available to receive', 'Action']} row={i => [<div><strong>{i.customer_name}</strong><p className="text-xs text-slate-500">{i.invoice_number}</p></div>, formatDate(i.due_date), formatXAF(i.balance), formatXAF(i.pending_amount), formatXAF(i.available_amount), <Button size="sm" disabled={!canAct || !(i.available_amount > 0)} onClick={() => open('receipt', i)}>{ui("Receive payment")}</Button>]} />}
-      {customerTab === 'paid' && <Register records={filtered(s.cashCustomers || [])} columns={['Customer', 'Supply / invoice', 'Paid in cash', 'Received into treasury', 'Collected by', 'Status']} row={c => [c.customer_name, c.document_number, formatXAF(c.amount), formatXAF(c.received), c.collector || 'Cash desk', <Status value={c.status} />]} />}
-      {customerTab === 'receipts' && <Register records={filtered(s.receipts || [])} columns={['Customer', 'Receipt / invoices', 'Amount held', 'Receiving account', 'Status']} row={p => [p.party_name, <div>{p.payment_number}<p className="text-xs text-slate-500">{p.invoice_numbers}</p></div>, formatXAF(p.amount), p.treasury_account_name, <Status value={p.status} />]} />}
-      {customerTab === 'balances' && <><p className="mb-3 text-xs leading-5 text-slate-500">{ui("Current customer receivable balances include credit Commercial supplies as well as credit invoices. These balances overlap the invoice list; do not add the two totals together.")}</p><Register records={filtered(s.customerBalances || [])} columns={['Customer', 'Current receivable balance']} row={c => [c.business_name, formatXAF(c.balance)]} /></>}
-    </WorkspacePanel>}
-    {tab === 'expenses' && <WorkspacePanel title={ui("Operating expenses")} subtitle={ui("Small vouchers can be paid from petty cash up to 50,000 XAF. Larger expenses require an approved request. Every payment records its expense account and cost centre.")}>
-      <Button className="mb-4" disabled={!canAct} onClick={() => open('petty')}>{ui("Record small expense")}</Button>
-      <Register records={expenses} columns={['Expense / voucher', 'Payee / cost centre', 'Amount', 'Status', 'Action']} row={e => [<div><strong>{e.title}</strong><p className="text-xs text-slate-500">{e.request_number}</p></div>, <div>{e.payee}<p className="text-xs text-slate-500">{e.department_name}</p></div>, formatXAF(e.amount), <Status value={e.status} />, e.status === 'approved' ? <Button size="sm" disabled={!canAct} onClick={() => open('expense', e)}>{ui("Pay expense")}</Button> : <Button size="sm" variant="outline" disabled={!canAct} onClick={() => open('attachment', e)}>{e.receipt_url ? 'View / replace receipt' : 'File receipt'}</Button>]} />
-      <p className="mt-4 text-xs text-slate-500">{ui("Upload a receipt when paying or file it against the paid voucher here. ")}<Link className="underline" to="/expenses">{ui("Open larger expense requests")}</Link></p>
-    </WorkspacePanel>}
-    {tab === 'payments' && <div className="space-y-5"><WorkspacePanel title={ui("Supplier cash disbursements")} subtitle={ui("Request payment for an approved purchase order. Release money only after General Manager approval. Cheques retain the existing two-signature workflow.")}>
-      <Button className="mb-4" disabled={!canAct || !(s.orders || []).length} onClick={() => open('request')}>{ui("Request supplier payment")}</Button>
-      <Register records={payments} columns={['Supplier / payment', 'Amount', 'Account', 'Status', 'Action']} row={p => [<div><strong>{p.party_name}</strong><p className="text-xs text-slate-500">{p.payment_number}</p></div>, formatXAF(p.amount), p.treasury_account_name, <Status value={p.status} />, p.status === 'approved' && p.payment_method !== 'cheque' && p.po_id ? <Button size="sm" disabled={!canAct} onClick={() => open('release', p)}>{ui("Release payment")}</Button> : <span className="text-xs text-slate-500">{p.payment_method === 'cheque' ? 'Cheque desk' : p.status === 'pending_approval' ? 'Awaiting General Manager' : 'Review payment'}</span>]} />
-      <Link className="mt-4 inline-block text-sm font-medium text-emerald-800 underline" to="/cashier?view=cheques">{ui("Open cheque and signature desk")}</Link>
-    </WorkspacePanel></div>}
-    {tab === 'accounts' && <div className="space-y-5"><WorkspacePanel title={ui("Cash, bank and mobile money accounts")} subtitle={ui("Transfers move money between company accounts without creating sales or operating expenses.")}><div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{accounts.map(a => <div key={a.id} className="rounded-xl border bg-slate-50 p-4"><p className="font-medium">{a.name}</p><p className="mt-1 text-xs capitalize text-slate-500">{label(a.account_type)}</p><p className="mt-3 text-xl font-bold">{formatXAF(a.balance)}</p>{!a.gl_account_id && <p className="mt-2 text-xs text-slate-700">{ui("General Manager must link a ledger account.")}</p>}</div>)}</div><Button disabled={!canAct || accounts.length < 2} onClick={() => open('transfer')}>{ui("Transfer between accounts")}</Button></WorkspacePanel>
-      <WorkspacePanel title={ui("Movements on selected date")} subtitle={ui("Paired transfer rows are shown in each affected account. They are excluded from cash receipt and expense totals.")}><Register records={movements} columns={['Reference', 'Account', 'Movement', 'Amount', 'Purpose']} row={m => [m.transaction_number, m.treasury_account_name, <Status value={m.transaction_type} />, formatXAF(m.amount), <div>{m.description}<p className="text-xs text-slate-500">{m.reference || m.source_document_number}</p></div>]} /></WorkspacePanel></div>}
+      {tab==='handovers'&&<div className="space-y-4"><WorkspacePanel help title={ui('Receive payments')} subtitle={ui('Choose who is depositing the cash. Recorded collections and customer invoices supply the amounts automatically.')}>
+        <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm"><strong>{pendingDeposits.length}</strong> {ui('deposits or customer payments to receive')}</p><Button variant="outline" onClick={()=>setTab('invoices')}>{ui('Customer invoices')}</Button></div>
+        <h3 className="mb-2 mt-5 text-xs font-semibold text-slate-500">{ui('Recent cash receipts')}</h3>
+        {receipts.length?<div className="divide-y">{receipts.slice(0,5).map(m=><div key={m.id} className="flex items-start justify-between gap-3 py-3 text-sm"><div className="min-w-0"><p className="break-words">{m.description}</p><p className="mt-1 text-xs text-slate-500">{m.transaction_number}</p></div><strong className="shrink-0">{formatXAF(m.amount)}</strong></div>)}</div>:<p className="py-3 text-sm text-slate-500">{ui('No cash received on this date.')}</p>}
+        {(s.receipts||[]).length>0&&<p className="mt-3 text-xs text-slate-600">{ui('Customer receipts awaiting approval: {0}',s.receipts.length)}</p>}
+        <Button className="mt-3" variant="outline" onClick={()=>setHistoryOpen(v=>!v)} aria-expanded={historyOpen}>{historyOpen?ui('Hide receipt history'):ui('Receipt history & reconciliation')}</Button>
+      </WorkspacePanel>{historyOpen&&<CashHandoverPanel handovers={handovers} dailyCash={s.dailyCash||[]} commercials={s.commercials||[]} date={date} collections={s.collections||[]} canAct={canAct} preview={preview} onReceive={h=>open('handover',h)} onResolve={h=>open('resolve',h)} onRefresh={refresh} refreshKey={reload}/>}</div>}
+      {tab==='expenses'&&<WorkspacePanel help title={ui('Petty cash budget')} subtitle={ui('The balance is the funded float still available. The administrator sets float limits; small expenses consume the float and transfers replenish it.')}>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">{floats.map(a=><div key={a.id} className="rounded-xl border p-3"><p className="text-sm font-medium">{a.name}</p><p className="mt-1 text-xl font-bold">{formatXAF(a.balance)}</p>{a.float_limit>0&&<><p className="mt-2 text-xs text-slate-500">{ui('Float target: {0}',formatXAF(a.float_limit))}</p><progress aria-label={ui('Available petty cash')} className="mt-2 h-2 w-full accent-green-700" value={Math.max(0,Math.min(Number(a.balance),Number(a.float_limit)))} max={Number(a.float_limit)}/></>}</div>)}</div>
+        {!floats.length&&<p role="status" className="py-3 text-sm text-slate-500">{ui('An administrator must configure a petty cash float first.')}</p>}
+        <div className="mb-4 flex flex-wrap gap-2"><Button disabled={!canAct||!floats.length} onClick={()=>open('petty')}>{ui('Small expense')}</Button><Button variant="outline" disabled={!canAct||!floats.length||accounts.length<2} onClick={()=>open('replenish')}>{ui('Top up petty cash')}</Button></div>
+        <Register records={expenses.filter(e=>e.status==='paid')} columns={[ui('Expense'),ui('Amount'),ui('Receipt')]} row={e=>[e.title,formatXAF(e.amount),<Button size="sm" variant="outline" disabled={!canAct} onClick={()=>open('attachment',e)}>{e.receipt_url?ui('View / replace receipt'):ui('File receipt')}</Button>]}/>
+        <Link className="mt-4 inline-block text-xs underline" to="/expenses">{ui('Open larger expense requests')}</Link>
+      </WorkspacePanel>}
+      {tab==='accounts'&&<div className="space-y-4"><WorkspacePanel help title={ui('Daily savings')} subtitle={ui('Move cash into an available reserve or mobile money account. Savings are a transfer, not another sale or an expense. Bank accounts remain administrator-only.')}>
+        <p className="mb-4 text-2xl font-bold">{formatXAF(sum(savings,'amount'))}</p><Button disabled={!canAct||operatingAccounts.length<2} onClick={()=>open('savings')}>{ui('Record daily savings')}</Button>{operatingAccounts.length<2&&<p role="status" className="mt-3 text-xs text-slate-600">{ui('Ask an administrator to add a permitted savings destination.')}</p>}
+        <Register records={savings} columns={[ui('Reference'),ui('Amount'),ui('From account')]} row={m=>[m.reference||m.transaction_number,formatXAF(m.amount),m.treasury_account_name]}/>
+      </WorkspacePanel><details className="rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{ui('Cash account activity')}</summary><div className="mt-4"><Button variant="outline" disabled={!canAct||accounts.length<2} onClick={()=>open('transfer')}>{ui('Transfer between accounts')}</Button><Register records={movements} columns={[ui('Reference'),ui('Account'),ui('Movement'),ui('Amount')]} row={m=>[m.transaction_number,m.treasury_account_name,<Status value={m.transaction_type}/>,formatXAF(m.amount)]}/></div></details></div>}
+      {tab==='payments'&&<WorkspacePanel help title={ui('Approved payments')} subtitle={ui('Only administrator-approved expenses and supplier payments can be released. Cheques retain the required signatures.')}>
+        <div className="space-y-3">{approvedExpenses.map(e=><div key={e.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0"><p className="break-words text-sm font-semibold">{e.title}</p><p className="text-sm">{formatXAF(e.amount)}</p></div><Button size="sm" disabled={!canAct} onClick={()=>open('expense',e)}>{ui('Pay expense')}</Button></div>)}{approved.map(p=><div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0"><p className="break-words text-sm font-semibold">{p.party_name}</p><p className="text-xs text-slate-500">{p.payment_number}</p><p className="text-sm">{formatXAF(p.amount)}</p></div>{p.payment_method!=='cheque'&&p.po_id?<Button size="sm" disabled={!canAct} onClick={()=>open('release',p)}>{ui('Release payment')}</Button>:<Link className="text-sm underline" to="/cashier?view=cheques">{ui('Cheque desk')}</Link>}</div>)}</div>
+        {!approved.length&&!approvedExpenses.length&&<p className="py-4 text-sm text-slate-500">{ui('No approved payments to release.')}</p>}
+        <details className="mt-4 border-t pt-4"><summary className="cursor-pointer text-sm">{ui('Requests & payment history')}</summary><div className="mt-3 space-y-3"><Button variant="outline" disabled={!canAct||!(s.orders||[]).length} onClick={()=>open('request')}>{ui('Request supplier payment')}</Button><Register records={payments.filter(p=>p.status!=='approved')} columns={[ui('Supplier'),ui('Amount'),ui('Status')]} row={p=>[p.party_name,formatXAF(p.amount),<Status value={p.status}/>]}/><Link className="inline-block text-xs underline" to="/cashier?view=cheques">{ui('Open cheque and signature desk')}</Link></div></details>
+      </WorkspacePanel>}
+      {tab==='invoices'&&<React.Suspense fallback={<p role="status">{ui('Loading invoices.')}</p>}><InvoiceWorkspace/></React.Suspense>}
     </div>
-    {dialog && canAct && <CashActionDialog key={dialog.requestKey} {...dialog} source={s} onClose={() => setDialog(null)} onDone={done} />}
+    {dialog&&canAct&&(dialog.kind==='receive'?<CashDepositorPicker source={s} onClose={()=>setDialog(null)} onSelect={item=>setDialog({kind:item.kind,document:item.document,requestKey:crypto.randomUUID(),fromPicker:true})}/>:<CashActionDialog key={dialog.requestKey} {...dialog} source={s} onBack={dialog.fromPicker?()=>open('receive'):undefined} onClose={()=>setDialog(null)} onDone={done}/>)}
   </div>;
 }
 
-export function CashActionDialog({ kind, document: doc, requestKey, source, onClose, onDone }) {
-  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-
-  const titles = { attachment: ui("File expense receipt"), resolve: ui("Resolve a received handover"), transfer: ui("Transfer funds"), petty: ui("Pay a small operating expense"), expense: ui("Pay approved expense"), request: ui("Request supplier payment"), release: ui("Release approved supplier payment"), receipt: ui("Receive customer payment"), handover: ui("Receive Commercial handover") };
-  const [form, setForm] = useState({ date: businessDate(), accountId: kind === 'release' ? doc.treasury_account_id : '', toAccountId: '', amount: doc?.available_amount ?? (kind === 'handover' ? Math.max(0, Number(doc.expected_amount || 0) - Number(doc.received_amount || 0)) : doc?.amount) ?? '', description: doc?.title || '', reference: '', payee: '', category: 'other', departmentId: '', expenseAccountId: doc?.expense_account_id || '', orderId: '', varianceReason: '', disputed: false, receiptFileUri: doc?.receipt_url || '' });
-  const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
-  const accounts = source.accounts.filter(a => (kind !== 'petty' || a.account_type === 'petty_cash') && a.gl_account_id);
-  const activeAccount = accounts.find(a => a.id === form.accountId);
-  const receiptOnly = kind === 'attachment', resolveOnly = kind === 'resolve';
-  const expense = kind === 'petty' || kind === 'expense', fixedAmount = kind === 'expense' || kind === 'release';
-  const pettyAccounts = source.expenseAccounts.filter(isSmallOperatingAccount);
-  const pettyIssue = kind === 'petty' ? smallOperatingExpenseIssue({ category: form.category, expenseAccount: source.expenseAccounts.find(a => a.id === form.expenseAccountId), description: form.description, payee: form.payee }) : '';
-  const submit = async e => {
-    e.preventDefault(); if (busy) return;
-    if (pettyIssue) { setError(pettyIssue); return; }
-    setBusy(true); setError('');
-    try {
-      if (kind === 'receipt') {
-        await erp.functions.invoke('customerReceipts', { action: 'confirm', requestKey, customerId: doc.customer_id, treasuryAccountId: form.accountId, date: form.date, amount: Number(form.amount), reference: form.reference, allocations: [{ invoice_id: doc.id, amount: Number(form.amount) }] });
-      } else {
-        const actions = { transfer: 'cashierTransfer', petty: 'cashierPettyExpense', expense: 'cashierPayExpense', request: 'cashierRequestPayment', release: 'cashierReleasePayment', handover: 'confirmHandover', attachment: 'cashierAttachReceipt', resolve: 'cashierResolveHandover' };
-        const response = await invokeFieldOps({ ...form, amount: Number(form.amount), action: actions[kind], requestKey, expenseId: ['expense', 'attachment'].includes(kind) ? doc.id : undefined, paymentId: kind === 'release' ? doc.id : undefined, handoverId: ['handover', 'resolve'].includes(kind) ? doc.id : undefined, treasuryAccountId: form.accountId, receivedAmount: Number(form.amount) });
-        onDone(response.data); return;
-      }
-      onDone();
-    } catch (err) { setError(errorMessage(err)); }
-    finally { setBusy(false); }
-  };
-  return <Dialog open onOpenChange={v => { if (!v && !busy) onClose(); }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{titles[kind]}</DialogTitle></DialogHeader>
-    <form onSubmit={submit} className="space-y-4">
-      {doc && <div className="rounded-xl bg-slate-50 p-4 text-sm"><strong>{doc.customer_name || doc.commercial_name || doc.party_name || doc.title}</strong><p className="mt-1 text-slate-500">{doc.invoice_number || doc.handover_number || doc.payment_number || doc.request_number}</p>{kind === 'receipt' && <p className="mt-2">{ui("Available after pending receipts: ")}{formatXAF(doc.available_amount)}</p>}{kind === 'handover' && <p className="mt-2">{ui("Expected: ")}{formatXAF(doc.expected_amount)}{ui(" · Previously received: ")}{formatXAF(doc.received_amount)}</p>}</div>}
-      {!receiptOnly && !resolveOnly && <div className="grid gap-4 sm:grid-cols-2">
-        {kind === 'request' && <div className="sm:col-span-2"><Field title={ui("Approved purchase order")}><Select value={form.orderId} onChange={v => { set('orderId', v); set('amount', source.orders.find(p => p.id === v)?.total || ''); }} options={source.orders.map(p => ({ id: p.id, name: `${p.po_number} · ${p.supplier_name} · ${formatXAF(p.total)}` }))} /></Field></div>}
-        <Field title={['receipt', 'handover'].includes(kind) ? ui("Receive into account") : ui("Pay / transfer from account")}><Select value={form.accountId} onChange={v => set('accountId', v)} options={accounts.map(a => ({ id: a.id, name: `${a.name} · ${formatXAF(a.balance)}` }))} /></Field>
-        {kind === 'transfer' && <Field title={ui("Transfer to account")}><Select value={form.toAccountId} onChange={v => set('toAccountId', v)} options={accounts.filter(a => a.id !== form.accountId).map(a => ({ id: a.id, name: a.name }))} /></Field>}
-        <Field title={ui("Amount (XAF)")}><Input type="number" min="0.01" step="0.01" max={kind === 'petty' ? source.pettyCashLimit : kind === 'receipt' ? doc.available_amount : kind === 'handover' ? Math.max(0, Number(doc.expected_amount || 0) - Number(doc.received_amount || 0)) : undefined} required disabled={fixedAmount} value={form.amount} onChange={e => set('amount', e.target.value)} /></Field>
-        <Field title={ui("Transaction date")}><Input type="date" max={businessDate()} required value={form.date} onChange={e => set('date', e.target.value)} /></Field>
-        {expense && <Field title={ui("Expense ledger account")}><Select value={form.expenseAccountId} onChange={v => set('expenseAccountId', v)} options={(kind === 'petty' ? pettyAccounts : source.expenseAccounts).map(a => ({ id: a.id, name: `${a.account_number} · ${a.name}` }))} /></Field>}
-        {kind === 'petty' && <><Field title={ui("Cost centre")}><Select value={form.departmentId} onChange={v => set('departmentId', v)} options={source.departments} /></Field><Field title={ui("Payee")}><Input required value={form.payee} onChange={e => set('payee', e.target.value)} /></Field><Field title={ui("Category")}><Select value={form.category} onChange={v => set('category', v)} options={SMALL_OPERATING_CATEGORIES.map(id => ({ id, name: label(id) }))} /></Field></>}
-        {['transfer', 'petty', 'request'].includes(kind) && <div className="sm:col-span-2"><Field title={ui("Purpose / description")}><Input required value={form.description} onChange={e => set('description', e.target.value)} /></Field></div>}
-        {kind !== 'handover' && <div className="sm:col-span-2"><Field title={ui("Receipt / transaction reference")}><Input required={['receipt', 'transfer', 'request'].includes(kind)} value={form.reference} onChange={e => set('reference', e.target.value)} placeholder={ui("Receipt, bank or voucher reference")} /></Field></div>}
-        {kind === 'handover' && <div className="space-y-3 sm:col-span-2"><Field title={ui("Variance explanation")}><Input value={form.varianceReason} onChange={e => set('varianceReason', e.target.value)} placeholder={ui("Required if the cash received is short")} /></Field><label className="flex gap-2 text-sm"><input type="checkbox" checked={form.disputed} onChange={e => set('disputed', e.target.checked)} />{ui("Flag this handover for reconciliation")}</label></div>}
-      </div>}
-      {(expense || receiptOnly) && <ReceiptField label={ui("Expense receipt (image or PDF)")} fileUri={form.receiptFileUri} onChange={value => set('receiptFileUri', value)} />}
-      {resolveOnly && <Field title={ui("Resolution explanation")}><Input required value={form.varianceReason} onChange={e => set('varianceReason', e.target.value)} /></Field>}
-      {activeAccount && <p className="text-xs text-slate-500">{ui("Current recorded balance: ")}{formatXAF(activeAccount.balance)}{ui(". The account is checked again when saving.")}</p>}
-      {kind === 'handover' && <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">{ui("Confirm only the cash physically counted. Full receipt settles the agent's collections; a shortfall stays outstanding. Existing sales are not posted again.")}</p>}
-      {kind === 'petty' && <p className="rounded-lg bg-green-50 p-3 text-xs text-green-900">{ui("Petty cash is for routine small purchases up to ")}{formatXAF(source.pettyCashLimit)}{ui(". Salaries belong in Payroll; rent and other planned costs need an approved Expense Request.")}</p>}
-      {pettyIssue && <p role="alert" className="text-sm text-slate-800">{pettyIssue}</p>}
-      {!receiptOnly && !resolveOnly && !accounts.length && <p role="alert" className="text-sm text-slate-700">{kind === 'petty' ? ui("A General Manager must configure an active petty cash float with a ledger account first.") : ui("A General Manager must configure an active treasury account linked to the ledger first.")}</p>}
-      {['receipt', 'request'].includes(kind) && <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-900">{kind === 'receipt' ? ui("The receipt will be held for General Manager approval. The invoice and treasury ledger change after approval; no new sale is created.") : ui("This requests General Manager approval. Cash is only deducted when the approved payment is released.")}</p>}
-      {error && <p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
-      <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>{ui("Cancel")}</Button><Button type="submit" disabled={busy || !!pettyIssue || (receiptOnly ? !form.receiptFileUri : resolveOnly ? !form.varianceReason.trim() : !form.accountId || !accounts.length)}>{busy ? ui("Saving...") : kind === 'request' ? ui("Send for approval") : kind === 'receipt' ? ui("Confirm receipt for approval") : ui("Confirm and save")}</Button></DialogFooter>
-    </form>
-  </DialogContent></Dialog>;
+export function CashActionDialog({kind,document:doc,requestKey,source,onBack,onClose,onDone}){
+ const interfaceLanguage=useInterfaceLanguage();void interfaceLanguage;
+ const handover=kind==='handover'||kind==='daily',expense=kind==='petty'||kind==='expense',transfer=['transfer','savings','replenish'].includes(kind);
+ const titles={attachment:'File expense receipt',resolve:'Resolve a received handover',transfer:'Transfer funds',savings:'Record daily savings',replenish:'Top up petty cash',petty:'Small expense',expense:'Pay approved expense',request:'Request supplier payment',release:'Release approved supplier payment',receipt:'Receive customer payment',handover:'Receive cash',daily:'Receive daily cash'};
+ const accounts=(source.accounts||[]).filter(a=>a.gl_account_id&&(kind==='petty'?a.account_type==='petty_cash':['savings','replenish'].includes(kind)?a.account_type!=='petty_cash':true));
+ const destinations=(source.accounts||[]).filter(a=>a.gl_account_id&&(kind==='replenish'?a.account_type==='petty_cash':kind==='savings'?a.account_type!=='petty_cash':true));
+ const [form,setForm]=useState({date:businessDate(),accountId:kind==='release'?doc.treasury_account_id:accounts.length===1?accounts[0].id:'',toAccountId:kind==='replenish'&&destinations.length===1?destinations[0].id:'',amount:doc?.available_amount??(handover?Math.max(0,Number(doc.expected_amount||0)-Number(doc.received_amount||0)):doc?.amount)??'',description:kind==='savings'?ui('Daily savings'):kind==='replenish'?ui('Petty cash top-up'):doc?.title||'',reference:'',payee:'',category:'other',departmentId:source.departments?.length===1?source.departments[0].id:'',expenseAccountId:doc?.expense_account_id||'',orderId:'',varianceReason:'',disputed:doc?.status==='disputed',receiptFileUri:doc?.receipt_url||''});
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),flight=useRef(false);
+ const set=(key,value)=>setForm(f=>({...f,[key]:value}));
+ const activeAccount=accounts.find(a=>a.id===form.accountId),receiptOnly=kind==='attachment',resolveOnly=kind==='resolve',fixedAmount=kind==='expense'||kind==='release';
+ const pettyAccounts=(source.expenseAccounts||[]).filter(isSmallOperatingAccount);
+ const pettyIssue=kind==='petty'?smallOperatingExpenseIssue({category:form.category,expenseAccount:(source.expenseAccounts||[]).find(a=>a.id===form.expenseAccountId),description:form.description,payee:form.payee}):'';
+ const invoiceRows=kind==='receipt'?(doc.invoices||[doc]):[];
+ let allocations=[];if(kind==='receipt'&&Number(form.amount)>0){try{allocations=receiptAllocations(invoiceRows,form.amount);}catch{/* Save reports the validation error. */}}
+ const submit=async event=>{
+  event.preventDefault();if(flight.current)return;if(pettyIssue){setError(pettyIssue);return;}
+  flight.current=true;setBusy(true);setError('');
+  try{
+   if(kind==='receipt'){const result=await erp.functions.invoke('customerReceipts',{action:'confirm',requestKey,customerId:doc.customer_id,treasuryAccountId:form.accountId,date:form.date,amount:Number(form.amount),reference:form.reference,allocations:receiptAllocations(invoiceRows,form.amount)});onDone({...result.data,receiptPending:true});}
+   else{const actions={transfer:'cashierTransfer',savings:'cashierTransfer',replenish:'cashierTransfer',petty:'cashierPettyExpense',expense:'cashierPayExpense',request:'cashierRequestPayment',release:'cashierReleasePayment',handover:'confirmHandover',daily:'cashierReceiveDailyCash',attachment:'cashierAttachReceipt',resolve:'cashierResolveHandover'};
+    const {data}=await invokeFieldOps({...form,amount:Number(form.amount),action:actions[kind],requestKey,purpose:kind==='savings'?'daily_savings':kind==='replenish'?'petty_cash_replenishment':undefined,expenseId:['expense','attachment'].includes(kind)?doc.id:undefined,paymentId:kind==='release'?doc.id:undefined,handoverId:['handover','resolve'].includes(kind)?doc.id:undefined,treasuryAccountId:form.accountId,receivedAmount:Number(form.amount),...(kind==='daily'?{collectionDate:doc.collection_date,commercialId:doc.commercial_id,collectionIds:doc.collection_ids,expectedAmount:doc.requestable}:{})});
+    onDone(data);
+   }
+  }catch(e){setError(errorMessage(e));}finally{flight.current=false;setBusy(false);}
+ };
+ return <Dialog open onOpenChange={value=>{if(!value&&!busy)onClose();}}><DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui(titles[kind])}</DialogTitle></DialogHeader>
+ <form onSubmit={submit} className="space-y-4">
+ {doc&&<div className="rounded-xl bg-slate-50 p-3 text-sm"><strong>{doc.customer_name||doc.commercial_name||doc.party_name||doc.title}</strong><p className="mt-1 text-xs text-slate-500">{doc.invoice_number||doc.handover_number||doc.payment_number||doc.request_number||(doc.collection_date?formatDate(doc.collection_date):'')}</p>{handover&&<p className="mt-2">{ui('Cash still due: {0}',formatXAF(Number(doc.expected_amount||0)-Number(doc.received_amount||0)))}</p>}</div>}
+ {!receiptOnly&&!resolveOnly&&<div className="grid gap-4 sm:grid-cols-2">
+ {kind==='request'&&<div className="sm:col-span-2"><Field title={ui('Approved purchase order')}><Select value={form.orderId} onChange={value=>{set('orderId',value);set('amount',source.orders.find(p=>p.id===value)?.total||'');}} options={(source.orders||[]).map(p=>({id:p.id,name:p.po_number+' · '+p.supplier_name+' · '+formatXAF(p.total)}))}/></Field></div>}
+ <Field title={handover||kind==='receipt'?ui('Receive into account'):ui('From account')}><Select value={form.accountId} onChange={value=>set('accountId',value)} options={accounts.map(a=>({id:a.id,name:a.name+' · '+formatXAF(a.balance)}))}/></Field>
+ {transfer&&<Field title={kind==='savings'?ui('Savings destination'):kind==='replenish'?ui('Petty cash float'):ui('Transfer to account')}><Select value={form.toAccountId} onChange={value=>set('toAccountId',value)} options={destinations.filter(a=>a.id!==form.accountId).map(a=>({id:a.id,name:a.name}))}/></Field>}
+ <Field title={ui('Amount (XAF)')}><Input type="number" min="0.01" step="0.01" max={kind==='petty'?source.pettyCashLimit:kind==='receipt'?doc.available_amount:handover?Math.max(0,Number(doc.expected_amount||0)-Number(doc.received_amount||0)):undefined} required disabled={fixedAmount} value={form.amount} onChange={e=>set('amount',e.target.value)}/></Field>
+ <Field title={ui('Transaction date')}><Input type="date" max={businessDate()} required value={form.date} onChange={e=>set('date',e.target.value)}/></Field>
+ {expense&&<Field title={kind==='petty'?ui('Expense category'):ui('Expense ledger account')}><Select value={form.expenseAccountId} onChange={value=>set('expenseAccountId',value)} options={(kind==='petty'?pettyAccounts:source.expenseAccounts||[]).map(a=>({id:a.id,name:a.name}))}/></Field>}
+ {kind==='petty'&&<><Field title={ui('Payee')}><Input required value={form.payee} onChange={e=>set('payee',e.target.value)}/></Field><Field title={ui('Cost centre')}><Select value={form.departmentId} onChange={value=>set('departmentId',value)} options={source.departments||[]}/></Field></>}
+ {(transfer||kind==='petty'||kind==='request')&&<div className="sm:col-span-2"><Field title={ui('Purpose / description')}><Input required maxLength={1000} value={form.description} onChange={e=>set('description',e.target.value)}/></Field></div>}
+ {!handover&&kind!=='petty'&&<div className="sm:col-span-2"><Field title={ui('Receipt / transaction reference')}><Input aria-label={ui('Receipt / transaction reference')} required={kind==='receipt'||transfer||kind==='request'} value={form.reference} onChange={e=>set('reference',e.target.value)}/></Field></div>}
+ {handover&&<div className="space-y-3 sm:col-span-2"><Field title={ui('Shortfall / variance explanation')}><Input value={form.varianceReason} onChange={e=>set('varianceReason',e.target.value)} placeholder={ui('Required if the cash received is short')}/></Field><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.disputed} onChange={e=>set('disputed',e.target.checked)}/>{ui('Flag this handover for reconciliation')}</label></div>}
+ </div>}
+ {kind==='receipt'&&allocations.length>0&&<div className="rounded-xl border p-3"><h3 className="mb-2 text-xs font-semibold">{ui('Applied to invoices')}</h3>{allocations.map(a=><p key={a.invoice_id} className="flex justify-between gap-3 py-1 text-xs"><span>{invoiceRows.find(i=>i.id===a.invoice_id)?.invoice_number}</span><strong>{formatXAF(a.amount)}</strong></p>)}{doc.more_invoices&&<p className="mt-2 text-xs text-slate-500">{ui('The first 50 unpaid invoices are included. Remaining invoices appear after these are settled.')}</p>}</div>}
+ {(expense||receiptOnly)&&<ReceiptField label={ui('Expense receipt (image or PDF)')} fileUri={form.receiptFileUri} onChange={value=>set('receiptFileUri',value)}/>}
+ {resolveOnly&&<Field title={ui('Resolution explanation')}><Input required value={form.varianceReason} onChange={e=>set('varianceReason',e.target.value)}/></Field>}
+ {activeAccount&&<p className="text-xs text-slate-500">{ui('Current recorded balance: ')}{formatXAF(activeAccount.balance)}</p>}
+ <HelpNotice title={ui(titles[kind])}><p>{handover?ui("Confirm only the cash physically counted. Full receipt settles the agent's collections; a shortfall stays outstanding. Existing sales are not posted again."):kind==='petty'?ui('Small expenses are paid from the petty cash float up to the permitted limit. Payroll and planned expenses keep their approval workflows.'):transfer?ui('A transfer moves existing cash between accounts. It does not create revenue or an operating expense.'):ui('The saved document and account balances are checked again before payment.')}</p></HelpNotice>
+ {kind==='receipt'&&<p className="text-xs font-medium text-slate-600">{ui('Administrator approval is required before this customer receipt is posted.')}</p>}
+ {kind==='request'&&<p className="text-xs text-slate-600">{ui('This requests administrator approval. Cash moves only when an approved payment is released.')}</p>}
+ {pettyIssue&&<p role="alert" className="text-sm text-slate-800">{pettyIssue}</p>}
+ {!receiptOnly&&!resolveOnly&&!accounts.length&&<p role="alert" className="text-sm text-slate-700">{kind==='petty'?ui('A General Manager must configure an active petty cash float with a ledger account first.'):ui('A General Manager must configure an active treasury account linked to the ledger first.')}</p>}
+ {transfer&&!destinations.some(a=>a.id!==form.accountId)&&<p role="status" className="text-xs text-slate-600">{ui('An administrator must configure a separate permitted destination account first.')}</p>}
+ {error&&<p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
+ <DialogFooter className="flex-wrap gap-2">{onBack&&<Button type="button" variant="outline" disabled={busy} onClick={onBack}>{ui('Choose another depositor')}</Button>}<Button type="button" variant="outline" disabled={busy} onClick={onClose}>{ui('Cancel')}</Button><Button type="submit" disabled={busy||!!pettyIssue||(receiptOnly?!form.receiptFileUri:resolveOnly?!form.varianceReason.trim():!form.accountId||!accounts.length||transfer&&!form.toAccountId)}>{busy?ui('Saving...'):kind==='request'?ui('Send for approval'):kind==='receipt'?ui('Save receipt for approval'):ui('Confirm and save')}</Button></DialogFooter>
+ </form></DialogContent></Dialog>;
 }

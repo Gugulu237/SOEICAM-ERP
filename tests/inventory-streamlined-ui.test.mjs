@@ -10,6 +10,7 @@ async function bundle(){
     b.onResolve({filter:/^react$/},args=>args.importer.endsWith('views/Inventory.jsx')||args.importer.endsWith('views\\Inventory.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
     b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__inventoryFlow.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__inventoryFlow.state('inventory',v),useRef=v=>globalThis.__inventoryFlow.ref('inventory',v),useMemo=fn=>fn(),useCallback=fn=>fn,useEffect=()=>{},Suspense=React.Suspense;export const lazy=loader=>props=>{const name=loader.toString().includes('IssueGoods')?'issue':'detail';globalThis.__inventoryFlow.lazy.push({name,props});return React.createElement('div',{'data-lazy':name});};",resolveDir:process.cwd()}));
     const mocks={
+      '@/components/ui/dropdown-menu':"import React from 'react';const C=React.createContext({});export const DropdownMenu=({open,onOpenChange,children})=>{if(open!==undefined)globalThis.__inventoryFlow.alertDismiss=()=>onOpenChange(false);return React.createElement(C.Provider,{value:{open:open??false,onOpenChange}},children);};export const DropdownMenuTrigger=({children})=>{const c=React.useContext(C);return React.cloneElement(children,{onClick:()=>c.onOpenChange?.(!c.open)});};export const DropdownMenuContent=({children,...props})=>React.useContext(C).open?React.createElement('div',{...props,role:'menu'},children):null;export const DropdownMenuLabel=({children})=>React.createElement('div',null,children);export const DropdownMenuItem=({children,onSelect,...props})=>React.createElement('button',{...props,onClick:onSelect},children);",
       '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__inventoryFlow.session;",
       '@/lib/router':"export const useBack=()=>()=>{};export const useParams=()=>({});export const useNavigate=()=>path=>globalThis.__inventoryFlow.navigation.push(path);export const useSearchParams=()=>[new URLSearchParams(globalThis.__inventoryFlow.query),value=>{const previous=new URLSearchParams(globalThis.__inventoryFlow.query);globalThis.__inventoryFlow.query=String(typeof value==='function'?value(previous):new URLSearchParams(value));}];",
       '@/lib/navigation-context':"export const usePageState=(_key,value)=>[value,()=>{}];",
@@ -32,8 +33,9 @@ test('Inventory keeps four categories, opens issue locally and exposes alerts th
     r.buttons.find(b=>b.label==='Issue to driver & agent').onClick();paint();
     assert.ok(r.lazy.some(v=>v.name==='issue'));assert.deepEqual(r.navigation,[]);
     r.lazy.find(v=>v.name==='issue').props.onClose();paint();
-    r.buttons.find(b=>b['aria-label']==='Stock alerts (0)').onClick();paint();
-    assert.equal(new URLSearchParams(r.query).get('section'),'alerts');
+    r.buttons.find(b=>b['aria-label']==='Stock alerts (0)').onClick();assert.match(paint(),/role="menu"/);
+    assert.equal(new URLSearchParams(r.query).get('section'),'items');
+    r.alertDismiss();assert.doesNotMatch(paint(),/role="menu"/);
     r.buttons.find(b=>b.label.startsWith('Packaging')).onClick();paint();
     assert.equal(new URLSearchParams(r.query).get('filter'),'packaging');
     assert.equal(new URLSearchParams(r.query).get('section'),'items');

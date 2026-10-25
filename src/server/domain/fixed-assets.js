@@ -56,7 +56,7 @@ async function preview(svc, month) {
 }
 
 export async function fixedAssetAction(client, user, body) {
-  const { employee, role }=await requireStaff(client,user,['admin','cashier'],'fixed asset accounting');
+  const { employee, role }=await requireStaff(client,user,['admin'],'fixed asset accounting');
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active accounting staff account is required');
   client.auth.assertModule?.('accounting');
   const svc=client.asServiceRole, action=body.action;

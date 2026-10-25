@@ -1,3 +1,4 @@
+import HelpNotice from '@/components/shared/HelpNotice';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
@@ -26,7 +27,7 @@ export default function DeliveriesBoard({ dispatches = [] }) {
   return <div className="space-y-5">
     <div className="rounded-xl border bg-white p-5">
       <h2 className="text-lg font-semibold text-slate-900">{ui("Delivery runs")}</h2>
-      <p className="mt-1 text-sm text-slate-600">{ui("Follow the driver and Commercial pair from loading through customer stops, return and reconciliation. Open a run to see its driver reports and stock detail.")}</p>
+      <HelpNotice title={ui("Delivery tracking")}><p>{ui("Follow the driver and Commercial pair from loading through customer stops, return and reconciliation. Open a run to see its driver reports and stock detail.")}</p></HelpNotice>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {[[ui("Awaiting departure"), counts.loading], [ui("On the road"), counts.road], [ui("Back for reconciliation"), counts.returns]].map(([label, count]) => <div key={label} className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold tabular-nums">{count}</p></div>)}
       </div>

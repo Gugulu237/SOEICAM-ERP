@@ -7,16 +7,17 @@ import { ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProductThumb from '@/components/shared/ProductThumb';
 import MobileInfo from '@/components/shared/MobileInfo';
+import HelpNotice from '@/components/shared/HelpNotice';
 import { MobileDashboardIdentity, useDashboardIdentity } from './DashboardIdentity';
 import { useWorkspaceAccess } from './WorkspaceAccess';
 
-export function WorkspaceHero({ eyebrow, title, description, icon: Icon, children }) {
+export function WorkspaceHero({ eyebrow, title, description, icon: Icon, children, help=false }) {
   const { centralHero } = useDashboardIdentity();
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  return <section className={(centralHero && !children ? "hidden sm:block " : "") + "relative overflow-hidden rounded-3xl border border-border bg-secondary/50 p-4 text-primary sm:p-8"}>
-    <div className="relative z-10 max-w-2xl"><div className="pr-10 sm:pr-0"><MobileDashboardIdentity /></div><div className="hidden sm:block"><p className="text-xs font-semibold uppercase tracking-widest">{eyebrow}</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{description}</p></div>{!centralHero && <MobileInfo mobileOnly title={eyebrow || title} className="absolute right-0 top-0 sm:hidden"><p>{description}</p></MobileInfo>}{children && <div className={(centralHero ? "mt-0 " : "mt-3 ") + "flex flex-wrap gap-2 sm:mt-5 sm:gap-3"}>{children}</div>}</div>
-    {Icon && <Icon className="absolute bottom-6 right-8 hidden h-32 w-32 opacity-10 xl:block" strokeWidth={1} aria-hidden="true" />}
+  return <section className={(centralHero && !children ? "hidden sm:block " : "") + (help?"relative overflow-hidden rounded-2xl border bg-white p-4 text-primary sm:p-5":"relative overflow-hidden rounded-3xl border border-border bg-secondary/50 p-4 text-primary sm:p-8")}>
+    <div className="relative z-10 max-w-2xl"><div className="pr-10 sm:pr-0"><MobileDashboardIdentity /></div><div className="hidden sm:block"><p className="text-xs font-semibold uppercase tracking-widest">{eyebrow}</p><h1 className={help?"mt-1 text-xl font-bold tracking-tight text-slate-900":"mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl"}>{title}</h1>{description && (help?<HelpNotice title={title}><p>{description}</p></HelpNotice>:<p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{description}</p>)}</div>{!centralHero && <MobileInfo mobileOnly title={eyebrow || title} className="absolute right-0 top-0 sm:hidden"><p>{description}</p></MobileInfo>}{children && <div className={(centralHero ? "mt-0 " : "mt-3 ") + "flex flex-wrap gap-2 sm:mt-5 sm:gap-3"}>{children}</div>}</div>
+    {!help && Icon && <Icon className="absolute bottom-6 right-8 hidden h-32 w-32 opacity-10 xl:block" strokeWidth={1} aria-hidden="true" />}
   </section>;
 }
 export function WorkspaceButton({ path, preview, children, ...props }) {
@@ -40,10 +41,10 @@ export function WorkspaceActions({ actions, preview }) {
   actions = actions.filter(action => canOpen(action.path));
   return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{actions.map(({ title, detail, path, icon: Icon }) => <button key={title} disabled={preview} onClick={() => { if (!preview) navigate(path); }} className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left transition hover:border-primary/40 disabled:cursor-default disabled:opacity-70"><span className="rounded-xl bg-secondary p-3 text-primary"><Icon size={21} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-1 hidden text-xs leading-5 text-slate-500 sm:block">{detail}</span></span></button>)}</div>;
 }
-export function WorkspacePanel({ title, subtitle, children, className = '' }) {
+export function WorkspacePanel({ title, subtitle, children, className = '', help=false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  return <section className={'rounded-2xl border bg-white p-5 ' + className}><h2 className="text-base font-semibold text-slate-900">{title}</h2>{subtitle && <p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p>}<div className="mt-4">{children}</div></section>;
+  return <section className={'rounded-2xl border bg-white p-5 ' + className}><div className="flex items-center gap-2"><h2 className="text-base font-semibold text-slate-900">{title}</h2>{subtitle && help && <HelpNotice title={title}><p>{subtitle}</p></HelpNotice>}</div>{subtitle && !help && <p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p>}<div className="mt-4">{children}</div></section>;
 }
 export function WorkspaceQueue({ rows, empty, preview }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

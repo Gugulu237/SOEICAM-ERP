@@ -1,0 +1,49 @@
+{
+  "variant": "light",
+  "styles": [
+    {
+      "id": "pointOfInterest",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "infrastructure.transitStation",
+      "label": {
+        "visible": false
+      }
+    },
+    {
+      "id": "pointOfInterest.landmark",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#64748b",
+        "textFillColor": "#475569"
+      }
+    },
+    {
+      "id": "pointOfInterest.entertainment.historic",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#64748b",
+        "textFillColor": "#475569"
+      }
+    },
+    {
+      "id": "pointOfInterest.entertainment.touristAttraction",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#64748b",
+        "textFillColor": "#475569"
+      }
+    },
+    {
+      "id": "pointOfInterest.transit.airport",
+      "label": {
+        "visible": true,
+        "pinFillColor": "#64748b",
+        "textFillColor": "#475569"
+      }
+    }
+  ]
+}

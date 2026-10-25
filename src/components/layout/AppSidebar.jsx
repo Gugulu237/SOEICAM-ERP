@@ -21,22 +21,17 @@ import { permitsWorkspace,workspacePath } from '@/lib/workspace-navigation';
 
 const navItems = [
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
-  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"], children: [
-    { get label(){return ui("Payroll");}, path: "/team-workspaces?section=payroll", roles: ["admin","cashier"] },
-  ] },
+  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"] },
   { get label(){return ui("Supply Chain Dashboard");}, icon: Truck, path: "/supply-chain", roles: ["warehouse_manager"], assignedRole: "supply_chain_manager" },
   { get label(){return ui("Commercial Dashboard");}, icon: ShoppingBag, path: "/commercial", roles: ["commercial"], personalCommercial: true, children: [
     { get label(){return ui("Record sale");}, path: "/commercial?section=pos&new=1", roles: ["commercial"] },
   ] },
   { get label(){return ui("Expenses");}, icon: Wallet, path: "/expenses", roles: ["admin", "cashier", "production_manager", "procurement", "warehouse_manager", "employee"] },
-  { get label(){return ui("Business Cockpit");}, icon: BarChart3, path: "/cockpit", roles: ["admin"] },
-  { get label(){return ui("Accounting");}, icon: BookOpen, path: "/accounting", roles: ["admin", "cashier","production_manager","warehouse_manager"] },
+  { get label(){return ui("Accounting");}, icon: BookOpen, path: "/accounting", roles: ["admin","production_manager","warehouse_manager"] },
   { get label(){return ui("Purchases");}, icon: ShoppingCart, path: "/purchases", roles: PURCHASE_ROLES },
   { get label(){return ui("Inventory");}, icon: Package, path: INVENTORY_PATH, roles: INVENTORY_ROLES },
   { get label(){return ui("Manufacturing");}, icon: Factory, path: "/manufacturing", roles: QUALITY_ROLES },
-  { get label(){return ui("Sales");}, icon: Receipt, path: "/sales", roles: ["admin", "employee", "hotesse", "production_manager","warehouse_manager"], children: [
-    { get label(){return ui("Outlet Reports");}, path: "/outlet-reports", roles: ["admin", "hotesse"] },
-  ] },
+  { get label(){return ui("Sales");}, icon: Receipt, path: "/sales", roles: ["admin", "employee", "hotesse", "production_manager","warehouse_manager"] },
   { get label(){return ui("Customers");}, icon: UserCheck, path: "/customers", roles: ["admin", "employee", "commercial"] },
   { get label(){return ui("Distribution");}, icon: Truck, path: "/distribution", roles: ["admin", "employee", "warehouse_manager", "production_manager", "driver"] },
   { get label(){return ui("Cashier");}, icon: Banknote, path: "/cashier", roles: ["admin", "cashier", "production_manager"] },
@@ -65,7 +60,7 @@ export default function AppSidebar() {
     else setPendingHref(href);
   };
 
-  const targetPath=path=>role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
+  const targetPath=path=>role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
   const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial') && hasRoleAccess(role, item.roles) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
 
@@ -75,6 +70,8 @@ export default function AppSidebar() {
     if (path === INVENTORY_PATH) return isInventoryPath(location.pathname);
     if (path === '/commercial') return ['/commercial', '/commercial-performance', '/field-sales'].some(root => location.pathname === root || location.pathname.startsWith(root + '/'));
     if (path === '/manufacturing') return location.pathname.startsWith('/manufacturing') || isQualityPath(location.pathname);
+    if (path === '/sales') return location.pathname.startsWith('/sales') || location.pathname === '/outlet-reports';
+    if (path === '/reports') return location.pathname.startsWith('/reports') || location.pathname === '/cockpit';
     if (path === '/customers') return location.pathname.startsWith('/customers') || location.pathname === '/field-customers';
     if (path === '/purchases') return location.pathname.startsWith('/purchases') || location.pathname === '/suppliers';
     if (path === '/distribution') return location.pathname.startsWith('/distribution') || location.pathname === '/driver';
@@ -96,7 +93,7 @@ export default function AppSidebar() {
       <nav className="flex-1 space-y-0.5 overflow-y-auto py-3">
         {visibleItems.map(item => (
           <React.Fragment key={item.path}>
-          {role === 'hotesse' && item.path === '/sales' ? <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">{compact ? <Receipt size={18} /> : ui("Sales")}</div> :
+          {
           <Link
             key={item.path}
             to={targetPath(item.path)}

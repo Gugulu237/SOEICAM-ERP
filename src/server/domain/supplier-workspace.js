@@ -1,3 +1,4 @@
+import {canUseTreasury,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
 import { requireStaff, round2, round3, nextSequence, postJournal, getRuleAccount, stockReceive, audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
@@ -88,15 +89,15 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
     if(!body.supplierId)return {suppliers:visibleSuppliers,products:catalogueProducts,permissions,date:businessDate()};
     const supplier=visibleSuppliers.find(v=>v.id===body.supplierId);if(!supplier)throw Error('Supplier not found');
     const [orders,receipts,payments,warehouses,accounts]=await Promise.all([
-      readRecords(s.PurchaseOrder,{supplier_id:supplier.id}),readRecords(s.GoodsReceipt,{supplier_id:supplier.id}),readRecords(s.Payment,{party_id:supplier.id,payment_type:'supplier_payment'}),readRecords(s.Warehouse,{is_active:true}),permissions.pay?readRecords(s.TreasuryAccount,{is_active:true}):[],
+      readRecords(s.PurchaseOrder,{supplier_id:supplier.id}),readRecords(s.GoodsReceipt,{supplier_id:supplier.id}),readRecords(s.Payment,{party_id:supplier.id,payment_type:'supplier_payment'}),readRecords(s.Warehouse,{is_active:true}),permissions.pay?readRecords(s.TreasuryAccount,{}):[],
     ]);
     const orderIds=orders.map(o=>o.id),orderLines=[];
     for(let i=0;i<orderIds.length;i+=100)orderLines.push(...await readRecords(s.PurchaseOrderLine,{po_id:{$in:orderIds.slice(i,i+100)}}));
     return {suppliers:visibleSuppliers,supplier,permissions,date:businessDate(),
       products:catalogueProducts,
-      orders:orders.map(o=>({...o,requires_supplier_split:orderLines.some(l=>l.po_id===o.id && l.supplier_id && l.supplier_id!==o.supplier_id)})),orderLines,receipts,bills:bills.filter(b=>b.supplier_id===supplier.id),payments:payments.map(p=>pick(p,'id payment_number party_name amount payment_date payment_method reference status po_id bill_id treasury_account_id treasury_account_name approved_by approved_at journal_id')),
+      orders:orders.map(o=>({...o,...(role==='cashier'?{cash_treasury_account_id:undefined,cash_treasury_account_name:undefined}:{}),requires_supplier_split:orderLines.some(l=>l.po_id===o.id && l.supplier_id && l.supplier_id!==o.supplier_id)})),orderLines,receipts,bills:bills.filter(b=>b.supplier_id===supplier.id),payments:visibleTreasuryDocuments(role,payments,accounts).map(p=>pick(p,'id payment_number party_name amount payment_date payment_method reference status po_id bill_id treasury_account_id treasury_account_name approved_by approved_at journal_id')),
       warehouses:warehouses.filter(w=>!['vehicle','commercial_custody','quarantine'].includes(w.warehouse_type)).map(w=>pick(w,'id name warehouse_type')),
-      accounts:accounts.map(a=>pick(a,'id name balance account_type'))};
+      accounts:accounts.filter(a=>a.is_active!==false&&canUseTreasury(role,a)).map(a=>pick(a,'id name balance account_type'))};
   }
   if(action==='saveSupplier') {
     const key=requestKey(user,body),form=body.supplier || {},existing=body.supplierId?await s.Supplier.get(body.supplierId):null,snapshot=JSON.stringify(form);

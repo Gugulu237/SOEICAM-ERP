@@ -1,3 +1,4 @@
+import HelpNotice from '@/components/shared/HelpNotice';
 
 /* localized-messages */
 import { sourceMessage, uiMessage } from '@/lib/i18n';
@@ -128,8 +129,7 @@ function DistributionManagement() {
   return (
     <div>
       <PageHeader
-        title={ui("Distribution")}
-        subtitle={ui("Finished goods out, Commercial pairs, customer supplies and counted returns")}
+        title={<span className="inline-flex items-center gap-2">{ui("Distribution")}<HelpNotice title={ui("Distribution")}><p>{ui("Finished goods out, Commercial pairs, customer supplies and counted returns")}</p></HelpNotice></span>}
         actions={
           !['stock', 'exchanges'].includes(selectedTab)&&<div className="flex gap-2">
 
@@ -168,7 +168,7 @@ function DistributionManagement() {
         </TabsContent>
         <TabsContent value="vehicles" className="mt-4">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
-            <div><h2 className="font-semibold text-slate-900">{ui("Delivery vehicles")}</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{ui("Each active vehicle needs its own stock location. New vehicles get an empty dedicated location automatically; goods move only when warehouse management confirms loading.")}</p></div>
+            <div><h2 className="font-semibold text-slate-900">{ui("Delivery vehicles")}</h2><HelpNotice title={ui("Delivery vehicles")}><p>{ui("Each active vehicle needs its own stock location. New vehicles get an empty dedicated location automatically; goods move only when warehouse management confirms loading.")}</p></HelpNotice></div>
             {canManageVehicles && <Button onClick={() => setVehicleDialog({ open: true, record: null })}><Plus size={16} className="mr-1" />{ui(" Add vehicle")}</Button>}
           </div>
           <DataTable columns={vehicleCols} data={vehicles} searchFields={["registration", "name"]} />

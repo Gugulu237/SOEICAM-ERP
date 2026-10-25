@@ -1,3 +1,4 @@
+import {canUseTreasury,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { readRecords } from './commercial-workspace.js';
 import { canReadPurchase } from './purchase-workspace.js';
 import { productionReadyForIssue } from '../../lib/production-handoff.js';
@@ -13,19 +14,19 @@ async function productsFor(svc, ids) {
   return view(products, productFields);
 }
 
-export async function cashierData(svc, date) {
+export async function cashierData(svc, date, role='cashier') {
   const [accounts, movements, handovers, payments, expenses] = await Promise.all([
-    readRecords(svc.entities.TreasuryAccount, { is_active: true }),
+    readRecords(svc.entities.TreasuryAccount),
     readRecords(svc.entities.TreasuryTransaction, { transaction_date: date }),
     readRecords(svc.entities.CashHandover, { status: { $in: ['submitted', 'partially_received', 'disputed'] } }),
     readRecords(svc.entities.Payment, { payment_type: 'supplier_payment', status: { $in: ['draft', 'pending_approval', 'approved'] } }),
     readRecords(svc.entities.ExpenseRequest, { status: 'approved' }),
   ]);
   return {
-    accounts: view(accounts, ['id', 'name', 'account_type', 'balance']),
-    movements: view(movements, ['id', 'transaction_type', 'transaction_date', 'amount']),
+    accounts: view(accounts.filter(a=>a.is_active===true&&canUseTreasury(role,a)), ['id', 'name', 'account_type', 'balance']),
+    movements: view(movements.filter(m=>role==='admin'||accounts.some(a=>a.id===m.treasury_account_id&&canUseTreasury(role,a))), ['id', 'transaction_type', 'transaction_date', 'amount']),
     handovers: view(handovers, ['id', 'handover_number', 'commercial_name', 'status', 'offered_amount', 'received_amount', 'submitted_at']),
-    payments: view(payments, ['id', 'payment_number', 'party_name', 'amount', 'status', 'payment_method', 'cheque_gm_signed_at', 'cheque_pm_signed_at', 'created_date']),
+    payments: view(visibleTreasuryDocuments(role,payments,accounts), ['id', 'payment_number', 'party_name', 'amount', 'status', 'payment_method', 'cheque_gm_signed_at', 'cheque_pm_signed_at', 'created_date']),
     expenses: view(expenses, ['id', 'request_number', 'title', 'amount', 'status']),
   };
 }
@@ -79,7 +80,7 @@ export async function managerData(svc, date) {
   const since = monthStart < plusDays(date, -6) ? monthStart : plusDays(date, -6);
   const invoiceStatuses = ['posted', 'partially_paid', 'paid', 'overdue'];
   const [cash, production, invoices, receivables, dispatches, fieldSales, pos, requests, expenses, payments, recipes, payroll, acquisitions, outletReports, recordedFieldSales] = await Promise.all([
-    cashierData(svc, date), productionData(svc, date),
+    cashierData(svc, date, 'admin'), productionData(svc, date),
     readRecords(svc.entities.Invoice, { invoice_date: { $gte: since, $lte: date }, status: { $in: invoiceStatuses } }),
     readRecords(svc.entities.Invoice, { status: { $in: invoiceStatuses }, balance: { $gt: 0 } }),
     readRecords(svc.entities.Dispatch, { status: { $in: ['approved', 'loaded', 'in_transit', 'returned'] } }),

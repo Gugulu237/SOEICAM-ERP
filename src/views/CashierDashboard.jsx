@@ -353,7 +353,7 @@ function ChequeDesk() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cash">{ui("Cash")}</SelectItem>
-                      <SelectItem value="bank_transfer">{ui("Bank Transfer")}</SelectItem>
+                      {isAdmin && <SelectItem value="bank_transfer">{ui("Bank Transfer")}</SelectItem>}
                       <SelectItem value="mobile_money">{ui("Mobile Money")}</SelectItem>
                       <SelectItem value="cheque">{ui("Cheque")}</SelectItem>
                     </SelectContent>

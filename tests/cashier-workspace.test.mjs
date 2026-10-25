@@ -25,16 +25,16 @@ test('Cashier received history is paginated, preserves acknowledgement details a
 });
 
 test('transfer preserves total cash and never posts revenue or expenses; retries move cash once', async () => {
-  const { client, entities } = await fixture(), body = { ...args('cashierTransfer'), toAccountId: 'bank' };
+  const { client, entities } = await fixture(), body = { ...args('cashierTransfer'), toAccountId: 'float' };
   await cashierAction(client, user, body); await cashierAction(client, user, body);
   assert.equal((await entities.TreasuryAccount.get('till')).balance, 90000);
-  assert.equal((await entities.TreasuryAccount.get('bank')).balance, 110000);
+  assert.equal((await entities.TreasuryAccount.get('float')).balance, 110000);
   const movements = await entities.TreasuryTransaction.list(); assert.equal(movements.length, 2);
   assert.deepEqual(movements.map(m => m.transaction_type), ['transfer_out', 'transfer_in']);
   assert.equal(movements[0].journal_id, movements[1].journal_id);
   assert.equal((await entities.JournalEntry.list()).length, 1);
-  assert.deepEqual((await entities.JournalLine.list()).map(l => l.account_id), ['bank-gl', 'till-gl']);
-  await assert.rejects(cashierAction(client, user, { ...args('cashierTransfer'), toAccountId: 'bank', amount: 200000 }), /Insufficient/);
+  assert.deepEqual((await entities.JournalLine.list()).map(l => l.account_id), ['float-gl', 'till-gl']);
+  await assert.rejects(cashierAction(client, user, { ...args('cashierTransfer'), toAccountId: 'float', amount: 200000 }), /Insufficient/);
 });
 
 test('petty cash applies the existing limit, valid cost centre and ledger, and consumes its budget once', async () => {
@@ -149,7 +149,7 @@ test('real HTTP transactions roll back a late cash posting error, then retry the
     const original = entities.Account.update;
     let fail = true;
     entities.Account.update = async (id, patch) => { if (id === 'till-gl' && fail) throw Error('Ledger unavailable'); return original(id, patch); };
-    const body = { ...args('cashierTransfer'), toAccountId: 'bank' }, params = { params: Promise.resolve({ name: 'fieldOps' }) };
+    const body = { ...args('cashierTransfer'), toAccountId: 'float' }, params = { params: Promise.resolve({ name: 'fieldOps' }) };
     const failed = await route(request(body), params); assert.equal(failed.status, 400);
     assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows, before);
     fail = false;

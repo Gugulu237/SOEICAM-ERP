@@ -2,6 +2,7 @@ import { COMPANY_PROFILE_FIELDS } from '../lib/company-profile.js';
 import { effectiveRole } from './domain/roles.js';
 import { assertEntityModule, assertModule } from './domain/role-catalogue.js';
 import { canReadManagementAccounting } from '../lib/management-access.js';
+import { CASH_ACCOUNT_TYPES } from '../lib/treasury-access.js';
 import { guardEmployeeAttribution } from './domain/employee-action-access.js';
 
 const readRoles = {
@@ -9,10 +10,10 @@ const readRoles = {
   Bill:['cashier','procurement'], Branch:['cashier','production_manager','warehouse_manager','procurement','employee'], Budget:['cashier','production_manager','procurement','warehouse_manager','employee'],
   CashCollection:['cashier','commercial'], CashHandover:['cashier','commercial'], CashHandoverAllocation:['cashier'], CompanySettings:['cashier','production_manager','warehouse_manager','procurement','employee','commercial','driver','hotesse'],
   Customer:['cashier','commercial','employee','production_manager'], CustomerLocation:['commercial','employee','warehouse_manager','production_manager'], Department:['cashier','production_manager','warehouse_manager','procurement','employee'],
-  DepreciationEntry:['cashier'], Dispatch:['warehouse_manager','employee','production_manager'], DispatchLine:['warehouse_manager','employee','production_manager'], DispatchRequest:['warehouse_manager','employee','production_manager'], DriverActivity:[],
+  DepreciationEntry:[], Dispatch:['warehouse_manager','employee','production_manager'], DispatchLine:['warehouse_manager','employee','production_manager'], DispatchRequest:['warehouse_manager','employee','production_manager'], DriverActivity:[],
   Employee:['cashier','production_manager','warehouse_manager','procurement','employee','commercial','driver','hotesse'], ExpenseRequest:['cashier','production_manager','warehouse_manager','procurement','employee'],
-  FieldSale:['commercial'], FieldSaleLine:['commercial'], FixedAsset:['cashier'], GoodsReceipt:['warehouse_manager','procurement','cashier'], GoodsReceiptLine:['warehouse_manager','procurement','cashier'],
-  Invoice:['cashier','employee'], InvoiceLine:['cashier','employee'], JournalEntry:['cashier'], JournalLine:['cashier'], OutletVisit:[],
+  FieldSale:['commercial'], FieldSaleLine:['commercial'], FixedAsset:[], GoodsReceipt:['warehouse_manager','procurement','cashier'], GoodsReceiptLine:['warehouse_manager','procurement','cashier'],
+  Invoice:['cashier','employee'], InvoiceLine:['cashier','employee'], JournalEntry:[], JournalLine:[], OutletVisit:[],
   Payment:['cashier','procurement','production_manager'], PaymentAllocation:['cashier'], PayrollLine:[], PayrollRun:[], PostingRule:['cashier','warehouse_manager','production_manager','employee','procurement'],
   Product:['cashier','warehouse_manager','production_manager','employee','procurement','commercial'], ProductionMaterial:['production_manager','warehouse_manager'], ProductionOrder:['production_manager','warehouse_manager'],
   PurchaseItem:['procurement','warehouse_manager','production_manager','employee','cashier'], PurchaseOrder:['procurement','warehouse_manager','production_manager','employee','cashier'], PurchaseOrderLine:['procurement','warehouse_manager','production_manager','employee','cashier'],
@@ -63,6 +64,12 @@ export async function recordScope(context, entity, operation, stores) {
       return {journal_id:{$in:ids}};
     }
   }
+  if (role === 'cashier') {
+    if(entity==='Account')return {account_type:{$in:['expense','other_expense']}};
+    if(entity==='TreasuryAccount')return {account_type:{$in:CASH_ACCOUNT_TYPES}};
+    if(entity==='TreasuryTransaction')return {treasury_account_id:{$in:(await stores.TreasuryAccount.filter({account_type:{$in:CASH_ACCOUNT_TYPES}})).map(a=>a.id)}};
+    if(entity==='Payment') {const banks=await stores.TreasuryAccount.filter({account_type:{$nin:CASH_ACCOUNT_TYPES}});return {payment_method:{$nin:['bank','bank_transfer']},treasury_account_id:{$nin:banks.map(a=>a.id)}};}
+  }
   if (entity === 'User') return { id:context.user.id };
   if (entity === 'Employee') {
     if (['warehouse_manager','employee','production_manager'].includes(role)) return { $or:[{ id:employeeId }, { role:{ $in:['commercial','driver','employee'] }, status:'active' }] };
@@ -84,12 +91,14 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if(role==='cashier' && entity==='Payment' && ['bank','bank_transfer'].includes(value.payment_method || existing?.payment_method))throw forbidden('Bank accounts are restricted to administrators.');
   if(entity==='Customer' && (Object.keys(value).some(key=>/^customer_(removed_|restored_|removal_|lifecycle_)/.test(key)) || existing?.customer_removed_at))throw forbidden('Delete or restore customers through the checked customer edit workflow.');
   if(entity==='AuditLog' && ([value,existing].some(row=>row && (['remove_customer','restore_customer'].includes(row.action) || 'customer_lifecycle_payload' in row || String(row.id||'').startsWith('customer-lifecycle-')))))throw forbidden('Customer directory deletion records are managed by the checked customer workflow.');
   if(entity==='Employee' && (['delete','deleteMany'].includes(operation) || Object.keys(value).some(key=>key.startsWith('employee_removed_') || key.startsWith('employee_restored_') || ['employee_removal_reason','employee_lifecycle_revision'].includes(key))))throw forbidden('Remove or restore employees through the checked employee directory workflow.');
   if(entity==='Employee' && existing?.employee_removed_at)throw forbidden('Restore this removed employee through the employee directory before editing the profile.');
   if(Object.keys(value).some(key=>key.startsWith('yogurt_') && !(entity==='Product' && ['yogurt_units_per_bucket','yogurt_net_weight_g'].includes(key)) || key==='recipe_kind') || entity==='ProductionOrder' && existing?.recipe_kind==='yogurt_phased_v1')throw forbidden('Yogurt phases, recipes and output records use the checked manufacturing workflow.');
   if(entity==='AuditLog' && [value,existing].some(row=>row && (['remove_employee','restore_employee'].includes(row.action) || 'employee_lifecycle_payload' in row || /^employee-lifecycle-[a-f0-9]{64}$/.test(row.id||''))))throw forbidden('Employee removal and restoration audits are managed only by the checked employee workflow.');
+  if(role!=='admin' && entity==='TreasuryAccount' && ((value.account_type && !CASH_ACCOUNT_TYPES.includes(value.account_type)) || existing && !CASH_ACCOUNT_TYPES.includes(existing.account_type)))throw forbidden('Bank accounts are restricted to administrators.');
   guardEmployeeAttribution({...context,role},entity,operation,value,existing);
   if(Object.keys(value).some(key=>key.startsWith('inventory_recovery_') || key.startsWith('notification_')) || ['ExpiryRecovery'].includes(value.document_type || value.entity_type || value.source_document_type) || ['expiry_recovery'].includes(value.module || value.source_module) || /^ERD-|^FN-|^FA-/.test(value.document_id || value.source_document_id || '') || entity==='AuditLog' && ['fermentation_notification','acknowledge_fermentation_notification','start_fermentation'].includes(value.action))throw forbidden('Recovery and notification records must use the checked workflow.');
   if(entity==='StockBalance' && existing?.inventory_recovery_id && ['qc_status','qc_notes','qc_released_by','qc_released_by_user_id','qc_released_at'].some(key=>key in value))throw forbidden('Release recovered packaging through the checked inspection workflow.');

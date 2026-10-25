@@ -7,13 +7,14 @@ import { invoiceDefaults } from '../src/lib/invoice-documents.js';
 const require=createRequire(import.meta.url);
 
 async function ui() {
-  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {CreateInvoiceDialog} from './src/components/sales/InvoiceWorkspace.jsx';import Invoice from './src/views/SalesInvoice.jsx';export const render=(name,props)=>renderToStaticMarkup(React.createElement(name==='create'?CreateInvoiceDialog:Invoice,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'invoice-ui',setup(b){
+  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Workspace,{CreateInvoiceDialog} from './src/components/sales/InvoiceWorkspace.jsx';import Invoice from './src/views/SalesInvoice.jsx';export const render=(name,props)=>renderToStaticMarkup(React.createElement(name==='create'?CreateInvoiceDialog:name==='list'?Workspace:Invoice,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'invoice-ui',setup(b){
     b.onResolve({filter:/^react$/},args=>/(InvoiceWorkspace|SalesInvoice)\.jsx$/.test(args.importer)?{path:args.importer.endsWith('SalesInvoice.jsx')?'detail':'create',namespace:'hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;export const useState=v=>globalThis.__invoiceUI.state(${JSON.stringify(key)},v);export const useEffect=(fn,deps)=>globalThis.__invoiceUI.effect(${JSON.stringify(key)},fn,deps);export const useMemo=fn=>fn();`,resolveDir:process.cwd()}));
     const mocks={
+      '@/components/shared/DataTable':"import React from 'react';export default function Table(props){return React.createElement('div',null,props.data.map(row=>React.createElement('div',{key:row.id},row.invoice_number,props.columns.find(c=>c.key==='customize')?.render(null,row))));}",
       '@/api/erpClient':`export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__invoiceUI.request(body)})}};`,
-      '@/lib/router':`const navigate=path=>globalThis.__invoiceUI.navigation.push(path);export const useNavigate=()=>navigate;export const useParams=()=>({id:'invoice-1'});export const useSearchParams=()=>[new URLSearchParams()];`,
-      '@/hooks/useCurrentUser':'export const useCurrentUser=()=>({isAdmin:true});',
+      '@/lib/router':`const navigate=path=>globalThis.__invoiceUI.navigation.push(path);export const useNavigate=()=>navigate;export const useParams=()=>({id:'invoice-1'});export const useSearchParams=()=>[new URLSearchParams(globalThis.__invoiceUI.query||'')];`,
+      '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__invoiceUI.session||({isAdmin:true,role:"admin"});',
       '@/components/ui/button':`import React from 'react';export function Button({children,onClick,...props}){globalThis.__invoiceUI.capture('button',{...props,onClick},children);return React.createElement('button',props,children);}`,
       '@/components/ui/dialog':`import React from 'react';export const Dialog=({children,open})=>open?React.createElement('div',null,children):null;export const DialogContent=({children})=>React.createElement('div',null,children);export const DialogHeader=DialogContent,DialogTitle=DialogContent,DialogDescription=DialogContent;`,
       '@/components/sales/InvoiceEditor':`export default function Editor(props){globalThis.__invoiceUI.editor=props;return null;}`,
@@ -38,4 +39,17 @@ test('invoice customization disables sharing an unsaved preview and submits revi
   const render=await ui(),state=hookRuntime(),calls=[];globalThis.__invoiceUI=state;state.request=async body=>{calls.push(body);return body.action==='invoiceDetail'?structuredClone(saved):{...structuredClone(saved),options:body.options,revision:4};};
   const draw=()=>{state.beforeRender();return render('detail');};
   try{draw();await state.flush();draw();await state.buttons.find(b=>b.label==='Customize').onClick();draw();assert.equal(state.buttons.find(b=>b.label==='Print / PDF').disabled,true);state.editor.setOptions({...options,reference:'CLIENT-PO',terms:'Client terms'});draw();await state.buttons.find(b=>b.label==='Save customization').onClick();const html=draw();assert.match(html,/Invoice details saved/);const request=calls.find(c=>c.action==='customizeSalesInvoice');assert.equal(request.revision,3);assert.equal(request.options.reference,'CLIENT-PO');assert.equal(request.total,undefined);assert.equal(state.buttons.find(b=>b.label==='Print / PDF').disabled,false);}finally{state.cleanup();delete globalThis.__invoiceUI;}
+});
+
+test('cashier invoice list exposes Customize directly and keeps issuing and letterhead controls hidden',async()=>{
+ const render=await ui(),state=hookRuntime();globalThis.__invoiceUI=state;
+ state.session={role:'cashier',isAdmin:false};state.request=async()=>({invoices:[{...saved.invoice,accounting_verified:true}],sources:[],customers:[],company:saved.company,permissions:{can_create:false}});
+ const draw=()=>{state.beforeRender();return render('list');};
+ try{draw();await state.flush();const html=draw();assert.match(html,/Customize/);assert.equal(state.buttons.some(b=>b.label==='Create invoice'||b.label==='Company letterhead'),false);state.buttons.find(b=>b.label==='Customize').onClick({stopPropagation(){}});assert.deepEqual(state.navigation,['/cashier/invoices/invoice-1?edit=1']);}finally{state.cleanup();delete globalThis.__invoiceUI;}
+});
+test('invoice customization opens from its direct link and returns a cashier to the cashier invoice list',async()=>{
+ const render=await ui(),state=hookRuntime(),calls=[];globalThis.__invoiceUI=state;state.query='edit=1';state.session={role:'cashier',isAdmin:false};
+ state.request=async body=>{calls.push(body);return body.action==='invoiceDetail'?structuredClone(saved):{...structuredClone(saved),options:body.options,revision:4};};
+ const draw=()=>{state.beforeRender();return render('detail');};
+ try{draw();await state.flush();draw();assert.ok(state.editor);assert.equal(state.buttons.find(b=>b.label==='Print / PDF').disabled,true);state.editor.setOptions({...options,layout:'classic',footer:'Client footer'});draw();await state.buttons.find(b=>b.label==='Save customization').onClick();draw();assert.equal(calls.at(-1).options.footer,'Client footer');state.buttons.find(b=>b.label==='Invoices').onClick();assert.deepEqual(state.navigation,['/cashier?section=invoices']);}finally{state.cleanup();delete globalThis.__invoiceUI;}
 });
