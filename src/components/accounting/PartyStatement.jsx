@@ -75,7 +75,7 @@ export default function PartyStatement({ partyType }) {
       {partyId && !loading && !error && (
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
           <div className="p-4"><ReportExport report={{title:`${label} statement`,metadata:[[label,parties.find(p=>p.id===partyId)?.business_name||parties.find(p=>p.id===partyId)?.name||partyId],['Period','All recorded dates']],notes:['Invoices / bills exclude drafts and cancellations. Payments include posted payments only.'],sections:[{title:'Transactions',columns:['Date','Reference','Description',...['Charge','Payment','Running balance'].map(label=>({label,type:'money'}))],rows:rows.map(r=>[r.date,r.ref,r.description,r.charge,r.credit,r.balance]),totals:[['','','Closing balance','','',rows.at(-1)?.balance||0]]}]}}/></div>
-          <table className="w-full text-sm">
+          <div className="max-w-full overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-left text-slate-500">
                 <th className="px-4 py-3">{ui("Date")}</th>
@@ -107,7 +107,7 @@ export default function PartyStatement({ partyType }) {
                 </tr>
               </tfoot>
             )}
-          </table>
+          </table></div>
         </div>
       )}
     </div>

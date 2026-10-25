@@ -46,7 +46,8 @@ export default function CommandSearch() {
   }, []);
 
   useEffect(() => {
-    if (!open || data) return;
+    if (!open) { setData(null); return; }
+    let active = true;
     Promise.all([
       permits('/customers') ? erp.entities.Customer.list("-updated_date", 200) : [],
       permits('/inventory') ? erp.entities.Product.filter({ is_active: true }, "-updated_date", 200) : [],
@@ -58,12 +59,14 @@ export default function CommandSearch() {
       permits('/purchases') ? erp.entities.PurchaseOrder.list("-updated_date", 100) : [],
       permits('/accounting') ? erp.entities.Invoice.list("-updated_date", 100) : [],
     ].map(promise => Promise.resolve(promise).catch(() => []))).then(([customers, products, balances, salesOrders, prodOrders, vehicles, suppliers, pos, invoices]) => {
+      if (!active) return;
       const batches = [...new Map(
         balances.filter(b => b.lot_number).map(b => [b.product_id+':'+b.lot_number, b])
       ).values()];
-      setData({ customers, products, batches, salesOrders, prodOrders, vehicles, suppliers, pos, invoices });
+      setData({ customers: customers.filter(customer => !customer.customer_removed_at), products, batches, salesOrders, prodOrders, vehicles, suppliers, pos, invoices });
     });
-  }, [open, data, role, allowedModules]);
+    return () => { active = false; };
+  }, [open, role, allowedModules]);
 
   function go(path) {
     setOpen(false);
@@ -74,16 +77,16 @@ export default function CommandSearch() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 w-full sm:w-64 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-400 hover:border-slate-300 hover:bg-white transition-colors"
+        aria-label={ui('Search or type a command…')} className="flex h-11 w-11 shrink-0 items-center justify-center sm:h-10 sm:w-full sm:min-w-0 sm:justify-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 text-sm text-slate-500 transition-colors hover:border-slate-300 hover:bg-white sm:px-3"
       >
         <Search size={15} />
-        <span className="flex-1 text-left truncate">{ui("Search or type a command…")}</span>
+        <span className="hidden flex-1 truncate text-left sm:block">{ui("Search")}</span>
         <kbd className="hidden sm:inline text-[10px] font-mono bg-white border border-slate-200 rounded px-1.5 py-0.5 text-slate-400">{ui("⌘K")}</kbd>
       </button>
 
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandInput placeholder={ui("Search customers, batches, products, orders…")} />
-        <CommandList className="max-h-[420px]">
+        <CommandList className="max-h-[min(420px,calc(100dvh_-_80px))]">
           <CommandEmpty>{data ? ui("No results found.") : ui("Loading…")}</CommandEmpty>
 
           <CommandGroup heading={ui("Quick Actions")}>

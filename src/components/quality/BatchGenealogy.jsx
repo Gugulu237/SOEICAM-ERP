@@ -56,7 +56,7 @@ export default function BatchGenealogy({ direction, lot, data }) {
 
         <Section title={ui("Ingredients & Packaging Consumed")}>
           {data.yogurt_yields&&<p className="mb-3 text-sm text-slate-500">{ui('These materials cover the shared fermentation batch and all its finished variants. Unused packaging has been deducted.')}</p>}
-          <table className="w-full text-sm">
+          <table className="mobile-table-cards w-full text-sm">
             <thead>
               <tr className="border-b text-left text-slate-600">
                 <th className="pb-2">{ui("Material")}</th>
@@ -68,10 +68,10 @@ export default function BatchGenealogy({ direction, lot, data }) {
             <tbody>
               {ingredients.map(m => (
                 <tr key={m.id} className="border-b border-slate-100">
-                  <td className="py-2 font-medium">{m.material_name}</td>
-                  <td className="py-2 text-slate-600">{m.lot_number || "—"}</td>
-                  <td className="py-2 text-right">{formatNumber(m.consumed_quantity || m.standard_quantity, 3)} {m.unit}</td>
-                  <td className="py-2 text-right">{formatXAF(m.total_cost)}</td>
+                  <td data-label={ui("Material")} className="py-2 font-medium">{m.material_name}</td>
+                  <td data-label={ui("Lot(s)")} className="py-2 text-slate-600">{m.lot_number || "—"}</td>
+                  <td data-label={ui("Consumed")} className="py-2 text-right">{formatNumber(m.consumed_quantity || m.standard_quantity, 3)} {m.unit}</td>
+                  <td data-label={ui("Cost")} className="py-2 text-right">{formatXAF(m.total_cost)}</td>
                 </tr>
               ))}
             </tbody>

@@ -124,7 +124,7 @@ export default function QuickItemEditor({ item, units = [], unitsLoading = false
       <DialogPortal>
         <DialogOverlay className="bg-slate-950/50 backdrop-blur-[2px]" />
         <DialogPrimitive.Content id={`${formId}-dialog`}
-          className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-[1000px] max-h-[calc(100dvh-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl focus:outline-none"
+          className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw_-_2rem)] max-w-[1000px] max-h-[calc(100dvh_-_2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl focus:outline-none"
           onEscapeKeyDown={event => { if (savingRef.current) event.preventDefault(); }}
           onPointerDownOutside={event => { if (savingRef.current) event.preventDefault(); }}
           onCloseAutoFocus={event => { event.preventDefault(); toggleRef.current?.focus(); }}>

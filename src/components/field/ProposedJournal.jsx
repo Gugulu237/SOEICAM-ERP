@@ -52,7 +52,7 @@ export default function ProposedJournal({ saleId }) {
         </span>
         {debit === credit && <span className="ml-auto text-xs text-emerald-600">{ui("balanced")}</span>}
       </div>
-      <table className="w-full text-sm">
+      <div className="max-w-full overflow-x-auto"><table className="w-full text-sm">
         <thead>
           <tr className="text-xs uppercase text-slate-500 border-b border-slate-100">
             <th className="text-left px-3 py-2 font-medium">{ui("Account")}</th>
@@ -76,12 +76,13 @@ export default function ProposedJournal({ saleId }) {
         </tbody>
         <tfoot>
           <tr className="bg-slate-50 font-semibold">
-            <td className="px-3 py-2" colSpan={2}>{ui("Total")}</td>
+            <td className="px-3 py-2 sm:hidden">{ui("Total")}</td>
+            <td className="hidden px-3 py-2 sm:table-cell" colSpan={2}>{ui("Total")}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatXAF(debit)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatXAF(credit)}</td>
           </tr>
         </tfoot>
-      </table>
+      </table></div>
     </div>
   );
 }

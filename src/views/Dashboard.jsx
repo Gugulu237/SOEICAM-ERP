@@ -138,7 +138,7 @@ export default function Dashboard() {
               { label: ui("New Production"), to: "/manufacturing/new" },
               { label: ui("Record Payment"), to: "/accounting/payments/new" },
               { label: ui("New Customer"), to: "/customers/new" },
-              { label: ui("Record Expense"), to: "/accounting/expenses" },
+              { label: ui("Record Expense"), to: "/expenses" },
             ].map(a => (
               <a key={a.to} href={a.to} className="block text-center py-3 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-700 transition-colors">
                 {a.label}

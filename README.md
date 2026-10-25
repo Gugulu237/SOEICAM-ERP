@@ -24,6 +24,24 @@ npm.cmd run build
 npm.cmd run start:local
 ```
 
+## Phone and tablet preview
+
+Run `npm run dev:responsive` and open http://localhost:5175/dev-preview. The workbench displays the authenticated app at phone (390 × 844) and tablet (820 × 1180) widths, with section, rotation and reload controls. Changes appear through Next.js development refresh. This route is unavailable in production.
+
+To reuse an existing local configuration without copying credentials, run `npm run dev:responsive -- "C:\path\to\.env.local"`. The preview process disables background manufacturing jobs so the existing local server remains responsible for them. Normal app authentication still applies.
+
+On Windows, start a preview that remains available after the launching terminal closes:
+
+```powershell
+powershell.exe -NoProfile -File scripts/start-local-preview.ps1 -EnvironmentFile "C:\path\to\.env.local"
+```
+
+This starts a hidden, independent Windows process on localhost only. It reuses an existing preview from this checkout and writes startup diagnostics to the ignored `soeicam-server-logs` folder. It does not add a service or start automatically after a reboot.
+
+The console launcher scripts/Open-SOEICAM-Preview.cmd uses the saved local environment reference and keeps the preview visible in its own Windows console. Startup warms the login, home and Customers pages and verifies their shared scripts before reporting that the interface is ready. The root recovery page reloads a stale JavaScript chunk once and offers a manual reload if it still fails. Clerk sessions defer the unused Supabase browser SDK until it is needed.
+
+Bundled inventory photos use committed, content-hashed WebP variants. After replacing an original photo, run `npm run photos:prepare` and commit the generated assets and manifest together. Originals remain available.
+
 ## Production and Hostinger
 
 Deploy the current `main` branch as a **Next.js Node.js Web App**. Use Node.js 24, build script `build` (`npm run build`) and output directory `.next`. The Next.js preset manages the server entry and standalone startup. Set the existing database and sign-in settings in Hostinger's Environment Variables, including the actual HTTPS ERP URL.
@@ -49,6 +67,13 @@ The active build has no Vite entry point, Vite dependencies, Vite environment va
 - Accounting: controlled journals, ledger, financial statements, treasury and report exports.
 
 Server routes enforce role, employee scope and approval rules independently of navigation. Financial and stock workflows use transactional writes and retry references. Deploying source does not reset records or run database maintenance.
+
+Inventory opens the finished products, ingredients, packaging and all-items catalogue. Receiving stays visible, vehicle issues open in a popup, and the bell opens low-stock alerts. Stock detail, movement history and recovered packaging receipts are in the tools menu. Accounting → Assets & controls → Expiry & recovery records losses; new recovered lots remain quarantined until warehouse receipt and quality inspection. Existing recovery records retain their inspection path.
+
+Sales PDF/Excel controls export the chosen summary, daily, customer or salesperson report for the applied dates. Orders, invoices and field sales have their own status summaries; individual invoices retain their document export. Sales entry records the customer and applicable branch, cash or credit, sale date and actual salesperson separately from the signed-in recorder. Its stock source defaults to goods already issued to a paired Commercial and driver; stock custody never changes the selected salesperson. The main finished-goods warehouse is available for direct customer supplies. Record sale posts the order, invoice, stock issue and cash/credit accounting in one transaction; invoices and retry references cannot deduct stock a second time. Personal Commercial POS remains available to the assigned agent.
+
+
+Customers offers a GPS map centred on Yaoundé, Cameroon-wide navigation, outlet pins and named delivery zones with Yaoundé I–VII labels and explicit served/planned/paused coverage. Zone matching requires review and verified GPS; it preserves assignments to other zones and staff visibility rules. Descriptions are available from small information icons. OpenStreetMap works without a Google key; optional Google Maps configuration is documented in [HOSTINGER_SETUP.md](HOSTINGER_SETUP.md#customer-delivery-maps).
 
 ## Checks
 

@@ -31,11 +31,11 @@ export default function AllocationEditor({ docs, allocations, onChange, amount }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <p className="text-sm font-medium text-slate-700">{ui("Allocate to open documents")}</p>
         <Button type="button" variant="outline" size="sm" onClick={autoAllocate}>{ui("Auto-allocate (oldest first)")}</Button>
       </div>
-      <table className="w-full text-sm">
+      <table className="mobile-table-cards w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-slate-500">
             <th className="py-1">{ui("Document")}</th>
@@ -47,11 +47,11 @@ export default function AllocationEditor({ docs, allocations, onChange, amount }
         <tbody>
           {docs.map((d) => (
             <tr key={d.id} className="border-b border-slate-100">
-              <td className="py-2 font-medium">{d.number}</td>
-              <td className="py-2 text-slate-500">{formatDate(d.due_date)}</td>
-              <td className="py-2 text-right">{formatXAF(d.balance)}</td>
-              <td className="py-2">
-                <Input type="number" min="0" max={d.balance} className="h-8 text-right"
+              <td data-label={ui("Document")} className="py-2 font-medium">{d.number}</td>
+              <td data-label={ui("Due")} className="py-2 text-slate-500">{formatDate(d.due_date)}</td>
+              <td data-label={ui("Balance")} className="py-2 text-right">{formatXAF(d.balance)}</td>
+              <td data-label={ui("Allocate")} className="py-2">
+                <Input aria-label={ui("Allocate") + ": " + d.number} type="number" min="0" max={d.balance} className="h-8 text-right"
                   value={allocations[d.id] || ""}
                   onChange={(e) => onChange({ ...allocations, [d.id]: Math.min(Number(e.target.value) || 0, d.balance) })} />
               </td>

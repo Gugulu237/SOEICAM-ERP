@@ -40,23 +40,23 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
     return (
       <div>
         <div
-          className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer border ${isSelected ? "bg-slate-50 border-slate-300" : "border-transparent hover:bg-slate-50"} ${isBranch ? "ml-5" : ""}`}
-          onClick={() => onSelect(partner)}
+          className={`flex min-w-0 items-center gap-2 px-2 py-2 rounded-lg border ${isSelected ? "bg-slate-50 border-slate-300" : "border-transparent hover:bg-slate-50"} ${isBranch ? "ml-5" : ""}`}
         >
-          <button
-            onClick={e => { e.stopPropagation(); toggle(partner.id); }}
-            className="p-0.5 text-slate-400 hover:text-slate-600"
-            disabled={!hasChildren}
+          {hasChildren ? <button
+            type="button"
+            aria-label={ui("Branches and delivery locations") + ': ' + partner.business_name}
+            aria-expanded={Boolean(isOpen)}
+            onClick={() => toggle(partner.id)}
+            className="flex h-11 w-11 shrink-0 items-center justify-center text-slate-400 hover:text-slate-600"
           >
-            {hasChildren
-              ? (isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />)
-              : <span className="inline-block w-3.5" />}
-          </button>
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button> : null}
+          <button type="button" aria-pressed={isSelected} onClick={() => onSelect(partner)} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left">
           {isBranch
             ? <Store size={16} className="text-slate-500 flex-shrink-0" />
             : <Building2 size={16} className="text-slate-500 flex-shrink-0" />}
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-900 truncate">{partner.business_name}</p>
+            <p className="break-words text-sm font-medium text-slate-900">{partner.business_name}</p>
             <p className="text-xs text-slate-500">
               {kids.length > 0
                 ? `${kids.length} sub-partner${kids.length === 1 ? "" : "s"} · ${formatXAF(groupBalance)}`
@@ -64,6 +64,7 @@ export default function PartnerTree({ partners, childrenByParent = {}, locations
             </p>
             {paymentSummaries && <div className="mt-1"><CustomerPaymentBadge summary={paymentSummaries[partner.id]} error={paymentError} /></div>}
           </div>
+          </button>
           {partner.financial_centralization_mode === "centralized" && (
             <Landmark size={13} className="text-blue-500 flex-shrink-0" title={ui("Centralized payments")} />
           )}

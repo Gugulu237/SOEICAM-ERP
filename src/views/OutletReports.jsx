@@ -1,3 +1,4 @@
+import LearnMore from '@/components/shared/LearnMore';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -45,7 +46,7 @@ export default function OutletReports({ embedded = false }) {
   if (authError || !['admin', 'hotesse'].includes(role)) return <p role="alert">{authError || ui("This workspace is restricted to Hotesse staff and the General Manager.")}</p>;
   if (role === 'hotesse') return <HotesseLiveWorkspace />;
   const visible = rows.filter(r => (!pending || r.status !== 'reviewed') && (reportType === 'all' || r.report_type === reportType) && [r.employee_name, r.customer_name, r.location_name].join(' ').toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-5"><header>{!embedded && <Link to="/sales" className="text-xs font-medium text-slate-500 hover:text-slate-900">{ui("Sales /")}</Link>}<h1 className={'mt-2 font-bold ' + (embedded ? 'text-xl' : 'text-2xl')}>{ui("Outlet reports")}</h1><p className="mt-2 text-sm text-slate-500">{ui("Review Hotesse daily retail sales, closing stock and concerns at each point of sale.")}</p></header>
+  return <div className="space-y-5"><header>{!embedded && <Link to="/sales" className="text-xs font-medium text-slate-500 hover:text-slate-900">{ui("Sales /")}</Link>}<h1 className={'mt-2 font-bold ' + (embedded ? 'text-xl' : 'text-2xl')}>{ui("Outlet reports")}</h1><LearnMore title={ui("Outlet reports")}><p>{ui("Review Hotesse daily retail sales, closing stock and concerns at each point of sale.")}</p></LearnMore></header>
     {isAdmin && <div className="flex flex-wrap gap-2"><Button variant={tab === 'shelves' ? 'default' : 'outline'} onClick={() => setTab('shelves')}>{ui("Shelf overview")}</Button><Button variant={tab === 'reports' ? 'default' : 'outline'} onClick={() => setTab('reports')}>{ui("Reports")}</Button><Button variant={tab === 'assignments' ? 'default' : 'outline'} onClick={() => setTab('assignments')}>{ui("Outlet assignments")}</Button></div>}
     {tab === 'shelves' && isAdmin ? <OutletShelfOverview onAssign={() => setTab('assignments')} /> : tab === 'assignments' && isAdmin ? <OutletAssignments /> : <>
       <label className="block text-xs font-medium">{ui("Report type")}<select className="ml-3 h-10 rounded-lg border bg-white px-3" value={reportType} onChange={event => setReportType(event.target.value)}><option value="all">{ui("All reports")}</option><option value="daily_sales">{ui("Daily units sold & closing stock")}</option><option value="delivery_shelf_check">{ui("Shelf counts after delivery")}</option></select></label>

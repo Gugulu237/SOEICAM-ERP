@@ -100,7 +100,7 @@ export default function JournalEntryForm() {
         {loadError && <p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p>}
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoBalance} onChange={e=>setAutoBalance(e.target.checked)}/>{ui("Auto-fill the balancing amount when selecting an empty account line")}</label>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="mobile-table-cards w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-slate-500">
                 <th className="py-2 pr-2 w-[35%]">{ui("Account")}</th>
@@ -113,18 +113,18 @@ export default function JournalEntryForm() {
             <tbody>
               {lines.map((line, i) => (
                 <tr key={i} className="border-b border-slate-100">
-                  <td className="py-2 pr-2">
+                  <td data-label={ui("Account")} className="py-2 pr-2">
                     <Button type="button" variant="outline" className="h-auto min-h-10 w-full justify-start whitespace-normal text-left" aria-label={ui("Choose account for line {0}",i+1)} aria-haspopup="dialog" aria-expanded={pickerLine===i} disabled={saving} onClick={event=>{pickerTrigger.current=event?.currentTarget || null;setPickerLine(current=>current===i?null:i);}}>
                       {line.account_id ? <span><span className="font-mono">{line.account_number}</span> · {line.account_name}</span> : <span className="text-slate-500">{ui("Select account")}</span>}
                     </Button>
                   </td>
-                  <td className="py-2 pr-2"><Input aria-label={ui("Line description {0}",i+1)} value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} /></td>
-                  <td className="py-2 pr-2"><Input aria-label={ui("Debit line {0}",i+1)} type="number" min="0" step="0.01" className="text-right" value={line.debit || ""} onChange={(e) => updateLine(i, "debit", e.target.value)} /></td>
-                  <td className="py-2 pr-2"><Input aria-label={ui("Credit line {0}",i+1)} type="number" min="0" step="0.01" className="text-right" value={line.credit || ""} onChange={(e) => updateLine(i, "credit", e.target.value)} /></td>
-                  <td className="py-2">
+                  <td data-label={ui("Line Description")} className="py-2 pr-2"><Input aria-label={ui("Line description {0}",i+1)} value={line.description} onChange={(e) => updateLine(i, "description", e.target.value)} /></td>
+                  <td data-label={ui("Debit")} className="py-2 pr-2"><Input aria-label={ui("Debit line {0}",i+1)} type="number" min="0" step="0.01" className="text-right" value={line.debit || ""} onChange={(e) => updateLine(i, "debit", e.target.value)} /></td>
+                  <td data-label={ui("Credit")} className="py-2 pr-2"><Input aria-label={ui("Credit line {0}",i+1)} type="number" min="0" step="0.01" className="text-right" value={line.credit || ""} onChange={(e) => updateLine(i, "credit", e.target.value)} /></td>
+                  <td data-label={ui("Actions")} className="py-2">
                     {line.account_id && balancingAmount(lines,i) && <Button title={ui("Fill balancing amount")} variant="outline" size="sm" onClick={()=>setLines(prev=>prev.map((l,n)=>n===i?{...l,...balancingAmount(prev,i)}:l))}>{ui("Balance")}</Button>}
                     {lines.length > 2 && (
-                      <Button variant="ghost" size="icon" onClick={() => setLines(lines.filter((_, idx) => idx !== i))}>
+                      <Button aria-label={ui("Remove") + ": " + (i + 1)} variant="ghost" size="icon" onClick={() => setLines(lines.filter((_, idx) => idx !== i))}>
                         <Trash2 size={14} className="text-red-500" />
                       </Button>
                     )}
@@ -138,8 +138,8 @@ export default function JournalEntryForm() {
                   <Button variant="outline" size="sm" onClick={() => setLines([...lines, emptyLine()])}>
                     <Plus size={14} className="mr-1" />{ui(" Add Line")}</Button>
                 </td>
-                <td className="py-3 pr-2 text-right">{formatXAF(totalDebit)}</td>
-                <td className="py-3 pr-2 text-right">{formatXAF(totalCredit)}</td>
+                <td className="py-3 pr-2 text-right"><span className="sm:hidden">{ui("Debit")}: </span>{formatXAF(totalDebit)}</td>
+                <td className="py-3 pr-2 text-right"><span className="sm:hidden">{ui("Credit")}: </span>{formatXAF(totalCredit)}</td>
                 <td></td>
               </tr>
             </tfoot>

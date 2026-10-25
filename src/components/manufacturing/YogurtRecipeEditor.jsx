@@ -122,7 +122,7 @@ export function VisualYogurtRecipeEditor({initialRecipe=null}) {
       <div className="flex flex-wrap gap-2 pb-6"><Button onClick={save} disabled={busy||!name.trim()||missingMaterials||config.product_bucket_recipe&&!!projectionError}>{ui(recipe&&recipe.status!=='draft'?'Save new draft version':'Save draft')}</Button>{recipe?.status==='draft'&&<Button variant="outline" onClick={approve} disabled={busy||dirty}>{ui('Approve recipe')}</Button>}{recipe?.status==='approved'&&!dirty&&<Button variant="outline" onClick={()=>navigate('/manufacturing/new?recipe='+recipe.id)}>{ui('Plan production')}</Button>}</div>
     </fieldset>}
     <Dialog open={!!editing} onOpenChange={open=>{if(!open)setEditing(null);}}>
-      {editing&&<DialogContent onCloseAutoFocus={event=>{event.preventDefault();if(productTrigger.current?.isConnected)productTrigger.current.focus({preventScroll:true});}} className="flex max-h-[80dvh] w-[calc(100vw-2rem)] max-w-xl flex-col gap-0 overflow-hidden p-0" style={{width:'min(36rem, calc(100vw - 2rem))',maxHeight:'80dvh'}}>
+      {editing&&<DialogContent onCloseAutoFocus={event=>{event.preventDefault();if(productTrigger.current?.isConnected)productTrigger.current.focus({preventScroll:true});}} className="flex max-h-[80dvh] w-[calc(100vw_-_2rem)] max-w-xl flex-col gap-0 overflow-hidden p-0" style={{width:'min(36rem, calc(100vw - 2rem))',maxHeight:'80dvh'}}>
         <DialogHeader className="shrink-0 border-b p-4 pr-10">
           <div className="flex items-center gap-3"><ProductPhoto product={items.find(p=>p.id===editing.output.product_id)} name={editing.output.product_name} className="h-16 w-16 shrink-0"/><div><DialogTitle>{ui(PRODUCT_FLAVOURS.find(f=>f.value===editing.output.flavor)?.label || 'Product setup')}{editing.output.size?' · '+editing.output.size:''}</DialogTitle><DialogDescription className="mt-1">{yogurtBase(config.family).label}</DialogDescription></div></div>
         </DialogHeader>
@@ -146,7 +146,7 @@ export function VisualYogurtRecipeEditor({initialRecipe=null}) {
       </DialogContent>}
     </Dialog>
     <Dialog open={!!managingItem} onOpenChange={open=>{if(!open&&!managedItemBusy.current)setManagingItem(null);}}>
-      {managingItem&&<DialogContent className="max-h-[85dvh] w-[calc(100vw-2rem)] max-w-3xl overflow-y-auto" onEscapeKeyDown={event=>{if(managedItemBusy.current)event.preventDefault();}} onPointerDownOutside={event=>{if(managedItemBusy.current)event.preventDefault();}}>
+      {managingItem&&<DialogContent className="max-h-[85dvh] w-[calc(100vw_-_2rem)] max-w-3xl overflow-y-auto" onEscapeKeyDown={event=>{if(managedItemBusy.current)event.preventDefault();}} onPointerDownOutside={event=>{if(managedItemBusy.current)event.preventDefault();}}>
         <DialogHeader><DialogTitle>{ui('Finish setup for {0}',managingItem.name)}</DialogTitle><DialogDescription>{ui('Your recipe stays here while you complete this inventory item.')}</DialogDescription></DialogHeader>
         <React.Suspense fallback={<p role="status">{ui('Loading item options...')}</p>}><ItemForm key={managingItem.id} embedded itemId={managingItem.id} onBusyChange={value=>{managedItemBusy.current=value;}} onCancel={()=>{if(!managedItemBusy.current)setManagingItem(null);}} onSaved={saved=>{setItems(current=>current.map(item=>item.id===saved.id?saved:item));setManagingItem(null);}}/></React.Suspense>
       </DialogContent>}

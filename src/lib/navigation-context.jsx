@@ -32,6 +32,7 @@ function restorePosition(position, done) {
 export function NavigationProvider({ identity, children }) {
   const pathname = usePathname(), params = useSearchParams();
   const href = pathname + (params.size ? '?' + params.toString() : '');
+  useEffect(()=>{if(process.env.NODE_ENV==='development' && window.parent!==window && typeof window.parent?.postMessage==='function')window.parent.postMessage({type:'soeicam:preview-route',href},window.location.origin);},[href]);
   const [store, setStore] = useState(null);
   const current = useRef(null), intent = useRef(null), traversal = useRef(null), restoring = useRef(false);
   useEffect(() => {

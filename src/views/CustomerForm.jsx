@@ -19,6 +19,7 @@ import { Save, ArrowLeft } from "lucide-react";
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import { readAll } from '@/lib/field-pos';
+import CustomerRemoval from '@/components/customers/CustomerRemoval';
 import DeliverySetupFields from '@/components/customers/DeliverySetupFields';
 
 export default function CustomerForm() {
@@ -46,6 +47,7 @@ export default function CustomerForm() {
   const [partnerType, setPartnerType] = useState("main");
   const [saving, setSaving] = useState(false);
   const [locating,setLocating]=useState(false);
+  const [customerRecord, setCustomerRecord] = useState(null);
 
   useEffect(() => {
     if (authLoading || role==='commercial') return;
@@ -59,10 +61,10 @@ export default function CustomerForm() {
       !isEdit && isAdmin ? invokeFieldOps({ action: 'customerAcquisitionOptions' }).then(({ data }) => { if (data.error) throw Error(data.error); return data.employees; }) : [],
     ]).then(([parents, customer, invoiceRows, paymentRows, staff]) => {
       if (!active) return;
-      setMainPartners(parents); setAgents(staff); setInvoices(invoiceRows); setPayments(paymentRows);
+      setMainPartners(parents.filter(row => !row.customer_removed_at)); setAgents(staff); setInvoices(invoiceRows); setPayments(paymentRows);
       if (isEdit) {
         if (!customer) throw Error(ui('Customer not found'));
-        const c = customer;
+        const c = customer; setCustomerRecord(c);
         setForm({
           business_name: c.business_name || '', contact_person: c.contact_person || '', phone: c.phone || '', whatsapp: c.whatsapp || '', email: c.email || '',
           category: c.category || 'shop', financial_centralization_mode: c.financial_centralization_mode || 'centralized',
@@ -146,6 +148,7 @@ export default function CustomerForm() {
       />
       {loading && <p role="status" className="mb-4 text-sm text-slate-500">{ui("Loading customer setup...")}</p>}
       {loadError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={() => setReload(value => value + 1)}>{ui("Retry")}</button></p>}
+      {customerRecord?.customer_removed_at && <p className="mb-4 rounded-xl border bg-amber-50 p-3 text-sm">{ui("This customer is deleted from the directory. Restore it before editing.")}</p>}
       <fieldset disabled={loading || saving || !!loadError}>
       <Tabs defaultValue="details">
         <TabsList>
@@ -154,43 +157,43 @@ export default function CustomerForm() {
           {isEdit && <TabsTrigger value="payments">{ui("Payments (")}{payments.length})</TabsTrigger>}
         </TabsList>
         <TabsContent value="details" className="mt-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-3xl">
+          <fieldset disabled={!!customerRecord?.customer_removed_at} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 max-w-3xl">
             {!isEdit && isAdmin && <section className="mb-5 space-y-2 rounded-xl border bg-slate-50 p-4"><label htmlFor="customer-acquired-by" className="block text-sm font-medium">{ui("Acquired by (employee)")}</label><select id="customer-acquired-by" value={acquiredById} onChange={event => setAcquiredById(event.target.value)} className="h-11 w-full rounded-md border bg-white px-3 text-sm"><option value="">{ui("No employee acquisition credit")}</option>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select><p className="text-xs leading-5 text-slate-600">{ui("Select the Commercial employee who found this customer. Their acquisition and configured commission are tracked on their account after verification. Your administrator account remains the registrar.")}</p>{acquiredById && <p className="text-xs text-slate-800">{ui("The new acquisition will await GM verification before its customer bonus counts. This does not create a salary payment.")}</p>}</section>}
             {isEdit && acquisition?.name && <section className="mb-5 rounded-xl border bg-slate-50 p-4 text-sm"><p>{ui("Acquired by ")}<strong>{acquisition.name}</strong> / {acquisition.date}</p><p className="mt-1 text-xs text-slate-500">{ui("Acquisition: ")}{acquisition.status.replaceAll('_', ' ')}</p>{acquisition.registrar && <p className="mt-1 text-xs text-slate-500">{ui("Registered by ")}{acquisition.registrar}</p>}<p className="mt-2 text-xs text-slate-500">{ui("Acquisition history is preserved. Verify customer acquisitions in Customers, Acquisition review.")}</p></section>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label>{ui("Business Name *")}</Label>
-                <Input value={form.business_name} onChange={e => set("business_name", e.target.value)} />
+                <Label htmlFor="customer-business-name">{ui("Business Name *")}</Label>
+                <Input id="customer-business-name" value={form.business_name} onChange={e => set("business_name", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Contact Person")}</Label>
-                <Input value={form.contact_person} onChange={e => set("contact_person", e.target.value)} />
+                <Label htmlFor="customer-contact-person">{ui("Contact Person")}</Label>
+                <Input id="customer-contact-person" value={form.contact_person} onChange={e => set("contact_person", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Phone")}</Label>
-                <Input value={form.phone} onChange={e => set("phone", e.target.value)} />
+                <Label htmlFor="customer-phone">{ui("Phone")}</Label>
+                <Input id="customer-phone" type="tel" autoComplete="tel" value={form.phone} onChange={e => set("phone", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("WhatsApp")}</Label>
-                <Input value={form.whatsapp} onChange={e => set("whatsapp", e.target.value)} />
+                <Label htmlFor="customer-whatsapp">{ui("WhatsApp")}</Label>
+                <Input id="customer-whatsapp" type="tel" value={form.whatsapp} onChange={e => set("whatsapp", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Email")}</Label>
-                <Input type="email" value={form.email} onChange={e => set("email", e.target.value)} />
+                <Label htmlFor="customer-email">{ui("Email")}</Label>
+                <Input id="customer-email" type="email" value={form.email} onChange={e => set("email", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Category")}</Label>
+                <Label htmlFor="customer-category">{ui("Category")}</Label>
                 <Select value={form.category} onValueChange={v => set("category", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="customer-category"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {["supermarket", "minimarket", "wholesaler", "shop", "cash_customer", "institutional"].map(c => <SelectItem key={c} value={c}>{c.replace(/_/g, " ")}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="sm:col-span-2">
-                <Label>{ui("Payment Organization")}</Label>
+                <Label htmlFor="customer-payment-organization">{ui("Payment Organization")}</Label>
                 <Select value={form.financial_centralization_mode} onValueChange={v => set("financial_centralization_mode", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="customer-payment-organization"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="centralized">{ui("Centralized — headquarters pays for all branches")}</SelectItem>
                     <SelectItem value="decentralized">{ui("Decentralized — each branch pays its own invoices")}</SelectItem>
@@ -198,9 +201,9 @@ export default function CustomerForm() {
                 </Select>
               </div>
               <div>
-                <Label>{ui("Partner Type")}</Label>
+                <Label htmlFor="customer-partner-type">{ui("Partner Type")}</Label>
                 <Select value={partnerType} onValueChange={setPartnerType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="customer-partner-type"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="main">{ui("Main partner — brand or headquarters")}</SelectItem>
                     <SelectItem value="branch">{ui("Branch — sub-partner of a main partner")}</SelectItem>
@@ -209,9 +212,9 @@ export default function CustomerForm() {
               </div>
               {partnerType === "branch" ? (
                 <div>
-                  <Label>{ui("Main Partner *")}</Label>
+                  <Label htmlFor="customer-main-partner">{ui("Main Partner *")}</Label>
                   <Select value={form.parent_id} onValueChange={v => set("parent_id", v)}>
-                    <SelectTrigger><SelectValue placeholder={ui("Choose the main partner")} /></SelectTrigger>
+                    <SelectTrigger id="customer-main-partner"><SelectValue placeholder={ui("Choose the main partner")} /></SelectTrigger>
                     <SelectContent>
                       {mainPartners.map(c => <SelectItem key={c.id} value={c.id}>{c.business_name}</SelectItem>)}
                     </SelectContent>
@@ -223,24 +226,24 @@ export default function CustomerForm() {
                 </div>
               )}
               <div className="sm:col-span-2">
-                <Label>{ui("Address")}</Label>
-                <Input value={form.address} onChange={e => set("address", e.target.value)} />
+                <Label htmlFor="customer-address">{ui("Address")}</Label>
+                <Input id="customer-address" value={form.address} onChange={e => set("address", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Town")}</Label>
-                <Input value={form.town} onChange={e => set("town", e.target.value)} />
+                <Label htmlFor="customer-town">{ui("Town")}</Label>
+                <Input id="customer-town" value={form.town} onChange={e => set("town", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Neighbourhood")}</Label>
-                <Input value={form.neighbourhood} onChange={e => set("neighbourhood", e.target.value)} />
+                <Label htmlFor="customer-neighbourhood">{ui("Neighbourhood")}</Label>
+                <Input id="customer-neighbourhood" value={form.neighbourhood} onChange={e => set("neighbourhood", e.target.value)} />
               </div>
               <div>
-                <Label>{ui("Credit Limit (XAF)")}</Label>
-                <Input type="number" value={form.credit_limit} onChange={e => set("credit_limit", Number(e.target.value))} />
+                <Label htmlFor="customer-credit-limit">{ui("Credit Limit (XAF)")}</Label>
+                <Input id="customer-credit-limit" type="number" value={form.credit_limit} onChange={e => set("credit_limit", Number(e.target.value))} />
               </div>
               <div>
-                <Label>{ui("Payment Terms (days)")}</Label>
-                <Input type="number" value={form.payment_terms_days} onChange={e => set("payment_terms_days", Number(e.target.value))} />
+                <Label htmlFor="customer-payment-terms">{ui("Payment Terms (days)")}</Label>
+                <Input id="customer-payment-terms" type="number" value={form.payment_terms_days} onChange={e => set("payment_terms_days", Number(e.target.value))} />
               </div>
             </div>
             <div className="mt-5"><DeliverySetupFields value={form} onChange={changes=>setForm(f=>({...f,...changes}))} disabled={saving} onBusyChange={setLocating}/></div>
@@ -248,7 +251,7 @@ export default function CustomerForm() {
             <div className="mt-6 flex gap-3">
               <Button onClick={handleSave} disabled={saving || locating || loading || !!loadError}><Save size={16} className="mr-1" /> {saving ? ui("Saving...") : ui("Save")}</Button>
             </div>
-          </div>
+          </fieldset>
         </TabsContent>
         {isEdit && (
           <TabsContent value="invoices" className="mt-4">
@@ -262,6 +265,7 @@ export default function CustomerForm() {
         )}
       </Tabs>
       </fieldset>
+      {isEdit && isAdmin && customerRecord && <section className="mt-6 max-w-3xl rounded-xl border border-red-100 bg-white p-4"><CustomerRemoval customer={customerRecord} disabled={saving || locating || loading || !!loadError} onDone={customer => navigate(customer.customer_removed_at ? "/customers?view=removed" : "/customers?view=visual&customer=" + encodeURIComponent(customer.id))} /></section>}
     </div>
   );
 }

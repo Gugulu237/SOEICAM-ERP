@@ -119,7 +119,7 @@ export async function commercialAction(base44, user, body) {
     const query = commercialId ? { $or: [{ acquired_by_id: commercialId }, { salesperson_id: commercialId }] }
       : { acquired_by_id: { $exists: true, $ne: '' } };
     const customers = await readRecords(svc.entities.Customer, query);
-    return { customers: customers.map(customerView) };
+    return { customers: customers.filter(customer => !customer.customer_removed_at).map(customerView) };
   }
 
   if (body.action === 'commercialPerformance') {

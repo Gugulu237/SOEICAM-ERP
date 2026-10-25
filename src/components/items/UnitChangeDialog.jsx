@@ -8,7 +8,7 @@ export default function UnitChangeDialog({ open, itemName, fromUnit, toUnit, sav
   if (!open) return null;
   const changedUnit = fromUnit && toUnit && fromUnit!==toUnit;
   return <AlertDialog open={open} onOpenChange={value=>{if(!value && !saving)onCancel();}}>
-    <AlertDialogContent overlayClassName="z-[90]" className="z-[100] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] overflow-y-auto" onEscapeKeyDown={event=>{if(saving)event.preventDefault();}}>
+    <AlertDialogContent overlayClassName="z-[90]" className="z-[100] max-h-[calc(100dvh_-_2rem)] w-[calc(100vw_-_2rem)] overflow-y-auto" onEscapeKeyDown={event=>{if(saving)event.preventDefault();}}>
       <AlertDialogHeader>
         <AlertDialogTitle>{changedUnit ? ui('Change this item unit across the app?') : ui('Save changes to {0}?',itemName)}</AlertDialogTitle>
         <AlertDialogDescription>{changedUnit ? ui('You are changing {0} from {1} to {2}. This affects inventory, purchasing, sales and production for this item.',itemName,fromUnit,toUnit) : ui('These item details are shared across the app. Choose Proceed to save, or Cancel to keep editing.')}</AlertDialogDescription>

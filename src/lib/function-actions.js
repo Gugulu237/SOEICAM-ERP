@@ -5,12 +5,12 @@ const fieldReads = new Set([
   'fieldStockInventory', 'driverReturnsWorkspace',
   'inventoryAuditWorkspace', 'inventoryAuditDetail', 'inventoryAuditMovements',
   'assetWorkspace', 'assetDepreciationPreview', 'commercialCashiers', 'cashierHandoverHistory', 'cashierWorkspace', 'purchasesWorkspace',
-  'distributionControl', 'supplierWorkspace', 'employeeDashboard', 'dispatchActivity',
+  'distributionControl', 'distributionIssueWorkspace', 'supplierWorkspace', 'employeeDashboard', 'dispatchActivity',
   'dispatchReconciliation', 'fieldCustomers', 'commercialPerformance', 'commercialDailySupplies',
   'expiredReturnReviewQueue', 'commercialReturns', 'outletReports', 'outletRoster', 'previewSale', 'proposedJournal',
   'yogurtWorkspace', 'checkProductionMaterials', 'productionPurchaseOptions', 'productionAuditRequests', 'batchCatalogue', 'batchTrace',
   'accountPosition', 'cashFlowReport', 'outletShelfOverview', 'companySales', 'invoiceWorkspace', 'invoiceDetail',
-  'invoiceSource', 'customerDeliveryWorkspace', 'deliveryZoneOptions',
+  'salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','invoiceSource', 'customerDeliveryWorkspace', 'customerMapWorkspace', 'deliveryZoneOptions',
 ]);
 export function isReadOnlyFunction(name, action) {
   return name === 'fieldOps' && fieldReads.has(action);

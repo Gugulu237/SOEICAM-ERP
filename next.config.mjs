@@ -8,7 +8,10 @@ const config = {
   experimental: { cpus: 1, webpackBuildWorker: false, serverActions: { bodySizeLimit: '20mb' } },
   webpack(config) { config.parallelism = 1; return config; },
   async headers() {
-    return [{ source: '/api/:path*', headers: [{ key: 'Cache-Control', value: 'private, no-store' }, { key: 'X-Content-Type-Options', value: 'nosniff' }] }];
+    return [
+      { source: '/api/:path*', headers: [{ key: 'Cache-Control', value: 'private, no-store' }, { key: 'X-Content-Type-Options', value: 'nosniff' }] },
+      { source: '/products/optimized/:path*', headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }] },
+    ];
   },
 };
 export default config;

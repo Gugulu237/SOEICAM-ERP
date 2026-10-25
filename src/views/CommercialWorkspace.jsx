@@ -13,13 +13,14 @@ import { readAll } from '@/lib/field-pos';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import { commercialWorkspaceSubject, commercialWorkspaceSection, validateCommercialWorkspace } from '@/lib/commercial-workspace';
 import dynamic from 'next/dynamic';
+import MobileInfo from '@/components/shared/MobileInfo';
 
 const CommercialPerformance = dynamic(() => import('@/views/CommercialPerformance'), { loading: () => <p role="status" className="p-6 text-sm text-slate-500">{ui("Loading performance...")}</p> });
 
 export default function CommercialWorkspace() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { role, employee, user, loading: authLoading, error: authError } = useCurrentUser();
+  const { role, roleLabel, employee, user, loading: authLoading, error: authError } = useCurrentUser();
   const [params, setParams] = useSearchParams();
   const managing = role === 'admin';
   const section = commercialWorkspaceSection(role,params);
@@ -94,14 +95,14 @@ export default function CommercialWorkspace() {
   return <div className="space-y-5 pb-6">
     <section className="rounded-2xl border border-emerald-200 bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-semibold text-slate-900">{reviewing ? ui('Customer acquisition review') : managing ? ui("Commercial quick reports") : ui("Commercial Agent dashboard")}</h2><p className="mt-1 text-xs text-slate-500">{reviewing ? ui('Verify reported customer acquisitions as General Manager. The review records your own account and does not create employee sales or operations.') : managing ? ui("Choose an agent to review their recorded activity. Employee operations are read-only.") : ui("Your stock, customers, sales and cash from SOEICAM.")}</p></div>
+        <div className="relative min-w-0 flex-1 pr-10 sm:pr-0">{!managing && <div className="sm:hidden"><p className="text-xs font-semibold uppercase tracking-wide text-primary">{ui(roleLabel || "Commercial agent")}</p><h1 className="mt-1 break-words text-2xl font-bold text-slate-900">{employee?.full_name || user?.full_name}</h1></div>}<h2 className={"font-semibold text-slate-900 " + (!managing ? "hidden sm:block" : "")}>{reviewing ? ui('Customer acquisition review') : managing ? ui("Commercial quick reports") : ui("Commercial Agent dashboard")}</h2><MobileInfo title={ui("Commercial workspace")} className="absolute right-0 top-0 sm:static" desktopClassName="mt-1 text-xs text-slate-500"><p>{reviewing ? ui('Verify reported customer acquisitions as General Manager. The review records your own account and does not create employee sales or operations.') : managing ? ui("Choose an agent to review their recorded activity. Employee operations are read-only.") : ui("Your stock, customers, sales and cash from SOEICAM.")}</p></MobileInfo></div>
         <div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${data ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{reportSection ? reviewing ? ui("Acquisition review") : ui("Reports") : data ? ui("Live records") : loading ? ui("Connecting...") : ui("Awaiting connection")}</span><Button variant="outline" size="sm" disabled={loading || (managing && rosterLoading)} onClick={refresh}><RefreshCw size={14} className={'mr-2 ' + (loading ? 'animate-spin' : '')} />{ui("Refresh")}</Button></div>
       </div>
       {managing && <div className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
         <label className="min-w-0 flex-1 text-xs font-medium text-slate-600">{ui("Commercial agent")}<select aria-label={ui("Live Commercial agent")} className="mt-1 block h-11 w-full rounded-lg border bg-white px-3 text-sm text-slate-900" value={employeeId} disabled={rosterLoading} onChange={e => setParams(current => { if (e.target.value) current.set('employee', e.target.value); else current.delete('employee'); current.delete('new'); current.delete('customer'); return current; })}><option value="">{rosterLoading ? ui("Loading agents...") : ui("Choose a Commercial agent")}</option>{roster.map(row => <option key={row.id} value={row.id}>{row.full_name}{row.status && row.status !== 'active' ? ' (' + row.status + ')' : ''}</option>)}</select></label>
         <Button asChild variant="outline"><Link to="/employees">{ui("Manage staff accounts")}</Link></Button><Button asChild variant="ghost"><Link to="/team-workspaces?role=commercial">{ui("Employee dashboards")}</Link></Button>
       </div>}
-      {data && <p className="mt-3 text-xs text-slate-500">{managing ? ui("Viewing {0} as General Manager. ", data.employee.full_name) : ''}{ui("Updated ")}{result.loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {data.date}{ui(" · Cameroon time")}</p>}
+      {data && <p className="mt-3 hidden text-xs text-slate-500 sm:block">{managing ? ui("Viewing {0} as General Manager. ", data.employee.full_name) : ''}{ui("Updated ")}{result.loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {data.date}{ui(" · Cameroon time")}</p>}
     </section>
     {managing && <nav aria-label={ui("Commercial Dashboard sections")} className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">{(managing ? [['performance', 'Performance'], ['workspace', 'Employee activity'], ['review','Acquisition review']] : [['workspace', 'Workspace'], ['pos', ui("Field POS")], ['performance', 'Performance']]).map(([value, label]) => <button key={value} type="button" aria-current={section === value ? 'page' : undefined} className={'rounded-lg px-4 py-2 text-sm font-semibold ' + (section === value ? 'bg-emerald-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-100')} onClick={() => setParams(current => { if (value === 'workspace') current.delete('section'); else current.set('section', value); current.delete('new'); current.delete('customer'); return current; })}>{ui(label)}</button>)}</nav>}
     {rosterError && managing && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{ui("Could not load Commercial agents. ")}{rosterError}</p>}

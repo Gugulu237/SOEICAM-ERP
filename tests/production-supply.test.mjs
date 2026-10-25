@@ -255,13 +255,13 @@ test('production output requires an active Cold Room, with explicit selection fo
   assert.equal((await action(f,{action:'completeProduction',quantity:20,warehouseId:f.cold.id})).reused,true);assert.equal((await s.StockMovement.filter({movement_type:'production_output'})).length,1);
 });
 
-test('purchased finished assemblies cannot be received into a dry warehouse but can be received into Cold Room',async()=>{
+test('finished assemblies remain excluded from supplier-material receiving in every warehouse',async()=>{
  const f=await setup(),s=f.entities;
  const line=await s.PurchaseOrderLine.create({po_id:'po',product_id:'product-a',product_name:'YOLA',quantity:5,unit:'ea',unit_price:10,total:50,received_quantity:0});
  await s.Employee.update('cashier',{role:'warehouse_manager'});
  const body={action:'receiveSupplierOrder',orderId:'po',requestKey:crypto.randomUUID(),date,warehouseId:f.raw.id,lines:[{po_line_id:line.id,quantity:5,lot_number:'PUR-FG-1',expiry_date:'2027-01-01'}]};
- await assert.rejects(supplierAction(f.client,user,body),/Cold Room/);assert.equal((await s.GoodsReceipt.list()).length,0);
- const result=await supplierAction(f.client,user,{...body,warehouseId:f.cold.id});assert.equal(result.receipt.warehouse_id,f.cold.id);assert.equal((await s.StockBalance.filter({warehouse_id:f.cold.id,product_id:'product-a'}))[0].quantity,5);
+ await assert.rejects(supplierAction(f.client,user,body),/Only active inventory items/);assert.equal((await s.GoodsReceipt.list()).length,0);
+ await assert.rejects(supplierAction(f.client,user,{...body,warehouseId:f.cold.id}),/Only active inventory items/);assert.equal((await s.GoodsReceipt.list()).length,0);assert.equal((await s.StockBalance.filter({warehouse_id:f.cold.id,product_id:'product-a'})).length,0);
 });
 
 test('an active unlinked supplier can receive a shortage proposal, but approval waits for Procurement confirmation and does not edit its catalogue',async()=>{

@@ -27,12 +27,15 @@ import { availableCustody, readAll, roundMoney, roundQuantity, saleIsLocked, sal
 import { isFinishedProduct } from '@/lib/product-images';
 import { formatXAF } from '@/lib/formatters';
 import { useToast } from '@/components/ui/use-toast';
+import { validateSaleReplacements } from '@/lib/sale-replacements';
+import SaleReplacements from '@/components/field/SaleReplacements';
+import MobileInfo from '@/components/shared/MobileInfo';
 import { businessDate } from '@/lib/business-date';
 
 const blank = () => ({ customer_id: '', location_id: '', transaction_date: businessDate(),
-  dispatch_id: '', payment_type: '', amount_collected: '', payment_terms_days: '', notes: '', receipt_reference: '', receipt_file_uris: [], lines: [] });
+  dispatch_id: '', payment_type: '', amount_collected: '', payment_terms_days: '', notes: '', receipt_reference: '', receipt_file_uris: [], lines: [], stock_replacements: [] });
 
-export default function FieldSaleForm({ embedded = false, commercialId: selectedCommercialId = '', commercialName = '', saleId, initialCustomerId = '', initialProductId = '', onDone, onCancel }) {
+export default function FieldSaleForm({ embedded = false, commercialId: selectedCommercialId = '', commercialName = '', saleId, initialCustomerId = '', initialProductId = '', initialPaymentType = '', onDone, onCancel }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const routeParams = useParams();
@@ -94,15 +97,16 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
           amount_collected: existing.amount_collected == null ? '' : String(existing.amount_collected),
           payment_terms_days: existing.payment_terms_days == null ? '' : String(existing.payment_terms_days), notes: existing.notes || '',
           receipt_reference: existing.receipt_reference || '', receipt_file_uris: existing.receipt_file_uris || [],
+          stock_replacements: existing.stock_replacements || [],
           lines: savedLines.map((line) => ({ product_id: line.product_id, product_name: line.product_name, quantity: line.quantity, unit_price: line.unit_price, tax_rate: line.tax_rate })),
-        } : { ...blank(), customer_id: cust.some((c) => c.id === customerParam) ? customerParam : '' });
+        } : { ...blank(), payment_type: ['cash', 'credit'].includes(initialPaymentType) ? initialPaymentType : '', customer_id: cust.some((c) => c.id === customerParam) ? customerParam : '' });
         setStep(saleIsLocked(existing) ? 'checkout' : 'products');
       } catch (error) { if (active) setLoadError(errorMessage(error)); }
       finally { if (active) setLoading(false); }
     }
     load();
     return () => { active = false; };
-  }, [authLoading, commercialId, id, reload, customerParam]);
+  }, [authLoading, commercialId, id, reload, customerParam, initialPaymentType]);
 
   useEffect(() => {
     let active = true;
@@ -158,7 +162,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
   const collected = form.payment_type === 'cash' ? roundMoney(form.amount_collected) : 0;
   const due = locked && sale ? roundMoney(sale.amount_due) : roundMoney(totals.total - collected);
   const availableProducts = stock.filter((p) => p.is_active !== false && isFinishedProduct(p) && p.quantity > 0);
-  const validation = validateSale(form, stock, { isAdmin });
+  const validation = validateSale(form, stock, { isAdmin }) || validateSaleReplacements(form, stock);
   const review = () => { setStep('checkout'); requestAnimationFrame(() => checkoutRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })); };
   const add = (product) => {
     if (disabled) return;
@@ -183,7 +187,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
   const save = async (submit) => {
     if (saving.current || disabled || uploading || !canSell) return;
     const runProblem = submit && (runLoading ? ui("Wait while delivery stock is refreshed.") : runError ? ui("Delivery stock could not be refreshed. Try again before recording this supply.") : !selectedRun || selectedRun.can_supply !== true ? ui("Choose a loaded delivery run paired with your driver before recording this supply.") : '');
-    const problem = runProblem || validateSale(form, stock, { isAdmin, submit });
+    const problem = runProblem || validateSale(form, stock, { isAdmin, submit }) || validateSaleReplacements(form, stock);
     if (submit && trackedOutlet && !form.location_id) { setSaveError(sourceMessage("Choose the exact supplied point of sale so its Hotesse receives the batch details.")); review(); return; }
     if (problem) { setSaveError(problem); review(); return; }
     saving.current = true; setBusy(true); setSaveError('');
@@ -195,6 +199,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
         paymentType: form.payment_type, amountCollected: form.amount_collected, collectionDate: form.transaction_date,
         paymentTermsDays: form.payment_terms_days, notes: form.notes, receiptReference: form.receipt_reference.trim(),
         receiptFileUris: form.receipt_file_uris,
+        stockReplacements: form.stock_replacements,
         lines: form.lines.map((line) => ({ product_id: line.product_id, quantity: roundQuantity(line.quantity), unit_price: roundMoney(line.unit_price) })),
         submit, idempotencyKey: requestKey.current,
       });
@@ -217,7 +222,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div><button type="button" onClick={back} disabled={busy} className="mb-3 flex min-h-9 items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900"><ArrowLeft size={14} />{ui("My field sales")}</button>
         <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight text-slate-900">{sale ? sale.sale_number : ui("Record sale / supply")}</h1><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">{ui("Field POS")}</span>{sale && <StatusPill map={SALE_STATUS} value={sale.status} />}</div>
-        <p className="mt-2 text-sm text-slate-500">{ui("Enter exactly what was delivered, declare cash or credit and photograph the supply receipt.")}</p>
+        <MobileInfo title={ui("Record sale")} desktopClassName="mt-2 text-sm text-slate-500"><p>{ui("Enter exactly what was delivered, declare cash or credit and photograph the supply receipt.")}</p></MobileInfo>
       </div>
       <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600"><span className="h-2 w-2 rounded-full bg-emerald-500" />{commercialName || sale?.commercial_name || employee?.full_name || ui("Selected Commercial agent")}</div>
     </div>
@@ -241,7 +246,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
         <ProductCatalog products={availableProducts} lines={form.lines} onSelect={add} selling disabled={disabled}
           emptyMessage={ui("Choose a loaded driver run to see its finished products. The warehouse loads stock before departure.")} />
       </section>
-      <section ref={checkoutRef} aria-label={ui("Sale checkout")} className={`min-w-0 scroll-mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-5 lg:max-h-[calc(100dvh-2.5rem)] lg:overflow-y-auto ${step === 'checkout' ? '' : 'hidden lg:block'}`}>
+      <section ref={checkoutRef} aria-label={ui("Sale checkout")} className={`min-w-0 scroll-mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-5 lg:max-h-[calc(100dvh_-_2.5rem)] lg:overflow-y-auto ${step === 'checkout' ? '' : 'hidden lg:block'}`}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><ShoppingBag size={18} />{ui("Current sale")}</h2><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{form.lines.length}{ui(" products")}</span></div>
         <div className="space-y-5 p-4 sm:p-5">
           <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
@@ -249,7 +254,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
             {locked ? <p className="text-sm">{[sale?.driver_name, sale?.vehicle_name, sale?.dispatch_number].filter(Boolean).join(' / ') || ui("No driver pairing recorded on this historical sale")}</p> : <>
               <select id="supply-run" disabled={disabled || runLoading} value={form.dispatch_id} onChange={event => {
                 if (event.target.value === form.dispatch_id) return;
-                if (!form.lines.length || window.confirm('Change delivery run? Products in this unsaved supply will be cleared.')) set({ dispatch_id: event.target.value, lines: [] });
+                if (!form.lines.length || window.confirm('Change delivery run? Products in this unsaved supply will be cleared.')) set({ dispatch_id: event.target.value, lines: [], stock_replacements: [] });
               }} className="h-11 w-full rounded-lg border bg-white px-2 text-xs">
                 <option value="">{runLoading ? ui("Refreshing delivery stock...") : ui("Choose your loaded run")}</option>
                 {runs.map(run => <option key={run.id} value={run.id} disabled={run.can_supply !== true}>{[run.driver_name || ui("No driver"), run.vehicle_name, run.dispatch_number, run.can_supply !== true ? run.status?.replaceAll('_', ' ') : ''].filter(Boolean).join(' / ')}</option>)}
@@ -259,27 +264,28 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
               {runError && <p role="alert" className="text-xs text-red-700">{runError} <button type="button" className="underline" onClick={() => setRunReload((value) => value + 1)}>{ui("Try again")}</button></p>}
               {!runLoading && !runs.some((run) => run.can_supply === true) && <p className="text-xs leading-5 text-slate-800">{ui("The warehouse must load finished products onto a run paired with you and a driver before supplies can be recorded.")}</p>}
             </>}
-            <p className="text-[11px] leading-5 text-slate-500">{ui("Only stock loaded onto this delivery run is available. Quantities refresh while this page is open and are checked again when you record the supply.")}</p>
+            <MobileInfo title={ui("Delivery stock")} desktopClassName="text-[11px] leading-5 text-slate-500"><p>{ui("Only stock loaded onto this delivery run is available. Quantities refresh while this page is open and are checked again when you record the supply.")}</p></MobileInfo>
           </div>
           <CustomerPicker customers={customers} value={form.customer_id} fallbackName={sale?.customer_name} disabled={disabled} onChange={(value) => { set({ customer_id: value, location_id: '' }); if (value === form.customer_id && outletError) setOutletRetry((n) => n + 1); }} />
           <Button type="button" variant="outline" className="w-full" disabled={disabled} onClick={() => setRegisterOpen(true)}>{ui("+ Register a new customer")}</Button>
           {!locked && <p className="-mt-3 text-[11px] leading-5 text-slate-500">{ui("Customers you register remain linked to you for follow-up and acquisition goals.")}</p>}
           {form.customer_id && <CustomerMapLinks customer={outlets.find((o) => o.id === form.location_id) || customers.find((c) => c.id === form.customer_id)} />}
-          <div className="grid grid-cols-2 gap-3"><div><Label htmlFor="pos-outlet" className="text-xs text-slate-500">{ui("Outlet")}</Label><select id="pos-outlet" value={form.location_id} disabled={disabled || !form.customer_id || Boolean(outletError)} onChange={(e) => set({ location_id: e.target.value })} className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">{trackedOutlet ? ui("Choose supplied point of sale") : ui("Head office")}</option>{outlets.map((outlet) => <option value={outlet.id} key={outlet.id}>{outlet.name}</option>)}</select></div>
-            <div><Label htmlFor="pos-date" className="text-xs text-slate-500">{ui("Delivery date")}</Label><Input id="pos-date" className="mt-1 min-w-0" type="date" value={form.transaction_date} disabled={disabled} onChange={(e) => { if (e.target.value !== form.transaction_date && (!form.lines.length || window.confirm('Change delivery date? Products in this unsaved supply will be cleared.'))) set({ transaction_date: e.target.value, dispatch_id: '', lines: [] }); }} /></div></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><Label htmlFor="pos-outlet" className="text-xs text-slate-500">{ui("Outlet")}</Label><select id="pos-outlet" value={form.location_id} disabled={disabled || !form.customer_id || Boolean(outletError)} onChange={(e) => set({ location_id: e.target.value })} className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"><option value="">{trackedOutlet ? ui("Choose supplied point of sale") : ui("Head office")}</option>{outlets.map((outlet) => <option value={outlet.id} key={outlet.id}>{outlet.name}</option>)}</select></div>
+            <div><Label htmlFor="pos-date" className="text-xs text-slate-500">{ui("Delivery date")}</Label><Input id="pos-date" className="mt-1 min-w-0" type="date" value={form.transaction_date} disabled={disabled} onChange={(e) => { if (e.target.value !== form.transaction_date && (!form.lines.length || window.confirm('Change delivery date? Products in this unsaved supply will be cleared.'))) set({ transaction_date: e.target.value, dispatch_id: '', lines: [], stock_replacements: [] }); }} /></div></div>
           {outletError && <p role="alert" className="text-xs text-red-600">{outletError}</p>}
           <FieldSaleLines lines={form.lines} stock={stock} disabled={disabled} isAdmin={isAdmin} onChange={(lines) => set({ lines })} />
+          <SaleReplacements key={sale?.id || "new"} rows={form.stock_replacements} stock={stock} lines={form.lines} date={form.transaction_date} disabled={disabled} onChange={rows => set({ stock_replacements: rows })} />
           <div className="space-y-2 border-t border-slate-100 pt-4 text-sm"><div className="flex justify-between text-slate-500"><span>{ui("Subtotal")}</span><span>{formatXAF(totals.subtotal)}</span></div>{totals.tax !== 0 && <div className="flex justify-between text-slate-500"><span>{ui("Tax")}</span><span>{formatXAF(totals.tax)}</span></div>}<div className="flex items-center justify-between text-lg font-bold text-slate-900"><span>{ui("Total")}</span><span aria-live="polite">{formatXAF(totals.total)}</span></div></div>
           <div><h3 className="mb-2 text-sm font-semibold">{ui("Did the customer pay cash or receive credit? *")}</h3><div className="grid grid-cols-2 gap-2">
-            {[{ value: 'cash', label: ui("Cash collected"), Icon: Banknote }, { value: 'credit', label: ui("On credit"), Icon: CreditCard }].map(({ value, label, Icon }) => <button type="button" key={value} disabled={disabled} aria-pressed={form.payment_type === value} onClick={() => set({ payment_type: value, amount_collected: '', payment_terms_days: '' })} className={`flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-semibold ${form.payment_type === value ? 'border-slate-400 bg-slate-50 text-slate-900' : 'border-slate-200 text-slate-500'}`}><Icon size={18} />{label}{form.payment_type === value && <Check size={14} />}</button>)}
+            {[{ value: 'cash', label: ui("Cash collected"), Icon: Banknote }, { value: 'credit', label: ui("On credit"), Icon: CreditCard }].map(({ value, label, Icon }) => <button type="button" key={value} disabled={disabled} aria-pressed={form.payment_type === value} onClick={() => set({ payment_type: value, amount_collected: '', payment_terms_days: '' })} className={`flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-semibold ${form.payment_type === value ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 text-slate-500'}`}><Icon size={18} />{label}{form.payment_type === value && <Check size={14} />}</button>)}
           </div></div>
           {form.payment_type === 'cash' && <div><div className="mb-1 flex items-center justify-between"><Label htmlFor="pos-cash" className="text-xs">{ui("Exact cash collected (XAF) *")}</Label><button type="button" disabled={disabled} onClick={() => set({ amount_collected: String(totals.total) })} className="min-h-8 text-xs font-semibold text-slate-700">{ui("Full amount")}</button></div><Input id="pos-cash" type="number" min="0.01" max={totals.total} step="0.01" inputMode="decimal" disabled={disabled} value={form.amount_collected} placeholder={ui("Enter cash received")} onChange={(e) => set({ amount_collected: e.target.value })} /><p className="mt-1 text-[11px] leading-5 text-slate-500">{ui("Enter the amount actually received. Any unpaid balance stays on the customer's account. If no cash was collected, choose On credit.")}</p></div>}
           {form.payment_type === 'credit' && <div><Label htmlFor="pos-terms" className="text-xs">{ui("Payment terms (days)")}</Label><Input id="pos-terms" type="number" min="0" step="1" inputMode="numeric" disabled={disabled} value={form.payment_terms_days} onChange={(e) => set({ payment_terms_days: e.target.value })} placeholder={ui("Customer's agreed terms")} /><p className="mt-1 text-[11px] text-slate-500">{ui("No cash collected. The full supply total is recorded as customer credit.")}</p></div>}
           {form.payment_type && due !== 0 && <div className={`flex justify-between rounded-lg p-3 text-sm ${due > 0 ? 'bg-slate-50 text-slate-800' : 'bg-red-50 text-red-700'}`}><span>{ui("Customer balance due")}</span><strong>{formatXAF(due)}</strong></div>}
           <details className="rounded-xl border border-slate-200 p-3" open><summary className="min-h-8 cursor-pointer text-sm font-semibold">{ui("Receipt & notes ")}{form.receipt_file_uris.length > 0 && `(${form.receipt_file_uris.length} attached)`}</summary><div className="mt-3 space-y-4"><ReceiptUploader fileUris={form.receipt_file_uris} onChange={(uris) => set({ receipt_file_uris: uris })} reference={form.receipt_reference} onReferenceChange={(value) => set({ receipt_reference: value })} disabled={disabled} onBusyChange={setUploading} /><div><Label htmlFor="pos-notes" className="text-xs">{ui("Notes")}</Label><Textarea id="pos-notes" rows={2} disabled={disabled} value={form.notes} onChange={(e) => set({ notes: e.target.value })} placeholder={ui("Delivery instructions or comments")} /></div></div></details>
-          {!locked && <><p className="text-xs leading-relaxed text-slate-500">{ui("Recording this supply posts the sale and reduces your delivery stock immediately. Exact quantities, a cash or credit declaration and a receipt photo are required.")}</p>
-            {(saveError || (form.lines.length > 0 && validation)) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{saveError || validation}</p>}
-            <div className="grid grid-cols-[auto_1fr] gap-2"><Button variant="outline" className="h-12" disabled={busy || uploading || Boolean(validation)} onClick={() => save(false)}>{ui("Save draft")}</Button><Button className="h-12 bg-primary font-semibold text-primary-foreground hover:bg-primary/90" disabled={busy || uploading || runLoading || Boolean(validation)} onClick={() => save(true)}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{uploading ? ui("Uploading…") : busy ? ui("Saving…") : ui("Record supply")}{!busy && !uploading && <ArrowRight size={16} className="ml-2" />}</Button></div></>}
+          {!locked && <><MobileInfo title={ui("Recording this sale")} desktopClassName="text-xs leading-relaxed text-slate-500"><p>{ui("Recording this supply posts the sale and reduces your delivery stock immediately. Exact quantities, a cash or credit declaration and a receipt photo are required.")}</p></MobileInfo>
+            {(saveError || (form.lines.length > 0 && validation)) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError || validation)}</p>}
+            <div className="grid grid-cols-1 gap-2"><Button variant="outline" className="h-12" disabled={busy || uploading || Boolean(validation)} onClick={() => save(false)}>{ui("Save draft")}</Button><Button className="order-first h-12 w-full bg-primary font-semibold text-primary-foreground hover:bg-primary/90" disabled={busy || uploading || runLoading || Boolean(validation)} onClick={() => save(true)}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{uploading ? ui("Uploading…") : busy ? ui("Saving…") : ui("Record supply")}{!busy && !uploading && <ArrowRight size={16} className="ml-2" />}</Button></div></>}
         </div>
       </section>
     </div>

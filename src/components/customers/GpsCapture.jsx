@@ -1,3 +1,4 @@
+import CustomerInfo from './CustomerInfo';
 
 /* localized-messages */
 import { sourceMessage, uiMessage } from '@/lib/i18n';
@@ -40,7 +41,7 @@ export default function GpsCapture({ value, onChange, disabled = false, onBusyCh
   };
   const located = hasCustomerLocation(value);
   return <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-    <div><h3 className="font-semibold text-slate-900">{ui("Customer delivery location")}</h3><p className="mt-1 text-sm text-slate-600">{ui("Stand at the customer's delivery entrance. Start live GPS, wait for a stable position, then use that location.")}</p></div>
+    <div className="flex items-center gap-1"><h3 className="font-semibold text-slate-900">{ui("Customer delivery location")}</h3><CustomerInfo title={ui("Customer delivery location")}>{ui("Stand at the customer's delivery entrance. Start live GPS, wait for a stable position, then use that location.")}</CustomerInfo></div>
     {busy ? <Button type="button" className="min-h-11 bg-emerald-700 hover:bg-emerald-800" onClick={() => stopRef.current?.()}><Square size={15} className="mr-2" />{located ? ui("Use this location & stop GPS") : ui("Stop GPS")}</Button>
       : <Button type="button" variant="outline" className="min-h-11 bg-white" disabled={disabled} onClick={capture}><LocateFixed size={16} className="mr-2" />{located ? ui("Update with live GPS") : ui("Start live GPS")}</Button>}
     {hasNewFix&&!busy&&<Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={()=>{changeRef.current(previousFix.current || {});previousFix.current=null;setHasNewFix(false);setError('');}}>{ui("Discard new GPS fix")}</Button>}
@@ -51,6 +52,6 @@ export default function GpsCapture({ value, onChange, disabled = false, onBusyCh
       <GoogleCustomerMap customers={[{ ...value, id: 'capture', business_name: value.business_name || 'Customer delivery entrance' }]} live={busy} />
       <CustomerMapLinks customer={value} /></div>}
     {error && <p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
-    <p className="text-xs leading-5 text-slate-500">{ui("Stop GPS before saving the customer. Only the selected pin, reported accuracy and capture time are saved. Device accuracy can vary.")}</p>
+    <CustomerInfo title={ui("GPS capture")}>{ui("Stop GPS before saving the customer. Only the selected pin, reported accuracy and capture time are saved. Device accuracy can vary.")}</CustomerInfo>
   </div>;
 }

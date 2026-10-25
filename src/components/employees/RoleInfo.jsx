@@ -30,7 +30,7 @@ export default function RoleInfo({ role }) {
       onCloseAutoFocus={event=>{if(pointerOpen.current)event.preventDefault();}}
       onEscapeKeyDown={()=>{pointerOpen.current=false;cancelClose();setOpen(false);}}
       onKeyDown={event=>{if(event.key==='Tab'){pointerOpen.current=false;cancelClose();setOpen(false);}}}
-      className="z-[80] w-80 max-w-[calc(100vw-24px)] overflow-y-auto overscroll-contain rounded-xl border-sky-200 p-4 text-left shadow-xl"
+      className="z-[80] w-80 max-w-[calc(100vw_-_24px)] overflow-y-auto overscroll-contain rounded-xl border-sky-200 p-4 text-left shadow-xl"
       style={{maxHeight:'min(28rem, var(--radix-dropdown-menu-content-available-height))'}}>
       <div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-slate-900">{ui(role.label)}</p><button type="button" aria-label={ui('Close role information')} className="-mr-1 -mt-1 rounded p-1 text-slate-500 hover:bg-slate-100" onClick={()=>{pointerOpen.current=false;setOpen(false);}}><X size={15}/></button></div>
       <div id={id}>

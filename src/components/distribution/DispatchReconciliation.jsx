@@ -70,7 +70,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
           <AlertTriangle size={16} />{ui(" Physical stock on the vehicle does not match expected quantities - investigate before closing.")}</div>
       )}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+        <table className="mobile-table-cards w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
               <th className="px-4 py-3 text-left font-semibold">{ui("Product")}</th>
@@ -88,18 +88,18 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
           <tbody>
             {data.rows.map(r => (
               <tr key={r.product_id || r.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-3 font-medium text-slate-900"><div className="flex items-center gap-2"><ProductThumb product={products.find(p=>p.id===r.product_id)} name={r.product_name}/><div>{r.product_name}{r.unit && <p className="mt-1 text-xs font-normal text-slate-500">{r.unit}</p>}</div></div></td>
-                <td className="px-4 py-3 text-right">{formatNumber(r.loaded, 3)}</td>
-                <td className="px-4 py-3 text-right">{formatNumber(r.sold, 3)}</td>
-                <td className="px-4 py-3 text-right">{formatNumber(r.replaced || 0, 3)}</td>
-                <td className="px-4 py-3 text-right">{formatNumber(r.returned, 3)}</td>
-                <td className="px-4 py-3 text-right">{formatNumber(r.expected, 3)}</td>
-                <td className="px-4 py-3 text-right">{formatNumber(r.actual, 3)}</td>
-                <td className={`px-4 py-3 text-right font-medium ${r.variance === 0 ? "text-slate-400" : r.variance > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                <td data-label={ui("Product")} className="px-4 py-3 font-medium text-slate-900"><div className="flex items-center gap-2"><ProductThumb product={products.find(p=>p.id===r.product_id)} name={r.product_name}/><div>{r.product_name}{r.unit && <p className="mt-1 text-xs font-normal text-slate-500">{r.unit}</p>}</div></div></td>
+                <td data-label={ui("Loaded")} className="px-4 py-3 text-right">{formatNumber(r.loaded, 3)}</td>
+                <td data-label={ui("Supplied")} className="px-4 py-3 text-right">{formatNumber(r.sold, 3)}</td>
+                <td data-label={ui("Replaced free")} className="px-4 py-3 text-right">{formatNumber(r.replaced || 0, 3)}</td>
+                <td data-label={ui("Returned")} className="px-4 py-3 text-right">{formatNumber(r.returned, 3)}</td>
+                <td data-label={ui("Expected")} className="px-4 py-3 text-right">{formatNumber(r.expected, 3)}</td>
+                <td data-label={ui("On vehicle")} className="px-4 py-3 text-right">{formatNumber(r.actual, 3)}</td>
+                <td data-label={ui("Variance")} className={`px-4 py-3 text-right font-medium ${r.variance === 0 ? "text-slate-400" : r.variance > 0 ? "text-emerald-600" : "text-red-600"}`}>
                   {r.variance > 0 ? "+" : ""}{formatNumber(r.variance, 3)}
                 </td>
-                {canReturn&&<td className="px-4 py-3"><Input aria-label={'Counted return of '+r.product_name} type="number" min="0" step="0.001" value={counts[r.product_id] ?? ''} className="w-28" onChange={e=>setCounts(current=>({...current,[r.product_id]:e.target.value}))}/></td>}
-                <td className="px-4 py-3 text-right">{formatXAF(r.sales_value)}</td>
+                {canReturn&&<td data-label={ui("Counted return")} className="px-4 py-3"><Input aria-label={ui("Counted return") + ": " + r.product_name} type="number" min="0" step="0.001" value={counts[r.product_id] ?? ''} className="w-28" onChange={e=>setCounts(current=>({...current,[r.product_id]:e.target.value}))}/></td>}
+                <td data-label={ui("Sales value")} className="px-4 py-3 text-right">{formatXAF(r.sales_value)}</td>
               </tr>
             ))}
             {data.rows.length === 0 && <tr><td colSpan={canReturn?10:9} className="px-4 py-6 text-center text-slate-400">{ui("Nothing loaded on this dispatch.")}</td></tr>}

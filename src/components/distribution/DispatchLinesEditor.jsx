@@ -39,7 +39,7 @@ export default function DispatchLinesEditor({ lines, setLines, products, stockMa
         {!readOnly && <Button variant="outline" size="sm" onClick={addLine}><Plus size={14} className="mr-1" />{ui(" Add Product")}</Button>}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="mobile-table-cards w-full text-sm">
           <thead>
             <tr className="border-b text-left text-slate-600">
               <th className="pb-2">{ui("Product")}</th>
@@ -52,27 +52,27 @@ export default function DispatchLinesEditor({ lines, setLines, products, stockMa
           <tbody>
             {lines.map((l, i) => (
               <tr key={i} className="border-b border-slate-100">
-                <td className="py-2 pr-2">
-                  <div className="flex min-w-64 items-center gap-3"><ProductThumb product={products.find(p => p.id === l.product_id)} name={l.product_name} size={44} /><div className="min-w-0 flex-1">{readOnly ? <span>{l.product_name}</span> : (
+                <td data-label={ui("Product")} className="py-2 pr-2">
+                  <div className="flex min-w-0 sm:min-w-64 items-center gap-3"><ProductThumb product={products.find(p => p.id === l.product_id)} name={l.product_name} size={44} /><div className="min-w-0 flex-1">{readOnly ? <span>{l.product_name}</span> : (
                     <Select value={l.product_id} onValueChange={v => updateLine(i, "product_id", v)}>
                       <SelectTrigger className="h-9"><SelectValue placeholder={ui("Select product")} /></SelectTrigger>
                       <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}><span className="flex items-center gap-2"><ProductThumb product={p} size={32} /><span>{p.name}</span></span></SelectItem>)}</SelectContent>
                     </Select>
                   )}<p className="mt-1 text-xs text-slate-500">{l.unit || ui("Select a product to see its U/M")}</p></div></div>
                 </td>
-                <td className="py-2 pr-2 text-right text-slate-500">{stockMap == null ? '-' : formatNumber(stockMap[l.product_id] || 0, 3)}</td>
-                <td className="py-2 pr-2">
+                <td data-label={ui("Usable in store")} className="py-2 pr-2 text-right text-slate-500">{stockMap == null ? '-' : formatNumber(stockMap[l.product_id] || 0, 3)}</td>
+                <td data-label={ui("Requested")} className="py-2 pr-2">
                   {readOnly ? formatNumber(l.requested_quantity, 2) : (
                     <Input aria-label={ui("Requested quantity for {0}", l.product_name || 'product')} type="number" min="0" step="0.001" className="h-9" value={l.requested_quantity} onChange={e => updateLine(i, "requested_quantity", e.target.value)} />
                   )}
                 </td>
-                <td className="py-2 pr-2">
+                <td data-label={ui("To Load")} className="py-2 pr-2">
                   {readOnly ? formatNumber(l.loaded_quantity, 2) : (
                     <Input aria-label={ui("Quantity to load for {0}", l.product_name || 'product')} type="number" min="0" step="0.001" className="h-9" value={l.loaded_quantity} onChange={e => updateLine(i, "loaded_quantity", e.target.value)} />
                   )}
                 </td>
                 {!readOnly && (
-                  <td className="py-2">
+                  <td data-label={ui("Actions")} className="py-2">
                     <button aria-label={ui("Remove {0} from load", l.product_name || 'product')} onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))} className="p-1 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   </td>
                 )}

@@ -1,8 +1,15 @@
 'use client';
-import { createBrowserClient } from '@supabase/ssr';
-let client;
+let client, pending;
 export const isSupabaseConfigured = () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
-export function supabaseBrowser() {
+// Keep the unused identity SDK out of the shared Clerk startup chunk.
+export async function supabaseBrowser() {
   if (!isSupabaseConfigured()) throw new Error('The SOEICAM database connection has not been configured.');
-  return client ||= createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  if (client) return client;
+  if (!pending) {
+    pending = import('@supabase/ssr').then(({createBrowserClient}) => {
+      client = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+      return client;
+    }).catch(error => { pending = null; throw error; });
+  }
+  return pending;
 }

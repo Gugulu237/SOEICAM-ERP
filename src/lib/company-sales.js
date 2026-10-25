@@ -11,13 +11,13 @@ export function companySalesRegister({ invoices = [], fieldSales = [], from, to 
   const rows = [
     ...invoices.filter(row => !row.field_sale_id && !fieldJournals.has(row.journal_id) && postedInvoiceStatuses.includes(row.status) && posted(row) && inPeriod(row.invoice_date)).map(row => ({
       id: 'invoice:' + row.id, document_id: row.id, document_number: row.invoice_number || row.id, source: 'Invoice', date: row.invoice_date,
-      customer_name: row.customer_name, commercial_name: '', payment_type: row.payment_type, status: row.status,
+      customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.salesperson_id || '',commercial_name: row.salesperson_name || '', payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
       collected: row.payment_type==='cash'?Number(row.total) || 0:0, balance: row.payment_type==='cash'?0:Number(row.balance) || 0, sales_order_id: row.sales_order_id || '', receipt_count: 0,
     })),
     ...fieldSales.filter(row => row.status === 'approved_posted' && posted(row) && inPeriod(row.transaction_date)).map(row => ({
       id: 'field:' + row.id, document_id: row.id, document_number: row.sale_number || row.id, source: 'Commercial supply', date: row.transaction_date,
-      customer_name: row.customer_name, commercial_name: row.commercial_name, payment_type: row.payment_type, status: row.status,
+      customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.commercial_id,commercial_name: row.commercial_name, payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
       collected: Number(row.amount_collected) || 0, balance: Number(row.amount_due) || 0, receipt_count: row.receipt_file_uris?.length || 0, invoice_id:row.invoice_id || '',
     })),

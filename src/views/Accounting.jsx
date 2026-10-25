@@ -39,7 +39,7 @@ export default function Accounting() {
         {[
           {title:ui("Cash & settlements"),links:[["/expenses",ui("Expenses")],["/accounting/receivables",ui("Receivables")],["/accounting/payables",ui("Payables")],["/accounting/treasury",ui("Treasury")]]},
           {title:ui("Financial reports"),links:[["/accounting/cash-flow",ui("Cash Flow & History")],["/accounting/statements",ui("Statements")],["/accounting/ledger",ui("General Ledger")],["/accounting/trial-balance",ui("Trial Balance")]]},
-          {title:ui("Assets & controls"),links:[["/accounting/assets",ui("Fixed Assets")],["/accounting/inventory",ui("Inventory Audit & Adjustments")]]},
+          {title:ui("Assets & controls"),links:[["/accounting/assets",ui("Fixed Assets")],["/accounting/inventory",ui("Inventory Audit & Adjustments")],["/accounting/recovery",ui("Expiry & recovery")]]},
         ].map(group=><DropdownMenu key={group.title}><DropdownMenuTrigger asChild><Button variant="outline">{group.title}<ChevronDown size={14} className="ml-2"/></Button></DropdownMenuTrigger><DropdownMenuContent align="start">{group.links.map(([path,label])=><DropdownMenuItem key={path} onSelect={()=>navigate(path)}>{label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>)}
       </nav>
       <Tabs defaultValue={typeof window !== 'undefined' && ['payments','journals','periods','rules'].includes(new URLSearchParams(window.location.search).get('tab')) ? new URLSearchParams(window.location.search).get('tab') : 'accounts'}>

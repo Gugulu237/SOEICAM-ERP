@@ -63,7 +63,7 @@ function interfaceFetcher({ loginStatus = 200, assetStatus = 200, loginHangs = f
       });
       return new Response('<link href="/_next/static/app.css"><script src="/_next/static/app.js"></script>', { status: loginStatus });
     }
-    return new Response('asset', { status: assetStatus });
+    return new Response('asset', { status: assetStatus, headers:{'content-type':url.pathname.endsWith('.js')?'application/javascript':'text/css'} });
   };
   return { fetcher, requests };
 }

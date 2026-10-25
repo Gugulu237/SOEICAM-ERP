@@ -188,3 +188,41 @@ test('management registration rolls back customer, acquisition credit and number
     assert.equal((await entities.JournalEntry.list()).length, 0);
   } finally { delete globalThis.__dailySupplyClient; delete globalThis.__supplyTransaction; await db.close(); }
 });
+
+
+test('a sale with inline exchanges rolls back the bill, cash, customer location, quarantine and fresh stock after a replacement ledger failure', async () => {
+  const db = new PGlite();
+  try {
+    const { entities, client } = await databaseFixture(db), route = await functionRoute();
+    globalThis.__dailySupplyClient = client;
+    globalThis.__supplyTransaction = async callback => {
+      await db.exec('BEGIN');
+      try { const result = await callback(); await db.exec('COMMIT'); return result; }
+      catch (error) { await db.exec('ROLLBACK'); throw error; }
+    };
+    const before = (await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows;
+    const original = entities.Account.update; let fail = true, failedAfterExchange = false;
+    entities.Account.update = async (id, value) => {
+      if (id === 'inventory' && fail && (await entities.SpoilageRecord.list()).length) {
+        failedAfterExchange = (await entities.FieldSale.list())[0].status === 'approved_posted';
+        throw Error('Replacement ledger unavailable');
+      }
+      return original(id, value);
+    };
+    const args = validSupply({ stockReplacements: [{ product_id: 'product-a', quantity: 3, reason: 'expired', expiry_date: '2000-01-01' }] });
+    const failed = await route(request(args), { params: Promise.resolve({ name: 'fieldOps' }) });
+    assert.equal(failed.status, 400); assert.match((await failed.json()).error, /Replacement ledger unavailable/);
+    assert.equal(failedAfterExchange, true);
+    assert.deepEqual((await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows, before);
+    fail = false;
+    const response = await route(request(args), { params: Promise.resolve({ name: 'fieldOps' }) }), result = await response.json();
+    assert.equal(response.status, 200, result.error); assert.equal(result.sale.total, 1000);
+    assert.equal((await entities.StockBalance.get('stock')).quantity, 5);
+    assert.equal((await entities.Customer.get('customer-a')).balance, 600);
+    assert.equal((await entities.JournalEntry.list()).length, 2); assert.equal((await entities.CashCollection.list()).length, 1);
+    const after = (await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows;
+    const retry = await route(request(args), { params: Promise.resolve({ name: 'fieldOps' }) });
+    assert.equal((await retry.json()).reused, true);
+    assert.deepEqual((await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows, after);
+  } finally { delete globalThis.__dailySupplyClient; delete globalThis.__supplyTransaction; await db.close(); }
+});

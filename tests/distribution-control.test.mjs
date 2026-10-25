@@ -80,3 +80,20 @@ test('a late issue failure rolls request, approval and inventory back at the rea
 test('legacy Custody bookmarks retain the selected agent in Distribution stock control',()=>{
   const url=new URL(distributionPath('stock',{commercial:'agent / 1',mode:'return'}),'http://localhost');assert.equal(url.pathname,'/distribution');assert.equal(url.searchParams.get('tab'),'stock');assert.equal(url.searchParams.get('commercial'),'agent / 1');assert.equal(url.searchParams.get('mode'),'return');
 });
+
+test('inventory issue lookup reads only load setup and stock, with no performance scans or writes',async()=>{
+  const f=await setup();
+  const before=structuredClone(f.rows);
+  for(const name of ['Dispatch','DispatchLine','FieldSale','FieldSaleLine','Customer','JournalEntry','SpoilageRecord']){
+    f.s[name].filter=()=>{throw Error('Unnecessary performance scan: '+name);};
+  }
+  const data=await f.run({action:'distributionIssueWorkspace'});
+  assert.ok(data.staff.some(e=>e.id===f.agent.id));assert.ok(data.staff.some(e=>e.id===f.driver.id));
+  assert.ok(data.warehouses.some(w=>w.id==='factory'));
+  assert.ok(data.warehouse_stock.some(b=>b.warehouse_id==='factory'&&b.product_id==='product-a'&&b.quantity===20));
+  assert.ok(data.products.some(p=>p.id==='product-a'&&p.unit));
+  assert.equal('salary' in data.staff[0],false);assert.equal('runs' in data,false);
+  assert.deepEqual(f.rows,before);
+  await f.s.Employee.update('cashier',{role:'commercial'});
+  await assert.rejects(f.run({action:'distributionIssueWorkspace'}),/Not permitted/);
+});

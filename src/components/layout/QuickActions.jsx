@@ -37,8 +37,8 @@ export default function QuickActions() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" className="bg-[#347623] font-semibold text-white hover:bg-[#245719]">
-          <Plus size={16} />{ui(" New")}</Button>
+        <Button size="sm" aria-label={ui('New')} className="h-11 w-11 shrink-0 sm:h-10 bg-[#347623] p-0 font-semibold text-white hover:bg-[#245719] sm:w-auto sm:px-3">
+          <Plus size={18} /><span className="hidden sm:inline">{ui(" New")}</span></Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         {actions.map(a => (

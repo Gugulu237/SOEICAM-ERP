@@ -2,13 +2,14 @@
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Link, useLocation } from "@/lib/router";
 import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   Receipt, UserCheck, Truck, Wallet, BarChart3,
   Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
-  ShoppingBag
+  ShoppingBag, Loader2
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -48,9 +49,21 @@ export default function AppSidebar() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingHref,setPendingHref] = useState('');
   const location = useLocation();
   const { role, assignedRole, allowedModules } = useCurrentUser();
   const { logout } = useAuth();
+
+  // Keep the drawer's Back entry until Next commits the selected route. Closing
+  // it on click rewinds history while a slower page is still loading and cancels
+  // that transition. Replacing the drawer entry leaves one Back step to this page.
+  useEffect(()=>{setMobileOpen(false);setPendingHref('');},[location.pathname,location.search]);
+  const onMenuLinkClick=event=>{
+    if(!mobileOpen || event.defaultPrevented || event.button!==0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;
+    const href=event.currentTarget.getAttribute('href');
+    if(href===location.pathname+location.search+location.hash){setMobileOpen(false);setPendingHref('');}
+    else setPendingHref(href);
+  };
 
   const targetPath=path=>role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
@@ -70,68 +83,58 @@ export default function AppSidebar() {
     return location.pathname.startsWith(path);
   };
 
-  const sidebar = (
-    <div className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ${collapsed ? "w-16" : "w-60"}`}>
-      <div className={`flex min-h-20 items-center gap-2 border-b border-sidebar-border bg-sidebar ${collapsed ? 'justify-center px-2 py-4' : 'justify-between px-3 py-3'}`}>
-        {collapsed ? <Link to="/" aria-label={ui("SOEICAM home")} className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-lg font-extrabold text-[#245719]">S</Link> :
-          <Link to="/" aria-label={ui("SOEICAM home")} className="block min-w-0 rounded-xl p-1.5"><img src="/brand/soeicam-logo.png" alt={ui("SOEICAM")} className="block h-auto w-[162px]" /></Link>}
-        <button aria-label={collapsed ? ui("Expand navigation") : ui("Collapse navigation")} onClick={() => setCollapsed(!collapsed)} className="hidden rounded p-1 text-[#245719] hover:bg-sidebar-accent lg:block">
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+  const sidebar = (mobile=false) => { const compact=collapsed&&!mobile; return (
+    <div className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ${mobile ? "w-full" : compact ? "w-16" : "w-60"}`}>
+      <div className={`flex min-h-20 items-center gap-2 border-b border-sidebar-border bg-sidebar ${compact ? 'justify-center px-2 py-4' : 'justify-between px-3 py-3'}`}>
+        {compact ? <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-lg font-extrabold text-[#245719]">S</Link> :
+          <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="block min-w-0 rounded-xl p-1.5"><img src="/brand/soeicam-logo.png" alt={ui("SOEICAM")} className="block h-auto w-[162px]" /></Link>}
+        <button aria-label={compact ? ui("Expand navigation") : ui("Collapse navigation")} onClick={() => setCollapsed(!compact)} className="hidden rounded p-1 text-[#245719] hover:bg-sidebar-accent xl:block">
+          {compact ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>
+      {mobile&&pendingHref&&<p role="status" className="flex items-center gap-2 border-b px-4 py-2 text-sm text-green-800"><Loader2 size={16} className="animate-spin"/>{ui('Opening section...')}</p>}
       <nav className="flex-1 space-y-0.5 overflow-y-auto py-3">
         {visibleItems.map(item => (
           <React.Fragment key={item.path}>
-          {role === 'hotesse' && item.path === '/sales' ? <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">{collapsed ? <Receipt size={18} /> : ui("Sales")}</div> :
+          {role === 'hotesse' && item.path === '/sales' ? <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-slate-500">{compact ? <Receipt size={18} /> : ui("Sales")}</div> :
           <Link
             key={item.path}
             to={targetPath(item.path)}
             resume={item.path !== '/' && !item.path.includes('?')}
-            onClick={() => setMobileOpen(false)}
+            replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick}
             aria-current={isActive(item.path) ? 'page' : undefined}
-            className={`mx-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`mx-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               isActive(item.path)
                 ? "bg-[#347623] text-white shadow-sm"
                 : "text-slate-700 hover:bg-sidebar-accent hover:text-[#245719]"
-            } ${collapsed ? "justify-center px-2" : ""}`}
+            } ${compact ? "justify-center px-2" : ""}`}
           >
             <item.icon size={18} className="shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
+            {!compact && <span>{item.label}</span>}
           </Link>
           }
-          {(item.children || []).filter(child => child.path !== targetPath(item.path) && hasRoleAccess(role, child.roles) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} onClick={() => setMobileOpen(false)} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (collapsed ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!collapsed && child.label}</Link>)}
+          {(item.children || []).filter(child => child.path !== targetPath(item.path) && hasRoleAccess(role, child.roles) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (compact ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!compact && child.label}</Link>)}
           </React.Fragment>
         ))}
       </nav>
       <div className="border-t border-sidebar-border p-3">
-        <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} aria-current={isActive('/profile') ? 'page' : undefined} onClick={() => setMobileOpen(false)} className={`mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${collapsed ? 'justify-center' : ''}`}><Settings size={18}/>{!collapsed && <span>{ui('My profile')}</span>}</Link>
+        <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} aria-current={isActive('/profile') ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={`mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${compact ? 'justify-center' : ''}`}><Settings size={18}/>{!compact && <span>{ui('My profile')}</span>}</Link>
         <button
           onClick={() => logout()}
-          className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${collapsed ? "justify-center" : ""}`}
+          className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${compact ? "justify-center" : ""}`}
         >
           <LogOut size={18} />
-          {!collapsed && <span>{ui("Sign Out")}</span>}
+          {!compact && <span>{ui("Sign Out")}</span>}
         </button>
       </div>
     </div>
-  );
+  ); };
 
   return (
     <>
-      <button aria-label={ui("Open navigation")} onClick={() => setMobileOpen(true)} className="fixed left-3 top-3 z-50 rounded-lg bg-[#347623] p-2 text-white shadow-lg lg:hidden">
-        <Menu size={20} />
-      </button>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setMobileOpen(false)}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative h-full" onClick={e => e.stopPropagation()}>
-            {sidebar}
-          </div>
-        </div>
-      )}
-      <div className="hidden lg:block h-screen sticky top-0">
-        {sidebar}
-      </div>
+      <button aria-label={ui("Open navigation")} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)} className="fixed left-2 top-2 z-40 flex h-10 w-10 items-center justify-center rounded-xl bg-[#347623] text-white shadow-sm xl:hidden"><Menu size={21}/></button>
+      <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
+      <div className="sticky top-0 hidden h-dvh xl:block">{sidebar()}</div>
     </>
   );
 }

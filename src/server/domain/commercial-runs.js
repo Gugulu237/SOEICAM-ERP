@@ -60,7 +60,7 @@ export async function supplyRun(svc, commercialId, dispatchId, date, required, v
     vehicle_id: run.vehicle_id || '', vehicle_name: run.vehicle_name || '', route_id: run.route_id || '', ...source };
 }
 
-async function runManifest(svc, dispatchId, warehouseId) {
+export async function runManifest(svc, dispatchId, warehouseId) {
   const [lines, sales, orders, replacements] = await Promise.all([
     readRecords(svc.entities.DispatchLine, { dispatch_id: dispatchId }),
     readRecords(svc.entities.FieldSale, { dispatch_id: dispatchId }),

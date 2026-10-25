@@ -1,3 +1,4 @@
+import MobileInfo from '@/components/shared/MobileInfo';
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ui } from '@/lib/i18n';
@@ -21,21 +22,22 @@ function ReturnsReport({ employeeId }) {
     }).catch(error => {if(active)setError(errorMessage(error));});
     return () => {active=false;};
   },[employeeId]);
-  return <section className="space-y-3"><h2 className="font-semibold">{ui('Expired returns')}</h2>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}{!result && !error ? <p role="status">{ui('Loading recorded returns...')}</p> : !result?.length ? <p className="text-sm text-slate-500">{ui('No returns recorded by this employee.')}</p> : result.map(row => <article key={row.id} className="rounded-xl border bg-slate-50 p-4 text-sm"><p className="font-semibold">{row.customer_name} / {row.product_name}</p><p className="mt-1">{row.quantity} {row.unit} / {row.reported_date} / {String(row.status || '').replaceAll('_',' ')}</p></article>)}</section>;
+  return <section className="space-y-3"><h2 className="font-semibold">{ui('Exchanges')}</h2>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}{!result && !error ? <p role="status">{ui('Loading recorded returns...')}</p> : !result?.length ? <p className="text-sm text-slate-500">{ui('No returns recorded by this employee.')}</p> : result.map(row => <article key={row.id} className="rounded-xl border bg-slate-50 p-4 text-sm"><p className="font-semibold">{row.customer_name} / {row.product_name}</p><p className="mt-1">{row.quantity} {row.unit} / {row.reason === 'damaged_at_store' ? ui('Damaged') : ui('Expired')} / {row.reported_date} / {String(row.status || '').replaceAll('_',' ')}</p>{row.source_sale_number && <p className="mt-1 text-xs text-slate-500">{row.source_sale_number}</p>}</article>)}</section>;
 }
 
-export default function CommercialActivityReport({ data, loading=false, activeTab, onTabChange }) {
+export default function CommercialActivityReport({ data, loading=false, showReadOnlyNotice=true, hideMobileHero=false, activeTab, onTabChange }) {
   const [localTab,setLocalTab] = useState('supplies');
   const tab=['supplies','stock','customers','returns'].includes(activeTab) ? activeTab : localTab;
   const setTab=value => onTabChange ? onTabChange(value) : setLocalTab(value);
   const summary=commercialSnapshot(data),ready=!!data?.employee && !loading;
   return <div className="space-y-5">
-    <ReadOnlyWorkspaceNotice employeeName={data?.employee?.full_name}/>
-    <header><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{ui('Commercial activity report')}</p><h1 className="mt-2 text-2xl font-bold">{data?.employee?.full_name || ui('Employee activity')}</h1><p className="mt-2 text-sm text-slate-600">{ui('Recorded sales, customers, stock and cash settlement. This report does not create or change employee activity.')}</p></header>
+
+    <header className={(hideMobileHero ? "hidden sm:block " : "") + "relative rounded-2xl border bg-secondary/50 p-4 pr-12 sm:border-0 sm:bg-transparent sm:p-0"}><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700"><span className="sm:hidden">{ui('Commercial agent')}</span><span className="hidden sm:inline">{ui('Commercial activity report')}</span></p><h1 className="mt-2 text-2xl font-bold">{data?.employee?.full_name || ui('Employee activity')}</h1><MobileInfo title={ui('Commercial activity report')} className="absolute right-1 top-1 sm:static" desktopClassName="mt-2 text-sm text-slate-600"><p>{ui('Recorded sales, customers, stock and cash settlement. This report does not create or change employee activity.')}</p></MobileInfo></header>
+    {showReadOnlyNotice && <ReadOnlyWorkspaceNotice employeeName={data?.employee?.full_name}/>}
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[
       ['Recorded sales today',formatXAF(summary.today)],['Recorded sales this month',formatXAF(summary.month)],['Cash awaiting clearance',formatXAF(summary.cash)],['Customers this month',summary.registered],
-    ].map(([label,value]) => <div key={label} className="rounded-xl border bg-white p-4"><p className="text-xs text-slate-500">{ui(label)}</p><p className="mt-2 text-xl font-bold">{ready ? value : '-'}</p></div>)}</div>
-    <nav aria-label={ui('Commercial activity report sections')} className="flex flex-wrap gap-2">{[['supplies','Daily supplies'],['stock','Vehicle stock'],['customers','Acquired customers'],['returns','Expired returns']].map(([value,label]) => <Button key={value} variant={tab===value?'default':'outline'} onClick={()=>setTab(value)}>{ui(label)}</Button>)}</nav>
+    ].map(([label,value]) => <div key={label} className="rounded-xl border bg-white p-4"><p className="text-xs text-slate-500">{ui(label)}</p><p className="mt-2 break-words text-lg font-bold sm:text-xl">{ready ? value : '-'}</p></div>)}</div>
+    <nav aria-label={ui('Commercial activity report sections')} className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">{[['supplies','Daily supplies'],['stock','Vehicle stock'],['customers','Acquired customers'],['returns','Exchanges']].map(([value,label]) => <Button key={value} className="min-h-11 shrink-0" variant={tab===value?'default':'outline'} onClick={()=>setTab(value)}>{ui(label)}</Button>)}</nav>
     <section className="rounded-2xl border bg-white p-4 sm:p-5">{tab==='supplies' ? <CommercialDailySupplies employeeId={data?.employee?.id} today={data?.date} readOnly managing/> : tab==='stock' ? <FieldInventoryCards employeeId={data?.employee?.id} enabled={ready}/> : tab==='returns' ? <ReturnsReport employeeId={data?.employee?.id}/> : <div className="divide-y">{!(data?.customers || []).length && <p className="py-4 text-sm text-slate-500">{ui('No customer acquisition records for this employee.')}</p>}{(data?.customers || []).map(customer => <article key={customer.id} className="py-4"><h2 className="text-sm font-semibold">{customer.business_name}</h2><p className="mt-1 text-xs text-slate-500">{ui('Acquired ')}{customer.acquisition_date || ui('date not recorded')} / {customer.acquisition_verified === 'verified_unique' ? ui('Verified customer') : ui('Awaiting acquisition review')}</p></article>)}</div>}</section>
     <CommercialCashSettlement days={data?.cashDays || []} ready={ready} commercialId={data?.employee?.id} commercialName={data?.employee?.full_name} managing/>
   </div>;

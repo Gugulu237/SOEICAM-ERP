@@ -10,7 +10,7 @@ async function renderer() {
     b.onResolve({ filter: /^react$/ }, args => args.importer.endsWith('CustomerForm.jsx') ? { path: 'hooks', namespace: 'fixture' } : undefined);
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{if(tag==='select')globalThis.__customerFormUI.selects.push(props);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__customerFormUI.state('customer',v),useRef=v=>globalThis.__customerFormUI.ref('customer',v),useEffect=(fn,deps)=>globalThis.__customerFormUI.effect('customer',fn,deps);`, resolveDir: process.cwd() }));
     const mocks = {
-      '@/api/erpClient': `export const erp=new Proxy({},{get:(_,key)=>globalThis.__customerFormUI.client[key]});`,
+      '@/api/erpClient': `export const erp=new Proxy({},{get:(_,key)=>globalThis.__customerFormUI.client[key]});export const invalidateERPReads=()=>{};`,
       '@/hooks/useCurrentUser': `export const useCurrentUser=()=>({isAdmin:true,loading:false});`,
       '@/lib/router': `export const Navigate=()=>null;export const useParams=()=>globalThis.__customerFormUI.params||({}),useNavigate=()=>path=>globalThis.__customerFormUI.navigation.push(path),useBack=()=>()=>{};`,
       '@/components/ui/button': `import React from 'react';export function Button({children,...props}){globalThis.__customerFormUI.capture('button',props,children);return React.createElement('button',props,children);}`,

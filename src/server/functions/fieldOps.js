@@ -1,3 +1,4 @@
+import {salesOrderAction,SALES_ORDER_ACTIONS} from '../domain/sales-orders.js';
 import { CUSTOMER_REGISTRATION_ACTIONS, customerRegistrationAction } from '../domain/customer-registration.js';
 import { fieldInventoryAction } from '../domain/field-stock-inventory.js';
 import { isTransactionConflict } from '../transaction-errors.js';
@@ -25,7 +26,8 @@ import { commercialAction, readRecords } from '../domain/commercial-workspace.js
 import { finishedProduct, periodDates } from '../domain/commercial-rules.js';
 import { createClientFromRequest } from '../request-client.js';
 import { commercialActor } from '../domain/commercial-actor.js';
-import { commercialReturnAction } from '../domain/commercial-returns.js';
+import { normalizeSaleReplacements, combinedSupplyQuantities } from '../../lib/sale-replacements.js';
+import { commercialReturnAction, postSaleReplacements } from '../domain/commercial-returns.js';
 import { companySalesAction } from '../domain/company-sales.js';
 import { invoiceAction, INVOICE_ACTIONS } from '../domain/sales-invoices.js';
 import { customerDeliveryAction,CUSTOMER_DELIVERY_ACTIONS } from '../domain/customer-delivery.js';
@@ -149,7 +151,7 @@ export default async function (req) {
     if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)) return Response.json(await customerRegistrationAction(base44, user, body));
     if (action === 'fieldStockInventory') return Response.json(await fieldInventoryAction(base44, user, body));
     if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)) return Response.json(await commercialReturnAction(base44, user, body));
-    const module = action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : INVOICE_ACTIONS.includes(action) ? 'sales'
+    const module = action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
       : CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'
       : SUPPLIER_ACTIONS.includes(action) || inActions(['purchasesWorkspace','approvePurchasePayment','rejectPurchasePayment']) ? 'purchases'
       : DISTRIBUTION_ACTIONS.includes(action) || inActions(['loadDispatch','returnDispatchStock','dispatchReconciliation','approveDispatch','approveDispatchRequest','dispatchActivity','driverActivity','issueCustody','returnCustody']) ? 'distribution'
@@ -166,6 +168,7 @@ export default async function (req) {
     if (WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action)) return Response.json(await warehouseAdjustmentAction(base44,user,body));
     if (ASSET_ACTIONS.includes(action)) return Response.json(await fixedAssetAction(base44,user,body));
     if (INVENTORY_AUDIT_ACTIONS.includes(action)) return Response.json(await inventoryAuditAction(base44,user,body));
+    if (SALES_ORDER_ACTIONS.includes(action)) return Response.json(await salesOrderAction(base44,user,body));
     if (INVOICE_ACTIONS.includes(action)) return Response.json(await invoiceAction(base44,user,body));
     if (CUSTOMER_DELIVERY_ACTIONS.includes(action)) return Response.json(await customerDeliveryAction(base44,user,body));
     if (SUPPLIER_ACTIONS.includes(action)) return Response.json(await supplierAction(base44, user, body));
@@ -238,7 +241,15 @@ export default async function (req) {
 
       const inputLines = Array.isArray(body.lines) ? body.lines : [];
       if (!inputLines.length || inputLines.length > 50 || inputLines.some(l => !l || typeof l.product_id !== 'string' || typeof l.quantity === 'boolean' || !Number.isFinite(Number(l.quantity)) || round3(l.quantity) <= 0) || new Set(inputLines.map(l => l.product_id)).size !== inputLines.length) throw new Error('Add valid positive quantities for distinct products');
-      const products = await loadProducts(svc, inputLines.map((l) => l.product_id));
+      const replacements = normalizeSaleReplacements(body.stockReplacements, transactionDate);
+      if (replacements.length && transactionDate > today()) throw Error('Stock replacements cannot be recorded in the future');
+      const combinedLines = combinedSupplyQuantities(inputLines, replacements);
+      if (combinedLines.length > 50) throw Error('Choose at most 50 distinct products for the supply and replacements');
+      const products = await loadProducts(svc, combinedLines.map(l => l.product_id));
+      for (const row of replacements) {
+        const product = products[row.product_id];
+        if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw Error('Choose an active finished product for each replacement');
+      }
 
       const lines = [];
       let subtotal = 0;
@@ -301,7 +312,7 @@ export default async function (req) {
         if (!receiptUris.length) throw new Error('A readable photograph of the supply receipt is required to record the sale');
         if (!receiptReference) throw new Error('The receipt reference is required to record the sale');
         receiptUris = await base44.validateReceiptPhotos(receiptUris, employee.id);
-        await assertRunSupplyStock(svc, run, inputLines, transactionDate);
+        await assertRunSupplyStock(svc, run, combinedLines, transactionDate);
       }
 
       const terms = body.paymentTermsDays === '' || body.paymentTermsDays == null ? Number(customer.payment_terms_days) || 0 : Number(body.paymentTermsDays);
@@ -328,6 +339,7 @@ export default async function (req) {
         due_date: amountDue > 0 ? addDays(transactionDate, terms) : '',
         receipt_reference: receiptReference,
         receipt_file_uris: receiptUris,
+        stock_replacements: replacements,
         notes: body.notes || '',
         status: submit ? 'submitted' : 'draft',
         submitted_at: submit ? new Date().toISOString() : '',
@@ -456,6 +468,7 @@ export default async function (req) {
         const recorded = await svc.entities.FieldSale.get(sale.id);
         const recordedLines = await svc.entities.FieldSaleLine.filter({ field_sale_id: sale.id });
         await recordSaleAccounting(svc, recorded, recordedLines, { id: user.id, name: employee.full_name || user.full_name }, true);
+        await postSaleReplacements(svc, user, recorded, replacements);
       }
 
       return Response.json({ sale: await svc.entities.FieldSale.get(sale.id) });

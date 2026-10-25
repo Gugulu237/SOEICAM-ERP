@@ -1,0 +1,777 @@
+{
+  "/products/yola/brasse-chocolat-500g.jpg": {
+    "originalBytes": 264094,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-chocolat-500g.f2be662966ff.96.webp",
+        "bytes": 3386
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-chocolat-500g.f2be662966ff.256.webp",
+        "bytes": 13630
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-chocolat-500g.f2be662966ff.512.webp",
+        "bytes": 33914
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-chocolat-500g.f2be662966ff.960.webp",
+        "bytes": 63916
+      }
+    ]
+  },
+  "/products/yola/brasse-fraise-500g.jpg": {
+    "originalBytes": 259385,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-fraise-500g.36b7ffa7d58d.96.webp",
+        "bytes": 3746
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-fraise-500g.36b7ffa7d58d.256.webp",
+        "bytes": 13934
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-fraise-500g.36b7ffa7d58d.512.webp",
+        "bytes": 34930
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-fraise-500g.36b7ffa7d58d.960.webp",
+        "bytes": 66906
+      }
+    ]
+  },
+  "/products/yola/brasse-nature-500g.jpg": {
+    "originalBytes": 263510,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-nature-500g.5386a125a8a8.96.webp",
+        "bytes": 3408
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-nature-500g.5386a125a8a8.256.webp",
+        "bytes": 13514
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-nature-500g.5386a125a8a8.512.webp",
+        "bytes": 34386
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-nature-500g.5386a125a8a8.960.webp",
+        "bytes": 64944
+      }
+    ]
+  },
+  "/products/yola/brasse-non-sucre-500g.jpg": {
+    "originalBytes": 250424,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-non-sucre-500g.d7743db6cba6.96.webp",
+        "bytes": 3402
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-non-sucre-500g.d7743db6cba6.256.webp",
+        "bytes": 13488
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-non-sucre-500g.d7743db6cba6.512.webp",
+        "bytes": 33606
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-non-sucre-500g.d7743db6cba6.960.webp",
+        "bytes": 62158
+      }
+    ]
+  },
+  "/products/yola/brasse-vanille-500g.jpg": {
+    "originalBytes": 277777,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-vanille-500g.2c3b2d0922a5.96.webp",
+        "bytes": 3228
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-vanille-500g.2c3b2d0922a5.256.webp",
+        "bytes": 13108
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-vanille-500g.2c3b2d0922a5.512.webp",
+        "bytes": 32406
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-vanille-500g.2c3b2d0922a5.960.webp",
+        "bytes": 62010
+      }
+    ]
+  },
+  "/products/yola/drink-fraise-250ml.jpg": {
+    "originalBytes": 136981,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-fraise-250ml.650aee136555.96.webp",
+        "bytes": 1986
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-fraise-250ml.650aee136555.256.webp",
+        "bytes": 6694
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-fraise-250ml.650aee136555.512.webp",
+        "bytes": 16274
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-fraise-250ml.650aee136555.960.webp",
+        "bytes": 30966
+      }
+    ]
+  },
+  "/products/yola/drink-fraise-330ml.jpg": {
+    "originalBytes": 153391,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-fraise-330ml.44404f2dbdc9.96.webp",
+        "bytes": 1922
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-fraise-330ml.44404f2dbdc9.256.webp",
+        "bytes": 6358
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-fraise-330ml.44404f2dbdc9.512.webp",
+        "bytes": 15982
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-fraise-330ml.44404f2dbdc9.960.webp",
+        "bytes": 31828
+      }
+    ]
+  },
+  "/products/yola/drink-nature-250ml.jpg": {
+    "originalBytes": 156111,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-nature-250ml.40dfad884ffe.96.webp",
+        "bytes": 1836
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-nature-250ml.40dfad884ffe.256.webp",
+        "bytes": 6462
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-nature-250ml.40dfad884ffe.512.webp",
+        "bytes": 15948
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-nature-250ml.40dfad884ffe.960.webp",
+        "bytes": 30890
+      }
+    ]
+  },
+  "/products/yola/drink-nature-330ml.jpg": {
+    "originalBytes": 143494,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-nature-330ml.ef63f617fdd7.96.webp",
+        "bytes": 1854
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-nature-330ml.ef63f617fdd7.256.webp",
+        "bytes": 6420
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-nature-330ml.ef63f617fdd7.512.webp",
+        "bytes": 15490
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-nature-330ml.ef63f617fdd7.960.webp",
+        "bytes": 29262
+      }
+    ]
+  },
+  "/products/yola/drink-nature-500ml.jpg": {
+    "originalBytes": 115424,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-nature-500ml.fc08efa7ca50.96.webp",
+        "bytes": 1638
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-nature-500ml.fc08efa7ca50.256.webp",
+        "bytes": 5714
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-nature-500ml.fc08efa7ca50.512.webp",
+        "bytes": 13318
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-nature-500ml.fc08efa7ca50.960.webp",
+        "bytes": 25038
+      }
+    ]
+  },
+  "/products/yola/drink-non-sucre-330ml.jpg": {
+    "originalBytes": 133638,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-non-sucre-330ml.87ef698b7ba4.96.webp",
+        "bytes": 1910
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-non-sucre-330ml.87ef698b7ba4.256.webp",
+        "bytes": 6424
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-non-sucre-330ml.87ef698b7ba4.512.webp",
+        "bytes": 15570
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-non-sucre-330ml.87ef698b7ba4.960.webp",
+        "bytes": 29476
+      }
+    ]
+  },
+  "/products/yola/drink-vanille-330ml.jpg": {
+    "originalBytes": 126889,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-drink-vanille-330ml.dbe7056722ad.96.webp",
+        "bytes": 1802
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-drink-vanille-330ml.dbe7056722ad.256.webp",
+        "bytes": 6274
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-drink-vanille-330ml.dbe7056722ad.512.webp",
+        "bytes": 15316
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-drink-vanille-330ml.dbe7056722ad.960.webp",
+        "bytes": 28694
+      }
+    ]
+  },
+  "/products/yola/tub-fraise-2-5kg.jpg": {
+    "originalBytes": 238458,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-fraise-2-5kg.b145dbb71d6f.96.webp",
+        "bytes": 3394
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-fraise-2-5kg.b145dbb71d6f.256.webp",
+        "bytes": 13044
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-fraise-2-5kg.b145dbb71d6f.512.webp",
+        "bytes": 31650
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-fraise-2-5kg.b145dbb71d6f.960.webp",
+        "bytes": 58152
+      }
+    ]
+  },
+  "/products/yola/tub-nature-10kg.jpg": {
+    "originalBytes": 217314,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-nature-10kg.4d5353b23e7b.96.webp",
+        "bytes": 3358
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-nature-10kg.4d5353b23e7b.256.webp",
+        "bytes": 12854
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-nature-10kg.4d5353b23e7b.512.webp",
+        "bytes": 30048
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-nature-10kg.4d5353b23e7b.960.webp",
+        "bytes": 52248
+      }
+    ]
+  },
+  "/products/yola/tub-nature-1kg.jpg": {
+    "originalBytes": 272318,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-nature-1kg.93188cd40e03.96.webp",
+        "bytes": 3924
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-nature-1kg.93188cd40e03.256.webp",
+        "bytes": 14910
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-nature-1kg.93188cd40e03.512.webp",
+        "bytes": 37122
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-nature-1kg.93188cd40e03.960.webp",
+        "bytes": 68182
+      }
+    ]
+  },
+  "/products/yola/tub-nature-2-5kg.jpg": {
+    "originalBytes": 199060,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-nature-2-5kg.638dcd48847b.96.webp",
+        "bytes": 3262
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-nature-2-5kg.638dcd48847b.256.webp",
+        "bytes": 11976
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-nature-2-5kg.638dcd48847b.512.webp",
+        "bytes": 28424
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-nature-2-5kg.638dcd48847b.960.webp",
+        "bytes": 49754
+      }
+    ]
+  },
+  "/products/yola/tub-non-sucre-1kg.jpg": {
+    "originalBytes": 309339,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-non-sucre-1kg.f74c79ae670d.96.webp",
+        "bytes": 3690
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-non-sucre-1kg.f74c79ae670d.256.webp",
+        "bytes": 15452
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-non-sucre-1kg.f74c79ae670d.512.webp",
+        "bytes": 37888
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-non-sucre-1kg.f74c79ae670d.960.webp",
+        "bytes": 71100
+      }
+    ]
+  },
+  "/products/yola/tub-vanille-1kg.jpg": {
+    "originalBytes": 329737,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-vanille-1kg.7b1b8ebfe78c.96.webp",
+        "bytes": 3624
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-vanille-1kg.7b1b8ebfe78c.256.webp",
+        "bytes": 14764
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-vanille-1kg.7b1b8ebfe78c.512.webp",
+        "bytes": 36744
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-vanille-1kg.7b1b8ebfe78c.960.webp",
+        "bytes": 70418
+      }
+    ]
+  },
+  "/products/yola/tub-vanille-2-5kg.jpg": {
+    "originalBytes": 241380,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-tub-vanille-2-5kg.988b6ad57e38.96.webp",
+        "bytes": 3384
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-tub-vanille-2-5kg.988b6ad57e38.256.webp",
+        "bytes": 13384
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-tub-vanille-2-5kg.988b6ad57e38.512.webp",
+        "bytes": 32990
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-tub-vanille-2-5kg.988b6ad57e38.960.webp",
+        "bytes": 60420
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-nature-250g.png": {
+    "originalBytes": 938212,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-nature-250g.ad4deb8ce2bd.96.webp",
+        "bytes": 2206
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-nature-250g.ad4deb8ce2bd.256.webp",
+        "bytes": 7562
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-nature-250g.ad4deb8ce2bd.512.webp",
+        "bytes": 19742
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-nature-250g.ad4deb8ce2bd.960.webp",
+        "bytes": 48752
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-nature-330g.png": {
+    "originalBytes": 834961,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-nature-330g.80f285291522.96.webp",
+        "bytes": 2214
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-nature-330g.80f285291522.256.webp",
+        "bytes": 7274
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-nature-330g.80f285291522.512.webp",
+        "bytes": 18912
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-nature-330g.80f285291522.960.webp",
+        "bytes": 46098
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-nature-500g.png": {
+    "originalBytes": 680757,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-nature-500g.46a4c343314c.96.webp",
+        "bytes": 2034
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-nature-500g.46a4c343314c.256.webp",
+        "bytes": 6408
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-nature-500g.46a4c343314c.512.webp",
+        "bytes": 15886
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-nature-500g.46a4c343314c.960.webp",
+        "bytes": 39364
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-strawberry-250g.png": {
+    "originalBytes": 843875,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-250g.1fc3b4e6a8db.96.webp",
+        "bytes": 2188
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-250g.1fc3b4e6a8db.256.webp",
+        "bytes": 7112
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-250g.1fc3b4e6a8db.512.webp",
+        "bytes": 18396
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-250g.1fc3b4e6a8db.960.webp",
+        "bytes": 46342
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-strawberry-330g.png": {
+    "originalBytes": 917413,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-330g.95ff39acac32.96.webp",
+        "bytes": 2358
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-330g.95ff39acac32.256.webp",
+        "bytes": 7154
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-330g.95ff39acac32.512.webp",
+        "bytes": 19136
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-strawberry-330g.95ff39acac32.960.webp",
+        "bytes": 48202
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-unsweetened-330g.png": {
+    "originalBytes": 790706,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-unsweetened-330g.de5e76f7655c.96.webp",
+        "bytes": 2268
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-unsweetened-330g.de5e76f7655c.256.webp",
+        "bytes": 6848
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-unsweetened-330g.de5e76f7655c.512.webp",
+        "bytes": 18022
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-unsweetened-330g.de5e76f7655c.960.webp",
+        "bytes": 44266
+      }
+    ]
+  },
+  "/products/soeicam/drinkable-vanilla-330g.png": {
+    "originalBytes": 799854,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-drinkable-vanilla-330g.25b82feb9de2.96.webp",
+        "bytes": 2102
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-drinkable-vanilla-330g.25b82feb9de2.256.webp",
+        "bytes": 6386
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-drinkable-vanilla-330g.25b82feb9de2.512.webp",
+        "bytes": 16942
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-drinkable-vanilla-330g.25b82feb9de2.960.webp",
+        "bytes": 42280
+      }
+    ]
+  },
+  "/products/soeicam/stirred-chocolate-500g.png": {
+    "originalBytes": 1447404,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-stirred-chocolate-500g.57ca46c6dea2.96.webp",
+        "bytes": 3208
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-stirred-chocolate-500g.57ca46c6dea2.256.webp",
+        "bytes": 12408
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-stirred-chocolate-500g.57ca46c6dea2.512.webp",
+        "bytes": 33156
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-stirred-chocolate-500g.57ca46c6dea2.960.webp",
+        "bytes": 80952
+      }
+    ]
+  },
+  "/products/soeicam/stirred-nature-10kg.png": {
+    "originalBytes": 1083299,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-stirred-nature-10kg.762b9f66ff02.96.webp",
+        "bytes": 3282
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-stirred-nature-10kg.762b9f66ff02.256.webp",
+        "bytes": 12324
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-stirred-nature-10kg.762b9f66ff02.512.webp",
+        "bytes": 32194
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-stirred-nature-10kg.762b9f66ff02.960.webp",
+        "bytes": 72494
+      }
+    ]
+  },
+  "/products/soeicam/stirred-nature-2.5kg.png": {
+    "originalBytes": 1019485,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-stirred-nature-2.5kg.42e7ce7ea462.96.webp",
+        "bytes": 3150
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-stirred-nature-2.5kg.42e7ce7ea462.256.webp",
+        "bytes": 11682
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-stirred-nature-2.5kg.42e7ce7ea462.512.webp",
+        "bytes": 30260
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-stirred-nature-2.5kg.42e7ce7ea462.960.webp",
+        "bytes": 70854
+      }
+    ]
+  },
+  "/products/soeicam/stirred-strawberry-2.5kg.png": {
+    "originalBytes": 1168876,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-stirred-strawberry-2.5kg.974569db04d7.96.webp",
+        "bytes": 3432
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-stirred-strawberry-2.5kg.974569db04d7.256.webp",
+        "bytes": 13472
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-stirred-strawberry-2.5kg.974569db04d7.512.webp",
+        "bytes": 35166
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-stirred-strawberry-2.5kg.974569db04d7.960.webp",
+        "bytes": 85028
+      }
+    ]
+  },
+  "/products/soeicam/stirred-vanilla-2.5kg.png": {
+    "originalBytes": 1257397,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/soeicam-stirred-vanilla-2.5kg.a57b6c8625d9.96.webp",
+        "bytes": 3250
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/soeicam-stirred-vanilla-2.5kg.a57b6c8625d9.256.webp",
+        "bytes": 13114
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/soeicam-stirred-vanilla-2.5kg.a57b6c8625d9.512.webp",
+        "bytes": 35142
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/soeicam-stirred-vanilla-2.5kg.a57b6c8625d9.960.webp",
+        "bytes": 86202
+      }
+    ]
+  }
+}

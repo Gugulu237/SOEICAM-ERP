@@ -4,6 +4,7 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 
 import { Suspense } from 'react';
+import { usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import { AuthProvider } from '@/lib/AuthContext';
@@ -38,4 +39,8 @@ function LocalizedProviders({ children }) {
 
 export default function Providers({children}){
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-return <LanguageProvider><LocalizedProviders>{children}</LocalizedProviders></LanguageProvider>;}
+const pathname=usePathname();
+  // The development workbench only frames the app. Each frame authenticates
+  // itself; booting another sign-in SDK here doubles mobile preview startup.
+  if(process.env.NODE_ENV==='development' && pathname==='/dev-preview')return <LanguageProvider>{children}</LanguageProvider>;
+  return <LanguageProvider><LocalizedProviders>{children}</LocalizedProviders></LanguageProvider>;}

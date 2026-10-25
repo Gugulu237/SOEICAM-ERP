@@ -1,9 +1,10 @@
 import { requireStaff,audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
-import { deliveryGpsPolicy,validateDeliveryGps,deliveryPoints,deliveryCoverage,DELIVERY_DAYS,ZONE_COLOURS } from '../../lib/customer-delivery.js';
+import { deliveryGpsPolicy,deliveryGpsStatus,validateDeliveryGps,deliveryPoints,deliveryCoverage,DELIVERY_DAYS,ZONE_COLOURS } from '../../lib/customer-delivery.js';
 import { hasCustomerLocation } from '../../lib/customer-location.js';
+import {validateZoneBoundary,pointInDeliveryBoundary,YAOUNDE_MUNICIPALITIES,ZONE_SERVICE_STATUSES} from '../../lib/customer-map-zones.js';
 
-export const CUSTOMER_DELIVERY_ACTIONS=['customerDeliveryWorkspace','deliveryZoneOptions','saveDeliveryZone','saveDeliveryPoint','assignDeliveryZone'];
+export const CUSTOMER_DELIVERY_ACTIONS=['customerDeliveryWorkspace','customerMapWorkspace','assignDeliveryZoneByBoundary','deliveryZoneOptions','saveDeliveryZone','saveDeliveryPoint','assignDeliveryZone'];
 const own=(o,k)=>Object.hasOwn(o,k),pick=(row,fields)=>Object.fromEntries(fields.split(' ').map(k=>[k,row[k]]));
 const gpsFields=['gps_lat','gps_lng','gps_accuracy_m','gps_captured_at'];
 const managedFields=['gps_capture_source','gps_updated_by','gps_updated_at','delivery_revision','delivery_updated_by','delivery_updated_at'];
@@ -59,12 +60,19 @@ async function selectedPoint(stores,body,role,employee) {
   return {entity,record};
 }
 export async function customerDeliveryAction(client,user,body) {
-  const allowed=body.action==='saveDeliveryZone'?['admin']:body.action==='deliveryZoneOptions'?['admin','employee','commercial','production_manager','warehouse_manager']:body.action==='saveDeliveryPoint'?['admin','employee','commercial']:['admin','employee'];
+  const allowed=body.action==='saveDeliveryZone'?['admin']:body.action==='deliveryZoneOptions'?['admin','employee','commercial','production_manager','warehouse_manager']:['saveDeliveryPoint','customerMapWorkspace'].includes(body.action)?['admin','employee','commercial']:['admin','employee'];
   const {role,employee}=await requireStaff(client,user,allowed,'customer delivery planning');if(role!=='admin' && employee?.status!=='active')throw Error('An active staff account is required.');
   const svc=client.asServiceRole,s=svc.entities,config=await deliveryConfiguration(s),{settings,zones,policy,revision}=config;
   if(body.action==='deliveryZoneOptions')return {zones:zones.filter(z=>z.is_active!==false),policy};
-  if(body.action==='customerDeliveryWorkspace') {
-    const [customers,locations,routes]=await Promise.all([readRecords(s.Customer,{is_active:{$ne:false}}),readRecords(s.CustomerLocation,{is_active:{$ne:false}}),readRecords(s.Route,{is_active:{$ne:false}})]);
+  if(['customerDeliveryWorkspace','customerMapWorkspace'].includes(body.action)) {
+    let [customers,locations,routes]=await Promise.all([readRecords(s.Customer,{is_active:{$ne:false}}),readRecords(s.CustomerLocation,{is_active:{$ne:false}}),readRecords(s.Route,{is_active:{$ne:false}})]);
+    if(role==='commercial'){
+      const owned=new Set(customers.filter(c=>c.acquired_by_id===employee.id || c.salesperson_id===employee.id).map(c=>c.id));
+      locations=locations.filter(l=>owned.has(l.customer_id) || l.assigned_commercial_id===employee.id);
+      const visible=new Set([...owned,...locations.map(l=>l.customer_id)]);
+      customers=customers.filter(c=>visible.has(c.id));
+      routes=[];
+    }
     const fields='id business_name name customer_id customer_number parent_id phone contact_person address town neighbourhood is_active delivery_zone_id delivery_days delivery_instructions route_id gps_lat gps_lng gps_accuracy_m gps_captured_at gps_capture_source delivery_revision';
     const points=deliveryPoints(customers.map(c=>pick(c,fields)),locations.map(l=>pick(l,fields)),zones,policy);
     return {points,zones,coverage:deliveryCoverage(points,zones),routes:routes.map(r=>pick(r,'id name code')),policy,revision,customer_count:customers.length};
@@ -78,6 +86,12 @@ export async function customerDeliveryAction(client,user,body) {
     if(zones.some(z=>z.id!==id && (z.code?.toUpperCase()===code || z.name.trim().toLocaleLowerCase()===name.toLocaleLowerCase())))throw Error('A zone already has this name or code.');
     if(!Object.hasOwn(ZONE_COLOURS,form.colour))throw Error('Choose an available zone colour.');
     const zone={id,name,code,town:text('town'),neighbourhoods:text('neighbourhoods',1000),notes:text('notes',2000),colour:form.colour,is_active:form.is_active!==false};
+    for(const key of ['boundary','municipality','service_status'])if(own(form,key) || own(existing || {},key)){
+      const value=own(form,key)?form[key]:existing[key];
+      if(key==='boundary')zone.boundary=validateZoneBoundary(value);
+      if(key==='municipality'){if(value!==''&&!YAOUNDE_MUNICIPALITIES.some(m=>m.id===value))throw Error('Choose a Yaoundé municipality.');zone.municipality=value;}
+      if(key==='service_status'){if(!ZONE_SERVICE_STATUSES.includes(value))throw Error('Choose a valid zone service status.');zone.service_status=value;}
+    }
     if(!body.zoneId && existing && JSON.stringify(existing)===JSON.stringify(zone))return {zone:existing,revision,reused:true};
     if(Number(body.revision)!==revision)throw Error('Zone settings changed in another window. Refresh before saving.');
     if(!zone.is_active){const [customers,locations]=await Promise.all([readRecords(s.Customer,{delivery_zone_id:id,is_active:{$ne:false}}),readRecords(s.CustomerLocation,{delivery_zone_id:id,is_active:{$ne:false}})]);if(customers.length || locations.length)throw Error('Reassign active customer and outlet records before archiving this zone.');}
@@ -86,6 +100,23 @@ export async function customerDeliveryAction(client,user,body) {
     await s.CompanySettings.update(settings.id,{delivery_zones:next,delivery_zones_revision:revision+1});
     await audit(svc,{action:existing?'edit_delivery_zone':'create_delivery_zone',module:'customers',entityType:'CompanySettings',entityId:settings.id,userId:user.id,description:`${existing?'Updated':'Created'} delivery zone ${code}`});
     return {zone,revision:revision+1};
+  }
+  if(body.action==='assignDeliveryZoneByBoundary'){
+    if(Number(body.zoneRevision)!==revision)throw Error('Zone settings changed. Refresh the map before assigning customers.');
+    const zone=zones.find(z=>z.id===body.zoneId && z.is_active!==false);
+    if(!zone || zone.service_status==='paused' || validateZoneBoundary(zone.boundary).length<3)throw Error('Choose an active delivery zone with a saved boundary.');
+    if(!Array.isArray(body.points)||!body.points.length||body.points.length>100||new Set(body.points.map(p=>p.kind+':'+p.recordId)).size!==body.points.length)throw Error('Choose 1 to 100 distinct delivery points.');
+    const changes=[];
+    for(const point of body.points){
+      const {entity,record}=await selectedPoint(s,point,role,employee);
+      if(Number(point.revision)!==Number(record.delivery_revision || 0))throw Error('A selected delivery point changed. Refresh and select it again.');
+      if(record.delivery_zone_id && record.delivery_zone_id!==zone.id)throw Error('A selected delivery point already belongs to another zone.');
+      if(deliveryGpsStatus(record,policy)!=='ready'||!pointInDeliveryBoundary(record,zone.boundary))throw Error('Only verified GPS points inside this zone can be assigned.');
+      changes.push({entity,record,data:await prepareDeliveryDefinition(s,{delivery_zone_id:zone.id},record,{user},config)});
+    }
+    for(const {entity,record,data} of changes)await s[entity].update(record.id,data);
+    await audit(svc,{action:'assign_delivery_zone_by_boundary',module:'customers',entityType:'CompanySettings',entityId:settings.id,userId:user.id,description:'Assigned '+changes.length+' verified delivery points inside '+zone.code});
+    return {updated:changes.length};
   }
   if(body.action==='assignDeliveryZone') {
     if(!Array.isArray(body.points) || !body.points.length || body.points.length>100 || new Set(body.points.map(p=>p.kind+':'+p.recordId)).size!==body.points.length)throw Error('Choose 1 to 100 distinct delivery points.');

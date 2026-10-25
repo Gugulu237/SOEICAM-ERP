@@ -7,6 +7,7 @@ import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/shared/StatusBadge";
+import CustomerInfo from "./CustomerInfo";
 import CustomerMapLinks from "./CustomerMapLinks";
 import LocationDialog from "./LocationDialog";
 import SpoilageDialog from "./SpoilageDialog";
@@ -15,7 +16,7 @@ import PartnerStockPanel from "./PartnerStockPanel";
 import PartnerSalesPanel from "./PartnerSalesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatXAF, formatDate, statusLabel } from "@/lib/formatters";
-import { MapPin, Plus, AlertTriangle, Pencil, Landmark, Truck } from "lucide-react";
+import { MapPin, Plus, AlertTriangle, Pencil, Truck } from "lucide-react";
 
 // 360° view of one business partner: its group (sub-partners), locations,
 // deliveries and spoilage per branch.
@@ -67,15 +68,14 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
             </button>
           )}
           <h2 className="text-lg font-bold text-slate-900">{partner.business_name}</h2>
-          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <StatusBadge status={partner.credit_status || "good"} />
-            <span className="inline-flex items-center gap-1">
-              <Landmark size={12} />
+            <CustomerInfo title={ui("Payment responsibility")}>
               {partner.financial_centralization_mode === "decentralized" ? ui("Each branch pays its own invoices") : ui("Centralized — HQ handles payments")}
-            </span>
+            </CustomerInfo>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 max-w-full flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => navigate(`/customers/${partner.id}`)}><Pencil size={13} className="mr-1" />{ui(" Edit")}</Button>
           <Button size="sm" variant="outline" onClick={() => setSpoilOpen(true)} disabled={locations.length === 0}><AlertTriangle size={13} className="mr-1" />{ui(" Report Spoilage")}</Button>
           <Button size="sm" onClick={() => setLocDialog({ open: true, location: null })}><Plus size={13} className="mr-1" />{ui(" Add Location")}</Button>

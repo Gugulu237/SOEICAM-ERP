@@ -295,7 +295,7 @@ function LegacyProductionOrderForm({initialOrder=null}) {
         {materials.length > 0 && (
           <div className="mb-6">
             <h3 className="font-semibold text-slate-900 mb-3">{ui("Required Materials (auto-calculated)")}</h3>
-            <table className="w-full text-sm">
+            <table className="mobile-table-cards w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-slate-600">
                   <th className="pb-2">{ui("Material")}</th>
@@ -310,13 +310,13 @@ function LegacyProductionOrderForm({initialOrder=null}) {
               <tbody>
                 {materials.map((m, i) => (
                   <tr key={i} className="border-b border-slate-100">
-                    <td className="py-2 font-medium">{m.material_name}</td>
-                    <td className="py-2 text-right">{formatNumber(m.standard_quantity, 3)}</td>
-                    <td className="py-2">{m.unit}</td>
-                    <td className="py-2 text-right">{formatXAF(m.unit_cost)}</td>
-                    <td className="py-2 text-right">{formatXAF(m.standard_quantity * m.unit_cost)}</td>
-                    {isEdit && <td className="py-2 text-right">{formatNumber(m.issued_quantity || 0, 3)}</td>}
-                    {isEdit && <td className="py-2 text-right">{formatNumber(m.consumed_quantity || 0, 3)}</td>}
+                    <td data-label={ui("Material")} className="py-2 font-medium">{m.material_name}</td>
+                    <td data-label={ui("Required Qty")} className="py-2 text-right">{formatNumber(m.standard_quantity, 3)}</td>
+                    <td data-label={ui("Unit")} className="py-2">{m.unit}</td>
+                    <td data-label={ui("Unit Cost")} className="py-2 text-right">{formatXAF(m.unit_cost)}</td>
+                    <td data-label={ui("Total Cost")} className="py-2 text-right">{formatXAF(m.standard_quantity * m.unit_cost)}</td>
+                    {isEdit && <td data-label={ui("Issued")} className="py-2 text-right">{formatNumber(m.issued_quantity || 0, 3)}</td>}
+                    {isEdit && <td data-label={ui("Consumed")} className="py-2 text-right">{formatNumber(m.consumed_quantity || 0, 3)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -340,7 +340,7 @@ function LegacyProductionOrderForm({initialOrder=null}) {
           <div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{ui('Material availability and source warehouses')}</h3><Button variant="outline" size="sm" disabled={checking || saving} onClick={refreshMaterials}>{checking?ui('Checking usable lots...'):ui('Refresh material availability')}</Button></div>
           <p className="text-sm text-slate-600">{ui('Production Managers submit orders directly to Warehouse. Only approved, unexpired stock in each selected warehouse is usable.')}</p>
           {checkError && <p role="alert" className="text-sm text-red-700">{uiMessage(checkError)}</p>}
-          {availability && <div className="overflow-x-auto"><table className="w-full min-w-[660px] text-sm"><thead><tr className="border-b text-left text-slate-500"><th className="py-2">{ui('Material')}</th><th>{ui('Source warehouse')}</th><th className="text-right">{ui('Required')}</th><th className="text-right">{ui('Available')}</th><th className="text-right">{ui('Short')}</th></tr></thead><tbody>{availability.availability.map(row=><tr className="border-b" key={row.material_id}><td className="py-3 pr-2 font-medium">{row.material_name}</td><td className="py-2 pr-3"><select aria-label={ui('Source warehouse for {0}',row.material_name)} className="h-10 w-full rounded-md border bg-white px-2" disabled={saving} value={row.warehouse_id || ''} onChange={e=>setForm(f=>({...f,material_warehouses:{...f.material_warehouses,[row.material_id]:e.target.value}}))}><option value="">{ui('Select source warehouse')}</option>{warehouses.filter(w=>MATERIAL_WAREHOUSE_TYPES.includes(w.warehouse_type)).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></td><td className="text-right">{formatNumber(row.required,3)} {row.unit}</td><td className="text-right">{formatNumber(row.available,3)} {row.unit}</td><td className={'text-right font-semibold '+(row.missing>0?'text-red-700':'text-emerald-700')}>{formatNumber(row.missing,3)} {row.unit}</td></tr>)}</tbody></table></div>}
+          {availability && <div className="overflow-x-auto"><table className="mobile-table-cards w-full min-w-[660px] text-sm"><thead><tr className="border-b text-left text-slate-500"><th className="py-2">{ui('Material')}</th><th>{ui('Source warehouse')}</th><th className="text-right">{ui('Required')}</th><th className="text-right">{ui('Available')}</th><th className="text-right">{ui('Short')}</th></tr></thead><tbody>{availability.availability.map(row=><tr className="border-b" key={row.material_id}><td data-label={ui("Material")} className="py-3 pr-2 font-medium">{row.material_name}</td><td data-label={ui("Source warehouse")} className="py-2 pr-3"><select aria-label={ui('Source warehouse for {0}',row.material_name)} className="h-10 w-full rounded-md border bg-white px-2" disabled={saving} value={row.warehouse_id || ''} onChange={e=>setForm(f=>({...f,material_warehouses:{...f.material_warehouses,[row.material_id]:e.target.value}}))}><option value="">{ui('Select source warehouse')}</option>{warehouses.filter(w=>MATERIAL_WAREHOUSE_TYPES.includes(w.warehouse_type)).map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></td><td data-label={ui("Required")} className="text-right">{formatNumber(row.required,3)} {row.unit}</td><td data-label={ui("Available")} className="text-right">{formatNumber(row.available,3)} {row.unit}</td><td data-label={ui("Short")} className={'text-right font-semibold '+(row.missing>0?'text-red-700':'text-emerald-700')}>{formatNumber(row.missing,3)} {row.unit}</td></tr>)}</tbody></table></div>}
           {availability?.shortages?.length>0 ? <><p role="alert" className="text-sm text-slate-900">{ui('Materials are missing. Check the selected warehouse, request a physical count, or send a purchase request. No material will be deducted until the entire issue can succeed.')}</p><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={saving || checking || availability.availability.some(row=>!row.warehouse_id)} onClick={preparePurchase}><ShoppingCart size={16} className="mr-2"/>{ui('Prepare purchase request')}</Button><Button variant="outline" disabled={saving || auditSent} onClick={requestAudit}><ClipboardCheck size={16} className="mr-2"/>{auditSent?ui('Inventory audit requested'):ui('Request quick inventory audit')}</Button></div></> : availability && <p className="text-sm text-emerald-700">{ui('All required components are available for this plan.')}</p>}
           {purchaseDraft && <ProductionPurchaseRequest key={JSON.stringify(materialContext)} data={purchaseDraft} context={materialContext} onClose={()=>setPurchaseDraft(null)} onRefresh={()=>{setPurchaseDraft(null);refreshMaterials();}} onNavigate={navigate}/>}
         </section>}

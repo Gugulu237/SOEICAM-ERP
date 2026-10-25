@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const ToastProvider = ToastPrimitive.Provider;
 const ToastViewport = React.forwardRef(({ className, ...props }, ref) => (
-  <ToastPrimitive.Viewport ref={ref} className={cn("pointer-events-none fixed right-3 top-16 z-[100] flex max-h-[calc(100dvh-6rem)] w-[calc(100%-1.5rem)] max-w-sm flex-col gap-2 overflow-y-auto p-1 outline-none sm:right-5", className)} {...props} />
+  <ToastPrimitive.Viewport ref={ref} className={cn("pointer-events-none fixed right-3 top-16 z-[100] flex max-h-[calc(100dvh_-_6rem)] w-[calc(100%_-_1.5rem)] max-w-sm flex-col gap-2 overflow-y-auto p-1 outline-none sm:right-5", className)} {...props} />
 ));
 ToastViewport.displayName = "ToastViewport";
 const Toast = React.forwardRef(({ className, variant, ...props }, ref) => (

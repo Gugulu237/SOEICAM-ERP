@@ -6,7 +6,7 @@ import {normalizeRole} from './roles.js';
 import {stockUnit} from '../../lib/item-units.js';
 import {DISPATCH_MANAGER_ROLES} from '../../lib/operations-access.js';
 
-export const DISTRIBUTION_ACTIONS=['distributionControl','issueDistributionStock','closeDistributionRun','recoverLegacyCustody'];
+export const DISTRIBUTION_ACTIONS=['distributionControl','distributionIssueWorkspace','issueDistributionStock','closeDistributionRun','recoverLegacyCustody'];
 const pick=(row,fields)=>Object.fromEntries(fields.split(' ').map(key=>[key,row?.[key]]));
 const open=['loaded','in_transit'];
 const storage=['finished_goods','cold_room','general'];
@@ -19,16 +19,16 @@ function snapshotStores(tables){return {entities:Object.fromEntries(Object.entri
 
 async function overview(svc,date){
   const s=svc.entities;
-  const [staff,vehicles,warehouses,products,allOpen,daySales,acquisitions]=await Promise.all([
+  const [staff,vehicles,warehouses,products,allOpen,daySales,acquisitions,dayOrders]=await Promise.all([
     readRecords(s.Employee,{role:{$in:['commercial','driver']}}),readRecords(s.Vehicle),readRecords(s.Warehouse),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']}}),
-    readRecords(s.Dispatch,{status:{$in:open}}),readRecords(s.FieldSale,{transaction_date:date,status:'approved_posted'}),readRecords(s.Customer,{acquisition_date:date}),
+    readRecords(s.Dispatch,{status:{$in:open}}),readRecords(s.FieldSale,{transaction_date:date,status:'approved_posted'}),readRecords(s.Customer,{acquisition_date:date}),readRecords(s.SalesOrder,{order_date:date,status:'invoiced',sales_supply_recorded_at:{$exists:true},dispatch_id:{$ne:''}}),
   ]);
-  const runs=await readRecords(s.Dispatch,{$or:[{dispatch_date:date},{id:{$in:daySales.map(v=>v.dispatch_id).filter(Boolean)}},...(date===today()?[{status:{$in:[...open,'returned']}}]:[])]});
+  const runs=await readRecords(s.Dispatch,{$or:[{dispatch_date:date},{id:{$in:[...daySales,...dayOrders].map(v=>v.dispatch_id).filter(Boolean)}},...(date===today()?[{status:{$in:[...open,'returned']}}]:[])]});
   const ids=runs.map(r=>r.id),legacyLocations=warehouses.filter(w=>w.warehouse_type==='commercial_custody');
   const [lines,fieldSales,orders,balances,runMovements,extraMovements,journals]=await Promise.all([
     byIds(s.DispatchLine,'dispatch_id',ids),byIds(s.FieldSale,'dispatch_id',ids),byIds(s.SalesOrder,'dispatch_id',ids),
     byIds(s.StockBalance,'warehouse_id',[...warehouses.filter(w=>storage.includes(w.warehouse_type)).map(w=>w.id),...runs.filter(r=>open.includes(r.status)).map(r=>r.vehicle_warehouse_id),...legacyLocations.map(w=>w.id)]),
-    byIds(s.StockMovement,'document_id',ids),byIds(s.StockMovement,'dispatch_id',ids),byIds(s.JournalEntry,'id',daySales.map(v=>v.journal_id)),
+    byIds(s.StockMovement,'document_id',ids),byIds(s.StockMovement,'dispatch_id',ids),byIds(s.JournalEntry,'id',[...daySales.map(v=>v.journal_id),...dayOrders.map(v=>v.sales_supply_journal_id)]),
   ]);
   const [fieldLines,orderLines,supplyMovements,expiredReturns]=await Promise.all([byIds(s.FieldSaleLine,'field_sale_id',fieldSales.map(v=>v.id)),byIds(s.SalesOrderLine,'order_id',orders.map(v=>v.id)),byIds(s.StockMovement,'document_id',[...fieldSales,...orders].map(v=>v.id)),byIds(s.SpoilageRecord,'dispatch_id',ids)]);
   const movements=[...new Map([...runMovements,...extraMovements,...supplyMovements].map(m=>[m.id,m])).values()];
@@ -38,14 +38,17 @@ async function overview(svc,date){
     try{const recon=await dispatchReconciliationData(snapshot,run);return {...view,reconciliation:{...recon,orders:recon.orders.map(o=>pick(o,'id order_number')),fieldSales:recon.fieldSales.map(v=>pick(v,'id sale_number'))},error:''};}catch(e){return {...view,error:e.message,reconciliation:null};}
   }));
   const proven=new Set(views.flatMap(v=>v.reconciliation?.fieldSales.map(s=>s.id) || [])),posted=new Set(journals.filter(j=>j.status==='posted').map(j=>j.id));
-  const sales=daySales.filter(v=>proven.has(v.id)&&posted.has(v.journal_id));
+  const provenOrders=new Set(views.flatMap(v=>v.reconciliation?.orders.map(o=>o.id)||[]));
+  const journalById=new Map(journals.map(j=>[j.id,j]));
+  const suppliedOrders=dayOrders.filter(o=>{const j=journalById.get(o.sales_supply_journal_id);return provenOrders.has(o.id)&&j?.status==='posted'&&j.source_document_type==='Invoice'&&j.source_document_id===o.invoice_id;}).map(o=>({...o,commercial_id:o.salesperson_id}));
+  const sales=[...daySales.filter(v=>proven.has(v.id)&&posted.has(v.journal_id)),...suppliedOrders];
   const agents=staff.filter(e=>normalizeRole(e.role)==='commercial').map(agent=>{
     const own=sales.filter(sale=>sale.commercial_id===agent.id),customers=acquisitions.filter(c=>c.acquired_by_id===agent.id);
     return {...pick(agent,'id full_name status'),sales:round2(own.reduce((sum,v)=>sum+Number(v.total || 0),0)),cash_collected:round2(own.reduce((sum,v)=>sum+Number(v.amount_collected || 0),0)),credit:round2(own.reduce((sum,v)=>sum+Number(v.amount_due ?? Math.max(0,Number(v.total || 0)-Number(v.amount_collected || 0))),0)),supplies:own.length,customers_supplied:new Set(own.map(v=>v.customer_id)).size,new_customers:customers.length,verified_customers:customers.filter(c=>c.acquisition_verified==='verified_unique').length,open_runs:views.filter(r=>r.salesperson_id===agent.id&&open.includes(r.status)).length};
   });
   const productMap=new Map(products.map(p=>[p.id,p]));
   const legacy=legacyLocations.map(w=>({...pick(w,'id name custodian_employee_id'),lots:balances.filter(b=>b.warehouse_id===w.id&&Number(b.quantity)>0).map(b=>({...pick(b,'id product_id product_name quantity lot_number expiry_date qc_status'),unit:stockUnit(productMap.get(b.product_id) || {})}))})).filter(w=>w.lots.length);
-  return {date,agents,runs:views,legacy,unverified_supplies:daySales.length-sales.length,
+  return {date,agents,runs:views,legacy,unverified_supplies:daySales.length+dayOrders.length-sales.length,
     products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),
     staff:staff.map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.role)})),
     vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),
@@ -57,6 +60,12 @@ export async function distributionControlAction(client,user,body){
   const {role,employee}=await requireStaff(client,user,DISPATCH_MANAGER_ROLES,'Distribution inventory control');
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active Distribution management staff account is required');
   const svc=client.asServiceRole,s=svc.entities;
+  if(body.action==='distributionIssueWorkspace') {
+    client.auth.assertModule?.('distribution');
+    const [staff,vehicles,warehouses,products]=await Promise.all([readRecords(s.Employee,{role:{$in:['commercial','driver']},status:'active'}),readRecords(s.Vehicle,{is_active:true}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:true})]);
+    const locations=warehouses.filter(w=>storage.includes(w.warehouse_type)),balances=await byIds(s.StockBalance,'warehouse_id',locations.map(w=>w.id));
+    return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date'))};
+  }
   if(body.action==='distributionControl'){const {from:date}=periodDates(body.date || today(),body.date || today());if(date>today())throw Error('Choose today or an earlier reporting date');return overview(svc,date);}
   if(body.action==='issueDistributionStock'){
     const key=keyOf(user,body),snapshot=JSON.stringify([body.commercialId,body.driverId,body.vehicleId,body.warehouseId,body.lines,String(body.notes || '').slice(0,2000)]);

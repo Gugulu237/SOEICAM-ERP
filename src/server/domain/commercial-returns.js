@@ -11,7 +11,7 @@ import { driverReturnRun, driverReturnWorkspace, assertDriverReturnCustomer } fr
 const kind = 'field_expired_return';
 const requestKind = 'field_expired_request';
 const pick = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
-const viewFields = ['id', 'record_number', 'customer_id', 'customer_name', 'location_name', 'product_id', 'product_name', 'quantity', 'unit', 'reported_date', 'dispatch_id', 'driver_name', 'vehicle_name', 'commercial_id', 'commercial_name', 'returned_expiry_date', 'returned_lot_number', 'status', 'replacement_dispatch_id', 'replacement_date', 'receipt_reference', 'receipt_file_uris', 'replacement_receipt_file_uris', 'replacement_receipt_reference', 'notes', 'return_received_at', 'request_type', 'replace_now', 'return_id', 'posted_return_id', 'verified_by', 'verified_at', 'review_note', 'rejected_by', 'rejected_at'];
+const viewFields = ['id', 'record_number', 'customer_id', 'customer_name', 'location_name', 'product_id', 'product_name', 'quantity', 'unit', 'reported_date', 'dispatch_id', 'driver_name', 'vehicle_name', 'commercial_id', 'commercial_name', 'returned_expiry_date', 'returned_lot_number', 'status', 'replacement_dispatch_id', 'replacement_date', 'receipt_reference', 'receipt_file_uris', 'replacement_receipt_file_uris', 'replacement_receipt_reference', 'notes', 'return_received_at', 'request_type', 'replace_now', 'return_id', 'posted_return_id', 'verified_by', 'verified_at', 'review_note', 'rejected_by', 'rejected_at', 'reason', 'source_sale_id', 'source_sale_number', 'posting_basis'];
 export const expiredReturnView = row => pick(row, viewFields);
 
 async function returnBin(stores, vehicle, branchId = '') {
@@ -45,13 +45,13 @@ async function replace(stores, record, context, date, actorId) {
   const issue = await stockIssue({ entities: stores }, { productId: record.product_id, productName: record.product_name,
     warehouseId: context.stock_warehouse_id, quantity: record.quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
     documentId: record.id, dispatchId: context.dispatch_id, movementDate: date, saleableOnly: true,
-    reason: `No-charge expired-product replacement for ${record.customer_name} (${record.record_number})` });
+    reason: `No-charge customer-product replacement for ${record.customer_name} (${record.record_number})` });
   let journal = null;
   if (issue.totalValue > 0) {
     const lines = await saleItemPostings(stores, [{ product_id: record.product_id, quantity: record.quantity, line_total: 0, line_cost: issue.totalValue }],
       { netTotal: 0, costTotal: issue.totalValue, fallback: field => getRuleAccount({ entities: stores }, field === 'cogs_account_id' ? 'direct_material_cogs' : 'finished_goods_inventory') });
     const posted = await postJournal({ entities: stores }, { entryDate: date, sourceModule: 'field_returns', sourceDocumentType: 'SpoilageRecord', sourceDocumentId: record.id,
-      description: `Expired-product replacement ${record.record_number} - ${record.customer_name}`, userId: actorId,
+      description: `Customer-product replacement ${record.record_number} - ${record.customer_name}`, userId: actorId,
       lines: lines.map(line => ({ ...line, description: line.debit ? 'Cost of no-charge replacement' : 'Fresh inventory issued for replacement' })) });
     journal = posted.journal;
   }
@@ -59,6 +59,37 @@ async function replace(stores, record, context, date, actorId) {
     replacement_dispatch_id: context.dispatch_id, replacement_warehouse_id: context.stock_warehouse_id,
     replacement_cost: issue.totalValue, unit_cost: round2(issue.totalValue / record.quantity), total_value: issue.totalValue,
     journal_id: journal?.id || '', journal_number: journal?.journal_number || '' });
+}
+
+
+// Called only from saveSale's authenticated, atomic submission. It deliberately
+// does not approve a standalone request or claim independent verification.
+export async function postSaleReplacements(svc, user, sale, replacements) {
+  if (!replacements.length) return;
+  const stores = svc.entities;
+  const [customer, vehicle] = await Promise.all([stores.Customer.get(sale.customer_id), stores.Vehicle.get(sale.vehicle_id)]);
+  if (!customer || customer.is_active === false || !vehicle || vehicle.is_active === false) throw Error('The exchange customer or delivery vehicle is no longer active');
+  const location = await customerLocation(stores, customer, sale.location_id);
+  const bin = await returnBin(stores, vehicle);
+  for (const row of replacements) {
+    const product = await stores.Product.get(row.product_id);
+    if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw Error('Choose an active finished product for each replacement');
+    const record = await stores.SpoilageRecord.create({ record_type: kind, record_number: 'ER-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
+      source_sale_id: sale.id, source_sale_number: sale.sale_number, posting_basis: 'sale_exchange', request_type: 'collection', replace_now: true,
+      customer_id: customer.id, customer_name: customer.business_name, location_id: location.id, location_name: location.name,
+      product_id: product.id, product_name: product.name, quantity: row.quantity, unit: stockUnit(product), reported_date: sale.transaction_date,
+      ...pick(sale, ['dispatch_id', 'driver_id', 'driver_name', 'vehicle_id', 'vehicle_name', 'commercial_id', 'commercial_name', 'recorded_by']),
+      returned_expiry_date: row.expiry_date, returned_lot_number: row.lot_number, reason: row.reason === 'damaged' ? 'damaged_at_store' : 'expired', status: 'reported',
+      collection_warehouse_id: bin.id, unit_cost: 0, total_value: 0, receipt_reference: sale.receipt_reference,
+      receipt_file_uris: sale.receipt_file_uris, notes: 'Stock exchange recorded with sale ' + sale.sale_number });
+    await stockReceive(svc, { productId: product.id, productName: product.name, warehouseId: bin.id, warehouseName: bin.name,
+      quantity: row.quantity, unitCost: 0, qcStatus: 'quarantine', lotNumber: 'ER-' + record.id, expiryDate: row.expiry_date || undefined,
+      documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,
+      reason: row.reason + ' customer goods collected during ' + sale.sale_number + '; not available for sale' });
+    await replace(stores, record, sale, sale.transaction_date, user.id);
+    await audit(svc, { action: 'sale_stock_exchange', module: 'field_returns', entityType: 'SpoilageRecord', entityId: record.id, userId: user.id,
+      description: row.quantity + ' ' + stockUnit(product) + ' ' + row.reason + ' goods exchanged during ' + sale.sale_number + '; fresh stock issued without customer charge' });
+  }
 }
 
 // Requests preserve field evidence, but cannot move inventory or post accounting.

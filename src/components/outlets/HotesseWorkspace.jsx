@@ -5,6 +5,7 @@ import { sourceMessage, uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import { MobileDashboardIdentity, useDashboardIdentity } from '@/components/home/DashboardIdentity';
 import React, { useState } from 'react';
 import { ClipboardCheck, Package, Store, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import { formatQuantity, formatDateTime } from '@/lib/formatters';
 
 export default function HotesseWorkspace({ data, loading, preview, onRefresh }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const { centralHero } = useDashboardIdentity();
 
   const [selected, setSelected] = useState(''), [tab, setTab] = useState('today'), [reporting, setReporting] = useState(null), [message, setMessage] = useState('');
   const source = data || {}, locations = source.locations || [], reports = source.reports || [];
@@ -30,7 +32,7 @@ export default function HotesseWorkspace({ data, loading, preview, onRefresh }) 
   const ProductPhotoTag = preview ? 'div' : 'button';
   const done = () => { setReporting(null); setMessage(sourceMessage("Report sent to management. Accounting and warehouse stock are unchanged.")); onRefresh?.(); };
   return <div className="space-y-5">
-    <header className="flex flex-wrap items-center justify-between gap-2"><h1 className="text-xl font-semibold">{ui("My point of sale")}</h1><span className="text-xs text-slate-500">{source.date || ui("Loading date...")}</span></header>
+    <header className={(centralHero ? "hidden sm:block " : "") + "rounded-2xl border bg-secondary/50 p-4 sm:border-0 sm:bg-transparent sm:p-0"}><MobileDashboardIdentity /><div className="hidden flex-wrap items-center sm:flex justify-between gap-2"><h1 className="text-xl font-semibold">{ui("My point of sale")}</h1><span className="text-xs text-slate-500">{source.date || ui("Loading date...")}</span></div></header>
     {message && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{uiMessage(message)}</p>}
     {!location ? <div className="rounded-2xl border bg-white p-8 text-center"><Store className="mx-auto text-rose-500" size={30} /><h2 className="mt-4 font-semibold">{loading ? ui("Loading your points of sale...") : ui("No point of sale assigned yet")}</h2><p className="mt-2 text-sm text-slate-500">{ui("The General Manager assigns an existing customer outlet under Sales / Outlet Reports / Outlet assignments.")}</p></div> : <>
       <section className="rounded-2xl border bg-white p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1"><label className="text-xs font-medium text-slate-500" htmlFor="daily-outlet">{ui("Assigned point of sale")}</label><select id="daily-outlet" value={location.id} onChange={event => setSelected(event.target.value)} className="mt-2 block h-11 w-full max-w-md rounded-lg border bg-white px-3 text-sm font-semibold">{locations.map(row => <option key={row.id} value={row.id}>{row.customer_name} / {row.name}</option>)}</select><p className="mt-3 text-xs text-slate-500">{[location.address, location.town].filter(Boolean).join(', ') || location.customer_name}</p></div><CustomerMapLinks customer={location} /></div></section>

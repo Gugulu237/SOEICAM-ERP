@@ -101,7 +101,7 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
                   <Button size="sm" variant="outline" onClick={() => onSelect?.(sub)}>{ui("Open ")}<ChevronRight size={13} className="ml-0.5" /></Button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 text-xs">
+              <div className="grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 text-xs">
                 <span className="text-slate-500">{ui("Balance ")}<span className="block font-semibold text-slate-900">{formatXAF(sub.balance)}</span></span>
                 <span className="text-slate-500">{ui("Outstanding ")}<span className="block font-semibold text-slate-900">{formatXAF(sm.outstanding)}</span></span>
                 <span className="text-slate-500">{ui("Spoilage ")}<span className={`block font-semibold ${sm.spoilage > 0 ? "text-red-600" : "text-slate-900"}`}>{formatXAF(sm.spoilage)}</span></span>

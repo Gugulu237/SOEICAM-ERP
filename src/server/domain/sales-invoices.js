@@ -1,3 +1,5 @@
+import {salesStockSource} from './sales-stock-source.js';
+import {assertRunSupplyStock} from './commercial-runs.js';
 import { requireStaff, nextSequence, postJournal, stockIssue, getRuleAccount, getAccountByNumber, audit, round2, round3, today } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { periodDates, finishedProduct } from './commercial-rules.js';
@@ -81,7 +83,7 @@ export async function invoiceAction(client,user,body) {
     const company=invoiceCompany(settings[0]),defaults=invoiceDefaults(customer,company),billTo=await billing(s,source,customer);
     const options={...defaults,bill_to_address:billTo.options.bill_to_address || defaults.bill_to_address};
     const invoiceDate=body.sourceType==='field'?source.transaction_date:today(),terms=Number(source.payment_terms_days ?? customer.payment_terms_days ?? 0);
-    return {options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id customer_id customer_name total subtotal tax_total payment_type'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?round2(Number(l.quantity)*Number(l.unit_price)-Number(l.line_total)):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
+    return {options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?round2(Number(l.quantity)*Number(l.unit_price)-Number(l.line_total)):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
   }
   if(body.action==='saveInvoiceCompany') {
     const settings=(await readRecords(s.CompanySettings))[0]; if(!settings)throw Error('Company settings are missing.');
@@ -134,8 +136,7 @@ export async function invoiceAction(client,user,body) {
     // twice. A recorded delivery needs a documented invoice reconciliation.
     const past=await readRecords(s.StockMovement,{document_id:source.id,status:'approved'});
     if(past.some(m=>Number(m.quantity)>0 && m.source_warehouse_id && !m.destination_warehouse_id))throw Error('This order already has goods issued. Reconcile its delivery before invoicing to avoid issuing stock twice.');
-    const warehouse=source.warehouse_id?await s.Warehouse.get(source.warehouse_id):null;
-    if(!warehouse || warehouse.is_active===false || ['vehicle','commercial_custody','quarantine','field_delivery_pending'].includes(warehouse.warehouse_type) || source.dispatch_id)throw Error('Invoice warehouse sales from an active company warehouse. Record vehicle deliveries in the Commercial workspace.');
+    const sourceContext=await salesStockSource(svc,{sourceType:source.dispatch_id?'issued':'warehouse',dispatchId:source.dispatch_id||'',warehouseId:source.warehouse_id},invoiceDate);
     const sourceLines=await readRecords(s.SalesOrderLine,{order_id:source.id});if(!sourceLines.length || sourceLines.length>200)throw Error('Save 1 to 200 order lines before invoicing.');
     const products=new Map((await recordsByIds(s.Product,sourceLines.map(l=>l.product_id))).map(p=>[p.id,p]));
     lines=[];
@@ -151,10 +152,12 @@ export async function invoiceAction(client,user,body) {
     }
     const subtotal=round2(lines.reduce((sum,l)=>sum+l.total-l.tax_amount,0)),tax=round2(lines.reduce((sum,l)=>sum+l.tax_amount,0)),total=round2(subtotal+tax);
     if(total<=0 || total!==round2(source.total) || tax!==round2(source.tax_total))throw Error('Saved order totals do not match its lines. Save the corrected order first.');
+    if(sourceContext.dispatch_id)await assertRunSupplyStock(svc,sourceContext,lines,invoiceDate);
     const cash=source.payment_type==='cash';
-    invoice=await s.Invoice.create({...base,sales_order_id:source.id,accounting_source:'sales_order',subtotal,tax_total:tax,total,amount_paid:0,balance:total,status:'posted',payment_type:cash?'cash':'credit',cash_deposited:false});
+    const sellerId=source.sales_supply_recorded_at?source.salesperson_id:sourceContext.salesperson_id||source.salesperson_id||'',sellerName=source.sales_supply_recorded_at?source.salesperson_name:sourceContext.salesperson_name||source.salesperson_name||'';
+    invoice=await s.Invoice.create({...base,sales_order_id:source.id,accounting_source:'sales_order',subtotal,tax_total:tax,total,amount_paid:0,balance:total,status:'posted',payment_type:cash?'cash':'credit',cash_deposited:false,warehouse_id:sourceContext.stock_warehouse_id,dispatch_id:sourceContext.dispatch_id,salesperson_id:sellerId,salesperson_name:sellerName,stock_holder_id:sourceContext.salesperson_id||'',stock_holder_name:sourceContext.salesperson_name||'',recorded_by:user.id});
     let cogs=0;
-    for(const l of lines){const result=await stockIssue(svc,{productId:l.product_id,productName:l.product_name,warehouseId:source.warehouse_id,quantity:l.quantity,movementType:'customer_delivery',documentType:'SalesOrder',documentId:source.id,movementDate:invoiceDate,reason:customer.business_name,saleableOnly:true});l.cogs_total=result.totalValue;l.unit_cost=result.totalValue/l.quantity;cogs=round2(cogs+result.totalValue);}
+    for(const l of lines){const result=await stockIssue(svc,{productId:l.product_id,productName:l.product_name,warehouseId:sourceContext.stock_warehouse_id,quantity:l.quantity,movementType:'customer_delivery',documentType:'SalesOrder',documentId:source.id,movementDate:invoiceDate,reason:customer.business_name,saleableOnly:true,dispatchId:sourceContext.dispatch_id || undefined});l.cogs_total=result.totalValue;l.unit_cost=result.totalValue/l.quantity;cogs=round2(cogs+result.totalValue);}
     const debit=cash?await getAccountByNumber(svc,'1050'):await getRuleAccount(svc,'customer_receivable');
     const itemLines=await saleItemPostings(s,lines,{netTotal:subtotal,costTotal:cogs,fallback:field=>getRuleAccount(svc,{revenue_account_id:'sales_revenue',cogs_account_id:'direct_material_cogs',inventory_account_id:'finished_goods_inventory'}[field])});
     const plan=[{account_id:debit.id,account_number:debit.account_number,account_name:debit.account_name,debit:total,credit:0,party_type:'customer',party_id:customer.id},...itemLines];
@@ -163,7 +166,7 @@ export async function invoiceAction(client,user,body) {
     const {journal}=await postJournal(svc,{entryDate:invoiceDate,description:`Invoice ${number} — ${customer.business_name}`,sourceModule:'sales',sourceDocumentType:'Invoice',sourceDocumentId:invoice.id,userId:user.id,lines:plan});
     invoice=await s.Invoice.update(invoice.id,{journal_id:journal.id});
     if(!cash)await s.Customer.update(customer.id,{balance:round2(Number(customer.balance || 0)+total)});
-    await s.SalesOrder.update(source.id,{status:'invoiced',invoice_id:invoice.id});
+    await s.SalesOrder.update(source.id,{status:'invoiced',invoice_id:invoice.id,amount_collected:cash?total:0,amount_due:cash?0:total,...(source.sales_supply_recorded_at?{sales_supply_journal_id:journal.id}:{}),...(sourceContext.dispatch_id?{salesperson_id:sellerId,salesperson_name:sellerName,driver_id:sourceContext.driver_id,driver_name:sourceContext.driver_name,vehicle_id:sourceContext.vehicle_id,vehicle_name:sourceContext.vehicle_name}: {})});
   }
   if(!lines.length || lines.some(l=>!Number.isFinite(l.quantity) || l.quantity<=0 || !Number.isFinite(l.total) || !Number.isFinite(l.discount_amount) || l.discount_amount<0 || !Number.isFinite(l.unit_price) || l.unit_price<0 || l.tax_amount<0) || round2(lines.reduce((sum,l)=>sum+l.total,0))!==round2(invoice.total) || round2(lines.reduce((sum,l)=>sum+l.tax_amount,0))!==round2(invoice.tax_total))throw Error('Invoice lines do not reconcile to the source sale.');
   await s.InvoiceLine.bulkCreate(lines.map(l=>({...l,invoice_id:invoice.id})));

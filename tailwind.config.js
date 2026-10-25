@@ -1,5 +1,7 @@
+import animate from 'tailwindcss-animate';
+
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
     darkMode: ["class"],
     // Tailwind 3 equivalent of the theme stylesheet's Tailwind 4 @source hint.
     content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}", "./node_modules/@clerk/ui/dist/themes/shadcn.js"],
@@ -92,5 +94,5 @@ module.exports = {
   		}
   	}
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [animate],
 }

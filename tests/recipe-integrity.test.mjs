@@ -110,7 +110,7 @@ async function recipeRenderer(){
       '@/api/erpClient':'export const erp={entities:new Proxy({},{get:(_,key)=>globalThis.__recipeUI.client[key]})};',
       '@/lib/router':"export const useParams=()=>({id:'approved'}),useNavigate=()=>value=>globalThis.__recipeUI.navigation.push(value),useBack=()=>()=>{},useSearchParams=()=>[new URLSearchParams()];",
       '@/components/ui/use-toast':'export const useToast=()=>({toast:v=>globalThis.__recipeUI.notifications.push(v)});',
-      '@/components/ui/button':"import React from 'react';export const Button=({children,...props})=>{globalThis.__recipeUI.capture('button',props,children);return React.createElement('button',props,children);};",
+      '@/components/ui/button':"import React from 'react';export const buttonVariants=()=> 'fixture-button';export const Button=({children,...props})=>{globalThis.__recipeUI.capture('button',props,children);return React.createElement('button',props,children);};",
       '@/components/ui/input':"import React from 'react';export const Input=props=>React.createElement('input',props);",
       '@/components/ui/label':leaf(['Label']),
       '@/components/ui/select':leaf(['Select','SelectContent','SelectItem','SelectTrigger','SelectValue']),

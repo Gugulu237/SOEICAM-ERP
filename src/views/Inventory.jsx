@@ -11,12 +11,12 @@ import { useNavigate, useSearchParams } from "@/lib/router";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { formatNumber, formatDate } from "@/lib/formatters";
 import { itemUnits, stockUnit } from "@/lib/item-units";
-import { isAssemblyInventoryType } from '@/lib/item-types';
 import { usePageState } from '@/lib/navigation-context';
 import { purchasePermissions } from '@/lib/purchase-workspace';
 import { WAREHOUSE_MANAGERS } from '@/lib/warehouse-workspace';
-import { INVENTORY_SECTIONS, ITEM_FILTERS, inventoryWorkspaceState, matchesItemFilter, inventoryItemCounts, inventoryStockIndex } from "@/lib/inventory-workspace";
+import { ITEM_FILTERS, inventoryWorkspaceState, matchesItemFilter, inventoryItemCounts, inventoryStockIndex } from "@/lib/inventory-workspace";
 import { finishedStockOutsideColdRoom } from '@/lib/finished-product-storage';
+import { inventoryLowStock } from '@/lib/stock-alerts';
 import { canAdjustInventory } from '@/lib/inventory-adjustment-access';
 import DataTable from "@/components/shared/DataTable";
 import ProductThumb from "@/components/shared/ProductThumb";
@@ -26,10 +26,12 @@ import ItemAvailabilityAction from '@/components/items/ItemAvailabilityAction';
 import QuickItemEditor from "@/components/items/QuickItemEditor";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, Factory, PackageCheck } from "lucide-react";
+import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, Bell, PackageCheck, MoreHorizontal } from "lucide-react";
 
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
+const ProductionCountRequests = lazy(() => import('@/components/inventory/ProductionCountRequests'));
 const WarehouseDialog = lazy(() => import("@/components/admin/WarehouseDialog"));
 const ExpiryRecovery = lazy(() => import("@/components/inventory/ExpiryRecovery"));
 const StockAlerts = lazy(() => import("@/components/inventory/StockAlerts"));
@@ -37,7 +39,8 @@ const MovementLedger = lazy(() => import("@/components/inventory/MovementLedger"
 const StockTransferDialog = lazy(() => import("@/components/inventory/StockTransferDialog"));
 const StockAdjustmentDialog = lazy(() => import("@/components/inventory/StockAdjustmentDialog"));
 const ItemForm = lazy(() => import('@/views/ItemForm'));
-const SECTIONS = { get items(){return ui("Items");}, get stock(){return ui("Stock on Hand");}, get alerts(){return ui("Alerts");}, get movements(){return ui("Movements");}, get recovery(){return ui("Expiry & recovery");} };
+const IssueGoods = lazy(() => import('@/components/distribution/IssueGoods'));
+const SECTIONS = { get stock(){return ui('Stock on Hand');}, get alerts(){return ui('Stock alerts');}, get movements(){return ui('Movements');} };
 const Pending = () => <p role="status" className="rounded-xl border bg-white p-8 text-sm text-slate-500">{ui("Loading inventory...")}</p>;
 
 export default function Inventory() {
@@ -48,8 +51,6 @@ export default function Inventory() {
   const { role, employee, allowedModules } = useCurrentUser(), { toast } = useToast();
   const hasModule=key=>role==='admin' || !allowedModules || allowedModules.includes(key);
   const canReceive = purchasePermissions(role, employee?.assigned_role).receive && hasModule('purchases');
-  const canManufacture = ['admin','production_manager','warehouse_manager'].includes(role) && hasModule('manufacturing');
-  const canBuild=['admin','production_manager'].includes(role) && hasModule('manufacturing');
   const canEdit = ["admin", "warehouse_manager", "procurement", "production_manager"].includes(role);
   const canMoveStock = ["admin", "warehouse_manager", "production_manager"].includes(role);
   const canAdjustStock = canAdjustInventory(role,employee,allowedModules);
@@ -58,6 +59,9 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState("");
   const [view, setView] = usePageState("inventory:view", "visual", { scope: "path" });
   const [locationDialog,setLocationDialog] = useState(null);
+  const [countsOpen,setCountsOpen]=useState(false);
+  const [showIssue, setShowIssue] = useState(false), [showRecoveryReceipt, setShowRecoveryReceipt] = useState(false);
+  const lowStock = useMemo(() => inventoryLowStock(products, balances), [products, balances]);
   const stockArea = workspace.stockArea;
   const [movementVersion, setMovementVersion] = useState(0);
   const [showTransfer, setShowTransfer] = useState(false), [showAdjust, setShowAdjust] = useState(null);
@@ -137,46 +141,77 @@ export default function Inventory() {
     { key: "_unit", label: ui("U/M"), sortable: false, render: (_, row) => productById.has(row.product_id) ? stockUnit(productById.get(row.product_id)) : "—" },
   ];
   const misplaced=finishedStockOutsideColdRoom(products,warehouses,balances);
-  const buildAction=item=>canBuild && isAssemblyInventoryType(item.inventory_type) && item.is_active!==false && item.configuration_status!=='draft' ? <Button size="sm" variant="outline" className="h-auto min-h-8 max-w-full whitespace-normal text-xs" onClick={event=>{event.stopPropagation();navigate('/manufacturing/new?product='+encodeURIComponent(item.id));}}><Factory size={14} className="mr-1"/>{ui('Build assembly')}</Button>:null;
   const stockRows = balances.filter(row => (!params.get("warehouse") || row.warehouse_id===params.get("warehouse")) && (stockArea === "all" || stock.warehouseTypes.get(row.warehouse_id) === (stockArea === "delivery" ? "vehicle" : "wip")));
 
-  return <div className="space-y-5">
-    <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold tracking-tight">{ui("Inventory")}</h1><div className="flex max-w-full flex-wrap items-center gap-2">
-      {canReceive && <Button onClick={() => navigate('/purchases?section=receiving')}><PackageCheck size={16} className="mr-1" />{ui('Receive inventory')}</Button>}
-      {canManufacture && <Button variant="outline" onClick={() => navigate(canBuild ? '/manufacturing/new' : '/manufacturing')}><Factory size={16} className="mr-1" />{ui('Manufacturing')}</Button>}
-      {canMoveStock && hasModule('distribution') && <Button variant="outline" onClick={() => navigate('/distribution?tab=stock&issue=1')}><ArrowLeftRight size={16} className="mr-1" />{ui('Issue to driver & agent')}</Button>}
-      {canEdit && <Button onClick={() => navigate('/items/new')}><Plus size={16} className="mr-1" />{ui('New item')}</Button>}
-      <Button variant="outline" size="icon" aria-label={ui('Refresh')} title={ui('Refresh')} disabled={refreshing} onClick={loadData}><RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} /></Button>
-    </div></header>
-    {misplaced.length>0 && <p role="alert" className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900">{ui('Finished stock recorded outside Cold Room needs a physical-location check.')}{canMoveStock && <button type="button" className="ml-2 underline" onClick={()=>setShowTransfer(true)}>{ui('Move stock')}</button>}</p>}
+  useEffect(() => {
+    if (workspace.section !== 'recovery') return;
+    if (role === 'admin' || role === 'cashier') navigate('/accounting/recovery', { replace: true });
+    else {
+      if (['warehouse_manager','production_manager'].includes(role)) setShowRecoveryReceipt(true);
+      setParams(previous => { previous.set('section','items'); previous.delete('tab'); return previous; }, { replace: true });
+    }
+  }, [workspace.section, role, navigate, setParams]);
+  const closePanel = () => changeWorkspace({ section: 'items' });
+
+  return <div className="min-w-0 space-y-4">
+    <header className="flex items-center justify-between gap-2">
+      <h1 className="min-w-0 text-xl font-bold tracking-tight sm:text-2xl">{ui('Inventory')}</h1>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button variant="outline" size="icon" className="relative h-11 w-11 rounded-xl" aria-label={ui('Stock alerts ({0})', lowStock.length)} title={ui('Stock alerts')} onClick={() => changeWorkspace({ section: 'alerts' })}>
+          <Bell size={19}/>{!loading && lowStock.length > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">{lowStock.length > 99 ? '99+' : lowStock.length}</span>}
+        </Button>
+        {canEdit && <Button className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/>{ui('New item')}</Button>}
+      </div>
+    </header>
+    {(canReceive || canMoveStock && hasModule('distribution')) && <div className="grid gap-2 sm:flex">
+      {canReceive && <Button className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" onClick={() => navigate('/purchases?section=receiving')}><PackageCheck size={18} className="shrink-0"/>{ui('Receive inventory')}</Button>}
+      {canMoveStock && hasModule('distribution') && <Button variant="outline" className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" onClick={() => setShowIssue(true)}><ArrowLeftRight size={18} className="shrink-0"/>{ui('Issue to driver & agent')}</Button>}
+    </div>}
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{uiMessage(error)}<button type="button" className="ml-3 underline" onClick={loadData}>{ui("Retry")}</button></div>}
-    <Tabs value={workspace.section} onValueChange={section => changeWorkspace({ section })}>
-      <TabsList className="h-auto flex-wrap justify-start">{INVENTORY_SECTIONS.filter(section=>section!=='recovery' || ['admin','warehouse_manager','production_manager'].includes(role)).map(section => <TabsTrigger key={section} value={section}>{SECTIONS[section]}</TabsTrigger>)}</TabsList>
-      <TabsContent value="items" className="mt-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2" aria-label={ui("Item types")}>{ITEM_FILTERS.map(filter => <button type="button" key={filter.key} aria-pressed={workspace.filter === filter.key} onClick={() => changeWorkspace({ filter: filter.key, type: "all" })} className={"min-h-10 rounded-full border px-3 text-sm font-medium " + (workspace.filter === filter.key ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400")}>{filter.label}<span className="ml-2 opacity-70">{loading ? "—" : counts[filter.key]}</span></button>)}</div>
-          <ViewToggle value={view} onChange={setView} options={[{ value: "visual", label: "Photos", icon: Grid2X2 }, { value: "table", label: "Table", icon: List }]} />
-        </div>
-        {loading ? <Pending /> : <GroupedItems key={workspace.filter+workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit?editItem:undefined} table={view==='table'} renderDetails={item=><div className="flex flex-wrap gap-2">{quickEditor(item)}{canEdit&&<ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item=>{savedItem(item);loadData();}}/>}{buildAction(item)}</div>} />}
-      </TabsContent>
-      <TabsContent value="stock" className="mt-5 space-y-4">
+    <nav aria-label={ui("Item types")} className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+      {ITEM_FILTERS.map(filter => <button type="button" key={filter.key} aria-pressed={workspace.filter === filter.key} onClick={() => changeWorkspace({ section: 'items', filter: filter.key, type: 'all' })} className={"flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium sm:justify-center " + (workspace.filter === filter.key ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400")}>{filter.label}<span className="text-xs opacity-70">{loading ? "-" : counts[filter.key]}</span></button>)}
+    </nav>
+    <div className="flex items-center justify-between gap-2">
+      <ViewToggle value={view} onChange={setView} options={[{ value: "visual", label: "Photos", icon: Grid2X2 }, { value: "table", label: "Table", icon: List }]} />
+      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label={ui('More inventory tools')}><MoreHorizontal size={20}/></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64 [&_[role=menuitem]]:min-h-11">
+          <DropdownMenuItem disabled={refreshing} onSelect={() => loadData()}><RefreshCw size={16} className="mr-2"/>{ui('Refresh')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => changeWorkspace({ section: 'stock' })}>{ui('Stock on Hand')}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => changeWorkspace({ section: 'movements' })}>{ui('Movements')}</DropdownMenuItem>
+          {canAdjustStock && <DropdownMenuItem disabled={loading} onSelect={() => setShowAdjust({})}>{ui('Adjust quantity')}</DropdownMenuItem>}
+          {canMoveStock && <DropdownMenuItem disabled={loading} onSelect={() => setShowTransfer(true)}>{ui('Move stock')}</DropdownMenuItem>}
+          {canMoveStock && <DropdownMenuItem onSelect={() => setShowRecoveryReceipt(true)}>{ui('Recovered packaging')}</DropdownMenuItem>}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{quickEditor(item)}{canEdit && <ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
+    <Dialog open={['stock','movements','alerts'].includes(workspace.section)} onOpenChange={open => { if (!open) closePanel(); }}>
+      <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
+        <DialogHeader><DialogTitle>{SECTIONS[workspace.section] || ui('Inventory')}</DialogTitle><DialogDescription className="sr-only">{ui('Inventory details')}</DialogDescription></DialogHeader>
+        {workspace.section === 'stock' && <div className="space-y-4">
+          {misplaced.length > 0 && <p role="alert" className="rounded-md border bg-slate-50 p-3 text-xs">{ui('Finished stock recorded outside Cold Room needs a physical-location check.')}</p>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ViewToggle value={stockArea} onChange={area => changeWorkspace({ area })} options={[{ value: "all", label: "All stock" }, { value: "wip", label: "Production stock" }, { value: "delivery", label: "Out for delivery" }]} />
           {canMoveStock && <div className="flex flex-wrap gap-2">{canAdjustStock && <Button variant="outline" disabled={loading} onClick={() => setShowAdjust({})}><ClipboardCheck size={16} className="mr-1" />{ui("Adjust quantity")}</Button>}<Button disabled={loading} onClick={() => setShowTransfer(true)}><ArrowLeftRight size={16} className="mr-1" />{ui("Move stock")}</Button></div>}
         </div>
-        <label className="flex items-center gap-2 text-sm">{ui('Location')}<select aria-label={ui('Stock location')} value={params.get('warehouse') || ''} onChange={event=>changeWorkspace({warehouse:event.target.value})} className="h-9 rounded-md border bg-white px-3"><option value="">{ui('All locations')}</option>{warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+        <label className="flex items-center gap-2 text-sm">{ui('Location')}<select aria-label={ui('Stock location')} value={params.get('warehouse') || ''} onChange={event=>changeWorkspace({warehouse:event.target.value})} className="h-11 min-w-0 max-w-full rounded-md border bg-white px-3"><option value="">{ui('All locations')}</option>{warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
         <details className="rounded-lg border bg-white p-3"><summary className="cursor-pointer text-sm font-medium">{ui('Manage storage locations')}</summary><div className="mt-3 divide-y">{warehouses.filter(w=>!['vehicle','commercial_custody'].includes(w.warehouse_type)).map(w=><div key={w.id} className="flex items-center justify-between py-2 text-sm"><span>{w.name} <span className="text-xs text-slate-500">{w.code} · {w.is_active===false?ui('Inactive'):ui('Active')}</span></span>{canManageWarehouses && <Button size="sm" variant="ghost" onClick={()=>setLocationDialog(w)}>{ui('Edit')}</Button>}</div>)}</div>{canManageWarehouses && <Button size="sm" variant="outline" onClick={()=>setLocationDialog({})}>{ui('Add location')}</Button>}</details>
+        {canMoveStock && hasModule('manufacturing') && <details className="rounded-xl border bg-white p-3" onToggle={event=>setCountsOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-medium">{ui('Production count requests')}</summary>{countsOpen && <Suspense fallback={<Pending/>}><ProductionCountRequests products={products} onCount={canAdjustStock?()=>setShowAdjust({}):undefined}/></Suspense>}</details>}
         {loading ? <Pending /> : <DataTable key={stockArea} columns={balanceColumns} data={stockRows} searchFields={["product_name", "warehouse_name", "lot_number"]} emptyMessage={ui("No stock records in this area.")} />}
-      </TabsContent>
-      <TabsContent value="recovery" className="mt-5"><Suspense fallback={<Pending/>}>{['admin','warehouse_manager','production_manager'].includes(role)?<ExpiryRecovery onSaved={loadData}/>:<p>{ui('Warehouse management handles expired-stock disposal.')}</p>}</Suspense></TabsContent>
-      <TabsContent value="alerts" className="mt-5">{loading ? <Pending /> : <Suspense fallback={<Pending />}><StockAlerts products={products} balances={balances} onCount={canAdjustStock ? () => setShowAdjust({}) : undefined} /></Suspense>}</TabsContent>
-      <TabsContent value="movements" className="mt-5 space-y-3">
+
+        </div>}
+        {workspace.section === 'movements' && <div className="space-y-3">
         {canMoveStock && <div className="flex justify-end"><Button disabled={loading} onClick={() => setShowTransfer(true)}><ArrowLeftRight size={16} className="mr-2" />{ui("Move stock")}</Button></div>}
         {loading ? <Pending /> : <Suspense fallback={<Pending />}><MovementLedger warehouseId={params.get('warehouse') || undefined} reportMode={params.get('panel')==='report'} warehouses={warehouses} products={products} refreshKey={movementVersion} /></Suspense>}
-      </TabsContent>
-    </Tabs>
+
+        </div>}
+        {workspace.section === 'alerts' && (loading ? <Pending/> : <Suspense fallback={<Pending/>}><StockAlerts products={products} balances={balances} onEdit={canEdit ? item => { closePanel(); editItem(item); } : undefined}/></Suspense>)}
+      </DialogContent>
+    </Dialog>
+    {showRecoveryReceipt && <Dialog open onOpenChange={setShowRecoveryReceipt}><DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{ui('Recovered packaging')}</DialogTitle><DialogDescription>{ui('Receive recovered packaging after accounting treatment. Quality inspection is required before reuse.')}</DialogDescription></DialogHeader><Suspense fallback={<Pending/>}><ExpiryRecovery mode="warehouse" onSaved={loadData}/></Suspense></DialogContent></Dialog>}
+    {showIssue && <Suspense fallback={<Pending/>}><IssueGoods onClose={() => setShowIssue(false)} onSaved={() => { setShowIssue(false); loadData(); }}/></Suspense>}
     <Dialog open={!!editingItem} onOpenChange={open=>{if(!open)closeItemEditor();}}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl overflow-y-auto" onEscapeKeyDown={event=>{if(editorBusy.current)event.preventDefault();}} onPointerDownOutside={event=>{if(editorBusy.current)event.preventDefault();}}>
+      <DialogContent className="max-h-[92dvh] w-[calc(100vw_-_2rem)] max-w-5xl overflow-y-auto" onEscapeKeyDown={event=>{if(editorBusy.current)event.preventDefault();}} onPointerDownOutside={event=>{if(editorBusy.current)event.preventDefault();}}>
         <DialogHeader><DialogTitle>{ui('Edit item: {0}',editingItem?.name || '')}</DialogTitle><DialogDescription>{ui('Update this item without leaving your current inventory section.')}</DialogDescription></DialogHeader>
         {editingItem && <Suspense fallback={<Pending />}><ItemForm key={editingItem.id} embedded itemId={editingItem.id} onBusyChange={busy=>{editorBusy.current=busy;}} onCancel={closeItemEditor} onSaved={item=>{savedItem(item);setEditingItem(null);loadData();}} /></Suspense>}
       </DialogContent>

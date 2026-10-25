@@ -42,7 +42,7 @@ export default function PostingRulesManager() {
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-      <table className="w-full text-sm">
+      <table className="mobile-table-cards w-full text-sm">
         <thead>
           <tr className="bg-slate-50 border-b border-slate-200 text-left text-slate-500">
             <th className="px-4 py-3">{ui("Posting Rule")}</th>
@@ -56,12 +56,12 @@ export default function PostingRulesManager() {
           )}
           {rules.map((r) => (
             <tr key={r.id} className="border-b border-slate-100">
-              <td className="px-4 py-3 font-medium">{r.label || r.rule_key}</td>
-              <td className="px-4 py-3 text-slate-500">{r.description}</td>
-              <td className="px-4 py-3">
+              <td data-label={ui("Posting Rule")} className="px-4 py-3 font-medium">{r.label || r.rule_key}</td>
+              <td data-label={ui("Description")} className="px-4 py-3 text-slate-500">{r.description}</td>
+              <td data-label={ui("Mapped Account")} className="px-4 py-3">
                 {isAdmin ? (
                   <Select value={r.account_id} onValueChange={(v) => updateRule(r, v)}>
-                    <SelectTrigger><SelectValue placeholder={ui("Select account")} /></SelectTrigger>
+                    <SelectTrigger aria-label={ui("Mapped Account") + ": " + (r.label || r.rule_key)}><SelectValue placeholder={ui("Select account")} /></SelectTrigger>
                     <SelectContent>
                       {accounts.map((a) => (
                         <SelectItem key={a.id} value={a.id}>{a.account_number} — {a.name}</SelectItem>

@@ -211,7 +211,7 @@ function LegacyRecipeForm() {
             <h3 className="font-semibold text-slate-900">{ui("Bill of Materials")}</h3>
             <Button variant="outline" size="sm" onClick={addLine}><Plus size={14} className="mr-1" />{ui(" Add Material")}</Button>
           </div>
-          <table className="w-full text-sm">
+          <table className="mobile-table-cards w-full text-sm">
             <thead>
               <tr className="border-b text-left text-slate-600">
                 <th className="pb-2">{ui("Material")}</th>
@@ -225,15 +225,15 @@ function LegacyRecipeForm() {
             <tbody>
               {lines.map((l, i) => (
                 <tr key={i} className="border-b border-slate-100">
-                  <td className="py-2 pr-2">
+                  <td data-label={ui("Material")} className="py-2 pr-2">
                     <Select value={l.material_id} onValueChange={v => updateLine(i, "material_id", v)}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder={ui("Select material")} /></SelectTrigger>
+                      <SelectTrigger aria-label={ui("Material") + ": " + (i + 1)} className="h-9"><SelectValue placeholder={ui("Select material")} /></SelectTrigger>
                       <SelectContent>{materials.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
                     </Select>
                   </td>
-                  <td className="py-2 pr-2">
+                  <td data-label={ui("Type")} className="py-2 pr-2">
                     <Select value={l.material_type} onValueChange={v => updateLine(i, "material_type", v)}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectTrigger aria-label={ui("Type") + ": " + (i + 1)} className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ingredient">{ui("Ingredient")}</SelectItem>
                         <SelectItem value="primary_packaging">{ui("Primary Packaging")}</SelectItem>
@@ -242,10 +242,10 @@ function LegacyRecipeForm() {
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="py-2 pr-2"><Input type="number" className="h-9" value={l.quantity} onChange={e => updateLine(i, "quantity", e.target.value)} /></td>
-                  <td className="py-2 pr-2"><Input className="h-9" value={l.unit} onChange={e => updateLine(i, "unit", e.target.value)} /></td>
-                  <td className="py-2 pr-2"><Input type="number" className="h-9" value={l.expected_wastage_pct} onChange={e => updateLine(i, "expected_wastage_pct", e.target.value)} /></td>
-                  <td className="py-2"><button onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))} className="p-1 text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>
+                  <td data-label={ui("Quantity")} className="py-2 pr-2"><Input aria-label={ui("Quantity") + ": " + (i + 1)} type="number" className="h-9" value={l.quantity} onChange={e => updateLine(i, "quantity", e.target.value)} /></td>
+                  <td data-label={ui("Unit")} className="py-2 pr-2"><Input aria-label={ui("Unit") + ": " + (i + 1)} className="h-9" value={l.unit} onChange={e => updateLine(i, "unit", e.target.value)} /></td>
+                  <td data-label={ui("Wastage %")} className="py-2 pr-2"><Input aria-label={ui("Wastage %") + ": " + (i + 1)} type="number" className="h-9" value={l.expected_wastage_pct} onChange={e => updateLine(i, "expected_wastage_pct", e.target.value)} /></td>
+                  <td data-label={ui("Actions")} className="py-2"><button type="button" aria-label={ui("Remove") + ": " + (i + 1)} onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))} className="p-1 text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>
                 </tr>
               ))}
             </tbody>

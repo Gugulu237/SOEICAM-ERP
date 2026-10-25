@@ -76,15 +76,15 @@ export default function Reports() {
           <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl">
             <h2 className="text-lg font-bold mb-4">{ui("Income Statement")}</h2>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b"><span className="font-semibold">{ui("Net Sales Revenue")}</span><span className="font-bold text-green-700">{formatXAF(revenue)}</span></div>
-              <div className="flex justify-between py-2 border-b"><span>{ui("Less: Direct Material Cost of Goods Sold")}</span><span className="text-red-600">({formatXAF(cogs)})</span></div>
-              <div className="flex justify-between py-2 border-b bg-slate-50 px-2 rounded"><span className="font-semibold text-slate-800">{ui("Material Gross Margin")}</span><span className="font-bold text-slate-800">{formatXAF(materialMargin)}</span></div>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-b"><span className="font-semibold">{ui("Net Sales Revenue")}</span><span className="font-bold text-green-700">{formatXAF(revenue)}</span></div>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-b"><span>{ui("Less: Direct Material Cost of Goods Sold")}</span><span className="text-red-600">({formatXAF(cogs)})</span></div>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-b bg-slate-50 px-2 rounded"><span className="font-semibold text-slate-800">{ui("Material Gross Margin")}</span><span className="font-bold text-slate-800">{formatXAF(materialMargin)}</span></div>
               {revenue > 0 && <div className="text-right text-xs text-slate-500">{ui("Margin: ")}{formatNumber(materialMargin / revenue * 100, 1)}%</div>}
-              <div className="flex justify-between py-2 border-b"><span>{ui("Less: Operating Expenses")}</span><span className="text-red-600">({formatXAF(expenses)})</span></div>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-b"><span>{ui("Less: Operating Expenses")}</span><span className="text-red-600">({formatXAF(expenses)})</span></div>
               {accounts.filter(a => ["expense", "other_expense"].includes(a.account_type) && a.balance > 0).map(a => (
-                <div key={a.id} className="flex justify-between py-1 pl-6 text-slate-600"><span>{a.name}</span><span>{formatXAF(a.balance)}</span></div>
+                <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-1 pl-6 text-slate-600"><span>{a.name}</span><span>{formatXAF(a.balance)}</span></div>
               ))}
-              <div className="flex justify-between py-3 border-t-2 border-slate-900">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 border-t-2 border-slate-900">
                 <span className="font-bold text-lg">{ui("Operating Profit")}</span>
                 <span className={`font-bold text-lg ${operatingProfit >= 0 ? "text-green-700" : "text-red-700"}`}>{formatXAF(operatingProfit)}</span>
               </div>
@@ -99,24 +99,24 @@ export default function Reports() {
               <div>
                 <h3 className="font-semibold text-slate-700 mb-2">{ui("Assets")}</h3>
                 {accounts.filter(a => a.account_type === "asset" && a.balance !== 0).map(a => (
-                  <div key={a.id} className="flex justify-between py-1 pl-4"><span>{a.account_number} — {a.name}</span><span>{formatXAF(reportBalance(a))}</span></div>
+                  <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-1 pl-4"><span>{a.account_number} — {a.name}</span><span>{formatXAF(reportBalance(a))}</span></div>
                 ))}
-                <div className="flex justify-between py-2 border-t font-bold"><span>{ui("Total Assets")}</span><span>{formatXAF(totalAssets)}</span></div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-t font-bold"><span>{ui("Total Assets")}</span><span>{formatXAF(totalAssets)}</span></div>
               </div>
               <div>
                 <h3 className="font-semibold text-slate-700 mb-2">{ui("Liabilities")}</h3>
                 {accounts.filter(a => a.account_type === "liability" && a.balance !== 0).map(a => (
-                  <div key={a.id} className="flex justify-between py-1 pl-4"><span>{a.account_number} — {a.name}</span><span>{formatXAF(reportBalance(a,"credit"))}</span></div>
+                  <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-1 pl-4"><span>{a.account_number} — {a.name}</span><span>{formatXAF(reportBalance(a,"credit"))}</span></div>
                 ))}
-                <div className="flex justify-between py-2 border-t font-bold"><span>{ui("Total Liabilities")}</span><span>{formatXAF(totalLiabilities)}</span></div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-t font-bold"><span>{ui("Total Liabilities")}</span><span>{formatXAF(totalLiabilities)}</span></div>
               </div>
               <div>
                 <h3 className="font-semibold text-slate-700 mb-2">{ui("Equity")}</h3>
                 {accounts.filter(a => a.account_type === "equity").map(a => (
-                  <div key={a.id} className="flex justify-between py-1 pl-4"><span>{a.account_number} — {a.name}</span><span>{formatXAF(reportBalance(a,"credit"))}</span></div>
+                  <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-1 pl-4"><span>{a.account_number} — {a.name}</span><span>{formatXAF(reportBalance(a,"credit"))}</span></div>
                 ))}
-                <div className="flex justify-between py-1 pl-4"><span>{ui("Retained Earnings (Current P&L)")}</span><span>{formatXAF(operatingProfit)}</span></div>
-                <div className="flex justify-between py-2 border-t font-bold"><span>{ui("Total Equity")}</span><span>{formatXAF(totalEquity + operatingProfit)}</span></div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-1 pl-4"><span>{ui("Retained Earnings (Current P&L)")}</span><span>{formatXAF(operatingProfit)}</span></div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 border-t font-bold"><span>{ui("Total Equity")}</span><span>{formatXAF(totalEquity + operatingProfit)}</span></div>
               </div>
             </div>
           </div>
@@ -125,7 +125,7 @@ export default function Reports() {
         <TabsContent value="tb" className="mt-4">
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h2 className="text-lg font-bold mb-4">{ui("Trial Balance")}</h2>
-            <table className="w-full text-sm">
+            <div className="max-w-full overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b"><th className="py-2 text-left">{ui("Account")}</th><th className="py-2 text-left">{ui("Name")}</th><th className="py-2 text-right">{ui("Debit")}</th><th className="py-2 text-right">{ui("Credit")}</th></tr></thead>
               <tbody>
                 {trialBalance.map((r, i) => (
@@ -144,7 +144,7 @@ export default function Reports() {
                   <td className="py-2 text-right">{formatXAF(totalCredit)}</td>
                 </tr>
               </tfoot>
-            </table>
+            </table></div>
             {Math.abs(totalDebit - totalCredit) > 1 && (
               <p className="mt-2 text-red-600 text-sm font-medium">{ui("⚠ Trial balance is out of balance by ")}{formatXAF(Math.abs(totalDebit - totalCredit))}</p>
             )}

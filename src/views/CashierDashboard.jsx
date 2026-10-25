@@ -3,6 +3,7 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useMemo } from "react";
+import { DashboardIdentity } from '@/components/home/DashboardIdentity';
 import CashierWorkspace from '@/components/cashier/CashierWorkspace';
 import { Link, useSearchParams } from '@/lib/router';
 import { erp } from "@/api/erpClient";
@@ -27,11 +28,11 @@ import { Banknote, Clock, CheckCircle2, DollarSign } from "lucide-react";
 export default function CashierDashboard() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { role, loading } = useCurrentUser();
+  const { role, roleLabel, employee, user, loading } = useCurrentUser();
   const [params] = useSearchParams();
   if (loading) return <p role="status" className="p-8 text-slate-500">{ui("Loading cash desk...")}</p>;
   if (role === 'production_manager' || params.get('view') === 'cheques') return <><Link to="/cashier" className="mb-4 inline-block text-sm text-emerald-800 underline">{ui("Back to cash workspace")}</Link><ChequeDesk /></>;
-  return <CashierWorkspace />;
+  return <DashboardIdentity value={{roleName: roleLabel, employeeName: employee?.full_name || user?.full_name}}><CashierWorkspace /></DashboardIdentity>;
 }
 
 function ChequeDesk() {

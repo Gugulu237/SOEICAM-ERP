@@ -16,12 +16,13 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogFooter} from '@/components/ui/dialog';
 import {useToast} from '@/components/ui/use-toast';
-import ProductCatalog from '@/components/shared/ProductCatalog';
 import ProductThumb from '@/components/shared/ProductThumb';
 import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
 import DispatchReconciliation from './DispatchReconciliation';
-import {Plus,RefreshCw,Truck,Undo2,Trash2} from 'lucide-react';
+import {Plus,RefreshCw,Undo2} from 'lucide-react';
+import IssueGoods, {useStockSave} from './IssueGoods';
+export {default as IssueGoods} from './IssueGoods';
 
 const invoke=async body=>(await invokeFieldOps(body)).data;
 const selectClass='h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm';
@@ -56,16 +57,6 @@ export default function DistributionStockControl(){
   </section>;
 }
 
-function useStockSave(onSaved){const {toast}=useToast(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[key]=useState(()=>crypto.randomUUID()),lock=useRef(false);return {busy,error,save:async body=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');try{const result=await invoke({...body,requestKey:key});toast({title:body.action==='issueDistributionStock'?ui("Finished goods issued to vehicle"):ui("Legacy custody recovered")});onSaved(result.dispatch);}catch(e){setError(e.message);}finally{lock.current=false;setBusy(false);}}};}
-export function IssueGoods({data,initialAgent='',onClose,onSaved}){
-  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-
-  const [form,setForm]=useState({commercialId:initialAgent,driverId:'',vehicleId:'',warehouseId:'',notes:'',lines:[]}),{busy,error,save}=useStockSave(onSaved);
-  const set=(key,value)=>setForm(f=>({...f,[key]:value,...(key==='warehouseId'?{lines:[]}: {})}));
-  const products=data.products.filter(p=>p.is_active!==false&&p.configuration_status!=='draft').map(p=>({...p,storage_unit:p.unit,quantity:Math.round(data.warehouse_stock.filter(b=>b.warehouse_id===form.warehouseId&&b.product_id===p.id&&Number(b.quantity)>0&&(b.qc_status || 'approved')==='approved'&&(!b.expiry_date||b.expiry_date>=businessDate())).reduce((sum,b)=>sum+Number(b.quantity),0)*1000)/1000}));
-  function add(p){setForm(f=>{const existing=f.lines.find(l=>l.product_id===p.id);return {...f,lines:existing?f.lines.map(l=>l.product_id===p.id?{...l,quantity:Math.min(Number(l.quantity)+1,p.quantity)}:l):[...f.lines,{product_id:p.id,quantity:Math.min(1,p.quantity)}]};});}
-  return <Dialog open onOpenChange={()=>!busy&&onClose()}><DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto"><DialogHeader><DialogTitle>{ui("Issue finished goods · ")}{formatDate(businessDate())}</DialogTitle></DialogHeader><p className="text-sm text-slate-500">{ui("Warehouse staff select the source, driver, Commercial agent and vehicle, then confirm the counted quantities. This transfers stock from the warehouse into the shared vehicle location; it does not record a sale.")}</p><fieldset disabled={busy} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['commercialId',ui("Sales agent"),data.staff.filter(e=>e.role==='commercial'&&e.status==='active')],['driverId','Driver',data.staff.filter(e=>e.role==='driver'&&e.status==='active')],['vehicleId','Vehicle',data.vehicles.filter(v=>v.is_active!==false)],['warehouseId',ui("Factory / warehouse"),data.warehouses]].map(([key,label,rows])=><label key={key} className="space-y-1 text-sm">{label}<select className={selectClass} value={form[key]} onChange={e=>set(key,e.target.value)}><option value="">{ui("Choose ")}{label.toLowerCase()}</option>{rows.map(r=><option key={r.id} value={r.id}>{r.full_name || r.name || r.registration}</option>)}</select></label>)}</div><div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]"><ProductCatalog products={products.filter(p=>p.quantity>0)} selecting hidePrice lines={form.lines} onSelect={add} disabled={busy} emptyMessage={ui("Choose a source with approved, unexpired finished goods.")}/><div className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">{ui("Load list")}</h3>{!form.lines.length&&<p className="text-sm text-slate-400">{ui("Tap product photos to add goods.")}</p>}{form.lines.map(l=>{const p=products.find(p=>p.id===l.product_id);return <div key={l.product_id} className="flex items-center gap-2 border-b pb-3"><ProductThumb product={p}/><div className="min-w-0 flex-1"><p className="text-sm">{p.name}</p><p className="text-xs text-slate-500">{ui("Available ")}{p.quantity} {p.unit}</p><Input aria-label={'Load quantity for '+p.name} className="mt-1 w-28" type="number" min="0.001" max={p.quantity} step="0.001" value={l.quantity} onChange={e=>setForm(f=>({...f,lines:f.lines.map(row=>row.product_id===l.product_id?{...row,quantity:e.target.value}:row)}))}/></div><Button size="icon" variant="ghost" aria-label={'Remove '+p.name} onClick={()=>setForm(f=>({...f,lines:f.lines.filter(row=>row.product_id!==l.product_id)}))}><Trash2 size={14}/></Button></div>;})}<Input placeholder={ui("Loading notes / reference")} value={form.notes} onChange={e=>set('notes',e.target.value)}/></div></div></fieldset>{error&&<p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}<DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>{ui("Cancel")}</Button><Button disabled={busy||!form.lines.length||!form.commercialId||!form.driverId||!form.vehicleId||!form.warehouseId} onClick={()=>save({action:'issueDistributionStock',...form,date:businessDate()})}><Truck size={15} className="mr-1"/>{busy?ui("Issuing..."):ui("Confirm & issue to vehicle")}</Button></DialogFooter></DialogContent></Dialog>;
-}
 
 function LegacyRecovery({data,onClose,onSaved}){
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

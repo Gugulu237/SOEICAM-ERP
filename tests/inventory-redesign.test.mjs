@@ -102,6 +102,10 @@ test('packaging release requires production inspection and generic API writes ca
   const f=await setup(),s=f.entities,result=await f.call(await f.body()),id=result.recovered[0].balance_id;
   await assert.rejects(f.call({action:'release',balanceId:id,reference:'QC-001',inspectionConfirmed:true}),/quality control/);
   await s.Employee.update('cashier',{role:'production_manager'});
+  await assert.rejects(f.call({action:'release',balanceId:id,reference:'QC-001',inspectionConfirmed:true}),/Warehouse must receive/);
+  await s.Employee.update('cashier',{role:'warehouse_manager'});
+  await f.call({action:'receive',balanceId:id,quantity:10,reference:'RCV-001',inspectionConfirmed:true});
+  await s.Employee.update('cashier',{role:'production_manager'});
   await assert.rejects(f.call({action:'release',balanceId:id,reference:'',inspectionConfirmed:true}),/evidence/);
   await f.call({action:'release',balanceId:id,reference:'QC-001 sanitation record',inspectionConfirmed:true});assert.equal((await s.StockBalance.get(id)).qc_status,'approved');
   assert.equal((await f.call({action:'release',balanceId:id})).reused,true);
@@ -109,9 +113,9 @@ test('packaging release requires production inspection and generic API writes ca
   for(const [entity,input,existing] of [['AuditLog',{action:'fermentation_notification'}],['StockBalance',{qc_status:'approved'},{inventory_recovery_id:'recovery'}],['StockMovement',{document_type:'ExpiryRecovery'}],['ProductionOrder',{fermentation_due_at:date}]])assert.throws(()=>guardMutation(context,entity,'update',input,existing),/checked/);
   assert.throws(()=>guardMutation(context,'ProductionOrder','update',{status:'completed'},{status:'in_production',fermentation_started_at:date}),/checked manufacturing/);
 });
-test('disposal is restricted to authorized warehouse staff with inventory-adjustment access',async()=>{
+test('disposal rejects field and production roles and preserves special warehouse adjustment access',async()=>{
   const f=await setup(),s=f.entities,body=await f.body();
-  for(const role of ['production_manager','commercial','employee','cashier','driver','procurement']){await s.Employee.update('cashier',{role});await assert.rejects(f.call(body));}
+  for(const role of ['production_manager','commercial','employee','driver','procurement']){await s.Employee.update('cashier',{role});await assert.rejects(f.call(body));}
   await s.Employee.update('cashier',{role:'warehouse_manager',allowed_modules:['inventory']});await assert.rejects(f.call(body),/Special inventory/);
   await s.Employee.update('cashier',{status:'inactive'});await assert.rejects(f.call(body),/active/);
   assert.equal((await s.StockMovement.list()).length,0);
@@ -167,5 +171,57 @@ test('the HTTP transaction rolls back stock, recovery lots and journal when fina
     s.AuditLog.create=async row=>{if(row.action==='dispose_expired_stock')throw Error('Audit unavailable');return create(row);};
     const response=await route.POST(request(body));assert.equal(response.status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
     s.AuditLog.create=create;assert.equal((await route.POST(request(body))).status,200);
+    const held=(await s.StockBalance.list()).find(row=>row.inventory_recovery_id);
+    const receipt={action:'receive',balanceId:held.id,quantity:held.quantity,reference:'RECEIPT-TRANSACTION',inspectionConfirmed:true};
+    const receiptBefore=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows;
+    s.AuditLog.create=async row=>{if(row.action==='receive_recovered_packaging')throw Error('Receipt audit unavailable');return create(row);};
+    assert.equal((await route.POST(request(receipt))).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,receiptBefore);
+    s.AuditLog.create=create;assert.equal((await route.POST(request(receipt))).status,200);assert.equal((await (await route.POST(request(receipt))).json()).reused,true);
   }finally{delete globalThis.__recoveryClient;delete globalThis.__recoveryTransaction;await db.close();}
+});
+
+test('Accounting records recovery, warehouse confirms the count once, and production releases only received packaging',async()=>{
+  const f=await setup(),s=f.entities;
+  await s.Employee.update('cashier',{role:'cashier',allowed_modules:['accounting']});
+  const modules=[];
+  f.client.auth.assertModule=module=>{modules.push(module);if(module!=='accounting')throw Error('Module disabled');};
+  const workspace=await f.call({action:'workspace'});
+  assert.equal(workspace.can_post,true);assert.equal(workspace.can_receive,false);assert.equal(workspace.can_release,false);
+  assert.ok(workspace.accounts.some(a=>a.id==='expense'));
+  const result=await f.call(await f.body()),id=result.recovered[0].balance_id;
+  assert.ok(modules.every(m=>m==='accounting'));
+  const receipt={action:'receive',balanceId:id,quantity:10,reference:'PACK-RECEIPT-001',inspectionConfirmed:true};
+  await assert.rejects(f.call(receipt),/Warehouse management/);
+  delete f.client.auth.assertModule;
+  await s.Employee.update('cashier',{role:'production_manager',allowed_modules:['inventory','quality']});
+  await assert.rejects(f.call({action:'release',balanceId:id,reference:'QC-PACK',inspectionConfirmed:true}),/Warehouse must receive/);
+  await assert.rejects(f.call(receipt),/Warehouse management/);
+  await s.Employee.update('cashier',{role:'warehouse_manager',allowed_modules:['inventory']});
+  const before=await s.StockBalance.get(id),journals=(await s.JournalEntry.list()).length,moves=(await s.StockMovement.list()).length;
+  assert.equal(before.inventory_recovery_receipt_required,true);assert.equal(before.qc_status,'quarantine');
+  for(const quantity of ['',0,9,11])await assert.rejects(f.call({...receipt,quantity}));
+  await assert.rejects(f.call({...receipt,inspectionConfirmed:false}),/Confirm/);
+  await f.call(receipt);assert.equal((await f.call(receipt)).reused,true);
+  await assert.rejects(f.call({...receipt,reference:'CHANGED'}),/different details/);
+  const after=await s.StockBalance.get(id);
+  assert.equal(after.quantity,before.quantity);assert.equal(after.total_value,before.total_value);assert.equal(after.qc_status,'quarantine');
+  assert.equal(after.inventory_recovery_received_by,user.id);
+  assert.equal((await s.JournalEntry.list()).length,journals);assert.equal((await s.StockMovement.list()).length,moves);
+  assert.equal((await s.AuditLog.filter({action:'receive_recovered_packaging'})).length,1);
+  await s.Employee.update('cashier',{role:'production_manager',allowed_modules:['inventory','quality']});
+  await f.call({action:'release',balanceId:id,reference:'QC-PACK-001',inspectionConfirmed:true});
+  assert.equal((await s.StockBalance.get(id)).qc_status,'approved');
+});
+
+test('disabled accounting cannot read or post recovery and legacy inspected packaging keeps its release path',async()=>{
+  const f=await setup(),s=f.entities;
+  await s.Employee.update('cashier',{role:'cashier',allowed_modules:[]});
+  f.client.auth.assertModule=()=>{throw Error('Accounting module disabled');};
+  await assert.rejects(f.call({action:'workspace'}),/disabled/);
+  await assert.rejects(f.call({action:'post'}),/disabled/);
+  delete f.client.auth.assertModule;
+  const lot=await s.StockBalance.create({product_id:f.pack.id,product_name:f.pack.name,warehouse_id:f.store.id,quantity:2,total_value:0,qc_status:'quarantine',inventory_recovery_id:'legacy-recovery'});
+  await s.Employee.update('cashier',{role:'production_manager'});
+  await f.call({action:'release',balanceId:lot.id,reference:'LEGACY-QC',inspectionConfirmed:true});
+  assert.equal((await s.StockBalance.get(lot.id)).qc_status,'approved');
 });

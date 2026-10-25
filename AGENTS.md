@@ -19,3 +19,13 @@ This is a Next.js App Router application, with Supabase PostgreSQL/Storage and t
 Keep changes focused and preserve employee attribution, role boundaries, approval checks, retry protection and accounting/stock history. Do not restore Vite build files, Vite environment variables or Base44 runtime dependencies. Historical import utilities must remain manual.
 
 Never commit actual environment files, credentials, company record exports, backups or logs. Do not reset or migrate live company data as part of a source update or build. Run appropriate isolated checks and report any build, database or deployment verification that could not be completed.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

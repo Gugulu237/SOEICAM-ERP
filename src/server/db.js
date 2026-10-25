@@ -9,7 +9,9 @@ export function database() {
   if (!process.env.DATABASE_URL) throw Object.assign(new Error('The Supabase database connection is not configured.'), { status:503 });
   // Keep the bounded pool warm while a person reviews a form. Closing it after
   // twenty seconds made the next navigation pay the remote TLS handshake again.
-  return globalThis.__soeicamDatabase ||= postgres(process.env.DATABASE_URL, { max:5, prepare:false, ssl:process.env.DATABASE_SSL === 'disable' ? false : 'require', connect_timeout:10, idle_timeout:120, types: { numeric:{ to:1700, from:[1700], serialize:String, parse:Number } } });
+  const configuredMax = Number(process.env.SOEICAM_DATABASE_POOL_MAX);
+  const max = Number.isInteger(configuredMax) && configuredMax >= 1 && configuredMax <= 5 ? configuredMax : 5;
+  return globalThis.__soeicamDatabase ||= postgres(process.env.DATABASE_URL, { max, prepare:false, ssl:process.env.DATABASE_SSL === 'disable' ? false : 'require', connect_timeout:10, idle_timeout:120, types: { numeric:{ to:1700, from:[1700], serialize:String, parse:Number } } });
 }
 export async function transaction(run) {
   if (context.getStore()) return run();
