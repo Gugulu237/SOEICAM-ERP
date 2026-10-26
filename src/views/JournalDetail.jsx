@@ -1,8 +1,9 @@
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
+import { ui,uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import {readAll} from "@/lib/field-pos";
 import { erp } from "@/api/erpClient";
 import { useParams, useNavigate, Link } from "@/lib/router";
 import { formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
@@ -29,16 +30,18 @@ export default function JournalDetail() {
   const [journal, setJournal] = useState(null);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [working, setWorking] = useState(false);
+  const [working, setWorking] = useState(false),[loadError,setLoadError]=useState("");
+  const loadSequence=useRef(0);
 
-  const load = useCallback(() => {
-    Promise.all([
-      erp.entities.JournalEntry.get(id),
-      erp.entities.JournalLine.filter({ journal_id: id }),
-    ]).then(([j, l]) => { setJournal(j); setLines(l); }).finally(() => setLoading(false));
-  }, [id]);
-
-  useEffect(() => { load(); }, [load]);
+  const load=useCallback(async()=>{
+    const sequence=++loadSequence.current;setLoading(true);setLoadError("");
+    try{
+      const [j,l]=await Promise.all([erp.entities.JournalEntry.get(id),readAll(erp.entities.JournalLine,{journal_id:id},"id")]);
+      if(sequence===loadSequence.current){setJournal(j);setLines(l);}
+    }catch(e){if(sequence===loadSequence.current)setLoadError(e.message);}
+    finally{if(sequence===loadSequence.current)setLoading(false);}
+  },[id]);
+  useEffect(()=>{load();return()=>{loadSequence.current++;};},[load]);
 
   async function handleReverse() {
     setWorking(true);
@@ -61,6 +64,7 @@ export default function JournalDetail() {
   }
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
+  if(loadError)return <section className="space-y-3"><PageHeader title={ui("Journal Entry")}/><p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p><div className="flex flex-wrap gap-2"><Button type="button" onClick={load}>{ui("Retry loading journal")}</Button><Button variant="outline" onClick={()=>navigate("/accounting")}>{ui("Back")}</Button></div></section>;
   if (!journal) return <div className="text-center py-20 text-slate-500">{ui("Journal not found")}</div>;
 
   const sourceLink = journal.source_document_id && SOURCE_LINKS[journal.source_document_type]
@@ -106,7 +110,7 @@ export default function JournalDetail() {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="mobile-table-cards w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-left text-slate-500">
               <th className="px-4 py-3">{ui("Account")}</th>
@@ -118,10 +122,10 @@ export default function JournalDetail() {
           <tbody>
             {lines.map((l) => (
               <tr key={l.id} className="border-b border-slate-100">
-                <td className="px-4 py-3 font-medium">{l.account_number} — {l.account_name}</td>
-                <td className="px-4 py-3 text-slate-600">{l.description}</td>
-                <td className="px-4 py-3 text-right">{l.debit > 0 ? formatXAF(l.debit) : ""}</td>
-                <td className="px-4 py-3 text-right">{l.credit > 0 ? formatXAF(l.credit) : ""}</td>
+                <td data-label={ui("Account")} className="px-4 py-3 font-medium break-words">{l.account_number} — {l.account_name}</td>
+                <td data-label={ui("Description")} className="px-4 py-3 text-slate-600 break-words">{l.description}</td>
+                <td data-label={ui("Debit")} className="px-4 py-3 text-right">{l.debit > 0 ? formatXAF(l.debit) : ""}</td>
+                <td data-label={ui("Credit")} className="px-4 py-3 text-right">{l.credit > 0 ? formatXAF(l.credit) : ""}</td>
               </tr>
             ))}
           </tbody>

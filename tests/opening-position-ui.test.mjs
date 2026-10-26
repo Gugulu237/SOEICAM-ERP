@@ -15,7 +15,7 @@ async function renderer(){
  '@/components/ui/input':'import React from "react";export const Input=props=>{globalThis.__positionUI.capture("input",props,[]);return React.createElement("input",props);};'
  };
  const out=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Page from './src/views/OpeningPosition.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Page));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'position-ui',setup(b){
- b.onResolve({filter:/^react$/},a=>a.importer.endsWith('OpeningPosition.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
+ b.onResolve({filter:/^react$/},a=>a.importer.endsWith('OpeningPosition.jsx')||a.importer.endsWith('OpeningOffset.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'import React from '+JSON.stringify(require.resolve('react'))+';export default {...React,createElement:(tag,props,...children)=>{if(tag==="select")globalThis.__positionUI.capture(tag,props,children);if(tag==="form")globalThis.__positionUI.form=props;return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__positionUI.state("page",v),useRef=v=>globalThis.__positionUI.ref("page",v),useEffect=(f,d)=>globalThis.__positionUI.effect("page",f,d);',resolveDir:process.cwd()}));
  b.onResolve({filter:new RegExp('^@/')},a=>mocks[a.path]?{path:a.path,namespace:'mock'}:undefined);b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:mocks[a.path],resolveDir:process.cwd()}));
  }}]});const m={exports:{}};new Function('require','module','exports',out.outputFiles[0].text)(require,m,m.exports);return m.exports.render;
@@ -38,4 +38,13 @@ test('detailed opening screen reviews once, keeps failed draft and request key a
 test('cashiers cannot load detailed opening balances or bank lookups',async()=>{
  const r=hookRuntime(),render=await renderer();r.role='cashier';r.request=()=>assert.fail('Restricted data must not load');globalThis.__positionUI=r;
  try{r.beforeRender();assert.match(render(),/Only administrators/);await r.flush();}finally{r.cleanup();delete globalThis.__positionUI;}
+});
+
+test('opening equity counterpart is explicit, automatically recalculated and included in the reviewed save',async()=>{
+ const r=hookRuntime(),render=await renderer(),calls=[];r.request=async body=>{if(!body)return setup;calls.push(body);return {journal:{journal_number:'JV-OFFSET'}};};globalThis.__positionUI=r;
+ const draw=()=>{r.beforeRender();return render();},field=label=>r.controls.find(c=>c['aria-label']===label),button=label=>r.buttons.find(b=>b.label===label);
+ try{draw();await r.flush();draw();button('+ Cash and bank').onClick();draw();field('Cash or bank account').onChange({target:{value:'till'}});field('Opening amount').onChange({target:{value:'1000'}});field('Previous system reference').onChange({target:{value:'Old books'}});
+ draw();assert.equal(button('Review before posting').disabled,true);field('Opening equity account').onChange({target:{value:'equity'}});assert.match(draw(),/Counterpart/);assert.equal(button('Review before posting').disabled,false);
+ field('Opening amount').onChange({target:{value:'2000'}});draw();r.form.onSubmit({preventDefault(){}});draw();assert.ok(button('Confirm opening position'));r.form.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);assert.deepEqual(calls[0].lines,[{account_id:'equity',debit:0,credit:2000}]);
+ }finally{r.cleanup();delete globalThis.__positionUI;}
 });

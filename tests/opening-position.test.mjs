@@ -11,6 +11,7 @@ import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {purchasePaymentDecision} from '../src/server/domain/purchase-workspace.js';
 import {verifiedOpeningDocument} from '../src/server/domain/opening-payments.js';
 import {validateAllocations,approveReceipt} from '../src/server/domain/customer-receipts.js';
+import {openingOffset} from '../src/lib/opening-offset.js';
 import {openingPositionTotals} from '../src/lib/opening-position-totals.js';
 import {companySalesRegister} from '../src/lib/company-sales.js';
 import {scheduleThrough} from '../src/lib/asset-schedule.js';
@@ -174,4 +175,13 @@ test('supplier deletion route rolls back a directory change if its audit fails a
   assert.equal((await post()).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
   s.AuditLog.create=create;assert.equal((await post()).status,200);assert.equal((await post()).status,200);assert.equal((await s.Supplier.get('supplier')).supplier_lifecycle_revision,1);assert.equal((await s.AuditLog.list()).length,1);
  }finally{delete globalThis.__position;await db.close();}
+});
+
+test('detailed opening debits reject posting alone and accept only their full reviewed equity counterpart',async()=>{
+ const f=await setup(),s=f.entities,body={...f.body,details:[f.body.details[0]],lines:[]},before=structuredClone(f.rows);
+ await assert.rejects(saveOpeningPosition(s,context,body),/must balance/);assert.deepEqual(f.rows,before);
+ const workspace=await openingPositionWorkspace(s,context),totals=openingPositionTotals(body.details,[],workspace),offset=openingOffset(totals,f.equity.id,workspace.accounts);
+ assert.equal(offset.line.credit,50000);const result=await saveOpeningPosition(s,context,{...body,lines:[offset.line]});
+ const journal=await s.JournalEntry.get(result.journal.id);assert.equal(journal.total_debit,50000);assert.equal(journal.total_credit,50000);
+ const lines=await s.JournalLine.filter({journal_id:journal.id});assert.equal(lines.find(l=>l.account_id==='till-gl').debit,lines.find(l=>l.account_id===f.equity.id).credit);
 });

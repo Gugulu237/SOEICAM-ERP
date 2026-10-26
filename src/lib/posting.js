@@ -7,25 +7,25 @@ export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // Validate journal lines: >=2 lines, no dual debit/credit, no zero lines, balanced.
 export function validateJournal(lines) {
-  const errors = [];
-  const active = (lines || []).filter((l) => l.account_id);
-  if (active.length < 2) errors.push("A journal requires at least two lines");
-  let totalDebit = 0;
-  let totalCredit = 0;
-  active.forEach((l, i) => {
-    const d = round2(l.debit);
-    const c = round2(l.credit);
-    const label = l.account_name || `line ${i + 1}`;
-    if (d > 0 && c > 0) errors.push(`${label}: a line cannot have both debit and credit`);
-    if (d === 0 && c === 0) errors.push(`${label}: zero-value line not allowed`);
-    if (d < 0 || c < 0) errors.push(`${label}: negative amounts not allowed`);
-    totalDebit += d;
-    totalCredit += c;
+  const errors=[],rows=Array.isArray(lines)?lines:[];
+  if(rows.filter(l=>l?.account_id).length<2)errors.push("A journal requires at least two lines");
+  let debitCents=0,creditCents=0;
+  rows.forEach((l,i)=>{
+    if(!l)return;
+    const d=Number(l.debit||0),c=Number(l.credit||0),label=l.account_name||`line ${i+1}`;
+    if(!l.account_id&&!d&&!c&&Number.isFinite(d)&&Number.isFinite(c))return;
+    if(!l.account_id)errors.push(`${label}: choose an account for the entered amount`);
+    if(![d,c].every(n=>Number.isFinite(n)&&Math.abs(n)<=1e12)){errors.push(`${label}: enter valid finite amounts`);return;}
+    if([d,c].some(n=>Math.abs(n*100-Math.round(n*100))>0.0001))errors.push("Journal amounts must have at most two decimal places.");
+    if(d>0&&c>0)errors.push(`${label}: a line cannot have both debit and credit`);
+    if(d===0&&c===0)errors.push(`${label}: zero-value line not allowed`);
+    if(d<0||c<0)errors.push(`${label}: negative amounts not allowed`);
+    debitCents+=Math.round(d*100);creditCents+=Math.round(c*100);
   });
-  if (round2(totalDebit) !== round2(totalCredit)) {
-    errors.push(`Journal does not balance: debits ${totalDebit} â‰  credits ${totalCredit}`);
-  }
-  return { errors, totalDebit: round2(totalDebit), totalCredit: round2(totalCredit) };
+  if(!Number.isSafeInteger(debitCents)||!Number.isSafeInteger(creditCents))errors.push("Journal totals exceed the supported precision.");
+  const totalDebit=debitCents/100,totalCredit=creditCents/100;
+  if(debitCents!==creditCents)errors.push(`Journal does not balance: debits ${totalDebit} != credits ${totalCredit}`);
+  return {errors,totalDebit,totalCredit};
 }
 
 // Find the accounting period covering a date.

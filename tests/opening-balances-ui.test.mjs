@@ -14,7 +14,7 @@ async function renderer(){
  '@/components/ui/input':'import React from "react";export const Input=props=>{globalThis.__openingUI.capture("input",props,[]);return React.createElement("input",props);};'
  };
  const r=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Page from './src/views/OpeningBalances.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Page));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'opening-ui',setup(b){
-  b.onResolve({filter:/^react$/},a=>a.importer.endsWith('OpeningBalances.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
+  b.onResolve({filter:/^react$/},a=>a.importer.endsWith('OpeningBalances.jsx')||a.importer.endsWith('OpeningOffset.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
   b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'import React from '+JSON.stringify(require.resolve('react'))+';export default {...React,createElement:(tag,props,...children)=>{if(tag==="select")globalThis.__openingUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__openingUI.state("page",v),useRef=v=>globalThis.__openingUI.ref("page",v),useEffect=(f,d)=>globalThis.__openingUI.effect("page",f,d);',resolveDir:process.cwd()}));
   b.onResolve({filter:/^@\//},a=>mocks[a.path]?{path:a.path,namespace:'mock'}:undefined);b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:mocks[a.path],resolveDir:process.cwd()}));
  }}]});const module={exports:{}};new Function('require','module','exports',r.outputFiles[0].text)(require,module,module.exports);return module.exports.render;

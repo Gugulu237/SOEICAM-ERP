@@ -6,9 +6,9 @@ import { hookRuntime } from './helpers/commercial-ui.mjs';
 const require = createRequire(import.meta.url);
 
 async function loadUI() {
-  const result = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Form from './src/views/JournalEntryForm.jsx';import Picker,{journalAccountGroups,matchingJournalAccounts,movePickerFocus} from './src/components/accounting/JournalAccountPicker.jsx';export {journalAccountGroups,matchingJournalAccounts,movePickerFocus};export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='picker'?Picker:Form,props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false, plugins: [{ name: 'journal-picker-fixture', setup(b) {
+  const result = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Form from './src/views/JournalEntryForm.jsx';import Picker,{journalAccountGroups,matchingJournalAccounts,movePickerFocus} from './src/components/accounting/JournalAccountPicker.jsx';export {journalAccountGroups,matchingJournalAccounts,movePickerFocus};export {validateJournal} from './src/lib/posting.js';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='picker'?Picker:Form,props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false, plugins: [{ name: 'journal-picker-fixture', setup(b) {
     b.onResolve({ filter: /^react$/ }, args => /(JournalEntryForm|JournalAccountPicker)\.jsx$/.test(args.importer) ? { path: args.importer, namespace: 'journal-hooks' } : undefined);
-    b.onLoad({ filter: /.*/, namespace: 'journal-hooks' }, ({ path }) => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__journalPicker.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__journalPicker.state(${JSON.stringify(path)},v);export const useRef=v=>globalThis.__journalPicker.ref(${JSON.stringify(path)},v);export const useEffect=(fn,deps)=>globalThis.__journalPicker.effect(${JSON.stringify(path)},fn,deps);`, resolveDir: process.cwd() }));
+    b.onLoad({ filter: /.*/, namespace: 'journal-hooks' }, ({ path }) => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__journalPicker.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__journalPicker.state(${JSON.stringify(path)},v);export const useCallback=(fn,deps)=>{const r=globalThis.__journalPicker.ref("callback",{});if(!r.current.deps||deps.some((v,i)=>v!==r.current.deps[i]))r.current={fn,deps};return r.current.fn;};export const useRef=v=>globalThis.__journalPicker.ref(${JSON.stringify(path)},v);export const useEffect=(fn,deps)=>globalThis.__journalPicker.effect(${JSON.stringify(path)},fn,deps);`, resolveDir: process.cwd() }));
     const mocks = {
       '@/lib/router': `export const useNavigate=()=>path=>globalThis.__journalPicker.navigation.push(path);`,
       '@/hooks/useCurrentUser': `export const useCurrentUser=()=>({role:'admin'});`,
@@ -101,5 +101,24 @@ test('large account lists render in bounded pages and later accounts remain sear
 test('first account group choice survives pending effects and back clears search before returning to account types',async()=>{
  const {render}=await loadUI(),r=runtime();globalThis.__journalPicker=r;const props={open:true,accounts,lineNumber:1,onSelect:()=>{},onOpenChange:()=>{}};const draw=()=>{r.beforeRender();return render('picker',props);};
  try{draw();r.buttons.find(b=>b.label==='Assets2').onClick();await r.flush();let html=draw();assert.match(html,/1000/);assert.doesNotMatch(html,/Product sales/);change(r,'Search accounts','bank');draw();r.buttons.find(b=>b['aria-label']==='Previous account options').onClick();draw();assert.equal(field(r,'Search accounts').value,'');assert.ok(r.buttons.find(b=>b.label==='1000Cash'));r.buttons.find(b=>b['aria-label']==='Previous account options').onClick();draw();assert.ok(r.buttons.find(b=>b.label==='Assets2'));r.buttons.find(b=>b.label==='Assets2').onClick();draw();change(r,'Search accounts','banque');draw();r.buttons.find(b=>b.label==='All account types').onClick();html=draw();assert.ok(r.buttons.find(b=>b.label==='Assets2'));assert.equal(field(r,'Search accounts').value,'');assert.match(html,/data-popdown/);
+ }finally{r.cleanup();delete globalThis.__journalPicker;}
+});
+
+test('journal validation rejects non-finite values, orphan amounts and sub-cent inputs while preserving exact cent totals',async()=>{
+ const {validateJournal}=await loadUI(),valid=[{account_id:'cash',debit:.1+.2},{account_id:'capital',credit:.3}];
+ assert.deepEqual(validateJournal(valid).errors,[]);assert.equal(validateJournal(valid).totalDebit,.3);
+ for(const lines of [
+ [{account_id:'cash',debit:Infinity},{account_id:'capital',credit:100}],
+ [{account_id:'cash',debit:'invalid'},{account_id:'capital',credit:100}],
+ [{debit:100},{account_id:'capital',credit:100}],
+ [{account_id:'cash',debit:1.001},{account_id:'capital',credit:1.001}],
+ [{account_id:'cash',debit:100},{account_id:'capital',credit:99.99}]
+ ])assert.ok(validateJournal(lines).errors.length);
+});
+test('account load errors are recoverable and preserve the journal draft during retry',async()=>{
+ const {render}=await loadUI(),r=runtime();let fail=true;r.client={entities:{Account:{filter:async()=>{if(fail)throw Error('Accounts temporarily unavailable');return accounts;}}}};globalThis.__journalPicker=r;
+ const draw=()=>{r.beforeRender();return render('form');};
+ try{draw();await r.flush();assert.match(draw(),/Accounts temporarily unavailable/);assert.equal(r.buttons.find(b=>b.label==='Post Journal').disabled,true);assert.ok(r.buttons.find(b=>b.label==='Cancel'));
+ fail=false;await r.buttons.find(b=>b.label==='Retry loading accounts').onClick();draw();assert.equal(r.buttons.some(b=>b.label==='Retry loading accounts'),false);assert.equal(r.buttons.find(b=>b['aria-label']==='Choose account for line 1').disabled,false);
  }finally{r.cleanup();delete globalThis.__journalPicker;}
 });

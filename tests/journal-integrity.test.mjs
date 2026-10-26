@@ -168,3 +168,13 @@ test('browser posting and payroll controls call checked endpoints rather than ed
   assert.match(posting,/saveJournal/);assert.match(payroll,/accounting\.payroll/);assert.match(payroll,/createKey\.current/);
   assert.doesNotMatch(approvals,/entities\.PayrollRun\.(create|update|delete)/);assert.match(approvals,/accounting\.payroll\(\{action:'reject'/);
 });
+
+test('manual journals reject sub-cent amounts, unbalanced entries and unsafe totals before any writes',async()=>{
+ const {stores:s,rows}=await fixture(),base=journalBody(),before=structuredClone(rows);
+ for(const lines of [
+ [{account_id:'cash',debit:1.001},{account_id:'capital',credit:1.001}],
+ [{account_id:'cash',debit:1},{account_id:'capital',credit:.99}],
+ [{debit:10},{account_id:'capital',credit:10}],
+ Array.from({length:200},(_,i)=>({account_id:i%2?'cash':'capital',debit:i%2?1e12:0,credit:i%2?0:1e12}))
+ ]){await assert.rejects(saveManualJournal(s,context,{...base,lines}));assert.deepEqual(rows,before);}
+});

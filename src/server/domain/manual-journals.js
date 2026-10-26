@@ -25,10 +25,11 @@ export async function saveManualJournal(stores, context, body) {
   if(raw.length<1||(status==='posted'&&raw.length<2))throw Error('A posted journal requires at least two lines.');
   const periods=await stores.AccountingPeriod.filter({}),period=periods.find(p=>p.start_date<=entryDate&&entryDate<=p.end_date);
   if(['closed','locked'].includes(period?.status))throw Error('The accounting period is closed or locked.');
-  let totalDebit=0,totalCredit=0;const lines=[],accounts=new Map();
+  let totalDebit=0,totalCredit=0,totalDebitCents=0,totalCreditCents=0;const lines=[],accounts=new Map();
   for(const l of raw){
     const d=Number(l.debit||0),c=Number(l.credit||0);
     if(!l.account_id||![d,c].every(n=>Number.isFinite(n)&&n>=0&&n<=1e12)||d>0&&c>0)throw Error('Choose an account and enter a valid debit or credit on each line.');
+    if([d,c].some(n=>Math.abs(n*100-Math.round(n*100))>0.0001))throw Error("Journal amounts must have at most two decimal places.");
     const debit=round2(d),credit=round2(c);
     if(status==='posted'&&debit===0&&credit===0)throw Error('A posted journal cannot contain a zero-value line.');
     const account=accounts.get(l.account_id)||await stores.Account.get(String(l.account_id));
@@ -36,7 +37,9 @@ export async function saveManualJournal(stores, context, body) {
     accounts.set(account.id,account);
     if(String(l.description||'').length>1000)throw Error('A journal line description is too long.');
     lines.push({account_id:account.id,account_number:account.account_number,account_name:account.name,description:String(l.description||'')||description,debit,credit});
-    totalDebit=round2(totalDebit+debit);totalCredit=round2(totalCredit+credit);
+    totalDebitCents+=Math.round(debit*100);totalCreditCents+=Math.round(credit*100);
+    if(!Number.isSafeInteger(totalDebitCents)||!Number.isSafeInteger(totalCreditCents))throw Error("Journal totals exceed the supported precision.");
+    totalDebit=totalDebitCents/100;totalCredit=totalCreditCents/100;
   }
   if(status==='posted'&&totalDebit!==totalCredit)throw Error('Journal debits and credits must balance before posting.');
   const client={entities:stores},journal_number=draft?.journal_number||await nextSequence(client,'next_journal_number','JV',6);

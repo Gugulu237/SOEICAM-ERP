@@ -2,7 +2,7 @@
 /* localized-interface */
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
 import { formatXAF } from "@/lib/formatters";
@@ -17,6 +17,7 @@ import { readAll } from "@/lib/field-pos";
 import { useToast } from "@/components/ui/use-toast";
 import { Plus, Trash2 } from "lucide-react";
 
+import {businessDate} from "@/lib/business-date";
 import { balancingAmount } from "@/lib/journal-balancing";
 
 const emptyLine = () => ({ account_id: "", account_number: "", account_name: "", description: "", debit: 0, credit: 0 });
@@ -26,7 +27,8 @@ export default function JournalEntryForm() {
 
   const navigate = useNavigate();
   useCurrentUser();
-  const saveRef = useRef(false);
+  const saveRef = useRef(false),loadSequence=useRef(0);
+  const [loadingAccounts,setLoadingAccounts]=useState(true);
   const pickerTrigger = useRef(null);
   const requestKey = useRef(crypto.randomUUID());
   const [autoBalance, setAutoBalance] = useState(true);
@@ -35,15 +37,17 @@ export default function JournalEntryForm() {
   const [accounts, setAccounts] = useState([]);
   const [pickerLine, setPickerLine] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ entry_date: new Date().toISOString().slice(0, 10), description: "" });
+  const [form, setForm] = useState({ entry_date: businessDate(), description: "" });
   const [lines, setLines] = useState([emptyLine(), emptyLine()]);
 
-  useEffect(() => {
-    readAll(erp.entities.Account, { is_active: { $ne: false } }, "account_number").then((accs) =>
-      setAccounts(accs.filter((a) => a.is_posting !== false && a.allow_manual_journal !== false)
-        .sort((a, b) => String(a.account_number || "").localeCompare(String(b.account_number || ""), undefined, { numeric: true })))
-    ).catch(e => setLoadError(e.message));
-  }, []);
+  const loadAccounts=useCallback(async()=>{
+    const sequence=++loadSequence.current;setLoadingAccounts(true);setLoadError("");
+    try{const accs=await readAll(erp.entities.Account,{is_active:{$ne:false}},"account_number");
+      if(sequence===loadSequence.current)setAccounts(accs.filter(a=>a.is_active!==false&&a.is_posting!==false&&a.allow_manual_journal!==false).sort((a,b)=>String(a.account_number||"").localeCompare(String(b.account_number||""),undefined,{numeric:true})));
+    }catch(e){if(sequence===loadSequence.current)setLoadError(e.message);}
+    finally{if(sequence===loadSequence.current)setLoadingAccounts(false);}
+  },[]);
+  useEffect(()=>{loadAccounts();return()=>{loadSequence.current++;};},[loadAccounts]);
 
   const updateLine = (i, field, value) => {
     setLines((prev) => prev.map((l, idx) => {
@@ -60,7 +64,7 @@ export default function JournalEntryForm() {
   const balanced = errors.length === 0;
 
   async function save(status) {
-    if (saveRef.current) return;
+    if (saveRef.current||loadingAccounts||loadError||!accounts.length) return;
     if (!form.description) { toast({ title: ui("Description required"), variant: "destructive" }); return; }
     if (status === "posted" && !balanced) { toast({ title: ui("Cannot post"), description: errors[0], variant: "destructive" }); return; }
     saveRef.current = true;
@@ -85,7 +89,11 @@ export default function JournalEntryForm() {
   return (
     <div>
       <PageHeader title={ui("New Journal Entry")} subtitle={ui("Manual double-entry journal — debits must equal credits")} />
-      <div className="bg-white rounded-lg border border-slate-200 p-6 space-y-6">
+      <div className="min-w-0 bg-white rounded-lg border border-slate-200 p-3 sm:p-6 space-y-4">
+        {loadingAccounts&&<p role="status" className="text-sm">{ui("Loading accounts...")}</p>}
+        {loadError&&<div role="alert" className="space-y-2 text-sm text-red-700"><p>{uiMessage(loadError)}</p><Button type="button" variant="outline" onClick={loadAccounts}>{ui("Retry loading accounts")}</Button></div>}
+        {!loadingAccounts&&!loadError&&!accounts.length&&<p role="status" className="text-sm">{ui("No active posting accounts are available for journals.")}</p>}
+        <fieldset disabled={saving||loadingAccounts||!!loadError||!accounts.length} className="min-w-0 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <Label>{ui("Transaction Date")}</Label>
@@ -97,7 +105,7 @@ export default function JournalEntryForm() {
           </div>
         </div>
 
-        {loadError && <p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p>}
+
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoBalance} onChange={e=>setAutoBalance(e.target.checked)}/>{ui("Auto-fill the balancing amount when selecting an empty account line")}</label>
         <div className="overflow-x-auto">
           <table className="mobile-table-cards w-full text-sm">
@@ -154,10 +162,11 @@ export default function JournalEntryForm() {
               : uiMessage(errors[0])}
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => navigate("/accounting")}>{ui("Cancel")}</Button>
-          <Button variant="secondary" disabled={saving} onClick={() => save("draft")}>{ui("Save as Draft")}</Button>
-          <Button disabled={saving || !balanced} onClick={() => save("posted")}>{ui("Post Journal")}</Button>
+        </fieldset>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" disabled={saving} onClick={() => navigate("/accounting")}>{ui("Cancel")}</Button>
+          <Button variant="secondary" disabled={saving||loadingAccounts||!!loadError||!accounts.length} onClick={() => save("draft")}>{ui("Save as Draft")}</Button>
+          <Button disabled={saving || loadingAccounts || !!loadError || !accounts.length || !balanced} onClick={() => save("posted")}>{ui("Post Journal")}</Button>
         </div>
       </div>
       {pickerLine!==null && <JournalAccountPicker key={pickerLine} open returnFocusRef={pickerTrigger} accounts={accounts} selectedId={lines[pickerLine]?.account_id || ""} lineNumber={pickerLine+1} onOpenChange={open=>{if(!open)setPickerLine(null);}} onSelect={id=>{updateLine(pickerLine,"account_id",id);setPickerLine(null);}}/>}
