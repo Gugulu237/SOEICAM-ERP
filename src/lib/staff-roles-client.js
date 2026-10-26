@@ -1,4 +1,5 @@
 import { invalidateERPReads } from '@/api/erpClient';
+import {notifyRoleChanges} from './role-permission-sync';
 const pending=new Map();
 export function saveStaffRoleAction(body) {
   const key=JSON.stringify(body);
@@ -8,7 +9,7 @@ export function saveStaffRoleAction(body) {
     const result=await response.json();
     if(!response.ok)throw Error(result.error || result.message || 'Could not save staff role changes.');
     invalidateERPReads();
-    window.dispatchEvent(new Event('soeicam:roles-changed'));
+    notifyRoleChanges();
     return result;
   })();
   pending.set(key,request);

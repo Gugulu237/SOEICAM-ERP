@@ -36,6 +36,7 @@ export default function CustomerTasks({ embedded = false, onRecordSale } = {}) {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(() => !isAdmin && params.get('new') === '1');
+  const [branchParent,setBranchParent]=useState(null);
   const [registrationBusy, setRegistrationBusy] = useState(false);
   const [showMap, setShowMap] = useState(false), [gpsCustomer, setGpsCustomer] = useState(null);
   const [reload, setReload] = useState(0);
@@ -55,10 +56,11 @@ export default function CustomerTasks({ embedded = false, onRecordSale } = {}) {
     }).catch((e) => { if (active) setError(errorMessage(e)); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [authLoading, reload, commercialId]);
+  useEffect(()=>{const parent=params.get('parent');if(!parent||loading||!canRegister)return;const customer=customers.find(c=>c.id===parent&&!c.parent_id&&c.is_active!==false);if(customer){setBranchParent(customer);setOpen(true);}const next=new URLSearchParams(params);next.delete('parent');setParams(next,{replace:true});},[loading,customers,canRegister,params,setParams]);
   const filtered = customers.filter((c) => (!zone || (zone==='unassigned'?!c.delivery_zone_id:c.delivery_zone_id===zone)) && [c.business_name, c.phone, c.town, c.neighbourhood, c.acquired_by_name].join(' ').toLowerCase().includes(search.toLowerCase()));
   return <div className={embedded ? "rounded-2xl border bg-white p-4 sm:p-5" : "mx-auto max-w-6xl p-4 sm:p-6"}>
     <PageHeader title={isAdmin ? ui("Customers") : ui("Customers")} subtitle={<CustomerInfo title={ui("Customers")}>{ui("Customer contacts, delivery pins and acquisition history.")}</CustomerInfo>}
-      actions={<div className="flex gap-2">{commercialId && <Button variant="outline" onClick={() => navigate('/commercial?employee=' + encodeURIComponent(commercialId))}>{ui("Back to agent dashboard")}</Button>}{canRegister && <Button className="h-11" disabled={!canRegister} onClick={() => setOpen(true)}><UserPlus size={16} className="mr-2" />{ui("New customer")}</Button>}</div>} />
+      actions={<div className="flex gap-2">{commercialId && <Button variant="outline" onClick={() => navigate('/commercial?employee=' + encodeURIComponent(commercialId))}>{ui("Back to agent dashboard")}</Button>}{canRegister && <Button className="h-11" disabled={!canRegister} onClick={() => {setBranchParent(null);setOpen(true);}}><UserPlus size={16} className="mr-2" />{ui("New customer")}</Button>}</div>} />
     {commercialId && <CustomerInfo title={ui("Customers")}>{ui("Customers registered by or assigned to this agent. Field registrations and sales must be recorded by the employee from their own account.")}</CustomerInfo>}
     {!employee && !commercialId && <p className="mb-4 text-sm text-slate-800">{ui("Link your login to a staff record to register customers.")}</p>}
     <div className="mb-5 flex flex-wrap gap-3"><Input aria-label={ui("Find a customer")} value={search} onChange={event => setSearch(event.target.value)} placeholder={ui("Search name, phone, town or agent")} className="h-11 flex-1 bg-white" /><Button variant={showMap ? 'default' : 'outline'} className="h-11" onClick={() => setShowMap(value => !value)}><MapPin size={16} className="mr-2" />{showMap ? ui("Hide map") : ui("Customer map & deliveries")}</Button></div>
@@ -75,10 +77,11 @@ export default function CustomerTasks({ embedded = false, onRecordSale } = {}) {
         <CustomerMapLinks customer={c} />
         {c.is_active !== false && <Button variant="ghost" size="sm" className="min-h-10 px-0 text-emerald-700" onClick={() => setGpsCustomer(c)}><MapPin size={14} className="mr-1" />{ui("Update delivery pin")}</Button>}
         <div className="border-t pt-3 text-xs text-slate-500"><p>{ui("Acquired by ")}{c.acquired_by_name || ui("unassigned")} · {c.acquisition_date || ui("Date unavailable")}</p>{c.registered_by_name && <p className="mt-1">{ui("Registered by ")}{c.registered_by_name}</p>}<p className="mt-1">{ui("Acquisition: ")}{(c.acquisition_verified || ui("pending")).replaceAll('_', ' ')}{c.is_active === false ? ui(" · Inactive customer") : ''}</p></div>
+          {canRegister&&!c.parent_id&&c.is_active!==false&&<Button variant="outline" className="h-11 w-full" onClick={()=>{setBranchParent(c);setOpen(true);}}>{ui('Add branch')}</Button>}
           {canRegister && <Button variant="outline" className="h-11 w-full" disabled={!canRegister || c.is_active === false} onClick={() => onRecordSale ? onRecordSale(c.id) : navigate('/commercial?section=pos&new=1&customer=' + encodeURIComponent(c.id) + (commercialId ? '&employee=' + encodeURIComponent(commercialId) : ''))}><ShoppingBag size={16} className="mr-2" />{ui("Record supply / sale")}</Button>}
       </article>)}</div>}
     <Dialog open={open} onOpenChange={(value) => { if (!registrationBusy) setOpen(value); }}><DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}><DialogHeader><DialogTitle>{ui("Register a field customer")}</DialogTitle></DialogHeader>
-      {open && canRegister && <FieldCustomerRegistration commercialId={commercialId} onBusyChange={setRegistrationBusy} onCancel={() => setOpen(false)} onSaved={(customer) => { setCustomers((rows) => [customer, ...rows.filter((c) => c.id !== customer.id)]); setOpen(false); }} />}
+      {open && canRegister && <FieldCustomerRegistration key={branchParent?.id||'main'} parentCustomer={branchParent} parentOptions={customers} commercialId={commercialId} onBusyChange={setRegistrationBusy} onCancel={() => setOpen(false)} onSaved={(customer) => { setCustomers((rows) => [customer, ...rows.filter((c) => c.id !== customer.id)]); setOpen(false); }} />}
     </DialogContent></Dialog>
   </div>;
 }

@@ -16,6 +16,7 @@ import { ROLE_DEFINITIONS, normalizeRole } from "@/lib/permissions";
 import RoleInfo from './RoleInfo';
 import { usesClerk } from "@/lib/auth-provider";
 import { inviteEmployee } from "@/lib/staff-invitations-client";
+import {notifyRoleChanges} from '@/lib/role-permission-sync';
 import { Save } from "lucide-react";
 
 const EMPTY = {
@@ -99,6 +100,7 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
           employee_number: `E-${String(employees.length + 1).padStart(4, "0")}`,
           start_date: new Date().toISOString().split("T")[0],
         });
+      if(!employee || ['role','user_id','status'].some(key=>Object.hasOwn(payload,key)&&payload[key]!==employee[key]))notifyRoleChanges();
       let invitation = null, inviteError = null;
       if (sendInvitation) {
         try { invitation = await inviteEmployee(saved.id); }

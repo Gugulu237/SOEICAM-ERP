@@ -66,3 +66,21 @@ test('editing a customer displays acquisition history without allowing the finde
     assert.equal(tables.Customer[0].acquired_by_id, staff.id); assert.equal(tables.Customer[0].registered_by_name, 'Original admin'); assert.equal(tables.Customer[0].business_name, 'Updated business name');
   } finally { runtime.cleanup(); delete globalThis.__customerFormUI; }
 });
+
+test('Add branch query opens the parent selector and saves a linked customer without creating a delivery location',async()=>{
+ const runtime=hookRuntime(),render=await renderer(),handler=await fieldHandler(),{client,tables}=fixture();
+ const previousWindow=globalThis.window;globalThis.window={location:{search:'?parent=customer-a'}};
+ client.auth.me=async()=>({id:'gm-login',role:'admin',full_name:'GM'});client.entities.Employee.filter=async()=>[];
+ runtime.client={entities:client.asServiceRole.entities,functions:{invoke:async(name,body)=>{const response=await handler(request(body)),data=await response.json();if(!response.ok)throw Error(data.error);return {data};}}};
+ globalThis.__dailySupplyClient=client;globalThis.__customerFormUI=runtime;
+ const draw=()=>{runtime.beforeRender();runtime.inputs=[];runtime.selects=[];return render();};
+ try{draw();await runtime.flush();draw();await runtime.flush();const html=draw();
+  assert.match(html,/This customer belongs to a main/);assert.match(html,/Main \/ parent customer/);
+  assert.equal(runtime.selects.find(s=>s.id==='customer-main-partner').value,'customer-a');
+  runtime.inputs.find(i=>i.id==='customer-business-name').onChange({target:{value:'Branch from detail'}});
+  runtime.inputs.find(i=>i.id==='customer-phone').onChange({target:{value:'699123456'}});
+  draw();await runtime.buttons.find(b=>b.label.trim()==='Save').onClick();
+  const branch=tables.Customer.find(c=>c.business_name==='Branch from detail');assert.ok(branch);assert.equal(branch.parent_id,'customer-a');assert.equal(branch.parent_name,'Customer A');assert.equal(tables.CustomerLocation.length,0);
+  assert.deepEqual(runtime.navigation,['/customers?view=visual&customer=customer-a']);
+ }finally{runtime.cleanup();globalThis.window=previousWindow;delete globalThis.__customerFormUI;delete globalThis.__dailySupplyClient;}
+});

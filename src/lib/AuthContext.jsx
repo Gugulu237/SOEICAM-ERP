@@ -1,6 +1,7 @@
 "use client";
 import React, { createContext, useContext, useEffect, useCallback, useState, useRef } from 'react';
 import { erp, invalidateERPReads } from '@/api/erpClient';
+import {subscribeRoleChanges} from '@/lib/role-permission-sync';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { useAuth as useClerkAuth, useClerk } from '@clerk/nextjs';
 import { usesClerk } from '@/lib/auth-provider';
@@ -17,7 +18,7 @@ function useERPProfile() {
   const savingLanguage=useRef(false);
   const current=useRef(0), pendingAuth=useRef(null);
   const checkUserAuth=useCallback(async (options={}) => {
-    if(pendingAuth.current?.sequence===current.current)return pendingAuth.current.promise.then(()=>undefined,()=>undefined);
+    if(!options.force && pendingAuth.current?.sequence===current.current)return pendingAuth.current.promise.then(()=>undefined,()=>undefined);
     const sequence=++current.current;
     if(!options.background)setLoading(true);
     setError(null);
@@ -42,10 +43,11 @@ function useERPProfile() {
   },[]);
   useEffect(()=>{
     const refresh=()=>{if(document.visibilityState==='visible')checkUserAuth({background:true});};
-    const changed=()=>checkUserAuth({background:true});
-    document.addEventListener('visibilitychange',refresh);window.addEventListener('soeicam:roles-changed',changed);
-    const timer=window.setInterval(refresh,60000);
-    return()=>{document.removeEventListener('visibilitychange',refresh);window.removeEventListener('soeicam:roles-changed',changed);window.clearInterval(timer);};
+    const changed=()=>checkUserAuth({background:true,force:true});
+    const unsubscribe=subscribeRoleChanges(changed);
+    document.addEventListener('visibilitychange',refresh);window.addEventListener('focus',refresh);
+    const timer=window.setInterval(refresh,30000);
+    return()=>{unsubscribe();document.removeEventListener('visibilitychange',refresh);window.removeEventListener('focus',refresh);window.clearInterval(timer);};
   },[checkUserAuth]);
   const clear=useCallback(() => { current.current++; verifiedProfile.current=null; setProfileRefreshError(''); setItemLookupIdentity(null); configureLanguage(); invalidateERPReads(); setUser(null); setEmployee(null); setError(null); setLoading(false); },[]);
   const invalidate=useCallback(() => { current.current++; invalidateERPReads(); },[]);

@@ -1,3 +1,4 @@
+import {prepareCustomerParent} from './customer-hierarchy.js';
 import { requireStaff,audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { deliveryGpsPolicy,deliveryGpsStatus,validateDeliveryGps,deliveryPoints,deliveryCoverage,DELIVERY_DAYS,ZONE_COLOURS } from '../../lib/customer-delivery.js';
@@ -17,6 +18,7 @@ export async function deliveryConfiguration(stores) {
 // All Customer / CustomerLocation write paths share this validation. Manual
 // coordinate edits lose their old accuracy evidence instead of looking precise.
 export async function prepareDeliveryDefinition(stores,input,existing=null,context={},config=null) {
+  input=await prepareCustomerParent(stores,input,existing,context);
   if(managedFields.some(k=>own(input,k)))throw Error('Delivery verification and revision fields are managed by the location workflow.');
   if(!['delivery_zone_id','delivery_days','delivery_instructions','route_id',...gpsFields].some(k=>own(input,k)))return input;
   const {zones,policy}=config || await deliveryConfiguration(stores),out={...input};let changed=false;

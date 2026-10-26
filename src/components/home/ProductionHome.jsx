@@ -1,3 +1,4 @@
+import {mergeRoleWorkspaces} from '@/lib/appModules';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
@@ -14,7 +15,7 @@ import { WorkspaceHero, WorkspaceButton, WorkspaceMetrics, WorkspaceActions, Wor
 export default function ProductionHome({ data, loading, preview, roleLabel }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { can } = useWorkspaceAccess();
+  const { can, modules } = useWorkspaceAccess();
   const [tab, setTab] = useState('active');
   const source = data || {}, summary = productionSnapshot(source), ready = !!data && !loading;
   const navigate = useNavigate();
@@ -30,7 +31,7 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
       can('manufacturing') && { label: 'Awaiting quality control', value: summary.awaitingQC.length, note: 'Inspect before releasing finished goods' },
       (can('inventory') || can('quality')) && { label: 'Lots on quality hold', value: summary.held.length, note: 'Quarantined or rejected stock with quantity' },
     ].filter(Boolean)} />
-    <WorkspaceActions preview={preview} actions={[
+    <WorkspaceActions preview={preview} actions={mergeRoleWorkspaces('production_manager',modules,[
       {title:ui('Accounting'),detail:ui('Review accounts and financial reports'),path:'/accounting',icon:BookOpen,color:'bg-sky-50 text-sky-700'},
       {title:ui('Expenses'),detail:ui('Request operating and business expenses'),path:'/expenses',icon:Wallet,color:'bg-sky-50 text-sky-700'},
       { title: 'Company sales', detail: 'View posted invoices and Commercial supplies', path: '/sales', icon: Receipt, color: 'bg-green-50 text-green-700' },
@@ -39,7 +40,7 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
       { title: 'Production board', detail: 'Plan, record output and follow batches', path: '/manufacturing', icon: Factory, color: 'bg-blue-50 text-blue-700' },
       { title: 'Quality control', detail: 'Release batches, inspect quality, review expiry and trace supplies', path: '/manufacturing?section=quality', icon: FlaskConical, color: 'bg-emerald-50 text-emerald-700' },
       { title: 'Review requests', detail: 'Recipes and expense approvals', path: '/approvals', icon: ClipboardCheck, color: 'bg-blue-50 text-blue-700' },
-    ]} />
+    ])} />
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_310px]">
       {can('manufacturing') && <WorkspacePanel title={ui("Your production board")} subtitle={ui("Open a batch for materials, output and quality details.")}>
         <div className="mb-4 flex flex-wrap gap-2">{[['active', ui("Current batches")], ['today', 'Today'], ['qc', ui("Awaiting QC")]].map(([value, label]) => <Button key={value} variant={tab === value ? 'default' : 'outline'} size="sm" onClick={() => setTab(value)}>{label}</Button>)}</div>

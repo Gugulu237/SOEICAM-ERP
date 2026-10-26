@@ -53,7 +53,7 @@ export async function entityOperation(context,name,operation,args = []) {
         if (name === 'Employee' && row.role && row.role !== 'admin' && !(context.roleCatalogue?.roles?.[row.role] || (!context.roleCatalogue && normalizeRole(row.role) === row.role))) throw forbidden('Choose a configured system role.');
         await guardTreasuryReferences(serviceEntities,requireActiveContext(context),row);
         guardMutation(context,name,operation,row);
-        if(name==='JournalLine' && ['assets','inventory_audit','inventory_adjustment'].includes((await serviceEntities.JournalEntry.get(row.journal_id))?.source_module)) throw forbidden('Asset and inventory audit journal lines are immutable.');
+        if(name==='JournalLine' && ['assets','inventory_audit','inventory_adjustment','opening_balances'].includes((await serviceEntities.JournalEntry.get(row.journal_id))?.source_module)) throw forbidden('Asset and inventory audit journal lines are immutable.');
         await guardStockStorage(serviceEntities,name,operation,row,null);
         guardPurchaseMutation(context,name);
         await guardDispatchMutation(context,name,operation,row,null,serviceEntities);
@@ -79,7 +79,7 @@ export async function entityOperation(context,name,operation,args = []) {
       if (name === 'Employee' && args[1]?.role && args[1].role !== 'admin' && !(context.roleCatalogue?.roles?.[args[1].role] || (!context.roleCatalogue && normalizeRole(args[1].role) === args[1].role))) throw forbidden('Choose a configured system role.');
       await guardTreasuryReferences(serviceEntities,requireActiveContext(context),args[1],row);
       guardMutation(context,name,operation,args[1] || {},row);
-      if(name==='JournalLine') for(const id of [row.journal_id,args[1]?.journal_id].filter(Boolean)) if(['assets','inventory_audit','inventory_adjustment'].includes((await serviceEntities.JournalEntry.get(id))?.source_module)) throw forbidden('Asset and inventory audit journal lines are immutable.');
+      if(name==='JournalLine') for(const id of [row.journal_id,args[1]?.journal_id].filter(Boolean)) if(['assets','inventory_audit','inventory_adjustment','opening_balances'].includes((await serviceEntities.JournalEntry.get(id))?.source_module)) throw forbidden('Asset and inventory audit journal lines are immutable.');
       await guardStockStorage(serviceEntities,name,operation,args[1] || {},row);
       guardPurchaseMutation(context,name);
       await guardDispatchMutation(context,name,operation,args[1] || {},row,serviceEntities);

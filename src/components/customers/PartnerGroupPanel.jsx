@@ -53,7 +53,7 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-900">{ui("Group — ")}{subPartners.length}{ui(" sub-partner")}{subPartners.length === 1 ? "" : "s"}</h3>
+        <h3 className="text-sm font-semibold text-slate-900">{ui("Branches: {0}",subPartners.length)}</h3>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -113,7 +113,7 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
 
       {subPartners.length === 0 && (
         <p className="text-sm text-slate-400 bg-slate-50 rounded-lg p-4 text-center inline-flex items-center gap-2 w-full justify-center">
-          <MapPin size={14} />{ui(" No sub-partners yet — use Add Partner to add a branch that trades under this name.")}</p>
+          <MapPin size={14} />{ui(" No branches yet. Use Add branch to link a customer to this main customer.")}</p>
       )}
     </div>
   );

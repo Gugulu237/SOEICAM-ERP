@@ -19,6 +19,7 @@ import AccountStats from "@/components/accounting/AccountStats";
 import AccountTree from "@/components/accounting/AccountTree";
 import AccountFormDialog from "@/components/accounting/AccountFormDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useNavigate } from '@/lib/router';
 import { Plus, Search } from "lucide-react";
 
 const ALL = "all";
@@ -27,6 +28,7 @@ export default function ChartOfAccountsManager() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { toast } = useToast();
+  const navigate=useNavigate();
   const { isAdmin, isCashier } = useCurrentUser();
   const canManage = isAdmin || isCashier;
   const [view, setView] = useState('accounts');
@@ -145,6 +147,7 @@ export default function ChartOfAccountsManager() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={expandAll}>{ui("Expand all")}</Button>
           <Button variant="outline" onClick={collapseAll}>{ui("Collapse all")}</Button>
+          {isAdmin&&<Button variant="outline" onClick={()=>navigate('/accounting/opening-balances')}>{ui('Opening balances')}</Button>}
           {canManage && (
             <Button onClick={() => setDialog({ parentId: "" })}>
               <Plus size={16} className="mr-1" />{ui(" New Account")}</Button>

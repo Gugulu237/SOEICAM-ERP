@@ -22,7 +22,7 @@ export async function readRecords(entity, query = {}) {
   }
 }
 
-const customerView = (c) => Object.fromEntries(['id', 'customer_number', 'business_name', 'phone', 'contact_person', 'address', 'town', 'neighbourhood',
+const customerView = (c) => Object.fromEntries(['id', 'customer_number', 'parent_id', 'parent_name', 'business_name', 'phone', 'contact_person', 'address', 'town', 'neighbourhood',
   'gps_lat', 'gps_lng', 'gps_accuracy_m', 'gps_captured_at', 'delivery_instructions', 'acquired_by_id', 'acquired_by_name', 'acquisition_date',
   'acquisition_verified', 'acquisition_notes', 'acquisition_source', 'registered_by_id', 'registered_by_name', 'registered_at', 'is_active','delivery_zone_id','delivery_days','route_id','gps_capture_source','delivery_revision'].map((key) => [key, c[key]]));
 
@@ -74,7 +74,7 @@ export async function commercialAction(base44, user, body) {
     if (duplicate) throw new Error('This customer name and phone are already registered. Select the existing customer in the POS.');
     const possibleDuplicate = customers.some((c) => normalizedPhone(c.phone) === normalizedPhone(data.phone));
     // A retry preserves attribution to the authenticated Commercial.
-    const delivery=await prepareDeliveryDefinition(svc.entities,{...data,delivery_zone_id:body.customer?.delivery_zone_id || '',delivery_days:body.customer?.delivery_days || ''},null,{user});
+    const delivery=await prepareDeliveryDefinition(svc.entities,{...data,parent_id:body.customer?.parent_id || '',delivery_zone_id:body.customer?.delivery_zone_id || '',delivery_days:body.customer?.delivery_days || ''},null,{user,role,employee:agent});
     const result = await svc.entities.Customer.upsert([{ ...delivery, customer_number: customerNumber,
       acquisition_notes: possibleDuplicate ? 'Shared phone number: check for an existing customer before verifying.' : '',
     }], { key: ['customer_number', 'acquired_by_id'] });

@@ -94,8 +94,9 @@ test('CSV exports all history and protects text formula cells without changing n
   const csv = cashFlowCsv(l.run()); assert.ok(csv.startsWith('\uFEFF')); assert.match(csv, /'\=HYPERLINK/); assert.match(csv, /'\+formula/); assert.match(csv, /JV-csv/); assert.match(csv, /Opening cash/);
 });
 
-test('HTTP report authorizes accounting staff, reads every page, uses a snapshot and never mutates business records', async () => {
+test('HTTP report authorizes management, rejects cashier bank access, reads every page and never mutates business records', async () => {
   const env = await fixture();
+  env.client.auth.me=async()=>({id:'cashier-login',role:'admin'});
   const l = ledger();
   for (let i = 0; i < 405; i++) l.add('sale-' + i, '2026-10-01', [['cash', 1, 0], ['sales', 0, 1]]);
   env.rows.Account.splice(0, env.rows.Account.length, ...l.accounts); env.rows.JournalEntry.push(...l.journals); env.rows.JournalLine.push(...l.lines); env.rows.TreasuryAccount.length = 0;
@@ -107,9 +108,10 @@ test('HTTP report authorizes accounting staff, reads every page, uses a snapshot
   try {
     const before = JSON.stringify(env.rows), result = await call();
     assert.equal(result.status, 200, result.error); assert.equal(result.history.length, 405); assert.equal(result.inflow, 405); assert.equal(result.closing, 405); assert.equal(JSON.stringify(env.rows), before); assert.equal(snapshots, 1); assert.equal(isReadOnlyFunction('fieldOps', 'cashFlowReport'), true);
-    env.rows.Employee[0].status = 'inactive'; assert.equal((await call()).status, 400);
-    env.rows.Employee[0].status = 'active'; env.rows.Employee[0].role = 'commercial'; assert.equal((await call()).status, 400);
-    env.rows.Employee[0].role = 'cashier'; env.client.auth.assertModule = () => { throw Error('Accounting module denied'); }; assert.match((await call()).error, /module denied/);
+    env.client.auth.me=async()=>({id:'cashier-login',role:'user'}); env.rows.Employee[0].status = 'inactive'; assert.equal((await call()).status, 400);
+    env.rows.Employee[0].status = 'active'; env.client.auth.me=async()=>({id:'cashier-login',role:'user'}); assert.equal((await call()).status,400);
+    env.rows.Employee[0].role = 'commercial'; assert.equal((await call()).status, 400);
+    env.rows.Employee[0].role = 'cashier'; env.client.auth.me=async()=>({id:'cashier-login',role:'admin'}); env.client.auth.assertModule = () => { throw Error('Accounting module denied'); }; assert.match((await call()).error, /module denied/);
     env.client.auth.me = async () => null; assert.equal((await call()).status, 401);
   } finally { delete globalThis.__cashierClient; delete globalThis.__cashierTransaction; }
 });

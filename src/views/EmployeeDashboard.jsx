@@ -27,6 +27,8 @@ const EmployeeReportDirectory=dynamic(()=>import('@/components/employees/Employe
 const CommercialPerformance=dynamic(()=>import('@/views/CommercialPerformance'));
 import SupplyChainHome from '@/components/home/SupplyChainHome';
 import OperationalStaffHome from '@/components/home/OperationalStaffHome';
+import AssignedFeatures from '@/components/home/AssignedFeatures';
+import {subscribeRoleChanges} from '@/lib/role-permission-sync';
 import { WorkspaceAccess } from '@/components/home/WorkspaceAccess';
 import { DashboardIdentity, MobileDashboardIdentity } from '@/components/home/DashboardIdentity';
 import MobileInfo from '@/components/shared/MobileInfo';
@@ -45,6 +47,7 @@ export default function EmployeeDashboard() {
   const hub = location.pathname === '/team-workspaces';
   const reviewingWorkspace = !!params.get('role') && !['people','roles','payroll'].includes(params.get('section'));
   const [catalogue,setCatalogue] = useState(null), [catalogueError,setCatalogueError] = useState(''), [reload,setReload] = useState(0);
+  useEffect(()=>subscribeRoleChanges(()=>{if(role==='admin'&&hub&&reviewingWorkspace)setReload(n=>n+1);}),[role,hub,reviewingWorkspace]);
   useEffect(() => {
     if (role !== 'admin' || !hub || !reviewingWorkspace) return;
     let active = true;
@@ -64,7 +67,7 @@ export default function EmployeeDashboard() {
     const sections=[...(role==='admin'?[['people','Employees'],['roles','Roles & organigram'],['reports','Reports & dashboards']]:[]),...(canPayroll?[['payroll','Payroll']]:[])];
     const requested = params.get('role');
     const section = role==='cashier'?'payroll':sections.some(([key])=>key===params.get('section'))?params.get('section'):requested?'workspace':'people';
-    const profiles = { ...(catalogue?catalogue.roles:defaultProfiles),admin:gm };
+    const profiles = { ...(catalogue?catalogue.roles:defaultProfiles),admin:{...gm,...(catalogue?.roles?.admin || defaultProfiles.admin)} };
     const options = Object.values(profiles).sort((a,b) => roleHierarchyRank(a) - roleHierarchyRank(b) || a.label.localeCompare(b.label));
     return <div className="min-w-0 space-y-5"><header className={requested ? "hidden sm:block" : ""}><h1 className="text-3xl font-bold tracking-tight">{ui("Employee dashboard")}</h1></header>
       <nav aria-label={ui("Employee dashboard sections")} className={(requested ? "hidden sm:flex " : "flex ") + "gap-2 overflow-x-auto border-b pb-3 sm:flex-wrap"}>{sections.map(([key,label])=><Link key={key} to={'/team-workspaces?section='+key} aria-current={section===key?'page':undefined} className={'shrink-0 rounded-lg px-4 py-2 text-sm font-semibold '+(section===key?'bg-[#347623] text-white':'bg-white text-slate-700 hover:bg-green-50')}>{ui(label)}</Link>)}</nav>
@@ -74,8 +77,8 @@ export default function EmployeeDashboard() {
       </>}
     </div>;
   }
-  if (role === 'commercial' && (!allowedModules || allowedModules.includes('commercial'))) return <CommercialWorkspace />;
-  if (role === 'cashier' && (!allowedModules || allowedModules.includes('cashier'))) return <DashboardIdentity value={{roleName: roleLabel, employeeName: employee?.full_name || user?.full_name}}><CashierHome /></DashboardIdentity>;
+  if (role === 'commercial' && (!allowedModules || allowedModules.includes('commercial'))) return <><CommercialWorkspace/><AssignedFeatures role={role} modules={allowedModules}/></>;
+  if (role === 'cashier' && (!allowedModules || allowedModules.includes('cashier'))) return <DashboardIdentity value={{roleName: roleLabel, employeeName: employee?.full_name || user?.full_name}}><CashierHome /><AssignedFeatures role={role} modules={allowedModules}/></DashboardIdentity>;
   return <LiveWorkspace profile={{ key:role === 'admin' ? 'admin' : assignedRole || role,template_role:role }} />;
 }
 
@@ -89,7 +92,8 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
   const Component = dashboards[template];
   const employeeId = managing ? params.get('employee') || '' : employee?.id || '';
   const needsEmployee = ['driver','hotesse','commercial'].includes(template);
-  const scope = [user?.id,mode,employeeId,managing].join(':');
+  const modules = managing ? profile.modules : allowedModules;
+  const scope = [user?.id,mode,employeeId,managing,profile.template_role,modules?.join(',')].join(':');
   const showPerformance=params.get('performance')==='1';
   const setShowPerformance=next=>setParams(old=>{const p=new URLSearchParams(old);if(typeof next==='function'?next(showPerformance):next)p.set('performance','1');else p.delete('performance');return p;});
   const [selectionOpen, setSelectionOpen] = useState(false);
@@ -97,7 +101,6 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
   const requestInFlight = useRef(null);
   const data = result?.scope === scope ? result.data : null;
   const readOnly = managing || data?.readOnly === true;
-  const modules = managing ? profile.modules : allowedModules;
   const requiredModule = {cashier:'cashier',commercial:'commercial',driver:'distribution',hotesse:'outlets'}[template];
   // Staff operating permissions never prevent the GM from reviewing a
   // dashboard. Management previews still disable every submission control.
@@ -137,6 +140,7 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
       {template !== 'admin' && !independent && <select aria-label={ui("Workspace employee")} className="h-11 min-w-0 w-full rounded-lg border bg-white px-3 text-sm sm:w-auto" value={employeeId} onChange={e => setParams({section:'reports',role:mode,...(e.target.value ? {employee:e.target.value} : {})})}><option value="">{needsEmployee ? ui("Choose an employee") : ui("Department overview")}</option>{(data?.choices || []).map(staff => <option key={staff.id} value={staff.id}>{staff.full_name}{staff.status !== 'active' ? ' ('+staff.status+')' : ''}</option>)}</select>}
       <span className="ml-auto hidden items-center sm:flex gap-2 text-xs font-medium text-green-700"><span className="h-2 w-2 rounded-full bg-green-600" />{ui("Live workspace")}</span>
     </div></section>}
+    <AssignedFeatures role={profile.template_role} modules={modules} preview={readOnly}/>
     {disabled ? <p className="rounded-xl border bg-white p-5 text-sm text-slate-600">{ui("This workspace is disabled in the saved role permissions. The General Manager can adjust its access under Roles & organigram.")}</p> : <>
       {!independent && <div className="hidden items-center justify-between gap-2 text-xs text-slate-500 sm:flex"><span>{data?.date ? data.date + ' / Cameroon time' : ui("SOEICAM workspace")}{result?.scope === scope && result.updatedAt && ui(" / Updated {0}", result.updatedAt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))}</span><Button variant="ghost" size="sm" disabled={loading} onClick={refresh}><RefreshCw size={14} className={'mr-2 ' + (loading ? 'animate-spin' : '')} />{ui("Refresh")}</Button></div>}
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{ui("Could not refresh this workspace. ")}{uiMessage(error)} <button className="underline" onClick={refresh}>{ui("Retry")}</button></p>}

@@ -71,3 +71,20 @@ test('unmounting before the Supabase SDK arrives never registers a late subscrip
   globalThis.__authUI=runtime;globalThis.window={setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}};globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
   try{runtime.beforeRender();render();await runtime.flush();runtime.cleanup();cleaned=true;resolveSdk({auth:{onAuthStateChange(){registered++;}}});await Promise.resolve();assert.equal(registered,0);}finally{if(!cleaned)runtime.cleanup();delete globalThis.__authUI;globalThis.window=previous.window;globalThis.document=previous.document;}
 });
+
+test('a role save supersedes an older in-flight profile and storage events refresh permissions across tabs',async()=>{
+ const render=await renderer(),runtime=hookRuntime(),previous={window:globalThis.window,document:globalThis.document};
+ runtime.sdk={isLoaded:false};runtime.invalidations=0;const requests=[];
+ runtime.me=()=>new Promise(resolve=>requests.push(resolve));
+ const win=new EventTarget();win.setInterval=()=>1;win.clearInterval=()=>{};globalThis.window=win;globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
+ globalThis.__authUI=runtime;const draw=()=>{runtime.beforeRender();render();return runtime.value;};
+ const before={id:'test-user',staff_access:true,employee_profile:{id:'staff',role:'cashier',status:'active',allowed_modules:['cashier']}},after={...before,employee_profile:{...before.employee_profile,allowed_modules:['cashier','sales_reports']}};
+ try{
+  draw();await runtime.flush();assert.equal(requests.length,1);
+  win.dispatchEvent(new Event('soeicam:roles-changed'));assert.equal(requests.length,2,'a save cannot reuse the request started before the save');
+  requests[1](after);await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,['cashier','sales_reports']);
+  requests[0](before);await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,['cashier','sales_reports'],'the older response cannot undo newly saved permissions');
+  const event=new Event('storage');Object.defineProperty(event,'key',{value:'soeicam:role-permissions-changed'});win.dispatchEvent(event);assert.equal(requests.length,3);
+  requests[2](before);await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,['cashier'],'revocations also reach an open employee tab');
+ }finally{runtime.cleanup();delete globalThis.__authUI;globalThis.window=previous.window;globalThis.document=previous.document;}
+});

@@ -35,6 +35,7 @@ const navItems = [
   { get label(){return ui("Customers");}, icon: UserCheck, path: "/customers", roles: ["admin", "employee", "commercial"] },
   { get label(){return ui("Distribution");}, icon: Truck, path: "/distribution", roles: ["admin", "employee", "warehouse_manager", "production_manager", "driver"] },
   { get label(){return ui("Cashier");}, icon: Banknote, path: "/cashier", roles: ["admin", "cashier", "production_manager"] },
+  { get label(){return ui('Sales reports');}, icon: BarChart3, path: '/sales-reports', roles: null, requiresGrant:'sales_reports' },
   { get label(){return ui("Reports");}, icon: BarChart3, path: "/reports", roles: ["admin"] },
   { get label(){return ui("Administration");}, icon: Settings, path: "/admin", roles: ["admin"] },
 ];
@@ -62,7 +63,7 @@ export default function AppSidebar() {
 
   const targetPath=path=>role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
-  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial') && hasRoleAccess(role, item.roles) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
+  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial') && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && hasRoleAccess(role, item.roles) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";

@@ -91,6 +91,8 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if([value.source_module,existing?.source_module].includes('opening_balances')||[value.source_document_type,existing?.source_document_type].includes('OpeningBalances')||['opening_request_key','opening_import_hash'].some(k=>k in value||k in (existing||{})))throw forbidden('Opening balances are managed through the checked migration workflow.');
+  if(entity==='AuditLog'&&[value.action,existing?.action].includes('import_opening_balances'))throw forbidden('Opening balances are managed through the checked migration workflow.');
   if(role==='cashier' && entity==='Payment' && ['bank','bank_transfer'].includes(value.payment_method || existing?.payment_method))throw forbidden('Bank accounts are restricted to administrators.');
   if(entity==='Customer' && (Object.keys(value).some(key=>/^customer_(removed_|restored_|removal_|lifecycle_)/.test(key)) || existing?.customer_removed_at))throw forbidden('Delete or restore customers through the checked customer edit workflow.');
   if(entity==='AuditLog' && ([value,existing].some(row=>row && (['remove_customer','restore_customer'].includes(row.action) || 'customer_lifecycle_payload' in row || String(row.id||'').startsWith('customer-lifecycle-')))))throw forbidden('Customer directory deletion records are managed by the checked customer workflow.');

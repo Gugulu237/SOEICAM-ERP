@@ -1,5 +1,6 @@
 /* localized-metadata */
 import {ui} from './i18n.js';
+import {moduleForPath} from '../server/domain/role-catalogue.js';
 import { hasRoleAccess } from './permissions.js';
 import { INVENTORY_PATH, INVENTORY_ROLES } from './inventory-navigation.js';
 import { QUALITY_ROLES } from './quality-workspace.js';
@@ -9,13 +10,15 @@ import { permitsWorkspace,workspacePath } from './workspace-navigation.js';
 // Each module: identity (icon + color), route, roles, and a key into the
 // live-stats object computed by Home.jsx.
 import {
-  Factory, Package, ShoppingCart,
+  Factory, Package, ShoppingCart, FlaskConical,
   Users, Receipt, UserCheck, Truck, BookOpen, Banknote, CheckSquare,
   BarChart3, Wallet, Settings, Activity,
   ClipboardCheck
 } from "lucide-react";
 
 export const APP_MODULES = [
+  {key:'sales_reports',get label(){return ui('Sales reports');},path:'/sales-reports',icon:BarChart3,description:'Posted company sales and report exports',color:'bg-cyan-50 text-cyan-700',ring:'hover:border-cyan-300',roles:null,requiresGrant:'sales_reports'},
+  {key:'quality',get label(){return ui('Quality control');},path:'/manufacturing?section=quality',icon:FlaskConical,description:'Expiry, batch inspection and traceability',color:'bg-green-50 text-green-700',ring:'hover:border-green-300',roles:QUALITY_ROLES},
   { key: "commercial_workspace", get label(){return ui("Commercial Dashboard");}, path: "/commercial", icon: Users, description: "Field POS, agent stock, sales and performance", color: "bg-green-50 text-green-700", ring: "hover:border-green-300", roles: ["commercial"] },
   { key: "team_workspaces", get label(){return ui("Employee Dashboard");}, path: "/team-workspaces", icon: Users, description: "Staff, roles, payroll and live workspaces", color: "bg-sky-50 text-sky-800", ring: "hover:border-sky-300", roles: ["admin","cashier"] },
   { key: "driver", get label(){return ui("My Deliveries");}, path: "/distribution?tab=deliveries", icon: Truck, description: "Assigned runs, stops & delivery reports", color: "bg-blue-50 text-blue-700", ring: "hover:border-blue-300", roles: ["driver"] },
@@ -116,5 +119,11 @@ export const APP_MODULES = [
 
 export function modulesForRole(role,allowedModules){
  const destination=module=>role==='cashier'&&module.key==='team_workspaces'?'/team-workspaces?section=payroll':role==='hotesse'&&module.key==='sales'?'/outlet-reports':workspacePath(module.path,allowedModules);
- return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial')&&hasRoleAccess(role,module.roles)&&(role==='admin'||permitsWorkspace(destination(module),allowedModules))).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
+ return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial')&&hasRoleAccess(role,module.roles)&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
+}
+
+export function mergeRoleWorkspaces(role,modules,actions){
+ const current=actions.filter(Boolean).filter(action=>permitsWorkspace(action.path,modules)),shown=new Set(current.map(a=>moduleForPath(a.path)));
+ const extras=modulesForRole(role,modules).filter(m=>!shown.has(moduleForPath(m.path))).map(m=>({title:m.label,path:m.path,detail:m.description,icon:m.icon}));
+ return [...current,...extras];
 }

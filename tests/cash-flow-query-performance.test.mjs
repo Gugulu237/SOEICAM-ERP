@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cashFlowReport } from '../src/server/domain/cash-flow.js';
 import { buildCashFlow } from '../src/lib/cash-flow.js';
-import { fixture, user } from './helpers/cashier.mjs';
+import { fixture } from './helpers/cashier.mjs';
 
+const user={id:'gm',role:'admin'};
 const from = '2026-10-01', to = '2026-10-31';
 const comparable = ({ generated_at, ...report }) => report;
 async function ledgerFixture() {

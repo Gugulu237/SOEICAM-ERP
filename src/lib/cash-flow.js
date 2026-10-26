@@ -59,7 +59,7 @@ export function buildCashFlow({ accounts, treasury = [], journals, cashLines, pe
   const pool = cashPool(accounts, treasury), cashIds = new Set(pool.map(a => a.id));
   // Reversed originals remain in history alongside their dated reversal.
   const byAccount = new Map(accounts.map(a => [a.id, a])), posted = new Map(journals.filter(j => ['posted', 'reversed'].includes(j.status)).map(j => [j.id, j]));
-  const balances = new Map(pool.map(a => [a.id, { account_id: a.id, number: a.account_number, name: a.name, opening: 0, inflow: 0, outflow: 0, closing: 0, all_posted: 0 }]));
+  const balances = new Map(pool.map(a => [a.id, { account_id: a.id, number: a.account_number, name: a.name, opening: 0, opening_adjustments: 0, inflow: 0, outflow: 0, closing: 0, all_posted: 0 }]));
   const byJournal = new Map(), issues = [], history = [], groups = new Map();
   for (const l of periodLines) {
     if (!posted.has(l.journal_id)) continue;
@@ -77,7 +77,7 @@ export function buildCashFlow({ accounts, treasury = [], journals, cashLines, pe
     row.all_posted += d - c;
     if (j.entry_date < from) row.opening += d - c;
     if (j.entry_date <= to) row.closing += d - c;
-    if (j.entry_date >= from && j.entry_date <= to) { row.inflow += d; row.outflow += c; }
+    if (j.entry_date >= from && j.entry_date <= to) { if(j.source_module==='opening_balances')row.opening_adjustments+=d-c;else{row.inflow += d; row.outflow += c;} }
   }
   let internalTotal = 0;
   const add = (entry, classification, amount, account) => {
@@ -95,6 +95,7 @@ export function buildCashFlow({ accounts, treasury = [], journals, cashLines, pe
     if (!cash.length) continue;
     if (lines.some(l => (l.status && !['posted', 'reversed'].includes(l.status)) || cents(l.debit) < 0 || cents(l.credit) < 0 || (cents(l.debit) && cents(l.credit)))) throw Error(`Journal ${j.journal_number || id} contains invalid or non-posted lines`);
     if (lines.reduce((s, l) => s + cents(l.debit) - cents(l.credit), 0) !== 0) throw Error(`Journal ${j.journal_number || id} is not balanced; cash flow cannot be reconciled`);
+    if(j.source_module==='opening_balances')continue;
     const inflow = cash.reduce((n, l) => n + cents(l.debit), 0), outflow = cash.reduce((n, l) => n + cents(l.credit), 0), net = inflow - outflow;
     const entry = { id, date: j.entry_date, journal_number: j.journal_number || id, description: j.description || '', reference: j.reference || j.source_document_id || '', source: j.source_module || 'manual', document_type: j.source_document_type || '', cash_accounts: [...new Set(cash.map(l => `${byAccount.get(l.account_id)?.account_number} - ${byAccount.get(l.account_id)?.name}`))], cash_account_ids: [...new Set(cash.map(l => l.account_id))], counterpart_accounts: [...new Set(other.map(l => `${byAccount.get(l.account_id)?.account_number || '?'} - ${byAccount.get(l.account_id)?.name || l.account_name || 'Missing account'}`))], inflow: money(inflow), outflow: money(outflow), net: money(net), internal_transfer: 0, allocations: [], review: '' };
     const source = j.reversal_of ? posted.get(j.reversal_of) || j : j;
@@ -132,7 +133,7 @@ export function buildCashFlow({ accounts, treasury = [], journals, cashLines, pe
     if (linked.length === 1 && cents(linked[0].balance) !== row.all_posted) issues.push(`${row.number} ${row.name}: treasury balance differs from the posted ledger. Reconcile treasury opening balances and movements.`);
     if (linked.length > 1) issues.push(`${row.number} ${row.name}: multiple treasury accounts share this GL account; the cash statement counts the GL balance once.`);
     if (row.closing < 0) issues.push(`${row.number} ${row.name}: negative closing cash balance. Review overdrafts or missing receipts.`);
-    return { ...row, opening: money(row.opening), inflow: money(row.inflow), outflow: money(row.outflow), closing: money(row.closing), all_posted: money(row.all_posted), stored_balance: money(cents(a.balance)), balance_difference: money(difference) };
+    return { ...row, opening: money(row.opening), opening_adjustments:money(row.opening_adjustments), inflow: money(row.inflow), outflow: money(row.outflow), closing: money(row.closing), all_posted: money(row.all_posted), stored_balance: money(cents(a.balance)), balance_difference: money(difference) };
   }).sort((a, b) => a.number.localeCompare(b.number));
   const detail = [...groups.values()].map(g => ({ ...g, inflow: money(g.inflow), outflow: money(g.outflow), net: money(g.inflow - g.outflow) }));
   const activities = Object.entries(CASH_FLOW_ACTIVITIES).map(([key, label]) => {
@@ -141,16 +142,17 @@ export function buildCashFlow({ accounts, treasury = [], journals, cashLines, pe
     return { key, label, rows, inflow: money(inflow), outflow: money(outflow), net: money(inflow - outflow) };
   });
   const opening = components.reduce((n, a) => n + cents(a.opening), 0), closing = components.reduce((n, a) => n + cents(a.closing), 0);
-  const inflow = detail.reduce((n, r) => n + cents(r.inflow), 0), outflow = detail.reduce((n, r) => n + cents(r.outflow), 0), difference = closing - opening - inflow + outflow;
+  const inflow = detail.reduce((n, r) => n + cents(r.inflow), 0), outflow = detail.reduce((n, r) => n + cents(r.outflow), 0), openingAdjustments=components.reduce((n,a)=>n+cents(a.opening_adjustments),0), difference = closing - opening - inflow + outflow - openingAdjustments;
   if (difference) throw Error('Cash history is incomplete or changed while loading. Run the report again');
   if (!pool.length) issues.push('No cash GL accounts are configured. Link treasury accounts or mark the cash accounts in Chart of Accounts.');
-  return { from, to, generated_at: new Date().toISOString(), currency: 'XAF', opening: money(opening), closing: money(closing), inflow: money(inflow), outflow: money(outflow), net: money(inflow - outflow), reconciliation_difference: money(difference), internal_transfers: money(internalTotal), activities, components, history: history.sort((a, b) => a.date.localeCompare(b.date) || a.journal_number.localeCompare(b.journal_number)), issues };
+  return { from, to, generated_at: new Date().toISOString(), currency: 'XAF', opening: money(opening), opening_adjustments:money(openingAdjustments), closing: money(closing), inflow: money(inflow), outflow: money(outflow), net: money(inflow - outflow), reconciliation_difference: money(difference), internal_transfers: money(internalTotal), activities, components, history: history.sort((a, b) => a.date.localeCompare(b.date) || a.journal_number.localeCompare(b.journal_number)), issues };
 }
 
 export function cashFlowCsv(report) {
   // Prevent spreadsheet formula injection in account names and free text.
   const cell = value => '"' + (typeof value === 'number' ? String(value) : String(value ?? '').replace(/^[\s]*([=+@-])/, "'$1")).replaceAll('"', '""') + '"';
   const rows = [ [ui('SOEICAM Cash Flow'), report.from, report.to, 'XAF'], [ui('Opening cash'), report.opening], [ui('Activity'), ui('Category'), ui('Account'), ui('Receipts'), ui('Payments'), ui('Net')] ];
+  if(report.opening_adjustments)rows.splice(2,0,[ui('Opening balance imports'),report.opening_adjustments]);
   for (const activity of report.activities) for (const r of activity.rows) rows.push([ui(activity.label), ui(r.label), `${r.account_number} ${r.account_name}`, r.inflow, r.outflow, r.net]);
   rows.push([ui('Total external cash'), '', '', report.inflow, report.outflow, report.net], ['Closing cash', report.closing], ['Internal transfers excluded', report.internal_transfers], [], ['Cash account', 'Opening', 'Debits', 'Credits', 'Closing']);
   for (const a of report.components) rows.push([`${a.number} ${a.name}`, a.opening, a.inflow, a.outflow, a.closing]);
