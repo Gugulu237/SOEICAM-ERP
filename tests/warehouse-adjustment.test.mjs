@@ -138,3 +138,12 @@ test('a residual-value correction rolls back stock, GL and audit together after 
   assert.equal((await post()).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);s.AuditLog.create=create;assert.equal((await post()).status,200);assert.equal((await post()).status,200);assert.equal((await s.JournalEntry.list()).length,1);
  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
+
+test('an item-specific count opens the warehouse that currently holds its stock; an unstocked finished item defaults to Cold Room',async()=>{
+ const f=await setup(),s=f.entities;
+ let workspace=await warehouseAdjustmentAction(f.client,user,{action:'warehouseAdjustmentWorkspace',productId:f.product.id});
+ assert.equal(workspace.warehouse.id,f.warehouse.id);assert.equal(workspace.rows.length,2);
+ const cold=await s.Warehouse.create({name:'Cold Room',warehouse_type:'cold_room',is_active:true});
+ const finished=await s.Product.create({name:'500 g yogurt',inventory_type:'assembly',is_active:true,current_cost:100,configuration_status:'ready'});
+ workspace=await warehouseAdjustmentAction(f.client,user,{action:'warehouseAdjustmentWorkspace',productId:finished.id});assert.equal(workspace.warehouse.id,cold.id);
+});

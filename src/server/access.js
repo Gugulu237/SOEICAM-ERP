@@ -91,6 +91,8 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if(entity==='Product'&&(['delete','deleteMany'].includes(operation)||Object.keys(value).some(k=>/^item_(removed_|restored_|removal_|lifecycle_)/.test(k))||existing?.item_removed_at))throw forbidden('Delete or restore items through the checked item editor workflow.');
+  if(entity==='AuditLog'&&[value,existing].some(r=>r&&(['remove_item','restore_item'].includes(r.action)||'item_lifecycle_payload' in r||String(r.id||'').startsWith('item-lifecycle-'))))throw forbidden('Item deletion records are managed by the checked item workflow.');
   if([value.source_module,existing?.source_module].includes('opening_balances')||[value.source_document_type,existing?.source_document_type].includes('OpeningBalances')||['opening_request_key','opening_import_hash'].some(k=>k in value||k in (existing||{})))throw forbidden('Opening balances are managed through the checked migration workflow.');
   if(entity==='AuditLog'&&[value.action,existing?.action].includes('import_opening_balances'))throw forbidden('Opening balances are managed through the checked migration workflow.');
   if(role==='cashier' && entity==='Payment' && ['bank','bank_transfer'].includes(value.payment_method || existing?.payment_method))throw forbidden('Bank accounts are restricted to administrators.');

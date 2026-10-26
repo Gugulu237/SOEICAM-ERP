@@ -1,3 +1,4 @@
+import ItemMaintenance from '@/components/items/ItemMaintenance';
 import AssemblyYieldFields from '@/components/items/AssemblyYieldFields';
 import { validateAssemblyYieldChanges } from '@/lib/assembly-yield';
 
@@ -41,7 +42,7 @@ import { itemAttributes, attributeFacets, validateItemMetadata } from '@/lib/ite
 const SUB_TYPES = [["additive", "Additive"], ["raw_material", "Raw material / Ingredient"], ["packaging", "Packaging"], ["finished_product", "Finished Product / Assembly"], ["consumable", "Consumable"], ["cleaning", "Cleaning supply"], ["spare_part", "Spare part"], ["promotional", "Promotional"], ["wip", "Work in progress"]];
 const SKU_PREFIX = { inventory_item: "ITM", service: "SRV", assembly: "ASM" };
 
-export default function ItemForm({ embedded = false, itemId, initialType = "inventory_item", initialInventoryType = "raw_material", excludedProductIds = [], onSaved, onCancel, onBusyChange, onCatalogItemCreated }) {
+export default function ItemForm({ embedded = false, itemId, initialType = "inventory_item", initialInventoryType = "raw_material", excludedProductIds = [], onSaved, onCancel, onBusyChange, onCatalogItemCreated, onStockAdjusted }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { id:routeId } = useParams(), navigate = useNavigate(), goBack = useBack("/inventory"), { toast } = useToast();
@@ -186,7 +187,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
 
   return <div>
     {!embedded && <PageHeader title={isEdit ? ui("Edit Item") : ui("New Item")} subtitle={ui("Set up the item, its accounts and its stock settings.")} actions={<Button variant="outline" disabled={saving || unitBusy} onClick={cancel}><ArrowLeft size={16} className="mr-1" />{ui("Back")}</Button>} />}
-    <fieldset disabled={saving} className={embedded ? "space-y-5" : "max-w-5xl space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"}>
+    <fieldset disabled={saving || Boolean(savedItem?.item_removed_at)} className={embedded ? "space-y-5" : "max-w-5xl space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"}>
       {savedItem&&(savedItem.configuration_status==='draft'||savedItem.is_active===false)&&<div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900"><strong>{ui(itemAvailabilityLabel(savedItem))}</strong><p className="mt-1">{ui('Complete the required details and turn on Active item before saving.')}</p>{finishedItemSetupIssues({...form,components}).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues({...form,components}).map(label=>ui(label)).join(', ')}</p>}</div>}
       <div className="flex flex-wrap items-center justify-between gap-3"><ItemTypeChooser value={itemType} onChange={changeType} /><label className="flex items-center gap-2 text-sm"><Switch aria-label={ui("Active item")} checked={form.is_active} onCheckedChange={value => set("is_active", value)} />{ui("Active item")}</label></div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.5fr]">
@@ -216,6 +217,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
       {saveError && !pendingSave && <p role="alert" className="text-sm text-red-700">{uiMessage(saveError)}</p>}
       <div className="flex gap-3 border-t pt-4"><Button type="button" onClick={handleSave} disabled={saving || unitBusy}><Save size={16} className="mr-1" />{saving ? ui("Saving...") : ui("Save Item")}</Button><Button type="button" variant="outline" onClick={cancel} disabled={saving || unitBusy}>{ui("Cancel")}</Button></div>
     </fieldset>
+    {savedItem&&<ItemMaintenance item={savedItem} disabled={saving||unitBusy} onBusyChange={busy=>{savingRef.current=busy;setSaving(busy);onBusyChange?.(busy);}} onDone={item=>{if(embedded)onSaved?.(item);else navigate('/inventory');}} onStockAdjusted={()=>{setStockReload(v=>v+1);onStockAdjusted?.();}}/>}
     <UnitChangeDialog open={!!pendingSave} itemName={form.name} fromUnit={savedItem && stockUnit(savedItem)} toUnit={pendingSave?.changes.unit_of_measure || savedItem && stockUnit(savedItem)} saving={saving} error={uiMessage(saveError)} onConfirm={()=>persist(pendingSave)} onCancel={()=>{if(!savingRef.current)setPendingSave(null);}} />
   </div>;
 }

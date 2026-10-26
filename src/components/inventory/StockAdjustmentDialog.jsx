@@ -1,7 +1,7 @@
 import ReportExport from '@/components/shared/ReportExport';
 import { warehouseAdjustmentDocument } from '@/lib/report-models';
 import { warehouseCountVariance } from '@/lib/warehouse-count';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender } from '@/lib/localization';
 import { invokeFieldOps } from '@/lib/field-ops';
@@ -16,9 +16,10 @@ import { useToast } from '@/components/ui/use-toast';
 const newRow=item=>({...item,id:'new-'+crypto.randomUUID(),product_id:item.id,product_name:item.name,book_quantity:0,book_value:0,counted_quantity:'',lot_number:'',expiry_date:'',qc_status:'quarantine',is_new:true});
 const preview=row=>{try{return row.counted_quantity===''?null:warehouseCountVariance(row,row.counted_quantity,{verifiedCost:row.verified_unit_cost,confirmed:row.confirm_reconciliation});}catch{return null;}};
 
-export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',productId='',onSaved}) {
+export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',productId='',onSaved,onBusyChange}) {
   useLocaleRender();
   const {toast}=useToast();
+  const posting=useRef(false);
   const [warehouse,setWarehouse]=useState(warehouseId),[data,setData]=useState(null),[rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
   const [date,setDate]=useState(businessDate()),[account,setAccount]=useState(''),[reason,setReason]=useState(''),[reference,setReference]=useState('');
@@ -28,10 +29,12 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
   useEffect(()=>{
     if(!open)return;
     setReceipt(null);
-    let active=true;setLoading(true);setError('');
-    invokeFieldOps({action:'warehouseAdjustmentWorkspace',warehouseId:warehouse || undefined}).then(({data:result})=>{
+    let active=true;setLoading(true);setError('');setData(null);
+    invokeFieldOps({action:'warehouseAdjustmentWorkspace',warehouseId:warehouse || undefined,productId:productId||undefined}).then(({data:result})=>{
       if(!active)return;
+      if(result.error)throw Error(result.error);
       setData(result);
+      setAccount(previous=>result.accounts.some(a=>a.id===previous)?previous:result.accounts.length===1?result.accounts[0].id:'');
       setPage(0);setSearch('');
       const existing=result.rows.filter(row=>!productId || row.product_id===productId).map(row=>({...row,id:row.balance_id,counted_quantity:''}));
       const product=result.items.find(p=>p.id===productId);
@@ -46,21 +49,22 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
   const filtered=rows.filter(row=>[row.product_name,row.lot_number,row.batch_number].join(' ').toLowerCase().includes(search.toLowerCase()));
   const currentPage=Math.min(page,Math.max(0,Math.ceil(filtered.length/25)-1)),visible=filtered.slice(currentPage*25,currentPage*25+25);
   async function save() {
-    if(saving || loading)return;
-    setSaving(true);setError('');
+    if(posting.current || loading)return;
+    posting.current=true;setSaving(true);setError('');onBusyChange?.(true);
     try {
       const selected=changes.map(change=>change.row);
       const {data:result}=await invokeFieldOps({action:'postWarehouseAdjustment',requestKey,warehouseId:data.warehouse.id,date,accountId:account,reference,reason,
         rows:selected.map(row=>({...(row.is_new?{product_id:row.product_id,lot_number:row.lot_number,expiry_date:row.expiry_date,unit_cost:row.unit_cost}:{balance_id:row.balance_id,fingerprint:row.fingerprint,...(row.requires_reconciliation?{verified_unit_cost:row.verified_unit_cost,confirm_reconciliation:row.confirm_reconciliation}: {})}),counted_quantity:countedQuantity(row.counted_quantity)}))});
+      if(result.error)throw Error(result.error);
       toast({title:ui('Quantity adjustment saved'),description:result.journal_number || reference});
       setReceipt(warehouseAdjustmentDocument(result,{warehouse:data.warehouse.name,reason,account:data.accounts.find(a=>a.id===account)?.name}));onSaved?.();
-    }catch(e){setError(e.message);}finally{setSaving(false);}
+    }catch(e){setError(e.message);}finally{posting.current=false;setSaving(false);onBusyChange?.(false);}
   }
   if(receipt) return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{ui('Quantity adjustment saved')}</DialogTitle><DialogDescription>{ui('The stock adjustment is recorded. Save or print the posted receipt below.')}</DialogDescription></DialogHeader><p>{reference}</p><ReportExport report={receipt}/><DialogFooter><Button onClick={()=>onOpenChange(false)}>{ui('Done')}</Button></DialogFooter></DialogContent></Dialog>;
-  return <Dialog open={open} onOpenChange={value=>{if(!saving)onOpenChange(value);}}><DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+  return <Dialog open={open} onOpenChange={value=>{if(!posting.current)onOpenChange(value);}}><DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
     <DialogHeader><DialogTitle>{ui('Adjust warehouse quantity')}</DialogTitle><DialogDescription>{ui('Enter the physical quantity for each item or lot you counted. Blank rows remain unchanged.')}</DialogDescription></DialogHeader>
     <p className="text-xs text-slate-600">{ui('Inventory changes require special role access. Valuation corrections require the General Manager or an authorized accountant.')}</p>
-    {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uiMessage(error)}</p>}
+    {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uiMessage(error)}{!data&&!loading&&<button type="button" className="ml-2 underline" onClick={()=>setRevision(v=>v+1)}>{ui('Retry')}</button>}</p>}
     {data && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <label className="space-y-1 text-sm">{ui('Warehouse')}<select aria-label={ui('Adjustment warehouse')} className="h-10 w-full rounded-md border bg-white px-2" disabled={saving || loading} value={data.warehouse.id} onChange={e=>{setWarehouse(e.target.value);setRequestKey(crypto.randomUUID());}}>{data.warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
       <label className="space-y-1 text-sm">{ui('Adjustment date')}<Input aria-label={ui('Adjustment date')} type="date" max={businessDate()} value={date} disabled={saving} onChange={e=>setDate(e.target.value)}/></label>

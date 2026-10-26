@@ -7,7 +7,7 @@ import { itemAttributes } from '../../lib/item-attributes.js';
 export async function componentCatalog(stores) {
   const [products, assets] = await Promise.all([readRecords(stores.Product), readRecords(stores.FixedAsset)]);
   const pick = (row, fields) => Object.fromEntries(fields.map(key => [key, row[key]]));
-  return { products: products.map(row => ({ ...pick(row, ['id', 'sku', 'name', 'inventory_type', 'is_active', 'unit_of_measure', 'storage_unit', 'purchase_unit', 'production_unit', 'sales_unit', 'purchase_price', 'current_cost', 'standard_cost', 'components', 'image_url', 'size', 'flavor', 'material_group', 'category', 'product_family', 'configuration_status']), attributes:itemAttributes(row) })),
+  return { products: products.filter(row=>!row.item_removed_at).map(row => ({ ...pick(row, ['id', 'sku', 'name', 'inventory_type', 'is_active', 'unit_of_measure', 'storage_unit', 'purchase_unit', 'production_unit', 'sales_unit', 'purchase_price', 'current_cost', 'standard_cost', 'components', 'image_url', 'size', 'flavor', 'material_group', 'category', 'product_family', 'configuration_status']), attributes:itemAttributes(row) })),
     assets: assets.map(row => pick(row, ['id', 'asset_number', 'name', 'category', 'location', 'status'])) };
 }
 
@@ -62,6 +62,7 @@ export async function validateProductComponents(stores, input, existing = null) 
     } else {
       record = productCache.get(row.product_id);
       if (!record) throw new Error('Choose a registered component item');
+      if(record.item_removed_at)throw new Error('Restore deleted component items before using this assembly.');
       const actualType = productComponentType(record);
       if (type && type !== actualType) throw new Error('The selected item does not match its component type');
       type = actualType;

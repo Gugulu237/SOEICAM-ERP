@@ -9,7 +9,7 @@ async function renderer(){if(compiled)return compiled;const out=await build({std
   b.onLoad({filter:/.*/,namespace:'hooks'},a=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(a.path)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__iaUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__iaUI.state(key,v),useRef=v=>globalThis.__iaUI.ref(key,v),useEffect=(f,d)=>globalThis.__iaUI.effect(key,f,d),useMemo=f=>f(),useCallback=f=>f;export const lazy=React.lazy,Suspense=React.Suspense;`,resolveDir:process.cwd()}));
   const leaf=names=>`import React from 'react';${names.map(n=>`export const ${n}=({children,...p})=>React.createElement('div',{'data-widget':'${n}'},children);`).join('')}`;
   const mocks={
-    '@/api/erpClient':'export const erp=new Proxy({},{get:(_,k)=>globalThis.__iaUI.client[k]});',
+    '@/api/erpClient':'export const invalidateERPReads=()=>{};export const erp=new Proxy({},{get:(_,k)=>globalThis.__iaUI.client[k]});',
     '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__iaUI.session;',
     '@/lib/navigation-context':'export const usePageState=(key,v)=>globalThis.__iaUI.state(key,v);',
     '@/lib/router':'export const Link=()=>null;export const useParams=()=>({id:globalThis.__iaUI.routeId});export const useNavigate=()=>p=>globalThis.__iaUI.navigation.push(p);export const useBack=()=>()=>{};export const useSearchParams=()=>[new URLSearchParams(globalThis.__iaUI.search),()=>{}];',

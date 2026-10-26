@@ -11,7 +11,7 @@ async function renderer(){
     b.onResolve({filter:/^react\/jsx-runtime$/},a=>/(StockAdjustmentDialog|WarehouseZones|WarehouseStockItems)\.jsx$/.test(a.importer)?{path:'jsx',namespace:'capture-jsx'}:undefined);
     b.onLoad({filter:/.*/,namespace:'capture-jsx'},()=>({contents:`import {jsx as baseJsx,jsxs as baseJsxs,Fragment} from ${JSON.stringify(require.resolve('react/jsx-runtime'))};export {Fragment};export const jsx=(tag,props,key)=>{globalThis.__adjustmentUI.capture(tag,props,props?.children);return baseJsx(tag,props,key);};export const jsxs=(tag,props,key)=>{globalThis.__adjustmentUI.capture(tag,props,props?.children);return baseJsxs(tag,props,key);};`,resolveDir:process.cwd()}));
     b.onResolve({filter:/^react$/},a=>/(StockAdjustmentDialog|WarehouseZones|WarehouseStockItems)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
-    b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(key)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__adjustmentUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=value=>globalThis.__adjustmentUI.state(key,value),useEffect=(fn,deps)=>globalThis.__adjustmentUI.effect(key,fn,deps),useMemo=fn=>fn();export const Fragment=React.Fragment,lazy=React.lazy,Suspense=React.Suspense;`,resolveDir:process.cwd()}));
+    b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(key)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__adjustmentUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useRef=value=>globalThis.__adjustmentUI.ref(key,value);export const useState=value=>globalThis.__adjustmentUI.state(key,value),useEffect=(fn,deps)=>globalThis.__adjustmentUI.effect(key,fn,deps),useMemo=fn=>fn();export const Fragment=React.Fragment,lazy=React.lazy,Suspense=React.Suspense;`,resolveDir:process.cwd()}));
     const mocks={
       '@/lib/field-ops':`export const invokeFieldOps=body=>globalThis.__adjustmentUI.invoke(body);`,
       '@/lib/navigation-context':`export const usePageState=(key,initial)=>globalThis.__adjustmentUI.state(key,initial);`,
@@ -86,4 +86,18 @@ test('a blocked valuation lot remains visible with a specific reason while other
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{draw();await r.flush();assert.match(draw(),/Ask Accounting or the General Manager/);assert.equal(element(r,'input','Physical quantity for Milk powder').disabled,true);assert.equal(!!element(r,'input','Physical quantity for Other material').disabled,false);}
  finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+test('rapid repeated quantity submission writes once and reports busy state until the posted receipt returns',async()=>{
+ const render=await renderer(),r=runtime(),busy=[];globalThis.__adjustmentUI=r;let finish,writes=0;
+ r.invoke=async body=>body.action==='warehouseAdjustmentWorkspace'?{data:workspace}:new Promise(resolve=>{writes++;finish=()=>resolve({data:postedReceipt(body,'JV-DOUBLE')});});
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{},onBusyChange:v=>busy.push(v)});};
+ try{
+  draw();await r.flush();draw();
+  element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});
+  element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-DOUBLE'}});
+  element(r,'input','Adjustment reason').onChange({target:{value:'Verified physical stock'}});draw();
+  const save=button(r,'Save quantity adjustment'),waiting=save.onClick();await save.onClick();assert.equal(writes,1);draw();assert.equal(button(r,'Cancel').disabled,true);
+  finish();await waiting;assert.match(draw(),/Save or print the posted receipt/);assert.deepEqual(busy,[true,false]);
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });

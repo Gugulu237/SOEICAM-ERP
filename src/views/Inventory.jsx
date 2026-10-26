@@ -55,6 +55,8 @@ export default function Inventory() {
   const canMoveStock = ["admin", "warehouse_manager", "production_manager"].includes(role);
   const canAdjustStock = canAdjustInventory(role,employee,allowedModules);
   const canManageWarehouses = WAREHOUSE_MANAGERS.includes(role);
+  const [removedProducts,setRemovedProducts]=useState([]);
+  const showRemoved=canEdit&&params.get('deleted')==='1';
   const [products, setProducts] = useState([]), [balances, setBalances] = useState([]), [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState("");
   const [view, setView] = usePageState("inventory:view", "visual", { scope: "path" });
@@ -72,11 +74,12 @@ export default function Inventory() {
   const [customUnits, setCustomUnits] = useState([]), [unitsLoading, setUnitsLoading] = useState(false);
   const loadSequence = useRef(0), unitRequest = useRef(null);
   const pendingLoad = useRef(null), lastLoadAt = useRef(0);
-  const counts = useMemo(() => inventoryItemCounts(products), [products]);
+  const catalogue=showRemoved?removedProducts:products;
+  const counts = useMemo(() => inventoryItemCounts(catalogue), [catalogue]);
   const stock = useMemo(() => inventoryStockIndex(balances, warehouses), [balances, warehouses]);
   const productById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
   const units = useMemo(() => itemUnits(customUnits, products), [customUnits, products]);
-  const filtered = useMemo(() => products.filter(item => matchesItemFilter(item, workspace.filter, workspace.subtype)), [products, workspace.filter, workspace.subtype]);
+  const filtered = useMemo(() => catalogue.filter(item => matchesItemFilter(item, workspace.filter, workspace.subtype)), [catalogue, workspace.filter, workspace.subtype]);
   const changeWorkspace = changes => setParams(previous => {
     const next = new URLSearchParams(previous);
     next.set("section", workspace.section); next.set("filter", workspace.filter);
@@ -102,7 +105,7 @@ export default function Inventory() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || ui("Inventory could not load"));
       if (controller.signal.aborted || sequence !== loadSequence.current) return;
-      setProducts(data.products); setBalances(data.balances); setWarehouses(data.warehouses);
+      setProducts(data.products); setRemovedProducts(data.removedProducts||[]); setBalances(data.balances); setWarehouses(data.warehouses);
       lastLoadAt.current = Date.now(); setError("");
       setMovementVersion(value => value + 1);
     } catch (failure) { if (!controller.signal.aborted && sequence === loadSequence.current) setError(failure.message); }
@@ -131,7 +134,8 @@ export default function Inventory() {
   function savedItem(item) {
     // A refresh begun before this save must not overwrite the returned record.
     loadSequence.current++; pendingLoad.current?.abort(); pendingLoad.current = null; setRefreshing(false); setLoading(false);
-    setProducts(rows => rows.map(row => row.id === item.id ? item : row));
+    setProducts(rows => item.item_removed_at ? rows.filter(row => row.id !== item.id) : rows.some(row => row.id === item.id) ? rows.map(row => row.id === item.id ? item : row) : [...rows, item]);
+    setRemovedProducts(rows => !item.item_removed_at ? rows.filter(row => row.id !== item.id) : rows.some(row => row.id === item.id) ? rows.map(row => row.id === item.id ? item : row) : [...rows, item]);
   }
   const quickEditor = item => canEdit ? <QuickItemEditor item={item} catalogueItems={products} units={units} unitsLoading={unitsLoading} onOpen={loadUnits} onSaved={item=>{savedItem(item);loadData();}} onEditDetails={editItem} /> : null;
   const balanceColumns = [
@@ -162,10 +166,12 @@ export default function Inventory() {
         {canEdit && <Button className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/>{ui('New item')}</Button>}
       </div>
     </header>
-    {(canReceive || canMoveStock && hasModule('distribution')) && <div className="grid gap-2 sm:flex">
+    {(canReceive || canAdjustStock || canMoveStock && hasModule('distribution')) && <div className="grid gap-2 sm:flex">
+      {canAdjustStock&&<Button variant="outline" className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" disabled={loading} onClick={()=>setShowAdjust({warehouseId:params.get('warehouse')||''})}><ClipboardCheck size={18} className="shrink-0"/>{ui('Adjust quantity')}</Button>}
       {canReceive && <Button className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" onClick={() => navigate('/purchases?section=receiving')}><PackageCheck size={18} className="shrink-0"/>{ui('Receive inventory')}</Button>}
       {canMoveStock && hasModule('distribution') && <Button variant="outline" className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" onClick={() => setShowIssue(true)}><ArrowLeftRight size={18} className="shrink-0"/>{ui('Issue to driver & agent')}</Button>}
     </div>}
+    {showRemoved&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3 text-sm"><strong>{ui('Deleted items')}</strong><Button variant="outline" onClick={()=>changeWorkspace({deleted:''})}>{ui('Back to catalogue')}</Button></div>}
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{uiMessage(error)}<button type="button" className="ml-3 underline" onClick={loadData}>{ui("Retry")}</button></div>}
     <nav aria-label={ui("Item types")} className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
       {ITEM_FILTERS.map(filter => <button type="button" key={filter.key} aria-pressed={workspace.filter === filter.key} onClick={() => changeWorkspace({ section: 'items', filter: filter.key, type: 'all' })} className={"flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium sm:justify-center " + (workspace.filter === filter.key ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400")}>{filter.label}<span className="text-xs opacity-70">{loading ? "-" : counts[filter.key]}</span></button>)}
@@ -175,6 +181,7 @@ export default function Inventory() {
       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label={ui('More inventory tools')}><MoreHorizontal size={20}/></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64 [&_[role=menuitem]]:min-h-11">
           <DropdownMenuItem disabled={refreshing} onSelect={() => loadData()}><RefreshCw size={16} className="mr-2"/>{ui('Refresh')}</DropdownMenuItem>
+          {canEdit&&<DropdownMenuItem onSelect={()=>changeWorkspace({section:'items',filter:'all',deleted:showRemoved?'':'1'})}>{ui(showRemoved?'Back to catalogue':'Deleted items')}</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => changeWorkspace({ section: 'stock' })}>{ui('Stock on Hand')}</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => changeWorkspace({ section: 'movements' })}>{ui('Movements')}</DropdownMenuItem>
           {canAdjustStock && <DropdownMenuItem disabled={loading} onSelect={() => setShowAdjust({})}>{ui('Adjust quantity')}</DropdownMenuItem>}
@@ -183,7 +190,7 @@ export default function Inventory() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{quickEditor(item)}{canEdit && <ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
+    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{!item.item_removed_at&&quickEditor(item)}{canEdit && !item.item_removed_at&&<ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
     <Dialog open={['stock','movements'].includes(workspace.section)} onOpenChange={open => { if (!open) closePanel(); }}>
       <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
         <DialogHeader><DialogTitle>{SECTIONS[workspace.section] || ui('Inventory')}</DialogTitle><DialogDescription className="sr-only">{ui('Inventory details')}</DialogDescription></DialogHeader>
@@ -191,7 +198,7 @@ export default function Inventory() {
           {misplaced.length > 0 && <p role="alert" className="rounded-md border bg-slate-50 p-3 text-xs">{ui('Finished stock recorded outside Cold Room needs a physical-location check.')}</p>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ViewToggle value={stockArea} onChange={area => changeWorkspace({ area })} options={[{ value: "all", label: "All stock" }, { value: "wip", label: "Production stock" }, { value: "delivery", label: "Out for delivery" }]} />
-          {canMoveStock && <div className="flex flex-wrap gap-2">{canAdjustStock && <Button variant="outline" disabled={loading} onClick={() => setShowAdjust({})}><ClipboardCheck size={16} className="mr-1" />{ui("Adjust quantity")}</Button>}<Button disabled={loading} onClick={() => setShowTransfer(true)}><ArrowLeftRight size={16} className="mr-1" />{ui("Move stock")}</Button></div>}
+          {(canMoveStock||canAdjustStock) && <div className="flex flex-wrap gap-2">{canAdjustStock && <Button variant="outline" disabled={loading} onClick={() => setShowAdjust({})}><ClipboardCheck size={16} className="mr-1" />{ui("Adjust quantity")}</Button>}{canMoveStock&&<Button disabled={loading} onClick={() => setShowTransfer(true)}><ArrowLeftRight size={16} className="mr-1" />{ui("Move stock")}</Button>}</div>}
         </div>
         <label className="flex items-center gap-2 text-sm">{ui('Location')}<select aria-label={ui('Stock location')} value={params.get('warehouse') || ''} onChange={event=>changeWorkspace({warehouse:event.target.value})} className="h-11 min-w-0 max-w-full rounded-md border bg-white px-3"><option value="">{ui('All locations')}</option>{warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
         <details className="rounded-lg border bg-white p-3"><summary className="cursor-pointer text-sm font-medium">{ui('Manage storage locations')}</summary><div className="mt-3 divide-y">{warehouses.filter(w=>!['vehicle','commercial_custody'].includes(w.warehouse_type)).map(w=><div key={w.id} className="flex items-center justify-between py-2 text-sm"><span>{w.name} <span className="text-xs text-slate-500">{w.code} · {w.is_active===false?ui('Inactive'):ui('Active')}</span></span>{canManageWarehouses && <Button size="sm" variant="ghost" onClick={()=>setLocationDialog(w)}>{ui('Edit')}</Button>}</div>)}</div>{canManageWarehouses && <Button size="sm" variant="outline" onClick={()=>setLocationDialog({})}>{ui('Add location')}</Button>}</details>
@@ -212,7 +219,7 @@ export default function Inventory() {
     <Dialog open={!!editingItem} onOpenChange={open=>{if(!open)closeItemEditor();}}>
       <DialogContent className="max-h-[92dvh] w-[calc(100vw_-_2rem)] max-w-5xl overflow-y-auto" onEscapeKeyDown={event=>{if(editorBusy.current)event.preventDefault();}} onPointerDownOutside={event=>{if(editorBusy.current)event.preventDefault();}}>
         <DialogHeader><DialogTitle>{ui('Edit item: {0}',editingItem?.name || '')}</DialogTitle><DialogDescription>{ui('Update this item without leaving your current inventory section.')}</DialogDescription></DialogHeader>
-        {editingItem && <Suspense fallback={<Pending />}><ItemForm key={editingItem.id} embedded itemId={editingItem.id} onBusyChange={busy=>{editorBusy.current=busy;}} onCancel={closeItemEditor} onSaved={item=>{savedItem(item);setEditingItem(null);loadData();}} /></Suspense>}
+        {editingItem && <Suspense fallback={<Pending />}><ItemForm key={editingItem.id} embedded itemId={editingItem.id} onStockAdjusted={loadData} onBusyChange={busy=>{editorBusy.current=busy;}} onCancel={closeItemEditor} onSaved={item=>{savedItem(item);setEditingItem(null);loadData();}} /></Suspense>}
       </DialogContent>
     </Dialog>
     <Suspense fallback={<Pending />}>

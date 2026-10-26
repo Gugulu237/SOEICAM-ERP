@@ -7,18 +7,14 @@ import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Pencil, Trash2, Power, Factory } from "lucide-react";
+import ItemRemoval from './ItemRemoval';
+import { Pencil, Power, Factory } from "lucide-react";
 
 export default function ItemRowActions({ item, onChanged, editPath, onBuild, onEdit }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const active = item.is_active !== false;
@@ -30,19 +26,6 @@ export default function ItemRowActions({ item, onChanged, editPath, onBuild, onE
     try {
       await erp.entities.Product.update(item.id, { is_active: !active });
       toast({ title: active ? "Deactivated" : "Activated", description: ui("{0} is now {1}", item.name, active ? "inactive" : "active") });
-      onChanged?.();
-    } catch (e) {
-      toast({ title: ui("Error"), description: e.message, variant: "destructive" });
-    }
-    setBusy(false);
-  }
-
-  async function handleDelete() {
-    setBusy(true);
-    try {
-      await erp.entities.Product.delete(item.id);
-      toast({ title: ui("Deleted"), description: ui("{0} was removed", item.name) });
-      setOpen(false);
       onChanged?.();
     } catch (e) {
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });
@@ -64,24 +47,7 @@ export default function ItemRowActions({ item, onChanged, editPath, onBuild, onE
       >
         <Power size={15} />
       </Button>
-      <Button variant="ghost" size="sm" title={ui("Delete")} className="text-red-500 hover:text-red-700" onClick={() => setOpen(true)}>
-        <Trash2 size={15} />
-      </Button>
-
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{ui("Delete ")}{item.name}?</AlertDialogTitle>
-            <AlertDialogDescription>{ui("This item will be permanently removed. If you just want to stop using it, deactivate it instead.")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{ui("Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={busy} className="bg-red-600 hover:bg-red-700">
-              {busy ? ui("Deleting...") : ui("Delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ItemRemoval item={item} disabled={busy} onBusyChange={setBusy} onDone={()=>onChanged?.()}/>
     </div>
   );
 }

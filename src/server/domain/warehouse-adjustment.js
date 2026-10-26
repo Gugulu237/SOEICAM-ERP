@@ -40,7 +40,12 @@ export async function warehouseAdjustmentAction(client,user,body) {
     if(previous){if(previous.warehouse_adjustment_payload!==payload)throw Error('This adjustment reference was used for different details. Reload quantities before continuing.');return {...previous.warehouse_adjustment_result,reused:true};}
   }
   const [warehouses,products,accounts,rules,treasury]=await Promise.all([readRecords(s.Warehouse),readRecords(s.Product),readRecords(s.Account),readRecords(s.PostingRule,{is_active:true}),readRecords(s.TreasuryAccount)]);
-  const warehouse=body.warehouseId ? warehouses.find(w=>w.id===body.warehouseId) : warehouses.find(factory);
+  const selectedProduct=body.productId?products.find(p=>p.id===body.productId):null;
+  if(body.productId&&!configured(selectedProduct))throw Error('Choose an active, configured inventory item.');
+  const itemBalances=!body.warehouseId&&selectedProduct?await readRecords(s.StockBalance,{product_id:selectedProduct.id}):[];
+  const heldAt=new Set(itemBalances.filter(b=>Number(b.quantity)!==0).map(b=>b.warehouse_id));
+  const preferred=warehouses.find(w=>factory(w)&&heldAt.has(w.id))||(['assembly','finished_product'].includes(selectedProduct?.inventory_type)?warehouses.find(w=>factory(w)&&w.warehouse_type==='cold_room'):null)||warehouses.find(factory);
+  const warehouse=body.warehouseId?warehouses.find(w=>w.id===body.warehouseId):preferred;
   if(!factory(warehouse))throw Error('Choose an active factory warehouse. Reconcile vehicle and agent stock through Distribution.');
   const cashIds=new Set(treasury.map(t=>t.gl_account_id));
   const validAccount=(a,inventory=false)=>a && a.is_active!==false && a.is_posting!==false && !a.is_treasury && a.account_number!=='1050' && !cashIds.has(a.id) &&
