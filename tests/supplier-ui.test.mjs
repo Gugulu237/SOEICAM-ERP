@@ -10,7 +10,7 @@ async function ui(){
       b.onResolve({filter:/^react$/},args=>args.importer.endsWith('SupplierDialogs.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
       b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__supplierUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__supplierUI.state('form',v);`,resolveDir:process.cwd()}));
       const mocks={
-        '@/api/erpClient':`export const erp={functions:{invoke:(name,body)=>globalThis.__supplierUI.invoke(name,body)}};`,
+        '@/api/erpClient':`export const invalidateERPReads=()=>{};export const erp={functions:{invoke:(name,body)=>globalThis.__supplierUI.invoke(name,body)}};`,
         '@/components/ui/use-toast':`export const useToast=()=>({toast:v=>globalThis.__supplierUI.notifications.push(v)});`,
         '@/components/ui/dialog':`import React from 'react';export const Dialog=({children})=>React.createElement('div',null,children);export const DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogFooter=Dialog;`,
         '@/components/ui/button':`import React from 'react';export function Button({children,...props}){globalThis.__supplierUI.capture('button',props,children);return React.createElement('button',props,children);}`,

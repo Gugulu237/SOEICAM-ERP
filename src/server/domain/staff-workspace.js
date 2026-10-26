@@ -1,3 +1,4 @@
+import {isOpeningRecord} from '../../lib/opening-records.js';
 import {canUseTreasury,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { readRecords } from './commercial-workspace.js';
 import { canReadPurchase } from './purchase-workspace.js';
@@ -97,7 +98,7 @@ export async function managerData(svc, date) {
   ]);
   const queue = (key, title, count, path) => ({ key, title, count, path });
   return { ...cash, ...production,
-    invoices: view(invoices, ['id', 'invoice_date', 'status', 'total']),
+    invoices: view(invoices.filter(i=>!isOpeningRecord(i)), ['id', 'invoice_date', 'status', 'total']),
     recordedFieldSales: view(recordedFieldSales.filter(sale => sale.status === 'approved_posted' && typeof sale.journal_id === 'string' && sale.journal_id.trim() && sale.transaction_date >= since && sale.transaction_date <= date), ['id', 'transaction_date', 'status', 'total', 'journal_id']),
     receivables: view(receivables, ['id', 'invoice_number', 'customer_name', 'due_date', 'status', 'balance']),
     dispatches: view(dispatches, ['id', 'dispatch_number', 'driver_name', 'vehicle_name', 'route_name', 'status']),

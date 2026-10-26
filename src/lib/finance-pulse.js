@@ -1,4 +1,5 @@
 /* localized-metadata */
+import {isOpeningRecord} from './opening-records.js';
 import {ui} from './i18n.js';
 // Aggregates a quick financial health snapshot for a chosen period.
 import { erp } from "@/api/erpClient";
@@ -53,7 +54,7 @@ export async function getFinancePulse(periodKey) {
   ]);
 
   const periodInvoices = invoices.filter(i =>
-    i.status !== "cancelled" && i.status !== "draft" && inRange(i.invoice_date, start, end)
+    !isOpeningRecord(i) && i.status !== "cancelled" && i.status !== "draft" && inRange(i.invoice_date, start, end)
   );
   const periodPurchases = purchases.filter(p =>
     !["draft", "cancelled"].includes(p.status) && inRange(p.order_date, start, end)

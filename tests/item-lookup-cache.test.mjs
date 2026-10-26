@@ -72,3 +72,12 @@ test('real ERP entity, function and unit writes invalidate only the item lookup 
     assert.equal((await getItemCatalog()).products[0].version, 6);
   } finally { globalThis.fetch = previous; }
 });
+
+test('a fresh assembly catalogue read bypasses the TTL but still shares pending work',async()=>{
+  const cache=createLookupCache();let version=1,calls=0;
+  const loader=async()=>{calls++;return {version};};
+  assert.equal((await cache.load('catalog',loader)).version,1);
+  version=2;assert.equal((await cache.load('catalog',loader)).version,1);
+  const results=await Promise.all([cache.load('catalog',loader,{fresh:true}),cache.load('catalog',loader,{fresh:true})]);
+  assert.deepEqual(results,[{version:2},{version:2}]);assert.equal(calls,2);
+});

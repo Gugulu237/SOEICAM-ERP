@@ -31,7 +31,7 @@ async function renderer() {
       '@/lib/navigation-context':`export const usePageState=(key,initial)=>globalThis.__productionUI.state(key,initial);`,
       '@/lib/router':`import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const Navigate=()=>null;export const useNavigate=()=>path=>globalThis.__productionUI.navigation.push(path);export const useBack=()=>()=>{};export const useParams=()=>globalThis.__productionUI.params || {};export const useSearchParams=()=>[new URLSearchParams(globalThis.__productionUI.search || ""),()=>{}];`,
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__productionUI.session;`,
-      '@/api/erpClient':`export const erp=new Proxy({},{get:(_,key)=>globalThis.__productionUI.client[key]});`,
+      '@/api/erpClient':`export const invalidateERPReads=()=>{};export const erp=new Proxy({},{get:(_,key)=>globalThis.__productionUI.client[key]});`,
       '@/components/ui/use-toast':`export const useToast=()=>({toast:v=>globalThis.__productionUI.notifications.push(v)});`,
       '@/components/ui/button':`import React from 'react';export function Button({children,...props}){globalThis.__productionUI.capture('button',props,children);return React.createElement('button',props,children);}`,
       '@/components/ui/input':`import React from 'react';export function Input(props){globalThis.__productionUI.inputs.push(props);return React.createElement('input',props);}`,

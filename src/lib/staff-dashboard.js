@@ -1,4 +1,5 @@
 /* localized-metadata */
+import {isOpeningRecord} from './opening-records.js';
 import {ui} from './i18n.js';
 export const DASHBOARD_ROLES = [
   { value: 'commercial', get label(){return ui("Commercial Agent");} }, { value: 'driver', get label(){return ui("Driver");} },
@@ -32,7 +33,7 @@ export function productionSnapshot(data = {}) {
   };
 }
 export function managerSnapshot(data = {}) {
-  const invoices = (data.invoices || []).filter(i => ['posted', 'partially_paid', 'paid', 'overdue'].includes(i.status) && i.invoice_date <= data.date);
+  const invoices = (data.invoices || []).filter(i => !isOpeningRecord(i) && ['posted', 'partially_paid', 'paid', 'overdue'].includes(i.status) && i.invoice_date <= data.date);
   const monthStart = data.monthStart || (data.date || '').slice(0, 8) + '01';
   const recordedFieldSales = (data.recordedFieldSales || []).filter(sale => {
     const date = sale.transaction_date;

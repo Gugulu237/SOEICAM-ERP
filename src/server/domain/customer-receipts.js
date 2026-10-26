@@ -1,3 +1,4 @@
+import {verifiedOpeningDocument} from './opening-payments.js';
 import { round2, getRuleAccount, getAccountByNumber, postJournal, claimField, audit } from './field-ops.js';
 import { isTransactionConflict } from '../transaction-errors.js';
 
@@ -8,6 +9,7 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
   const { items: invoices } = await svc.entities.Invoice.filter({ id: { $in: ids } }, { limit: 50 });
   const pending = await svc.entities.Payment.filter({ payment_type: 'customer_payment', status: { $in: ['pending_approval', 'approved'] }, id: { $ne: excludePaymentId }, allocated_to_invoices: { $regex: ids.map(id => String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') } }, { limit: 100 });
   if (pending.has_more) throw new Error('Too many pending receipts for these invoices; approve them first');
+  for(const invoice of invoices.filter(i=>i.opening_batch_id))if(!await verifiedOpeningDocument(svc.entities,invoice,'Invoice'))throw Error('Reconcile the imported customer receivable before recording payment.');
   for (const invoice of invoices.filter(i=>i.field_sale_id)) {
     const sale=await svc.entities.FieldSale.get(invoice.field_sale_id);
     if(!sale || sale.status!=='approved_posted' || sale.customer_id!==customerId || sale.journal_id!==invoice.journal_id || round2(sale.amount_due)!==round2(invoice.balance)) throw new Error('The Commercial supply and invoice balances need reconciliation before taking payment');
@@ -47,11 +49,12 @@ export async function approveReceipt(svc, payment, user) {
       let arReduction = 0;
       const credits = [];
       for (const { invoice, amount } of rows) {
-        const credit = invoice.payment_type === 'cash' ? await getAccountByNumber(svc, '1050') : await getRuleAccount(svc, 'customer_receivable');
+        if(invoice.opening_date&&payment.payment_date<invoice.opening_date)throw Error('An opening receivable cannot be collected before its opening date.');
+        const credit = invoice.opening_account_id ? {id:invoice.opening_account_id} : invoice.payment_type === 'cash' ? await getAccountByNumber(svc, '1050') : await getRuleAccount(svc, 'customer_receivable');
         const account = await svc.entities.Account.get(credit.id);
         if (!account.is_active || account.is_posting === false) throw new Error('The clearing/receivable account must be active for posting');
         if (invoice.payment_type !== 'cash') arReduction = round2(arReduction + amount);
-        credits.push({ account_id: credit.id, account_number: credit.account_number, account_name: credit.account_name, debit: 0, credit: amount, party_type: 'customer', party_id: payment.party_id, description: `Receipt for ${invoice.invoice_number}` });
+        credits.push({ account_id: credit.id, account_number: account.account_number, account_name: account.name, debit: 0, credit: amount, party_type: 'customer', party_id: payment.party_id, description: `Receipt for ${invoice.invoice_number}` });
       }
       snapshot = {
         invoices: rows.map(({ invoice, amount }) => ({ id: invoice.id, number: invoice.invoice_number, field_sale_id:invoice.field_sale_id || '', amount, paid_before: round2(invoice.amount_paid || 0), balance_before: round2(invoice.balance), paid: round2((invoice.amount_paid || 0) + amount), balance: round2(invoice.balance - amount), cash: invoice.payment_type === 'cash' })),

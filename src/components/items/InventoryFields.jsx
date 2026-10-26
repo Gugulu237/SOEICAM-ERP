@@ -5,6 +5,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 
 import React from 'react';
 import { Input } from '@/components/ui/input';
+import AssemblyProfitability from './AssemblyProfitability';
 import ItemAccountSelect from './ItemAccountSelect';
 
 export default function InventoryFields({ form, set, accounts, suppliers, isAssembly = false, estimatedCost = 0, quantityOnHand = 0, purchaseUnit = form.unit_of_measure }) {
@@ -13,7 +14,7 @@ export default function InventoryFields({ form, set, accounts, suppliers, isAsse
   return <div className="space-y-5">
     <div className={isAssembly?"grid gap-4 md:grid-cols-2":"grid gap-4"}>
       <section className="space-y-4 rounded-xl border border-slate-200 p-4"><h2 className="text-sm font-semibold text-slate-900">{ui("Purchase information")}</h2>
-        <label className="block space-y-1.5 text-sm font-medium">{isAssembly ? ui("Component cost") : ui("Cost")}{ui(" (XAF / ")}{isAssembly ? form.unit_of_measure : purchaseUnit})<Input type="number" min="0" step="any" readOnly={isAssembly} value={isAssembly ? estimatedCost : form.purchase_price} onChange={event => set('purchase_price', event.target.value)} /></label>
+        <label className="block space-y-1.5 text-sm font-medium">{isAssembly ? ui("Component cost") : ui("Cost")}{ui(" (XAF / ")}{isAssembly ? form.unit_of_measure : purchaseUnit})<Input type="number" min="0" step="any" readOnly={isAssembly} value={isAssembly ? estimatedCost ?? "" : form.purchase_price} onChange={event => set('purchase_price', event.target.value)} /></label>
         {isAssembly && <p className="text-xs text-slate-500">{ui("Calculated from the components for one ")}{form.unit_of_measure}.</p>}
         {!isAssembly && purchaseUnit !== form.unit_of_measure && <p className="text-xs text-slate-800">{ui("Existing purchase pricing is per ")}{purchaseUnit}{ui("; stock is counted in ")}{form.unit_of_measure}.</p>}
         <ItemAccountSelect label={ui("COGS Account")} value={form.cogs_account_id} onChange={value => set('cogs_account_id', value)} accounts={accounts} types={['cogs']} />
@@ -21,6 +22,7 @@ export default function InventoryFields({ form, set, accounts, suppliers, isAsse
       </section>
       {isAssembly && <section className="space-y-4 rounded-xl border border-slate-200 p-4"><h2 className="text-sm font-semibold text-slate-900">{ui("Sales information")}</h2>
         <label className="block space-y-1.5 text-sm font-medium">{ui("Sales price (XAF / U/M)")}<Input type="number" min="0" step="0.01" value={form.selling_price} onChange={event => set('selling_price', event.target.value)} /></label>
+        <AssemblyProfitability cost={estimatedCost} sellingPrice={form.selling_price}/>
         <ItemAccountSelect label={ui("Income Account")} value={form.revenue_account_id} onChange={value => set('revenue_account_id', value)} accounts={accounts} types={['revenue', 'other_income']} />
         <p className="text-xs leading-5 text-slate-500">{ui("Sales revenue is posted to the selected income account.")}</p>
       </section>}

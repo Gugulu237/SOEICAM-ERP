@@ -133,3 +133,27 @@ test('accounting inventory exposes direct quantity correction only with the dedi
  const paint=painter(r,ui,'InventoryAudit');try{paint();await r.flush();assert.doesNotMatch(paint(),/>Adjust quantity</);r.session={role:'cashier',allowedModules:['accounting','inventory_adjustments']};assert.match(paint(),/>Adjust quantity</);r.elements.find(e=>e.props['aria-label']==='Warehouse for inventory audit').props.onChange({target:{value:'cold'}});paint();button(r,'Adjust quantity').onClick();paint();assert.equal(r.adjustment.warehouseId,'cold');assert.equal(r.adjustment.open,true);}
  finally{r.cleanup();delete globalThis.__iaUI;}
 });
+
+test('refreshing assembly components updates registered costs and names while preserving the in-progress draft and overrides',async()=>{
+ const r=runtime(),ui=await renderer();r.routeId='yogurt';
+ const milk={id:'milk',name:'Milk',inventory_type:'raw_material',unit_of_measure:'kg',current_cost:1000};
+ const cup={id:'cup',name:'Cup',inventory_type:'packaging',unit_of_measure:'ea',current_cost:50};
+ const item={id:'yogurt',name:'Yogurt',inventory_type:'assembly',unit_of_measure:'ea',is_active:true,selling_price:1000,updated_date:'original-version',components:[
+  {component_type:'inventory_part',product_id:'milk',product_name:'Milk',quantity:0.5,unit:'kg',unit_cost:1000,cost_source:'registered'},
+  {component_type:'inventory_part',product_id:'cup',product_name:'Cup',quantity:1,unit:'ea',unit_cost:30,cost_source:'manual'}
+ ]};
+ r.catalogue={products:[milk,cup],assets:[],suppliers:[],accounts:[],units:[{code:'kg',name:'Kilogram'},{code:'ea',name:'Each'}]};
+ r.client.entities.Product.get=async()=>item;r.client.entities.StockBalance={aggregate:async()=>({sum_quantity:0})};
+ try{
+  const paint=painter(r,ui,'Item');paint();await r.flush();paint();await r.flush();paint();
+  let fields=r.elements.find(e=>e.props.form&&e.props.set);assert.equal(fields.props.estimatedCost,530);
+  fields.props.set('selling_price','1100');r.assembly.setComponents(rows=>rows.map((row,index)=>index?row:{...row,quantity:0.25}));paint();
+  r.catalogue={...r.catalogue,products:[{...milk,name:'Fresh milk',current_cost:1200},{...cup,current_cost:90}]};
+  await r.assembly.onRefreshCatalogue();paint();
+  fields=r.elements.find(e=>e.props.form&&e.props.set);
+  assert.equal(fields.props.form.selling_price,'1100');assert.equal(fields.props.estimatedCost,330);
+  assert.equal(r.assembly.components[0].product_name,'Fresh milk');assert.equal(r.assembly.components[0].quantity,0.25);
+  assert.equal(r.assembly.components[1].unit_cost,30);assert.equal(r.assembly.components[1].cost_source,'manual');
+  assert.deepEqual(r.navigation,[]);
+ }finally{r.cleanup();delete globalThis.__iaUI;}
+});

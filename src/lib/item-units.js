@@ -25,5 +25,11 @@ export function unitFactor(from, to) {
   return a[1] / b[1];
 }
 export const compatibleUnits = (units, base) => units.filter(unit => { try { unitFactor(unit.code, base); return true; } catch { return false; } });
-export const itemUnitCost = item => Number(item.current_cost > 0 ? item.current_cost : item.purchase_price ?? item.standard_cost ?? 0);
+export function itemUnitCost(item) {
+  if (Number(item.current_cost) > 0) return Number(item.current_cost);
+  if (item.purchase_price == null) return Number(item.standard_cost ?? 0);
+  const factor = Number(item.purchase_to_storage_factor ?? 1);
+  if (!Number.isFinite(factor) || factor <= 0) throw new Error('Review this item\'s purchase conversion before using its component cost');
+  return Number(item.purchase_price) / factor;
+}
 export const componentCostInUnit = (item, unit) => Math.round(itemUnitCost(item) * unitFactor(unit, stockUnit(item)) * 1e6) / 1e6;

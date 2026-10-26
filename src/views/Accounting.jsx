@@ -34,7 +34,7 @@ export default function Accounting() {
         subtitle={ui("Accounts, transactions and financial reporting")}
         actions={<div className="flex flex-wrap gap-2">
           {['admin','cashier'].includes(role) && <Button variant="outline" onClick={()=>navigate("/accounting/payments/new")}><Plus size={16} className="mr-1"/>{ui("Confirm Customer Receipt")}</Button>}
-          {role==='admin'&&<Button variant="outline" onClick={()=>navigate('/accounting/opening-balances')}>{ui('Opening balances')}</Button>}
+          {role==='admin'&&<Button variant="outline" onClick={()=>navigate('/accounting/opening-position')}>{ui('Opening balances')}</Button>}
           <Button onClick={()=>navigate("/accounting/journals/new")}><Plus size={16} className="mr-1"/>{ui("New Journal")}</Button>
         </div>}
       />

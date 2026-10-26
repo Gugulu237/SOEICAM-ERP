@@ -1,5 +1,6 @@
 
 /* localized-interface */
+import SupplierRemoval from './SupplierRemoval';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, {useState} from 'react';
@@ -24,21 +25,22 @@ export function NativeSelect({children,...props}){
 return <select {...props} className={'h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm '+(props.className || '')}>{children}</select>;}
 function useSave(onSaved,onClose){
   const [saving,setSaving]=useState(false),[key]=useState(()=>crypto.randomUUID()),{toast}=useToast();
-  return {saving,key,close:()=>!saving&&onClose(),save:async(body,title)=>{setSaving(true);try{const data=await supplierInvoke({...body,requestKey:key});toast({title});onSaved?.(data);onClose();}catch(e){toast({title:ui("Unable to save"),description:e.message,variant:'destructive'});}finally{setSaving(false);}}};
+  return {saving,key,setSaving,close:()=>!saving&&onClose(),save:async(body,title)=>{setSaving(true);try{const data=await supplierInvoke({...body,requestKey:key});toast({title});onSaved?.(data);onClose();}catch(e){toast({title:ui("Unable to save"),description:e.message,variant:'destructive'});}finally{setSaving(false);}}};
 }
 
 export function SupplierForm({supplier,products=[],initialTab='contact',onClose,onSaved}){
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [form,setForm]=useState(()=>({name:'',contact_person:'',phone:'',email:'',address:'',city:'',category:'',tax_id:'',notes:'',payment_terms_days:30,is_active:true,...supplier,supplier_items:supplierItems(supplier).filter(row=>!products.some(p=>p.id===row.product_id&&!supplierMaterial(p)))}));
-  const [term,setTerm]=useState(''),[tab,setTab]=useState(initialTab),{saving,key,close,save}=useSave(onSaved,onClose);
+  const [term,setTerm]=useState(''),[tab,setTab]=useState(initialTab),{saving,key,setSaving,close,save}=useSave(onSaved,onClose);
   const set=(k,v)=>setForm(p=>({...p,[k]:v}));
   function item(p,checked){set('supplier_items',checked?[...form.supplier_items,{product_id:p.id,unit:p.unit,unit_price:p.cost || 0,supplier_code:''}]:form.supplier_items.filter(r=>r.product_id!==p.id));}
   function change(id,k,v){set('supplier_items',form.supplier_items.map(r=>r.product_id===id?{...r,[k]:v}:r));}
   return <Dialog open onOpenChange={close}><DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{supplier?ui("Manage supplier"):ui("New supplier")}</DialogTitle></DialogHeader>
-    <div className="flex gap-2"><Button variant={tab==='contact'?'default':'outline'} onClick={()=>setTab('contact')}>{ui("Contact & terms")}</Button><Button variant={tab==='items'?'default':'outline'} onClick={()=>setTab('items')}>{ui("Items supplied (")}{form.supplier_items.length})</Button></div>
+    <fieldset disabled={saving||!!supplier?.supplier_removed_at} className="space-y-3"><div className="flex gap-2"><Button variant={tab==='contact'?'default':'outline'} onClick={()=>setTab('contact')}>{ui("Contact & terms")}</Button><Button variant={tab==='items'?'default':'outline'} onClick={()=>setTab('items')}>{ui("Items supplied (")}{form.supplier_items.length})</Button></div>
     {tab==='contact'?<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{[['name',ui("Supplier name *")],['contact_person',ui("Contact person")],['phone','Phone'],['email','Email'],['city','City'],['address','Address'],['category','Category'],['tax_id',ui("Tax ID")]].map(([k,label])=><Field key={k} label={label}><Input value={form[k] || ''} onChange={e=>set(k,e.target.value)} type={k==='email'?'email':'text'}/></Field>)}<Field label={ui("Payment terms (days)")}><Input type="number" min="0" max="3650" value={form.payment_terms_days} onChange={e=>set('payment_terms_days',e.target.value)}/></Field><Field label={ui("Status")}><NativeSelect value={form.is_active===false?'inactive':'active'} onChange={e=>set('is_active',e.target.value==='active')}><option value="active">{ui("Active")}</option><option value="inactive">{ui("Inactive (keep history)")}</option></NativeSelect></Field><div className="sm:col-span-2"><Field label={ui("Notes")}><Input value={form.notes || ''} onChange={e=>set('notes',e.target.value)}/></Field></div></div>:<div className="space-y-3"><p className="text-xs text-slate-500">{ui("Select the items this supplier sells. Prices are in XAF per displayed inventory U/M; item master prices are unchanged.")}</p><Input placeholder={ui("Find an item...")} value={term} onChange={e=>setTerm(e.target.value)}/><div className="max-h-80 overflow-y-auto divide-y rounded-xl border">{products.filter(p=>supplierMaterial(p)&&(p.is_active!==false && p.configuration_status!=='draft' || form.supplier_items.some(r=>r.product_id===p.id)) && (p.name+' '+p.sku).toLowerCase().includes(term.toLowerCase())).map(p=>{const row=form.supplier_items.find(r=>r.product_id===p.id);return <div key={p.id} className="flex flex-wrap items-center gap-3 p-3"><input aria-label={'Supplier sells '+p.name} type="checkbox" checked={!!row} onChange={e=>item(p,e.target.checked)}/><ProductThumb product={p}/><div className="min-w-0 flex-1 text-sm"><strong>{p.name}</strong><p className="text-xs text-slate-500">{p.sku} · {p.unit}</p></div>{row&&<><Field label={'Price / '+p.unit}><Input aria-label={'Supplier price for '+p.name} className="w-28" type="number" min="0" step="0.01" value={row.unit_price} onChange={e=>change(p.id,'unit_price',e.target.value)}/></Field><Field label={ui("Supplier code")}><Input className="w-28" value={row.supplier_code || ''} onChange={e=>change(p.id,'supplier_code',e.target.value)}/></Field></>}</div>;})}{!products.length&&<p className="p-4 text-sm text-slate-500">{ui("Save the supplier, then open Manage supplier to choose registered items.")}</p>}</div></div>}
-    <DialogFooter><Button variant="outline" disabled={saving} onClick={close}>{ui("Cancel")}</Button><Button disabled={saving || !form.name.trim()} onClick={()=>save({action:'saveSupplier',requestKey:key,supplierId:supplier?.id,supplier:form},'Supplier saved')}>{saving?ui("Saving..."):ui("Save supplier")}</Button></DialogFooter>
+    <DialogFooter><Button variant="outline" disabled={saving} onClick={close}>{ui("Cancel")}</Button><Button disabled={saving || !form.name.trim()} onClick={()=>save({action:'saveSupplier',requestKey:key,supplierId:supplier?.id,supplier:form},'Supplier saved')}>{saving?ui("Saving..."):ui("Save supplier")}</Button></DialogFooter></fieldset>
+    {supplier&&<SupplierRemoval supplier={supplier} disabled={saving} onBusyChange={setSaving} onDone={record=>{onSaved?.({supplier:record,removed:!!record.supplier_removed_at});onClose();}}/>}
   </DialogContent></Dialog>;
 }
 

@@ -17,8 +17,9 @@ const numericComponentValue = value => ['number', 'string'].includes(typeof valu
 // An unflagged saved row still follows its registered item's current cost.
 // Only an explicit user override belongs to this assembly's bill of materials.
 export function priceComponent(row, product) {
-  if (!product || row.cost_source === 'manual') return row;
-  const next = { ...row, unit_cost: componentCostInUnit(product, row.unit) };
+  if (!product) return row;
+  if (row.cost_source === 'manual') return { ...row, product_name: product.name };
+  const next = { ...row, product_name: product.name, unit_cost: componentCostInUnit(product, row.unit) };
   return { ...next, line_cost: componentLineCost(next) };
 }
 export function changeComponentUnit(row, unit, product) {

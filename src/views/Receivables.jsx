@@ -37,7 +37,7 @@ export default function Receivables() {
   const overdue = open.filter((i) => agingBucket(i.due_date) !== "current").reduce((s, i) => s + i.balance, 0);
 
   const cols = [
-    { key: "invoice_number", label: ui("Invoice #"), render: (i) => <span className="font-medium">{i}</span> },
+    { key: "invoice_number", label: ui("Invoice #"), render: (i,row) => <span className="font-medium">{i}{row.opening_batch_id&&<small className="block text-xs font-normal text-slate-500">{ui("Opening balance")}</small>}</span> },
     { key: "customer_name", label: ui("Customer") },
     { key: "invoice_date", label: ui("Date"), render: (i) => formatDate(i) },
     { key: "due_date", label: ui("Due"), render: (i) => formatDate(i) },

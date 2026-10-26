@@ -1,3 +1,4 @@
+import {verifiedOpeningDocument} from './opening-payments.js';
 import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, audit } from './field-ops.js';
 import { businessDate } from '../../lib/business-date.js';
@@ -54,10 +55,13 @@ export function guardPurchaseMutation(_context, entity) {
 export async function purchasePaymentDecision(client,user,body) {
   await requireStaff(client,user,['admin'],'purchase payment authorization');
   const s=client.asServiceRole.entities, payment=await s.Payment.get(body.paymentId), approving=body.action==='approvePurchasePayment';
-  if(!payment || payment.payment_type!=='supplier_payment' || !payment.po_id)throw Error('Select a supplier purchase payment request');
+  if(!payment || payment.payment_type!=='supplier_payment' || (!payment.po_id&&!payment.opening_bill_payment))throw Error('Select a supplier purchase payment request');
   if(payment.status===(approving?'approved':'rejected') && payment[approving?'approved_by':'rejected_by']===user.id)return {payment,reused:true};
   if(payment.status!=='pending_approval')throw Error('This request is not waiting for approval');
-  if(approving){
+  if(approving&&payment.opening_bill_payment){
+    const bill=await s.Bill.get(payment.bill_id),supplier=await s.Supplier.get(payment.party_id),account=await s.TreasuryAccount.get(payment.treasury_account_id),amount=Number(payment.amount);
+    if(!await verifiedOpeningDocument(s,bill,'Bill')||bill.supplier_id!==payment.party_id||!supplier||supplier.is_active===false||supplier.supplier_removed_at||!account?.is_active||!Number.isFinite(amount)||amount<=0||!['open','partially_paid','overdue'].includes(bill.status)||round2(amount)>round2(bill.balance)||round2(Number(bill.total)-Number(bill.amount_paid||0))!==round2(bill.balance))throw Error('Review the opening supplier bill, active supplier and treasury account before authorizing payment');
+  }else if(approving){
     const po=await s.PurchaseOrder.get(payment.po_id),supplier=await s.Supplier.get(payment.party_id),account=await s.TreasuryAccount.get(payment.treasury_account_id);
     if(!po || !['approved','partially_received','received','billed'].includes(po.status) || po.supplier_id!==payment.party_id || supplier?.is_active===false || !supplier || !account?.is_active)throw Error('Review the approved order, active supplier and treasury account before authorizing payment');
     const paid=await readRecords(s.Payment,{po_id:po.id,payment_type:'supplier_payment',status:'posted'}),amount=Number(payment.amount);

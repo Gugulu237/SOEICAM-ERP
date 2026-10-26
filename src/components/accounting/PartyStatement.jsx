@@ -42,7 +42,7 @@ export default function PartyStatement({ partyType }) {
     const charges = docs.map((d) => ({
       date: partyType === "customer" ? d.invoice_date : d.bill_date,
       ref: d.invoice_number || d.bill_number,
-      description: partyType === "customer" ? "Invoice" : ui("Supplier bill"),
+      description: d.opening_batch_id ? ui("Opening balance") : partyType === "customer" ? "Invoice" : ui("Supplier bill"),
       charge: round2(d.total), credit: 0,
     }));
     const credits = payments.map((p) => ({

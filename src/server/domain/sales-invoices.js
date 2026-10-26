@@ -1,3 +1,4 @@
+import {isOpeningRecord} from '../../lib/opening-records.js';
 import {salesStockSource} from './sales-stock-source.js';
 import {assertRunSupplyStock} from './commercial-runs.js';
 import { requireStaff, nextSequence, postJournal, stockIssue, getRuleAccount, getAccountByNumber, audit, round2, round3, today } from './field-ops.js';
@@ -28,6 +29,7 @@ async function sourceJournal(stores, source, type) {
 async function detail(stores,id) {
   const invoice=await stores.Invoice.get(id); if(!invoice)throw Error('Invoice not found.');
   const [lines,settings,customer,journal]=await Promise.all([readRecords(stores.InvoiceLine,{invoice_id:id}),readRecords(stores.CompanySettings),stores.Customer.get(invoice.customer_id),invoice.journal_id?stores.JournalEntry.get(invoice.journal_id):null]);
+  if(isOpeningRecord(invoice))throw Error('This is an opening receivable. View its original reference and balance in Receivables.');
   if(!lines.length)throw Error('This invoice has no saved lines. Reconcile its source order before printing it.');
   let customerBalance=round2(invoice.balance),customerPaid=round2(invoice.amount_paid);
   if(invoice.field_sale_id) {
@@ -50,7 +52,7 @@ async function workspace(stores,role) {
   const journals=new Map((await recordsByIds(stores.JournalEntry,[...fields,...invoices].map(f=>f.journal_id))).map(j=>[j.id,j]));
   const eligibleFields=fields.filter(f=>{const j=journals.get(f.journal_id);return !fieldIds.has(f.id)&&j?.status==='posted'&&j.source_document_id===f.id&&j.source_document_type==='FieldSale';});
   return {permissions:{can_create:role!=='cashier'},company:invoiceCompany(settings[0]),customers:customers.map(c=>pick(c,'id business_name address town tax_id email is_active payment_terms_days financial_centralization_mode invoice_defaults')),
-    invoices:invoices.map(i=>{const j=journals.get(i.journal_id);return {...pick(i,'id invoice_number customer_id customer_name invoice_date due_date total balance amount_paid status payment_type sales_order_id field_sale_id source_number'),accounting_verified:j?.status==='posted'&&j.source_document_id===(i.field_sale_id || i.id)&&j.source_document_type===(i.field_sale_id?'FieldSale':'Invoice'),customer_balance:i.field_sale_id?round2(fields.find(f=>f.id===i.field_sale_id)?.amount_due ?? i.balance):i.payment_type==='cash'?0:round2(i.balance)};}).sort((a,b)=>String(b.invoice_date).localeCompare(String(a.invoice_date)) || String(b.invoice_number).localeCompare(String(a.invoice_number))),
+    invoices:invoices.filter(i=>!isOpeningRecord(i)).map(i=>{const j=journals.get(i.journal_id);return {...pick(i,'id invoice_number customer_id customer_name invoice_date due_date total balance amount_paid status payment_type sales_order_id field_sale_id source_number'),accounting_verified:j?.status==='posted'&&j.source_document_id===(i.field_sale_id || i.id)&&j.source_document_type===(i.field_sale_id?'FieldSale':'Invoice'),customer_balance:i.field_sale_id?round2(fields.find(f=>f.id===i.field_sale_id)?.amount_due ?? i.balance):i.payment_type==='cash'?0:round2(i.balance)};}).sort((a,b)=>String(b.invoice_date).localeCompare(String(a.invoice_date)) || String(b.invoice_number).localeCompare(String(a.invoice_number))),
     sources:role==='cashier'?[]:[...orders.filter(o=>!orderIds.has(o.id)).map(o=>({...pick(o,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'order',number:o.order_number,date:o.order_date})),...eligibleFields.map(f=>({...pick(f,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'field',number:f.sale_number,date:f.transaction_date}))]};
 }
 async function uniqueNumber(svc) {

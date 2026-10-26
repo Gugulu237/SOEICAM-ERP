@@ -7,10 +7,10 @@ export function createLookupCache({ now = Date.now, ttl = 30_000 } = {}) {
   return {
     clear,
     setIdentity(value) { if (value !== identity) { identity = value; clear(); } },
-    load(key, loader) {
+    load(key, loader, { fresh = false } = {}) {
       const cached = entries.get(key);
       if (cached?.pending) return cached.pending.then(structuredClone);
-      if (cached && cached.expires > now()) return Promise.resolve(structuredClone(cached.value));
+      if (!fresh && cached && cached.expires > now()) return Promise.resolve(structuredClone(cached.value));
       const version = generation;
       const entry = {};
       entry.pending = Promise.resolve().then(loader).then(value => {
@@ -31,9 +31,9 @@ export function createLookupCache({ now = Date.now, ttl = 30_000 } = {}) {
 const lookups = createLookupCache();
 export const invalidateItemLookups = () => lookups.clear();
 export const setItemLookupIdentity = identity => lookups.setIdentity(identity);
-export const getItemCatalog = () => lookups.load('component-catalog', async () => {
+export const getItemCatalog = ({ fresh = false } = {}) => lookups.load('component-catalog', async () => {
   const response = await fetch('/api/items/component-catalog', { credentials: 'same-origin', cache: 'no-store' });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Item options could not load');
   return data;
-});
+}, { fresh });

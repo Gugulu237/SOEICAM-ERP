@@ -1,3 +1,5 @@
+import { assemblyEstimate } from '@/lib/assembly-pricing';
+import { watchItemCatalogue } from '@/lib/item-catalogue-sync';
 import ItemMaintenance from '@/components/items/ItemMaintenance';
 import AssemblyYieldFields from '@/components/items/AssemblyYieldFields';
 import { validateAssemblyYieldChanges } from '@/lib/assembly-yield';
@@ -25,7 +27,7 @@ import ServiceFields from "@/components/items/ServiceFields";
 import AssemblyFields from "@/components/items/AssemblyFields";
 import UnitOfMeasureSelect from "@/components/items/UnitOfMeasureSelect";
 import { Save, ArrowLeft, ChevronDown } from "lucide-react";
-import { assemblyCost, componentType, validateComponentNumbers, priceComponent } from "@/lib/assembly-components";
+import { componentType, validateComponentNumbers, priceComponent } from "@/lib/assembly-components";
 import { itemFormType, isAssemblyInventoryType } from "@/lib/item-types";
 import { PRODUCT_FAMILIES, MATERIAL_GROUPS, inventoryGroup, inventoryGroups } from "@/lib/inventory-groups";
 import { stockUnit, DEFAULT_ITEM_UNITS, itemUnits } from "@/lib/item-units";
@@ -53,6 +55,8 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const [savedItem,setSavedItem] = useState(null), [pendingSave,setPendingSave] = useState(null), [saveError,setSaveError] = useState('');
   const originalForm = useRef(null);
   const savingRef = useRef(false);
+  const catalogueRefresh = useRef(null), catalogueRevision = useRef(0);
+  const [catalogueRefreshing,setCatalogueRefreshing] = useState(false), [catalogueError,setCatalogueError] = useState("");
   const [itemType, setItemType] = useState(requestedType);
   const [products, setProducts] = useState([]), [assets, setAssets] = useState([]), [accounts, setAccounts] = useState([]), [suppliers, setSuppliers] = useState([]), [units, setUnits] = useState(DEFAULT_ITEM_UNITS);
   const [loading, setLoading] = useState(true), [loadError, setLoadError] = useState(""), [reload, setReload] = useState(0);
@@ -73,7 +77,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     let active = true;
     setLoading(true); setLoadError("");
     Promise.all([
-      getItemCatalog(),
+      getItemCatalog({ fresh: true }),
       isEdit ? erp.entities.Product.get(id) : Promise.resolve(null),
     ]).then(([catalog, item]) => {
       if (!active) return;
@@ -109,6 +113,26 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     return () => { active = false; };
   }, [id, embedded, reload, stockReload]);
 
+  useEffect(() => {
+    if(loading || itemType!=='assembly')return;
+    let active=true,pending=null;
+    const refresh=()=>{
+      if(savingRef.current)return Promise.resolve();
+      if(pending)return pending;
+      const revision=catalogueRevision.current;
+      setCatalogueRefreshing(true);
+      pending=getItemCatalog({fresh:true}).then(catalog=>{
+        if(!active || revision!==catalogueRevision.current)return;
+        setProducts(catalog.products);setAssets(catalog.assets);setUnits(catalog.units);
+        setAccounts(catalog.accounts);setSuppliers(catalog.suppliers);setCatalogueError('');
+      }).catch(error=>{if(active)setCatalogueError(error.message);}).finally(()=>{pending=null;if(active)setCatalogueRefreshing(false);});
+      return pending;
+    };
+    catalogueRefresh.current=refresh;
+    const stop=watchItemCatalogue(refresh);
+    return()=>{active=false;catalogueRefresh.current=null;stop();};
+  },[loading,itemType,id]);
+
   const set = (key, value) => {
     if (key === "inventory_type") {
       setItemType(itemFormType(value));
@@ -123,7 +147,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     try { return priceComponent(row, product); } catch { return row; }
   }), [components, productById]);
   const attributeOptions = useMemo(() => attributeFacets(products), [products]);
-  const estimatedCost = useMemo(() => assemblyCost(pricedComponents), [pricedComponents]);
+  const estimatedCost = useMemo(() => assemblyEstimate(components,productById), [components,productById]);
 
   async function handleSave() {
     if (savingRef.current || unitBusy) return;
@@ -182,7 +206,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   if (loading) return <p role="status" className="p-6 text-sm text-slate-500">{ui("Loading item options...")}</p>;
   if (loadError) return <div className="space-y-3 rounded-xl border bg-white p-6"><p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p><Button type="button" variant="outline" onClick={() => setReload(value => value + 1)}>{ui("Reload item form")}</Button></div>;
   const exclusions = [...new Set([...excludedProductIds, ...(isEdit ? [id] : [])])];
-  const catalogChanged = (type, record) => { if (type === "fixed_asset") setAssets(rows => [...rows.filter(row => row.id !== record.id), record]); else { setProducts(rows => [...rows.filter(row => row.id !== record.id), record]); setUnits(previous => itemUnits(previous, [record])); } onCatalogItemCreated?.(type, record); };
+  const catalogChanged = (type, record) => { catalogueRevision.current++; if (type === "fixed_asset") setAssets(rows => [...rows.filter(row => row.id !== record.id), record]); else { setProducts(rows => [...rows.filter(row => row.id !== record.id), record]); setUnits(previous => itemUnits(previous, [record])); } onCatalogItemCreated?.(type, record); };
   const cancel = () => { if (!savingRef.current && !unitBusy) { if (embedded) onCancel?.(); else goBack(); } };
 
   return <div>
@@ -204,7 +228,8 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
       {itemType!=="service" && <div className="rounded-xl border border-slate-200 p-4"><ItemAttributesEditor value={form.attributes} onChange={value=>set("attributes",value)} disabled={saving} suggestions={attributeOptions}/></div>}
       {itemType === "service" ? <ServiceFields form={form} set={set} accounts={accounts} /> : <InventoryFields form={form} set={set} accounts={accounts} suppliers={suppliers} isAssembly={itemType === "assembly"} estimatedCost={Number.isFinite(estimatedCost) ? estimatedCost : 0} quantityOnHand={stockLoading ? "Loading…" : stockError ? "Unavailable" : quantityOnHand} purchaseUnit={legacyUnits?.stock === form.unit_of_measure ? legacyUnits.purchase : form.unit_of_measure} />}
       {itemType !== "service" && stockError && <p role="alert" className="text-xs text-slate-800">{stockError}.<button type="button" className="ml-2 underline" onClick={() => setStockReload(value => value + 1)}>{ui("Retry stock quantity")}</button></p>}
-      {itemType === "assembly" && <AssemblyFields components={pricedComponents} setComponents={setComponents} products={products} assets={assets} units={units} excludedProductIds={exclusions} onCatalogChange={catalogChanged} disabled={saving} />}
+      {catalogueError && itemType === "assembly" && <p role="alert" className="text-xs text-red-700">{uiMessage(catalogueError)} <button type="button" className="underline" onClick={()=>catalogueRefresh.current?.()}>{ui("Retry")}</button></p>}
+      {itemType === "assembly" && <AssemblyFields components={pricedComponents} setComponents={setComponents} products={products} assets={assets} units={units} excludedProductIds={exclusions} onCatalogChange={catalogChanged} onRefreshCatalogue={()=>catalogueRefresh.current?.()} refreshing={catalogueRefreshing} disabled={saving} />}
       <details className="rounded-xl border border-slate-200"><summary className="flex cursor-pointer list-none items-center justify-between p-4 text-sm font-semibold">{ui("Photo and extra settings")}<ChevronDown size={16} /></summary><div className="space-y-4 border-t p-4">
         {itemType !== "service" && <ProductPhotoPicker product={form} onChange={value => set("image_url", value)} />}
         <div className="grid gap-4 sm:grid-cols-2"><label className="space-y-1.5 text-sm font-medium">{ui("Category")}<Input value={form.category} onChange={event => set("category", event.target.value)} /></label>{itemType!=='assembly' && <label className="space-y-1.5 text-sm font-medium">{itemType === "service" ? ui("Service cost (XAF / U/M)") : ui("Pack size")}<Input type={itemType === "service" ? "number" : "text"} value={itemType === "service" ? form.purchase_price : form.size} onChange={event => set(itemType === "service" ? "purchase_price" : "size", event.target.value)} /></label>}

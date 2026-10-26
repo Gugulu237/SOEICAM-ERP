@@ -6,6 +6,7 @@ import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { businessDate } from '../../lib/business-date.js';
 import { purchaseItemPostings } from '../../lib/item-posting.js';
 import { canReadPurchase } from './purchase-workspace.js';
+import {openingPartyLines} from '../../lib/opening-records.js';
 import { supplierCatalogue, supplierItems, supplierMaterial } from '../../lib/supplier-catalogue.js';
 
 export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill'];
@@ -24,14 +25,14 @@ function requestKey(user,body) {
   if (!/^[a-f\d-]{36}$/i.test(body.requestKey || '')) throw Error('Reopen this form for a valid save reference');
   return `${user.id}:${body.action}:${body.requestKey}`;
 }
-const supplierFields = 'id supplier_number name contact_person phone email address city tax_id category payment_terms_days is_active notes supplier_items updated_date';
+const supplierFields = 'id supplier_number name contact_person phone email address city tax_id category payment_terms_days is_active notes supplier_items updated_date supplier_removed_at supplier_lifecycle_revision';
 async function postedSupplierBalances(svc){
   const s=svc.entities,[rules,legacy,journals]=await Promise.all([readRecords(s.PostingRule,{rule_key:'supplier_payable',is_active:true}),readRecords(s.Account,{account_number:'4010'}),readRecords(s.JournalEntry,{status:'posted',entry_date:{$lte:businessDate()}})]);
   const accounts=[...new Set([...rules.map(r=>r.account_id),...legacy.map(a=>a.id)].filter(Boolean))],totals={};
   if(!accounts.length)throw Error('Configure the supplier payable account before reviewing supplier balances');
   for(let i=0;i<journals.length;i+=100){
-    const lines=await readRecords(s.JournalLine,{account_id:{$in:accounts},journal_id:{$in:journals.slice(i,i+100).map(j=>j.id)},party_type:'supplier'});
-    for(const line of lines){if(!line.party_id || ['draft','reversed'].includes(line.status))continue;totals[line.party_id]=round2(Number(totals[line.party_id] || 0)+Number(line.credit || 0)-Number(line.debit || 0));}
+    const lines=await readRecords(s.JournalLine,{account_id:{$in:accounts},journal_id:{$in:journals.slice(i,i+100).map(j=>j.id)}});
+    for(const raw of lines)for(const line of openingPartyLines(raw)){if(line.party_type!=='supplier'||!line.party_id || ['draft','reversed'].includes(line.status))continue;totals[line.party_id]=round2(Number(totals[line.party_id] || 0)+Number(line.credit || 0)-Number(line.debit || 0));}
   }
   return totals;
 }
@@ -79,7 +80,8 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
   const svc=client.asServiceRole,s=svc.entities;
   if(action==='supplierWorkspace') {
     const [suppliers,bills,ledger]=await Promise.all([readRecords(s.Supplier),readRecords(s.Bill),postedSupplierBalances(svc)]);
-    const summaries=suppliers.map(supplier=>{
+    const canManageSuppliers=supplyChain||['admin','procurement'].includes(role);
+    const summaries=suppliers.filter(supplier=>body.includeRemoved&&canManageSuppliers?!!supplier.supplier_removed_at:!supplier.supplier_removed_at).map(supplier=>{
       const open=bills.filter(b=>b.supplier_id===supplier.id && !['cancelled','draft'].includes(b.status) && Number(b.balance)>0);
       return {...pick(supplier,supplierFields),ledger_balance:round2(ledger[supplier.id] || 0),recorded_balance:Number(supplier.balance || 0),balance_difference:round2(Number(supplier.balance || 0)-Number(ledger[supplier.id] || 0)),unpaid_bills:round2(open.reduce((sum,b)=>sum+Number(b.balance),0)),overdue:round2(open.filter(b=>b.due_date && b.due_date<businessDate()).reduce((sum,b)=>sum+Number(b.balance),0)),open_bill_count:open.length};
     });
@@ -102,6 +104,7 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
   if(action==='saveSupplier') {
     const key=requestKey(user,body),form=body.supplier || {},existing=body.supplierId?await s.Supplier.get(body.supplierId):null,snapshot=JSON.stringify(form);
     if(body.supplierId && !existing)throw Error('Supplier not found');
+    if(existing?.supplier_removed_at)throw Error('Restore this supplier before editing its details.');
     if(!body.supplierId){const previous=(await readRecords(s.Supplier,{supplier_request_key:key}))[0];if(previous){if(previous.supplier_request_payload!==snapshot)throw Error('This supplier was already saved. Open Manage supplier to change its details.');return {supplier:previous,reused:true};}}
     const name=String(form.name || '').trim();if(!name || name.length>160)throw Error('Enter the supplier name (up to 160 characters)');
     const terms=Number(form.payment_terms_days ?? 30);if(!Number.isInteger(terms) || terms<0 || terms>3650)throw Error('Payment terms must be 0 to 3,650 days');

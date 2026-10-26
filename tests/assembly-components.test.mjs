@@ -287,3 +287,15 @@ test('actual product update validates and recalculates components before saving,
     assert.equal(writes.length, 5, 'invalid manual costs never reach persistence');
   } finally { delete globalThis.__assemblyStores; }
 });
+
+test('purchase-unit conversions reach the picker and server so saved inventory items work immediately as components',async()=>{
+  const bag={...part,current_cost:0,purchase_price:25000,purchase_unit:'bag',unit_of_measure:'kg',purchase_to_storage_factor:25};
+  const stores=storesFor([bag]);
+  const catalog=await componentCatalog(stores),selected=catalog.products[0];
+  assert.equal(selected.purchase_to_storage_factor,25);
+  const chosen=componentFromRecord('inventory_part',selected);assert.equal(chosen.unit_cost,1000);
+  bag.purchase_price=30000;
+  const saved=await validateProductComponents(stores,{inventory_type:'assembly',components:[{...chosen,quantity:0.5}]});
+  assert.equal(saved.current_cost,600);assert.equal(saved.components[0].unit_cost,1200);
+  assert.equal(bag.current_cost,0,'building a definition must not revalue stock');
+});

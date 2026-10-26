@@ -23,6 +23,7 @@ export default async function(req) {
       const existing = await svc.entities.Payment.filter({ receipt_request_key: `${user.id}:${body.requestKey}` }, { limit: 1 });
       if (existing.items.length) {assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(existing.items[0].treasury_account_id));return Response.json({ payment: existing.items[0] });}
       const rows = await validateAllocations(svc, body.allocations, body.customerId);
+      if(rows.some(r=>r.invoice.opening_date&&body.date<r.invoice.opening_date))throw Error('An opening receivable cannot be collected before its opening date.');
       if (round2(rows.reduce((s, r) => s + r.amount, 0)) !== amount) throw new Error('Allocate the entire received amount to invoices');
       const treasury = await svc.entities.TreasuryAccount.get(body.treasuryAccountId);
       if (!treasury?.is_active || !treasury.gl_account_id) throw new Error('Select an active treasury account linked to the ledger');

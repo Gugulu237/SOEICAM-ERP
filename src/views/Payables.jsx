@@ -41,7 +41,7 @@ export default function Payables() {
   const overdue = open.filter((b) => agingBucket(b.due_date) !== "current").reduce((s, b) => s + b.balance, 0);
 
   const cols = [
-    { key: "bill_number", label: ui("Bill #"), render: (v) => <span className="font-medium">{v}</span> },
+    { key: "bill_number", label: ui("Bill #"), render: (v,row) => <span className="font-medium">{v}{row.opening_batch_id&&<small className="block text-xs font-normal text-slate-500">{ui("Opening balance")}</small>}</span> },
     { key: "supplier_name", label: ui("Supplier") },
     { key: "po_number", label: ui("PO #") },
     { key: "bill_date", label: ui("Date"), render: (v) => formatDate(v) },

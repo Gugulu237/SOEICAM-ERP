@@ -63,3 +63,16 @@ test('component back steps through size, flavour and group and resets active sea
  try{draw();r.buttons.find(b=>b['aria-label']==='Choose component item 1').onClick();draw();click('Stickers1 ›');draw();click('Vanille1 ›');draw();click('500 g1 ›');draw();r.fields.find(f=>f['aria-label']==='Search assembly components').onChange({target:{value:'missing'}});draw();back();assert.ok(r.buttons.find(b=>b.label.startsWith('Vanilla sticker')));back();assert.ok(r.buttons.find(b=>b.label==='500 g1 ›'));back();assert.ok(r.buttons.find(b=>b.label==='Vanille1 ›'));back();assert.ok(r.buttons.find(b=>b.label==='Stickers1 ›'));assert.deepEqual(r.components,before);
  }finally{r.cleanup();delete globalThis.__assemblyPicker;}
 });
+
+test('invalid legacy purchase conversions show an error without replacing the selected component or crashing the picker',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyPicker=r;
+ const milk={id:'milk',name:'Milk',inventory_type:'raw_material',unit_of_measure:'kg',current_cost:100};
+ const invalid={id:'invalid',name:'Invalid pack conversion',inventory_type:'raw_material',unit_of_measure:'kg',current_cost:0,purchase_price:1000,purchase_to_storage_factor:0};
+ r.components=[componentFromRecord('inventory_part',milk)];const before=structuredClone(r.components);
+ const draw=()=>{r.beforeRender();return render({products:[milk,invalid],components:r.components,setComponents:fn=>{r.components=fn(r.components);}});};
+ try{
+  draw();r.buttons.find(b=>b['aria-label']==='Choose component item 1').onClick();draw();
+  r.fields.find(f=>f['aria-label']==='Search assembly components').onChange({target:{value:'Invalid pack'}});draw();
+  r.buttons.find(b=>b.label.startsWith('Invalid pack conversion')).onClick();assert.match(draw(),/purchase conversion/);assert.deepEqual(r.components,before);
+ }finally{r.cleanup();delete globalThis.__assemblyPicker;}
+});

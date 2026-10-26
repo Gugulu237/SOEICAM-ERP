@@ -17,6 +17,9 @@ import { WAREHOUSE_MANAGERS } from '@/lib/warehouse-workspace';
 import { ITEM_FILTERS, inventoryWorkspaceState, matchesItemFilter, inventoryItemCounts, inventoryStockIndex } from "@/lib/inventory-workspace";
 import { finishedStockOutsideColdRoom } from '@/lib/finished-product-storage';
 import { inventoryLowStock } from '@/lib/stock-alerts';
+import AssemblyProfitability from '@/components/items/AssemblyProfitability';
+import { assemblyEstimate } from '@/lib/assembly-pricing';
+import { isAssemblyInventoryType } from '@/lib/item-types';
 import { canAdjustInventory } from '@/lib/inventory-adjustment-access';
 import DataTable from "@/components/shared/DataTable";
 import ProductThumb from "@/components/shared/ProductThumb";
@@ -190,7 +193,7 @@ export default function Inventory() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{!item.item_removed_at&&quickEditor(item)}{canEdit && !item.item_removed_at&&<ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
+    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{canEdit && isAssemblyInventoryType(item.inventory_type) && <div className="w-full"><AssemblyProfitability compact cost={assemblyEstimate(item.components,productById)} sellingPrice={item.selling_price}/></div>}{!item.item_removed_at&&quickEditor(item)}{canEdit && !item.item_removed_at&&<ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
     <Dialog open={['stock','movements'].includes(workspace.section)} onOpenChange={open => { if (!open) closePanel(); }}>
       <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
         <DialogHeader><DialogTitle>{SECTIONS[workspace.section] || ui('Inventory')}</DialogTitle><DialogDescription className="sr-only">{ui('Inventory details')}</DialogDescription></DialogHeader>

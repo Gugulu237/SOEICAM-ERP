@@ -13,7 +13,7 @@ async function ui(){
       'next/dynamic':`import React from 'react';export default function dynamic(){return function Lazy(){globalThis.__purchaseUI.suppliersMounted=true;return React.createElement('p',null,'Supplier management loaded');};}`,
       '@/lib/router':`import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const useSearchParams=()=>[new URLSearchParams(globalThis.__purchaseUI.query || ''),value=>{const r=globalThis.__purchaseUI;const next=typeof value==='function'?value(new URLSearchParams(r.query || '')):value;r.query=next.toString();}];`,
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__purchaseUI.session;`,
-      '@/api/erpClient':`export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__purchaseUI.request(body)})}};`,
+      '@/api/erpClient':`export const invalidateERPReads=()=>{};export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__purchaseUI.request(body)})}};`,
       '@/components/ui/use-toast':`export const useToast=()=>({toast:v=>globalThis.__purchaseUI.notifications.push(v)});`,
       '@/components/ui/button':`import React from 'react';export function Button({children,onClick,asChild,...props}){globalThis.__purchaseUI.capture('button',{...props,onClick},children);return React.createElement('button',props,children);}`,
       '@/components/ui/dialog':`import React from 'react';export const Dialog=({children})=>React.createElement('div',null,children);export const DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogDescription=Dialog,DialogFooter=Dialog;`,

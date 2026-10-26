@@ -1,3 +1,4 @@
+import {requestOpeningBillPayment,releaseOpeningBillPayment} from './opening-payments.js';
 import {canUseTreasury,assertTreasuryAccess,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, today, postJournal, getAccountByNumber, audit } from './field-ops.js';
@@ -154,6 +155,7 @@ export async function cashierAction(base44, user, body) {
     const bill = body.billId ? await svc.entities.Bill.get(body.billId) : null;
     if (body.billId && (!bill || !['open','partially_paid','overdue'].includes(bill.status) || !(Number(bill.balance)>0))) throw Error('Select an unpaid supplier bill');
     if (bill && round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance)) throw Error('Reconcile the bill total, amount paid and balance before requesting another payment');
+    if(bill?.opening_batch_id)return requestOpeningBillPayment(svc,user,bill,body,await treasury(svc,body.accountId,role),date,key,actor);
     const po = await svc.entities.PurchaseOrder.get(bill?.po_id || body.orderId), account = await treasury(svc, body.accountId, role), amount = amountOf(body.amount);
     if (!po || (bill ? !['approved','partially_received','received','billed'].includes(po.status) || bill.supplier_id!==po.supplier_id : po.status !== 'approved' || po.cash_disbursed)) throw Error('Select an approved, unpaid purchase order');
     if (bill && amount>round2(bill.balance)) throw Error('The amount exceeds the unpaid bill balance');
@@ -243,6 +245,7 @@ export async function cashierAction(base44, user, body) {
   } else if (action === 'cashierReleasePayment') {
     document = await svc.entities.Payment.get(body.paymentId);
     if (document?.status === 'posted' && document.journal_id) return { payment: document, reused: true };
+    if(document?.opening_bill_payment)return releaseOpeningBillPayment(svc,user,document,body,account,date,key);
     if (!document || document.payment_type !== 'supplier_payment' || !document.po_id || document.payment_method === 'cheque' || document.status !== 'approved' || !document.approved_by || !document.approved_at) throw Error('A non-cheque purchase payment approved by the General Manager is required');
     if (document.treasury_account_id !== account.id) throw Error('Release cash from the account approved for this payment');
     po = await svc.entities.PurchaseOrder.get(document.po_id);

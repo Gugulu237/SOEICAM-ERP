@@ -53,9 +53,10 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
       erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total", "balance"] }),
       erp.entities.SalesOrder.filter({ customer_id: { $in: ids } }, { sort: "-order_date", limit: 15, include_total: false }),
       erp.entities.Invoice.filter({ customer_id: { $in: ids } }, { sort: "-invoice_date", limit: 15, include_total: false }),
-    ]).then(([orders, invoices, orderList, invoiceList]) => {
+      erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, accounting_source: { $ne: "opening_balances" } }, groupBy: "status", sum: ["total"] }),
+    ]).then(([orders, invoices, orderList, invoiceList, invoiceSales]) => {
       if (cancelled) return;
-      setData({ orders: orders.rows, invoices: invoices.rows, orderList: orderList.items, invoiceList: invoiceList.items });
+      setData({ orders: orders.rows, invoices: invoices.rows, invoiceSales: invoiceSales.rows, orderList: orderList.items, invoiceList: invoiceList.items });
     });
     return () => { cancelled = true; };
   }, [idsKey]);
@@ -64,7 +65,7 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
 
   const orderCount = data.orders.reduce((s, r) => s + (r.count || 0), 0);
   const delivered = data.orders.filter(r => DELIVERED.includes(r.status)).reduce((s, r) => s + (r.sum_total || 0), 0);
-  const invoiced = data.invoices.reduce((s, r) => s + (r.sum_total || 0), 0);
+  const invoiced = data.invoiceSales.reduce((s, r) => s + (r.sum_total || 0), 0);
   const outstanding = data.invoices.reduce((s, r) => s + (r.sum_balance || 0), 0);
 
   return (

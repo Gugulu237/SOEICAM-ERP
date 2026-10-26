@@ -46,7 +46,7 @@ export async function openingBalancesWorkspace(stores, context) {
   return {
     accounts:state.accounts.filter(a => a.is_active !== false && a.is_posting !== false).map(a => ({
       id:a.id, account_number:a.account_number, name:a.name, account_type:a.account_type,
-      normal_balance:a.normal_balance, is_control_account:a.is_control_account === true,
+      normal_balance:a.normal_balance, currency:a.currency, is_control_account:a.is_control_account === true,
       opening_recorded:used.has(a.id), treasury_names:state.treasury.filter(t => t.gl_account_id === a.id).map(t => t.name),
     })),
     date:state.openings[0]?.entry_date || first || businessDate().slice(0, 8) + '01',
@@ -61,8 +61,9 @@ export async function openingBalancesWorkspace(stores, context) {
 // The API executes this operation in one serializable database transaction.
 // This imports the general ledger only; it never manufactures debt documents,
 // inventory quantities, sales or cash receipts to balance the migration.
-export async function postOpeningBalances(stores, context, body) {
+export async function postOpeningBalances(stores, context, body, options = {}) {
   access(context);
+  if(body.details?.length&&!options.detailed)throw Error('Use the detailed starting-position workflow for asset, stock and debt records.');
   if (!/^[\w-]{16,80}$/.test(body.requestKey || '')) throw Error('Reopen opening balances for a valid save reference.');
   const date = validDate(body.date), reference = String(body.reference || '').trim();
   if (!reference || reference.length > 200) throw Error('Enter the reference from your previous accounting system.');
@@ -82,7 +83,7 @@ export async function postOpeningBalances(stores, context, body) {
     throw Error('Opening debits and credits must balance before posting.');
   }
   lines.sort((a, b) => a.account_id.localeCompare(b.account_id));
-  const hash = digest(JSON.stringify({date, reference, lines})), key = context.user.id + ':' + body.requestKey;
+  const hash = digest(JSON.stringify({date, reference, lines, ...(body.details?.length?{details:body.details}:{})})), key = context.user.id + ':' + body.requestKey;
   const previous = (await readRecords(stores.JournalEntry, {opening_request_key:key}))[0];
   if (previous) {
     if (previous.opening_import_hash !== hash) throw Object.assign(Error('This save reference belongs to different opening balances.'), {status:409});
@@ -100,7 +101,7 @@ export async function postOpeningBalances(stores, context, body) {
     const account = accountMap.get(line.account_id);
     if (!account || account.is_active === false || account.is_posting === false) throw Error('Select active posting accounts for opening balances.');
     if (account.currency && account.currency !== 'XAF') throw Error('Opening balances must be entered in XAF.');
-    if (account.is_control_account === true && body.acknowledgeControlBalances !== true) {
+    if (account.is_control_account === true && body.acknowledgeControlBalances !== true && !options.detailAccounts?.has(account.id)) {
       throw Error('Confirm that customer, supplier and stock details will be reconciled separately from their general ledger opening balances.');
     }
     const linked = state.treasury.filter(t => t.gl_account_id === account.id);
@@ -135,7 +136,7 @@ export async function postOpeningBalances(stores, context, body) {
   }
   const {journal} = await postJournal({entities:stores}, {
     entryDate:date, description:'Opening balances · ' + reference, sourceModule:'opening_balances',
-    sourceDocumentType:'OpeningBalances', sourceDocumentId:'OB-' + digest(key), userId:context.user.id, lines,
+    sourceDocumentType:'OpeningBalances', sourceDocumentId:'OB-' + digest(key), userId:context.user.id, lines:lines.flatMap(line=>options.partyLines?.has(line.account_id)?options.partyLines.get(line.account_id).map(p=>({...line,...p})): [line]),
   });
   await stores.JournalEntry.update(journal.id, {opening_request_key:key, opening_import_hash:hash, opening_reference:reference});
   for (const line of lines) {

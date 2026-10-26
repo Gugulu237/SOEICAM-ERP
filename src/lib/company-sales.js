@@ -1,3 +1,4 @@
+import {isOpeningRecord} from './opening-records.js';
 import { roundMoney } from './field-pos.js';
 
 export const postedInvoiceStatuses = ['posted', 'partially_paid', 'paid', 'overdue'];
@@ -9,7 +10,7 @@ export function companySalesRegister({ invoices = [], fieldSales = [], from, to 
   const inPeriod = date => date && date >= from && date <= to;
   const fieldJournals = new Set(fieldSales.filter(row=>row.status==='approved_posted' && posted(row)).map(row=>row.journal_id));
   const rows = [
-    ...invoices.filter(row => !row.field_sale_id && !fieldJournals.has(row.journal_id) && postedInvoiceStatuses.includes(row.status) && posted(row) && inPeriod(row.invoice_date)).map(row => ({
+    ...invoices.filter(row => !isOpeningRecord(row) && !row.field_sale_id && !fieldJournals.has(row.journal_id) && postedInvoiceStatuses.includes(row.status) && posted(row) && inPeriod(row.invoice_date)).map(row => ({
       id: 'invoice:' + row.id, document_id: row.id, document_number: row.invoice_number || row.id, source: 'Invoice', date: row.invoice_date,
       customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.salesperson_id || '',commercial_name: row.salesperson_name || '', payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
