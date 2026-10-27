@@ -1,10 +1,10 @@
 import {readRecords} from './commercial-workspace.js';
 import {journalCents,ledgerStatuses} from './journal-validation.js';
 import {assertTreasuryAccess} from '../../lib/treasury-access.js';
-export async function manualCashPlan(stores,context,lines,accounts){
+export async function manualCashPlan(stores,context,lines,accounts,{reversingManual=false}={}){
  const rules=await readRecords(stores.PostingRule,{is_active:true});
  const controls=new Set(rules.filter(r=>/receivable|payable|inventory|work_in_progress/.test(r.rule_key||'')).map(r=>r.account_id));
- for(const id of accounts.keys())if(accounts.get(id).is_control_account||controls.has(id))throw Error('Use the source customer, supplier, inventory or opening-balance workflow for control accounts.');
+ for(const id of accounts.keys())if(!reversingManual&&(accounts.get(id).is_control_account||controls.has(id)))throw Error('Use the source customer, supplier, inventory or opening-balance workflow for control accounts.');
  const treasury=await readRecords(stores.TreasuryAccount),linked=treasury.filter(t=>accounts.has(t.gl_account_id));
  if(!linked.length)return [];
  const journals=await readRecords(stores.JournalEntry,{status:{$in:ledgerStatuses}}),ids=new Set(journals.map(j=>j.id)),plans=[];

@@ -7,7 +7,9 @@ import {readAll} from "@/lib/field-pos";
 import { erp } from "@/api/erpClient";
 import { useParams, useNavigate, Link } from "@/lib/router";
 import { formatAccountingXAF as formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
-import { reverseJournal, postDraft } from "@/lib/posting";
+import JournalReversalDialog from "@/components/accounting/JournalReversalDialog";
+import {isManualJournal,canReverseManualJournal} from "@/lib/journal-reversal";
+import { postDraft } from "@/lib/posting";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import PageHeader from "@/components/shared/PageHeader";
 import StatusBadge from "@/components/shared/StatusBadge";
@@ -25,7 +27,8 @@ export default function JournalDetail() {
 
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isAdmin } = useCurrentUser();
+  const { isAdmin } = useCurrentUser();
+  const [reversing,setReversing]=useState(false);
   const { toast } = useToast();
   const [journal, setJournal] = useState(null);
   const [lines, setLines] = useState([]);
@@ -43,20 +46,10 @@ export default function JournalDetail() {
   },[id]);
   useEffect(()=>{load();return()=>{loadSequence.current++;};},[load]);
 
-  async function handleReverse() {
-    setWorking(true);
-    try {
-      const rev = await reverseJournal(journal, user?.id || "");
-      toast({ title: ui("Journal reversed"), description: ui("Reversal {0} posted", rev.journal_number) });
-      load();
-    } catch (e) { toast({ title: ui("Error"), description: e.message, variant: "destructive" }); }
-    finally { setWorking(false); }
-  }
-
   async function handlePostDraft() {
     setWorking(true);
     try {
-      await postDraft(journal, user?.id || "");
+      await postDraft(journal);
       toast({ title: ui("Journal posted") });
       load();
     } catch (e) { toast({ title: ui("Error"), description: e.message, variant: "destructive" }); }
@@ -64,7 +57,7 @@ export default function JournalDetail() {
   }
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
-  if(loadError)return <section className="space-y-3"><PageHeader title={ui("Journal Entry")}/><p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p><div className="flex flex-wrap gap-2"><Button type="button" onClick={load}>{ui("Retry loading journal")}</Button><Button variant="outline" onClick={()=>navigate("/accounting")}>{ui("Back")}</Button></div></section>;
+  if(loadError)return <section className="space-y-3"><PageHeader title={ui("Journal Entry")}/><p role="alert" className="text-sm text-red-700">{uiMessage(loadError)}</p><div className="flex flex-wrap gap-2"><Button type="button" onClick={load}>{ui("Retry loading journal")}</Button><Button variant="outline" onClick={()=>navigate("/accounting?tab=journals")}>{ui("Back")}</Button></div></section>;
   if (!journal) return <div className="text-center py-20 text-slate-500">{ui("Journal not found")}</div>;
 
   const sourceLink = journal.source_document_id && SOURCE_LINKS[journal.source_document_type]
@@ -76,16 +69,18 @@ export default function JournalDetail() {
         title={journal.journal_number || ui("Journal Entry")}
         subtitle={journal.description}
         actions={
-          <div className="flex gap-2">
-            {journal.status === "draft" && journal.source_module === "manual" && ["", "manual_journal"].includes(journal.source_document_type || "") && <Button disabled={working} onClick={handlePostDraft}>{ui("Post Journal")}</Button>}
-            {journal.status === "posted" && !journal.reversed_by_journal && !journal.reversal_of && journal.source_module === "manual" && ["", "manual_journal"].includes(journal.source_document_type || "") && isAdmin && (
-              <Button variant="destructive" disabled={working} onClick={handleReverse}>{ui("Reverse Journal")}</Button>
+          <div className="flex max-w-full flex-wrap gap-2">
+            {journal.status === "draft" && isManualJournal(journal) && <Button disabled={working} onClick={handlePostDraft}>{ui("Post Journal")}</Button>}
+            {canReverseManualJournal(journal) && isAdmin && (
+              <Button variant="destructive" disabled={working} onClick={()=>setReversing(true)}>{ui("Reverse Journal")}</Button>
             )}
-            <Button variant="outline" onClick={() => navigate("/accounting")}>{ui("Back")}</Button>
+            <Button variant="outline" onClick={() => navigate("/accounting?tab=journals")}>{ui("Back")}</Button>
           </div>
         }
       />
 
+      <JournalReversalDialog journal={reversing?journal:null} onClose={()=>setReversing(false)} onReversed={rev=>{toast({title:ui("Journal reversed"),description:ui("Reversal {0} posted",rev.journal_number)});load();}}/>
+      {!isManualJournal(journal)&&!journal.reversal_of&&<p className="mb-4 text-sm text-slate-600">{ui("Correct this entry from its original business operation so stock, cash and other balances remain consistent.")}</p>}
       <div className="bg-white rounded-lg border border-slate-200 p-6 mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
         <div><p className="text-slate-500">{ui("Status")}</p><StatusBadge status={journal.reversed_by_journal ? "reversed" : journal.status} /></div>
         <div><p className="text-slate-500">{ui("Transaction Date")}</p><p className="font-medium">{formatDate(journal.entry_date)}</p></div>

@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const config = {
   poweredByHeader: false,
+  images: {minimumCacheTTL:86400,remotePatterns:[{protocol:'https',hostname:'raw.githubusercontent.com',pathname:'/Gugulu237/SOEICAM/33d6fb5964f26ed01764f35f538bb2a90cdeded5/public/brand/logos/yola.png',search:''}]},
   reactStrictMode: true,
   cleanDistDir: process.platform !== 'win32',
   serverExternalPackages: ['postgres'],

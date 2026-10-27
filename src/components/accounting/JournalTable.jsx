@@ -3,6 +3,7 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
+import {isManualJournal,canReverseManualJournal} from "@/lib/journal-reversal";
 import { formatAccountingXAF as formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -69,13 +70,13 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
                     <Button variant="ghost" size="icon" title={ui("Open journal")} onClick={() => onOpen(j)}>
                       <Eye size={15} />
                     </Button>
-                    {j.status === "draft" && j.source_module === "manual" && ["", "manual_journal"].includes(j.source_document_type || "") && (
+                    {j.status === "draft" && isManualJournal(j) && (
                       <Button variant="ghost" size="icon" title={ui("Post this draft")} disabled={working} onClick={() => onPost(j)}>
                         <CheckCircle2 size={15} className="text-green-600" />
                       </Button>
                     )}
-                    {j.status === "posted" && !j.reversed_by_journal && !j.reversal_of && j.source_module === "manual" && ["", "manual_journal"].includes(j.source_document_type || "") && canReverse && (
-                      <Button variant="ghost" size="icon" title={ui("Reverse this journal")} disabled={working} onClick={() => onReverse(j)}>
+                    {canReverseManualJournal(j) && canReverse && (
+                      <Button variant="ghost" size="icon" aria-label={ui("Reverse this journal")} title={ui("Reverse this journal")} disabled={working} onClick={() => onReverse(j)}>
                         <RotateCcw size={15} className="text-rose-600" />
                       </Button>
                     )}

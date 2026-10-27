@@ -2,7 +2,8 @@ import {manualCashPlan} from './manual-cash-plan.js';
 import { requireAccountant } from './account-definitions.js';
 import { round2, nextSequence, audit } from './field-ops.js';
 
-export async function saveManualJournal(stores, context, body) {
+// reversingManual is server-only: journalLifecycle supplies an exact, verified mirror.
+export async function saveManualJournal(stores, context, body, {reversingManual=false}={}) {
   requireAccountant(context);
   let draft = null;
   if(body?.journalId){
@@ -34,7 +35,7 @@ export async function saveManualJournal(stores, context, body) {
     const debit=round2(d),credit=round2(c);
     if(status==='posted'&&debit===0&&credit===0)throw Error('A posted journal cannot contain a zero-value line.');
     const account=accounts.get(l.account_id)||await stores.Account.get(String(l.account_id));
-    if(!account||account.is_active===false||account.is_posting===false||account.allow_manual_journal===false)throw Error('Choose active posting accounts that allow manual journals.');
+    if(!account||account.is_active===false||account.is_posting===false||account.allow_manual_journal===false&&!reversingManual)throw Error('Choose active posting accounts that allow manual journals.');
     accounts.set(account.id,account);
     if(String(l.description||'').length>1000)throw Error('A journal line description is too long.');
     lines.push({account_id:account.id,account_number:account.account_number,account_name:account.name,description:String(l.description||'')||description,debit,credit});
@@ -43,7 +44,7 @@ export async function saveManualJournal(stores, context, body) {
     totalDebit=totalDebitCents/100;totalCredit=totalCreditCents/100;
   }
   if(status==='posted'&&totalDebit!==totalCredit)throw Error('Journal debits and credits must balance before posting.');
-  const cashPlan=status==='posted'?await manualCashPlan(stores,context,lines,accounts):[];
+  const cashPlan=status==='posted'?await manualCashPlan(stores,context,lines,accounts,{reversingManual}):[];
   const client={entities:stores},journal_number=draft?.journal_number||await nextSequence(client,'next_journal_number','JV',6);
   const journalData={journal_number,entry_date:entryDate,description,source_module:'manual',source_document_type:'manual_journal',source_document_id:'MAN-'+body.requestKey,period_id:period?.id||'',status,is_immutable:status==='posted',total_debit:totalDebit,total_credit:totalCredit,posted_by:status==='posted'?context.user.id:'',posted_at:status==='posted'?new Date().toISOString():'',manual_request_key:body.requestKey,manual_request_payload:fingerprint,created_by:context.user.email};
   const journal=draft?await stores.JournalEntry.update(draft.id,journalData):await stores.JournalEntry.create(journalData);

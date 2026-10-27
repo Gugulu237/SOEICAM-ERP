@@ -77,21 +77,21 @@ test('checked manual drafts post balances once and manual reversal keeps both or
   const journal=await journalLifecycle(s,context,{action:'postDraft',journalId:draft.id});
   assert.equal(journal.status,'posted');assert.equal((await s.Account.get('cash')).balance,1000);
   await journalLifecycle(s,context,{action:'postDraft',journalId:draft.id});assert.equal((await s.Account.get('cash')).balance,1000);
-  const reversal=await journalLifecycle(s,context,{action:'reverse',journalId:journal.id});
+  const reversal=await journalLifecycle(s,context,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date});
   assert.equal(reversal.reversal_of,journal.id);assert.equal((await s.Account.get('cash')).balance,0);assert.equal((await s.Account.get('capital')).balance,0);
   const posted=await s.JournalEntry.filter({status:'posted'});assert.equal(posted.length,2);
   const lines=await s.JournalLine.filter({journal_id:{$in:posted.map(row=>row.id)}});
   assert.equal(lines.filter(row=>row.account_id==='cash').reduce((sum,row)=>sum+row.debit-row.credit,0),0);
-  assert.equal((await journalLifecycle(s,context,{action:'reverse',journalId:journal.id})).id,reversal.id);assert.equal((await s.JournalEntry.list()).length,2);
+  assert.equal((await journalLifecycle(s,context,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date})).id,reversal.id);assert.equal((await s.JournalEntry.list()).length,2);
 });
 
 test('cashier cannot reverse, business-source journals cannot be detached from source workflows, disabled modules reject edits',async()=>{
   const {stores:s}=await fixture(),journal=await saveManualJournal(s,context,journalBody());
   const cashier={user:{id:'accountant',role:'user'},role:'cashier',employee:{role:'cashier',status:'active',allowed_modules:['accounting']}};
-  await assert.rejects(journalLifecycle(s,cashier,{action:'reverse',journalId:journal.id}),{status:403});
+  await assert.rejects(journalLifecycle(s,cashier,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date}),{status:403});
   await assert.rejects(journalLifecycle(s,{...cashier,employee:{...cashier.employee,allowed_modules:[]}},{action:'postDraft',journalId:journal.id}),{status:403});
   await s.JournalEntry.update(journal.id,{source_module:'inventory_adjustment',source_document_type:'WarehouseAdjustment'});
-  await assert.rejects(journalLifecycle(s,context,{action:'reverse',journalId:journal.id}),/original business workflow/);
+  await assert.rejects(journalLifecycle(s,context,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date}),/original business workflow/);
   assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.Account.get('cash')).balance,1000);
 });
 
@@ -101,10 +101,10 @@ test('manual reversal API rolls back mirror, account balances and source metadat
     const journal=await saveManualJournal(f.stores,context,journalBody());
     const before=(await db.query('SELECT * FROM journal_fixture ORDER BY entity,id')).rows,create=f.stores.AuditLog.create;
     f.stores.AuditLog.create=async input=>{if(input.action==='reverse_journal')throw Error('Audit unavailable');return create(input);};
-    assert.equal((await post(route,{action:'reverse',journalId:journal.id})).status,400);
+    assert.equal((await post(route,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date})).status,400);
     assert.deepEqual((await db.query('SELECT * FROM journal_fixture ORDER BY entity,id')).rows,before);
-    f.stores.AuditLog.create=create;assert.equal((await post(route,{action:'reverse',journalId:journal.id})).status,200);
-    assert.equal((await post(route,{action:'reverse',journalId:journal.id})).status,200);assert.equal((await f.stores.JournalEntry.list()).length,2);
+    f.stores.AuditLog.create=create;assert.equal((await post(route,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date})).status,200);
+    assert.equal((await post(route,{action:'reverse',journalId:journal.id,reason:'Correct a mistaken entry',reversalDate:date})).status,200);assert.equal((await f.stores.JournalEntry.list()).length,2);
   } finally {delete globalThis.__journalTest;await db.close();}
 });
 
@@ -192,4 +192,44 @@ test('manual cash journals keep Treasury and GL in sync, block stale cash caches
  await s.TreasuryAccount.update(t.id,{account_type:'cash'});await s.PostingRule.create({rule_key:'customer_receivable',account_id:'cash',is_active:true});
  await assert.rejects(saveManualJournal(s,context,{...body,requestKey:crypto.randomUUID()}),/control accounts/);
  assert.ok(journal.is_immutable);
+});
+
+test('manual reversal accepts an open correction date, preserves the original and rejects invalid or changed confirmations',async()=>{
+ const {stores:s}=await fixture(),originalDate=date.slice(0,8)+'01';
+ const journal=await saveManualJournal(s,context,{...journalBody(),entryDate:originalDate});
+ await s.AccountingPeriod.update('period',{status:'closed',end_date:originalDate});
+ const reason='Correct the capital recorded twice',reverse={action:'reverse',journalId:journal.id,reason,reversalDate:date};
+ // Ensure today is available even when the original date is locked.
+ if(date===originalDate){await s.AccountingPeriod.update('period',{status:'open'});}
+ const before=structuredClone(await s.JournalEntry.list());
+ await assert.rejects(journalLifecycle(s,context,{...reverse,reason:''}),/reason/);
+ await assert.rejects(journalLifecycle(s,context,{...reverse,reversalDate:'2099-01-01'}),/no later than today/);
+ await assert.rejects(journalLifecycle(s,context,{...reverse,reversalDate:'2020-01-01'}),/on or after/);
+ await assert.rejects(journalLifecycle(s,context,{...reverse,reversalDate:'2026-02-30'}),/valid journal date/);
+ assert.deepEqual(await s.JournalEntry.list(),before);
+ if(date!==originalDate)await assert.rejects(journalLifecycle(s,context,{...reverse,reversalDate:originalDate}),/closed or locked/);
+ const reversed=await journalLifecycle(s,context,reverse);
+ assert.equal(reversed.entry_date,date);assert.equal(reversed.reversal_reason,reason);
+ assert.equal((await s.JournalEntry.get(journal.id)).status,'posted');
+ assert.equal((await journalLifecycle(s,context,reverse)).id,reversed.id);
+ await assert.rejects(journalLifecycle(s,context,{...reverse,reason:'Different explanation'}),{status:409});
+ assert.equal((await s.JournalEntry.list()).length,2);
+ assert.match((await s.AuditLog.list()).find(a=>a.action==='reverse_journal').description,/Correct the capital/);
+});
+
+test('legacy source-free manual journals can reverse and an exact historical control-account correction cannot be forged by new journals',async()=>{
+ const {stores:s}=await fixture(),journal=await saveManualJournal(s,context,journalBody());
+ await s.JournalEntry.update(journal.id,{source_module:'',source_document_type:'',source_document_id:''});
+ await s.Account.update('capital',{is_control_account:true,allow_manual_journal:false});
+ await assert.rejects(saveManualJournal(s,context,{...journalBody(),reversingManual:true}),/allow manual journals/);
+ const reversal=await journalLifecycle(s,context,{action:'reverse',journalId:journal.id,reason:'Correct the original manual capital entry',reversalDate:date});
+ assert.equal(reversal.reversal_of,journal.id);assert.equal((await s.Account.get('capital')).balance,0);
+});
+
+test('reversal refuses mismatched original ledger evidence and never creates a partial inverse',async()=>{
+ const f=await fixture(),s=f.stores,journal=await saveManualJournal(s,context,journalBody());
+ await s.JournalEntry.update(journal.id,{total_credit:999});
+ const before=structuredClone(f.rows);
+ await assert.rejects(journalLifecycle(s,context,{action:'reverse',journalId:journal.id,reason:'Correct an error',reversalDate:date}),/original journal totals/);
+ assert.deepEqual(f.rows,before);
 });

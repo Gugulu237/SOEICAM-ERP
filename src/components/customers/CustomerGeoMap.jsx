@@ -2,6 +2,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ui} from '@/lib/i18n';
 import CustomerInfo from './CustomerInfo';
+import {customerPinElement,customerPinSize} from '@/lib/customer-map-pin';
 import {loadGoogleMaps,googleMapsLibrary,googleMapsFailureMessage,safeGoogleMapsDiagnostic} from '@/lib/google-maps';
 import {hasCustomerLocation} from '@/lib/customer-location';
 import {YAOUNDE_CENTER,CAMEROON_BOUNDS,ZONE_MAP_COLOURS} from '@/lib/customer-map-zones';
@@ -20,7 +21,8 @@ export function leafletAdapter(L,element,onPoint,onZone,onVertex){
       }
       for(const p of points)if(hasCustomerLocation(p)){
         const zone=zones.find(z=>z.id===p.zone_id),colour=p.gps_status==='ready'?(ZONE_MAP_COLOURS[zone?.colour]||'#059669'):'#64748b';
-        L.circleMarker([Number(p.gps_lat),Number(p.gps_lng)],{radius:p.id===selected?10:6,color:p.id===selected?'#111827':'#fff',weight:2,fillColor:colour,fillOpacity:1,bubblingMouseEvents:false,interactive:!drawing}).addTo(layers).on('click',()=>onPoint(p));
+        const size=customerPinSize(p.id===selected),icon=L.divIcon({className:'yola-map-marker',html:customerPinElement({colour,selected:p.id===selected,title:p.business_name}),iconSize:[size.width,size.height],iconAnchor:[size.width/2,size.height],popupAnchor:[0,-size.height]});
+        L.marker([Number(p.gps_lat),Number(p.gps_lng)],{icon,title:p.business_name,alt:p.business_name||'YOLA',zIndexOffset:p.id===selected?1000:0,bubblingMouseEvents:false,keyboard:!drawing,interactive:!drawing}).addTo(layers).on('click',()=>{if(!drawing)onPoint(p);});
       }
       if(points.length===1&&hasCustomerLocation(points[0])&&Number(points[0].gps_accuracy_m)>0)L.circle([Number(points[0].gps_lat),Number(points[0].gps_lng)],{radius:Number(points[0].gps_accuracy_m),color:'#059669',weight:1,fillOpacity:.08,interactive:false}).addTo(layers);
       if(draft.length)L.polyline(draft.map(p=>[p.lat,p.lng]),{color:'#059669',weight:3,dashArray:'6 5',interactive:false}).addTo(layers);
@@ -45,8 +47,8 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
       clear();
       for(const zone of zones)if(zone.boundary?.length>=3){const polygon=new Polygon({map,paths:zone.boundary,strokeColor:ZONE_MAP_COLOURS[zone.colour]||'#059669',fillColor:ZONE_MAP_COLOURS[zone.colour]||'#059669',strokeWeight:2,fillOpacity:.1,clickable:!drawing});layers.push(polygon);listeners.push(polygon.addListener('click',()=>onZone(zone)));}
       for(const p of points)if(hasCustomerLocation(p)){
-        const zone=zones.find(z=>z.id===p.zone_id),dot=document.createElement('div');dot.style.cssText='width:18px;height:18px;border:3px solid white;border-radius:50%;box-shadow:0 1px 5px #334155';dot.style.background=p.gps_status==='ready'?(ZONE_MAP_COLOURS[zone?.colour]||'#059669'):'#64748b';if(p.id===selected)dot.style.outline='3px solid #111827';
-        const marker=new AdvancedMarkerElement({map,position:{lat:Number(p.gps_lat),lng:Number(p.gps_lng)},title:p.business_name,content:dot,gmpClickable:!drawing});layers.push(marker);listeners.push(marker.addListener('click',()=>onPoint(p)));
+        const zone=zones.find(z=>z.id===p.zone_id),colour=p.gps_status==='ready'?(ZONE_MAP_COLOURS[zone?.colour]||'#059669'):'#64748b',pin=customerPinElement({colour,selected:p.id===selected,title:p.business_name});
+        const marker=new AdvancedMarkerElement({map,position:{lat:Number(p.gps_lat),lng:Number(p.gps_lng)},title:p.business_name,content:pin,anchorLeft:'-50%',anchorTop:'-100%',zIndex:p.id===selected?1000:10,gmpClickable:!drawing});layers.push(marker);listeners.push(marker.addListener('click',()=>{if(!drawing)onPoint(p);}));
       }
       if(points.length===1&&hasCustomerLocation(points[0])&&Number(points[0].gps_accuracy_m)>0)layers.push(new Circle({map,center:{lat:Number(points[0].gps_lat),lng:Number(points[0].gps_lng)},radius:Number(points[0].gps_accuracy_m),strokeColor:'#059669',strokeWeight:1,fillOpacity:.08,clickable:false}));
       for(const vertex of draft)layers.push(new Circle({map,center:vertex,radius:12,fillColor:'#059669',fillOpacity:1,strokeWeight:1,clickable:false}));
@@ -89,7 +91,7 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
       <div ref={element} className="h-[52svh] min-h-80 w-full sm:h-[560px]" role="region" aria-label={ui('Customer delivery map')}/>
       {status==='loading'&&<p role="status" className="absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
     </div>
-    <div className="flex flex-wrap justify-between gap-2 text-[11px] text-slate-500"><span>{provider}</span><span>{ui('Green / zone colour: verified GPS. Grey: verify location.')}</span></div>
+    <div className="flex flex-wrap justify-between gap-2 text-[11px] text-slate-500"><span>{provider}</span><span>{ui('YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.')}</span></div>
     {error&&<div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-slate-700"><p className="min-w-0 flex-1">{error}</p><button type="button" onClick={()=>window.location.reload()} className="min-h-10 shrink-0 rounded-md border bg-white px-3 font-medium">{ui('Reload page')}</button>{diagnostic&&<CustomerInfo title={ui('Google Maps status')}><p>{ui('The Google Maps API key and map ID are configured. This map uses OpenStreetMap only when Google Maps cannot start.')}</p><p>{ui('Allow this website in Google Cloud: {0}',typeof window!=='undefined'?window.location.origin+'/*':'http://localhost:5175/*')}</p><p className="break-words font-mono">{diagnostic}</p></CustomerInfo>}</div>}
   </div>;
 }

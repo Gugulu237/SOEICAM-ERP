@@ -6662,5 +6662,22 @@
   "Journal totals exceed the supported precision.": "Les totaux de l’écriture dépassent la précision acceptée.",
   "{0}: choose an account for the entered amount": "{0} : choisissez un compte pour le montant saisi",
   "{0}: enter valid finite amounts": "{0} : saisissez des montants numériques valides",
-  "Journal does not balance: debits {0} != credits {1}": "Écriture déséquilibrée : débits {0} ≠ crédits {1}"
+  "Journal does not balance: debits {0} != credits {1}": "Écriture déséquilibrée : débits {0} ≠ crédits {1}",
+  "Reversal date": "Date de contrepassation",
+  "Reason for reversal": "Motif de la contrepassation",
+  "Confirm reversal": "Confirmer la contrepassation",
+  "Reversing journal...": "Contrepassation en cours...",
+  "A new entry will swap the debits and credits. The original journal remains in the audit history.": "Une nouvelle écriture inverse les débits et les crédits. L’écriture d’origine reste conservée dans l’historique.",
+  "This date is in a closed or locked period. Choose an open posting date.": "Cette date appartient à une période clôturée ou verrouillée. Choisissez une date dans une période ouverte.",
+  "Period information could not load. The server will validate the posting date.": "Les périodes n’ont pas pu être chargées. Le serveur vérifiera la date de comptabilisation.",
+  "Correct this entry from its original business operation so stock, cash and other balances remain consistent.": "Corrigez cette écriture depuis son opération d’origine pour conserver la cohérence du stock, de la trésorerie et des autres soldes.",
+  "Enter a reversal reason of 3 to 1000 characters.": "Saisissez un motif de contrepassation de 3 à 1 000 caractères.",
+  "The reversal date must be on or after the original entry and no later than today.": "La date de contrepassation doit être égale ou postérieure à celle de l’écriture d’origine, sans dépasser aujourd’hui.",
+  "This journal was already reversed with different details. Open its recorded reversal.": "Cette écriture a déjà été contrepassée avec d’autres détails. Consultez la contrepassation enregistrée.",
+  "This journal reversal needs reconciliation.": "Cette contrepassation nécessite un rapprochement.",
+  "Review the customer or supplier allocations and posted lines before reversing this journal.": "Vérifiez les affectations aux clients ou fournisseurs et les lignes comptabilisées avant de contrepasser cette écriture.",
+  "Reconcile the original journal totals and lines before reversal.": "Rapprochez les totaux et les lignes de l’écriture d’origine avant la contrepassation.",
+  "Only an original posted manual journal can be reversed.": "Seule une écriture manuelle d’origine comptabilisée peut être contrepassée.",
+  "Only the General Manager may reverse a manual journal.": "Seul le Directeur Général peut contrepasser une écriture manuelle.",
+  "YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.": "Repères YOLA : GPS client. Bordure colorée : vérifié. Grise : à vérifier."
 }

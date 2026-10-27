@@ -44,8 +44,8 @@ export async function postDraft(journal) {
   return erp.accounting.saveJournal({ action:"postDraft", journalId:journal.id });
 }
 
-export async function reverseJournal(journal) {
-  return erp.accounting.saveJournal({ action:"reverse", journalId:journal.id });
+export async function reverseJournal(journal,{reversalDate,reason}={}) {
+  return erp.accounting.saveJournal({action:"reverse",journalId:journal.id,reversalDate,reason});
 }
 
 // Resolve a configurable posting rule (rule_key -> account). No hardcoded account IDs.

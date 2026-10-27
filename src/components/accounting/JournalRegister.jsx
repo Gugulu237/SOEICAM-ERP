@@ -13,7 +13,8 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
 import { loadJournalPage, loadJournalReport, loadJournalSources, loadJournalExport, exportJournalsCsv } from "@/lib/journal-register";
 import { loadAccountBalances, ledgerTotals } from "@/lib/account-balances";
-import { postDraft, reverseJournal } from "@/lib/posting";
+import JournalReversalDialog from "./JournalReversalDialog";
+import { postDraft } from "@/lib/posting";
 import JournalStats from "@/components/accounting/JournalStats";
 import JournalFilters from "@/components/accounting/JournalFilters";
 import JournalTable from "@/components/accounting/JournalTable";
@@ -39,6 +40,7 @@ export default function JournalRegister() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [working, setWorking] = useState(false);
+  const [reverseTarget,setReverseTarget]=useState(null);
   const [report, setReport] = useState(EMPTY_REPORT);
   const [ledger, setLedger] = useState(null);
   const [sources, setSources] = useState([]);
@@ -112,19 +114,7 @@ export default function JournalRegister() {
     }
   }
 
-  async function handleReverse(journal) {
-    if (!window.confirm(ui("Reverse {0}? A mirror journal will be posted and this one marked reversed.", journal.journal_number))) return;
-    setWorking(true);
-    try {
-      const reversal = await reverseJournal(journal, user?.id || "");
-      toast({ title: ui("Journal reversed"), description: ui("Reversal {0} posted", reversal.journal_number) });
-      refresh();
-    } catch (e) {
-      toast({ title: ui("Error"), description: e.message, variant: "destructive" });
-    } finally {
-      setWorking(false);
-    }
-  }
+  function handleReverse(journal){setReverseTarget(journal);}
 
   async function handleExport() {
     setExporting(true);
@@ -142,6 +132,7 @@ export default function JournalRegister() {
 
   return (
     <div>
+      <JournalReversalDialog journal={reverseTarget} onClose={()=>setReverseTarget(null)} onReversed={rev=>{toast({title:ui("Journal reversed"),description:ui("Reversal {0} posted",rev.journal_number)});refresh();}}/>
       <JournalStats report={report} ledger={ledger} error={ledgerError} />
       <div className="mb-3 flex flex-wrap items-center gap-2"><Button type="button" variant="outline" disabled={loading} onClick={refresh}>{ui(error||ledgerError||sourceError?"Retry journal loading":"Refresh journals")}</Button>{[error,ledgerError,sourceError].filter(Boolean).map((message,i)=><p key={i} role="alert" className="text-sm text-red-700">{uiMessage(message)}</p>)}</div>
       <JournalFilters
