@@ -91,6 +91,22 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if(entity==='PostingRule'&&['delete','deleteMany'].includes(operation))throw forbidden('Deactivate posting rules instead of deleting their configuration history.');
+  if(entity==='Payment'&&(value.status==='posted'||existing?.status==='posted'||'journal_id' in value||existing?.journal_id))throw forbidden('Posted payments and their journal links are immutable. Use the checked payment workflow.');
+  if(entity==='ExpenseRequest'&&existing?.status==='paid'&&(operation!=='update'||Object.keys(value).some(k=>!['receipt_url','receipt_collected_at'].includes(k))))throw forbidden('Paid expense vouchers are immutable except for their receipt evidence.');
+  if(entity==='ExpenseRequest'&&value.status==='paid')throw forbidden('Pay approved expenses through the checked Cashier workflow.');
+  if(entity==='ExpenseRequest'&&existing?.status==='approved'&&['amount','department_id','expense_account_id','requester_id','payee'].some(k=>k in value&&value[k]!==existing[k]))throw forbidden('Approved expense amounts and coding are locked. Review a new request for changes.');
+
+  if(['Account','AccountingPeriod','TreasuryTransaction','PaymentAllocation','Bill'].includes(entity))throw forbidden('Use the checked cash, Payroll, Accounting or Purchasing workflow. Financial records are immutable outside it.');
+  if(entity==='AuditLog'&&[value,existing].some(r=>r&&Object.keys(r).some(k=>k.startsWith('accounting_control_'))))throw forbidden('Accounting control audit records use the checked workflow.');
+  if(['Customer','Supplier'].includes(entity)&&Object.hasOwn(value,'balance')&&Number(value.balance)!==Number(existing?.balance||0))throw forbidden('Customer and supplier balances come from posted entries and cannot be edited directly.');
+  if(entity==='TreasuryAccount'){
+    if(['delete','deleteMany'].includes(operation))throw forbidden('Keep treasury account history. Make an unused account inactive instead.');
+    if('balance' in value&&(!Number.isFinite(Number(value.balance))||Number(value.balance)!==Number(existing?.balance||0)))throw forbidden('Enter treasury opening balances through Accounting opening balances; cash changes require a posted transaction.');
+    if(existing&&['gl_account_id','account_type','currency'].some(k=>k in value&&value[k]!==existing[k]))throw forbidden('Keep the treasury account ledger mapping and currency. Create a reviewed account instead.');
+  }
+  if(entity==='CompanySettings'&&Object.keys(value).some(k=>k.startsWith('next_')))throw forbidden('Document numbers are assigned only by checked server workflows.');
+
   if(['Invoice','Bill'].includes(entity)&&existing?.opening_batch_id||value.accounting_source==='opening_balances'||entity==='Payment'&&existing?.opening_bill_payment)throw forbidden('Opening debts and their payments use the checked accounting workflow.');
   if(Object.keys(value).some(k=>k.startsWith('opening_'))||existing?.opening_batch_id&&['delete','deleteMany'].includes(operation))throw forbidden('Opening position records are managed through the checked migration workflow.');
   if(entity==='AuditLog'&&[value,existing].some(r=>r&&(['attach_opening_details','import_opening_position'].includes(r.action)||'opening_position_payload' in r)))throw forbidden('Opening position audit records use the checked migration workflow.');

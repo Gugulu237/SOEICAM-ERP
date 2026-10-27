@@ -1,10 +1,12 @@
+import AccountingIntegrityCheck from './AccountingIntegrityCheck';
 import ReportExport from '@/components/shared/ReportExport';
 import { tableReport } from '@/lib/report-models';
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
+import {invalidateERPReads} from "@/api/erpClient";
+import { ui,uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "@/lib/router";
 import { useToast } from "@/components/ui/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -32,7 +34,8 @@ export default function JournalRegister() {
   const [cursor, setCursor] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error,setError] = useState('');
+  const [error,setError] = useState(''),[sourceError,setSourceError]=useState(''),[ledgerError,setLedgerError]=useState('');
+  const sequence=useRef(0),moreFlight=useRef(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [working, setWorking] = useState(false);
@@ -42,13 +45,13 @@ export default function JournalRegister() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    loadJournalSources().then(setSources).catch(e=>setError(e.message));
-  }, []);
+    let active=true;setSourceError("");loadJournalSources().then(v=>{if(active)setSources(v);}).catch(e=>{if(active)setSourceError(e.message);});return()=>{active=false;};
+  }, [refreshKey]);
 
   // Ledger integrity comes from the posted journal lines, not the journal
   // headers — a header can look balanced while its lines are one-sided.
   useEffect(() => {
-    loadAccountBalances().then((balances) => setLedger(ledgerTotals(balances))).catch(e=>setError(e.message));
+    let active=true;setLedger(null);setLedgerError("");loadAccountBalances().then(balances=>{if(active)setLedger(ledgerTotals(balances));}).catch(e=>{if(active)setLedgerError(e.message);});return()=>{active=false;};
   }, [refreshKey]);
 
   // The search box is debounced so typing never fires a report query per keystroke.
@@ -60,7 +63,7 @@ export default function JournalRegister() {
   }, [term]);
 
   useEffect(() => {
-    let alive = true;
+    let alive = true;sequence.current++;moreFlight.current=false;setLoadingMore(false);
     setLoading(true);setError('');
     Promise.all([loadJournalPage(filters), loadJournalReport(filters)])
       .then(([page, rep]) => {
@@ -80,18 +83,19 @@ export default function JournalRegister() {
     setFilters(next);
   };
 
-  const refresh = () => setRefreshKey((k) => k + 1);
+  const refresh = () => {invalidateERPReads();setRefreshKey((k) => k + 1);};
 
   async function loadMore() {
-    if (!cursor) return;
-    setLoadingMore(true);
+    if (!cursor||moreFlight.current) return;
+    const requestSequence=sequence.current;moreFlight.current=true;setLoadingMore(true);
     try {
       const page = await loadJournalPage(filters, cursor);
-      setRows((prev) => [...prev, ...page.items]);
+      if(requestSequence!==sequence.current)return;
+      setRows(prev=>[...new Map([...prev,...page.items].map(row=>[row.id,row])).values()]);
       setCursor(page.next_cursor || null);
       setHasMore(!!page.has_more);
-    } finally {
-      setLoadingMore(false);
+    } catch(e){if(requestSequence===sequence.current)setError(e.message);} finally {
+      if(requestSequence===sequence.current){moreFlight.current=false;setLoadingMore(false);}
     }
   }
 
@@ -138,7 +142,8 @@ export default function JournalRegister() {
 
   return (
     <div>
-      <JournalStats report={report} ledger={ledger} />
+      <JournalStats report={report} ledger={ledger} error={ledgerError} />
+      <div className="mb-3 flex flex-wrap items-center gap-2"><Button type="button" variant="outline" disabled={loading} onClick={refresh}>{ui(error||ledgerError||sourceError?"Retry journal loading":"Refresh journals")}</Button>{[error,ledgerError,sourceError].filter(Boolean).map((message,i)=><p key={i} role="alert" className="text-sm text-red-700">{uiMessage(message)}</p>)}</div>
       <JournalFilters
         term={term}
         onTermChange={setTerm}
@@ -155,7 +160,7 @@ export default function JournalRegister() {
         {key:'journal_number',label:'Journal'},{key:'entry_date',label:'Entry date'},{key:'description',label:'Description'},{key:'source_module',label:'Source'},{key:'source_document_type',label:'Source document'},{key:'source_document_id',label:'Source document ID'},
         {key:'total_debit',label:'Debit',exportType:'money'},{key:'total_credit',label:'Credit',exportType:'money'},{key:'status',label:'Status'},{key:'created_date',label:'Recorded at'},{key:'posted_at',label:'Posted at'},{key:'posted_by',label:'Posted by'},
       ],await loadJournalExport(filters),Object.entries(filters),['Every matching journal is included with its recorded status. Drafts do not affect the ledger. Reversed journals retain their history.'])}/></div>
-      {error && <p role="alert" className="mb-3 text-sm text-red-700">{error}</p>}
+
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-primary" />
@@ -181,6 +186,7 @@ export default function JournalRegister() {
         </>
       )}
 
+      {isAdmin&&<AccountingIntegrityCheck/>}
       <JournalActivityFeed />
     </div>
   );

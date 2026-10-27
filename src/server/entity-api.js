@@ -1,3 +1,6 @@
+import {preparePostingRule} from './domain/posting-rule-definition.js';
+import {prepareTreasuryAccount} from './domain/treasury-definition.js';
+import {audit} from './domain/field-ops.js';
 import {guardTreasuryReferences} from '../lib/treasury-access.js';
 import {employeeRoleChange} from './domain/employee-role-change.js';
 import 'server-only';
@@ -61,9 +64,11 @@ export async function entityOperation(context,name,operation,args = []) {
       }
       const saved=[];
       for (const row of rows) {
-        const prepared = name === 'Warehouse' ? await prepareWarehouseDefinition(serviceEntities,row) : name === 'Product' ? await prepareProductDefinition(serviceEntities, row) : name === 'Vehicle' ? await prepareVehicleDefinition(serviceEntities, row) : name === 'ProductionOrder' ? await prepareProductionBatch(serviceEntities, row) : ['Customer','CustomerLocation'].includes(name) ? await prepareDeliveryDefinition(serviceEntities,row,null,context) : row;
+        const prepared = name==='PostingRule'?await preparePostingRule(serviceEntities,context,row):name==='TreasuryAccount'?await prepareTreasuryAccount(serviceEntities,context,row):name === 'Warehouse' ? await prepareWarehouseDefinition(serviceEntities,row) : name === 'Product' ? await prepareProductDefinition(serviceEntities, row) : name === 'Vehicle' ? await prepareVehicleDefinition(serviceEntities, row) : name === 'ProductionOrder' ? await prepareProductionBatch(serviceEntities, row) : ['Customer','CustomerLocation'].includes(name) ? await prepareDeliveryDefinition(serviceEntities,row,null,context) : row;
         const value = { ...authenticatedRecordChanges(context,name,prepared), created_by:context.user.email };
         const record=await store.create(value);
+        if(name==='PostingRule')await audit({entities:serviceEntities},{action:'create_posting_rule',module:'accounting',entityType:name,entityId:record.id,userId:context.user.id,description:'Configured '+record.rule_key+' to '+record.account_number});
+        if(name==='TreasuryAccount')await audit({entities:serviceEntities},{action:'create_treasury_account',module:'accounting',entityType:name,entityId:record.id,userId:context.user.id,description:'Linked treasury account '+record.name+' to '+record.gl_account_number});
         if(name==='Recipe')await finishRecipeApproval(serviceEntities,context,null,record);
         if(name==='Product')await recordItemMetadataChange(serviceEntities,context,null,record);
         await recordAuthenticatedDecision(serviceEntities,context,name,null,record);
@@ -86,11 +91,13 @@ export async function entityOperation(context,name,operation,args = []) {
       await guardRecipeMutation(serviceEntities,context,name,operation,args[1] || {},row);
     }
     if (operation === 'delete' || operation === 'deleteMany') return store.deleteMany(query);
-    if (['Warehouse','Product','Vehicle','ProductionOrder','Customer','CustomerLocation'].includes(name)) {
+    if (['PostingRule','TreasuryAccount','Warehouse','Product','Vehicle','ProductionOrder','Customer','CustomerLocation'].includes(name)) {
       const records = [];
       for (const row of existing) {
-        const definition = name === 'Warehouse' ? await prepareWarehouseDefinition(serviceEntities,args[1],row) : name === 'Product' ? await prepareProductDefinition(serviceEntities, args[1], row) : name === 'Vehicle' ? await prepareVehicleDefinition(serviceEntities, args[1], row) : name === 'ProductionOrder' ? await prepareProductionBatch(serviceEntities, args[1], row) : await prepareDeliveryDefinition(serviceEntities,args[1],row,context);
+        const definition = name==='PostingRule'?await preparePostingRule(serviceEntities,context,args[1],row):name==='TreasuryAccount'?await prepareTreasuryAccount(serviceEntities,context,args[1],row):name === 'Warehouse' ? await prepareWarehouseDefinition(serviceEntities,args[1],row) : name === 'Product' ? await prepareProductDefinition(serviceEntities, args[1], row) : name === 'Vehicle' ? await prepareVehicleDefinition(serviceEntities, args[1], row) : name === 'ProductionOrder' ? await prepareProductionBatch(serviceEntities, args[1], row) : await prepareDeliveryDefinition(serviceEntities,args[1],row,context);
         const record=await store.update(row.id, authenticatedRecordChanges(context,name,definition,row));
+        if(name==='TreasuryAccount')await audit({entities:serviceEntities},{action:'update_treasury_account',module:'accounting',entityType:name,entityId:record.id,userId:context.user.id,description:'Updated treasury settings for '+record.name});
+        if(name==='PostingRule')await audit({entities:serviceEntities},{action:'update_posting_rule',module:'accounting',entityType:name,entityId:record.id,userId:context.user.id,description:'Changed '+record.rule_key+' from '+row.account_number+' to '+record.account_number});
         if(name==='Product')await recordItemMetadataChange(serviceEntities,context,row,record);
         records.push(record);
       }

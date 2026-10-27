@@ -50,32 +50,39 @@ export async function loadJournalReport(filters) {
   let total = 0;
   let debit = 0;
   let credit = 0;
-  (res.rows || []).forEach((row) => {
-    counts[row.status] = row.count || 0;
-    total += row.count || 0;
-    if (row.status === "posted") {
-      debit += row.sum_total_debit || 0;
-      credit += row.sum_total_credit || 0;
+  if(!Array.isArray(res?.rows))throw Error("The journal summary could not be loaded.");
+  res.rows.forEach((row) => {
+    const count=Number(row.count||0),d=Number(row.sum_total_debit||0),c=Number(row.sum_total_credit||0);
+    if(!Number.isSafeInteger(count)||count<0||![d,c].every(n=>Number.isFinite(n)&&n>=0))throw Error("The journal summary contains invalid totals.");
+    counts[row.status] = count;
+    total += count;
+    if (["posted","reversed"].includes(row.status)) {
+      debit += Math.round(d*100);
+      credit += Math.round(c*100);
     }
   });
   return {
     counts,
     total,
-    debit: Math.round(debit),
-    credit: Math.round(credit),
-    difference: Math.round(debit - credit),
+    debit: debit/100,
+    credit: credit/100,
+    difference: (debit-credit)/100,
   };
 }
 
 export async function loadJournalPage(filters, cursor) {
   const options = { sort: "-created_date", limit: PAGE_SIZE };
   if (cursor) options.cursor = cursor;
-  return erp.entities.JournalEntry.filter(buildJournalQuery(filters), options);
+  const page=await erp.entities.JournalEntry.filter(buildJournalQuery(filters),options);
+  if(Array.isArray(page))return {items:page,has_more:false,next_cursor:null};
+  if(!Array.isArray(page?.items)||page.has_more&&(!page.next_cursor||String(page.next_cursor)===String(cursor)))throw Error("The journal page could not be fully loaded. Please retry.");
+  return page;
 }
 
 export async function loadJournalSources() {
-  const res = await erp.entities.JournalEntry.list({ distinct: "source_module" });
-  return (res.items || []).filter(Boolean).sort();
+  const res=await erp.entities.JournalEntry.aggregate({groupBy:"source_module",limit:1000});
+  if(!Array.isArray(res?.rows))throw Error("Journal source options could not be loaded.");
+  return [...new Set(res.rows.map(r=>r.source_module).filter(s=>typeof s==="string"&&s.trim()&&s!=="all"))].sort();
 }
 
 const CSV_HEADERS = [
@@ -83,7 +90,7 @@ const CSV_HEADERS = [
   "Debit", "Credit", "Status", "Recorded At", "Posted At", "Posted By",
 ];
 
-const csvCell = (value) => `"${String(value == null ? "" : value).replace(/"/g, '""')}"`;
+const csvCell=value=>{let text=String(value??'');if(typeof value==='string'&&/^[\s\uFEFF]*[=+\-@]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';};
 
 // Full register export — walks the cursor so the report covers every match.
 export async function exportJournalsCsv(filters) {

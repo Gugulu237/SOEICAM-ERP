@@ -8,7 +8,7 @@ import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {openingPositionRequest} from '@/lib/opening-position-client';
 import {openingPositionTotals} from '@/lib/opening-position-totals';
 import {businessDate} from '@/lib/business-date';
-import {formatXAF} from '@/lib/formatters';
+import {formatAccountingXAF as formatXAF} from '@/lib/formatters';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import HelpNotice from '@/components/shared/HelpNotice';

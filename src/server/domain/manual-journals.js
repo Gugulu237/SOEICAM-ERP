@@ -1,3 +1,4 @@
+import {manualCashPlan} from './manual-cash-plan.js';
 import { requireAccountant } from './account-definitions.js';
 import { round2, nextSequence, audit } from './field-ops.js';
 
@@ -23,7 +24,7 @@ export async function saveManualJournal(stores, context, body) {
   const previous=(await stores.JournalEntry.filter({manual_request_key:body.requestKey},'id',1))[0];
   if(previous){if(previous.manual_request_payload!==fingerprint)throw Object.assign(Error('This save reference belongs to different journal details. Reload before creating another journal.'),{status:409});return previous;}
   if(raw.length<1||(status==='posted'&&raw.length<2))throw Error('A posted journal requires at least two lines.');
-  const periods=await stores.AccountingPeriod.filter({}),period=periods.find(p=>p.start_date<=entryDate&&entryDate<=p.end_date);
+  const periods=await stores.AccountingPeriod.filter({}),matches=periods.filter(p=>p.start_date<=entryDate&&entryDate<=p.end_date),period=matches.find(p=>['closed','locked'].includes(p.status))||matches.sort((a,b)=>String(b.start_date).localeCompare(String(a.start_date)))[0];
   if(['closed','locked'].includes(period?.status))throw Error('The accounting period is closed or locked.');
   let totalDebit=0,totalCredit=0,totalDebitCents=0,totalCreditCents=0;const lines=[],accounts=new Map();
   for(const l of raw){
@@ -42,6 +43,7 @@ export async function saveManualJournal(stores, context, body) {
     totalDebit=totalDebitCents/100;totalCredit=totalCreditCents/100;
   }
   if(status==='posted'&&totalDebit!==totalCredit)throw Error('Journal debits and credits must balance before posting.');
+  const cashPlan=status==='posted'?await manualCashPlan(stores,context,lines,accounts):[];
   const client={entities:stores},journal_number=draft?.journal_number||await nextSequence(client,'next_journal_number','JV',6);
   const journalData={journal_number,entry_date:entryDate,description,source_module:'manual',source_document_type:'manual_journal',source_document_id:'MAN-'+body.requestKey,period_id:period?.id||'',status,is_immutable:status==='posted',total_debit:totalDebit,total_credit:totalCredit,posted_by:status==='posted'?context.user.id:'',posted_at:status==='posted'?new Date().toISOString():'',manual_request_key:body.requestKey,manual_request_payload:fingerprint,created_by:context.user.email};
   const journal=draft?await stores.JournalEntry.update(draft.id,journalData):await stores.JournalEntry.create(journalData);
@@ -51,6 +53,7 @@ export async function saveManualJournal(stores, context, body) {
     for(const l of lines){const a=accounts.get(l.account_id);a.balance=round2(Number(a.balance||0)+(a.normal_balance==='debit'?l.debit-l.credit:l.credit-l.debit));}
     for(const a of accounts.values())await stores.Account.update(a.id,{balance:a.balance});
   }
+  for(const change of cashPlan)await stores.TreasuryAccount.update(change.id,{balance:change.balance});
   await audit(client,{action:status==='posted'?'post_journal':'create_draft_journal',module:'accounting',entityType:'JournalEntry',entityId:journal.id,userId:context.user.id,description:`${status==='posted'?'Posted':'Saved draft'} ${journal_number}: ${description}`});
   return journal;
 }

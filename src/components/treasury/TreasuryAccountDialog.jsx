@@ -1,5 +1,6 @@
 
 /* localized-interface */
+import {readAll} from "@/lib/field-pos";
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
@@ -17,10 +18,10 @@ export default function TreasuryAccountDialog({ onClose, onDone }) {
   const { toast } = useToast();
   const [glAccounts, setGlAccounts] = useState([]);
   const [form, setForm] = useState({ name: "", account_type: "cash", gl_account_id: "", float_limit: 0, custodian: "", opening_balance: 0 });
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(false),[loadError,setLoadError]=useState("");
 
   useEffect(() => {
-    erp.entities.Account.filter({ is_active: true, account_type: "asset" }, "account_number", 500).then(setGlAccounts);
+    readAll(erp.entities.Account,{is_active:true,account_type:"asset"},"account_number").then(a=>setGlAccounts(a.filter(r=>r.is_posting!==false&&r.normal_balance==="debit"&&!r.is_control_account))).catch(e=>setLoadError(e.message));
   }, []);
 
   async function handleSave() {
@@ -34,7 +35,7 @@ export default function TreasuryAccountDialog({ onClose, onDone }) {
       await erp.entities.TreasuryAccount.create({
         name: form.name, account_type: form.account_type,
         gl_account_id: gl.id, gl_account_number: gl.account_number, gl_account_name: gl.name,
-        balance: Number(form.opening_balance) || 0,
+        balance: 0,
         float_limit: Number(form.float_limit) || 0,
         custodian: form.custodian, is_active: true,
       });
@@ -48,6 +49,7 @@ export default function TreasuryAccountDialog({ onClose, onDone }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader><DialogTitle>{ui("New Treasury Account")}</DialogTitle></DialogHeader>
+        {loadError&&<p role="alert" className="text-sm text-red-700">{loadError}</p>}
         <div className="space-y-4">
           <div>
             <Label>{ui("Name")}</Label>
@@ -66,10 +68,7 @@ export default function TreasuryAccountDialog({ onClose, onDone }) {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>{ui("Opening Balance (XAF)")}</Label>
-              <Input type="number" min="0" value={form.opening_balance || ""} onChange={(e) => setForm((f) => ({ ...f, opening_balance: e.target.value }))} />
-            </div>
+            <p className="self-end text-xs text-slate-500">{ui("Record opening cash through Accounting opening balances. This account links to its posted GL balance.")}</p>
           </div>
           <div>
             <Label>{ui("Linked GL Account")}</Label>

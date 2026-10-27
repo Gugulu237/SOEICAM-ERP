@@ -1,6 +1,6 @@
 import React from 'react';
 import {ui,uiMessage} from '@/lib/i18n';
-import {formatXAF} from '@/lib/formatters';
+import {formatAccountingXAF as formatXAF} from '@/lib/formatters';
 import HelpNotice from '@/components/shared/HelpNotice';
 export default function OpeningOffset({accounts,accountId,onChange,offset,disabled}){
  const options=accounts.filter(a=>a.account_type==='equity'&&a.normal_balance==='credit'&&a.is_active!==false&&a.is_posting!==false&&!a.opening_recorded&&!a.is_control_account&&(!a.currency||a.currency==='XAF'));

@@ -5,7 +5,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
-import { formatXAF } from "@/lib/formatters";
+import { formatAccountingXAF as formatXAF } from "@/lib/formatters";
 import { validateJournal, round2 } from "@/lib/posting";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import PageHeader from "@/components/shared/PageHeader";
@@ -43,7 +43,7 @@ export default function JournalEntryForm() {
   const loadAccounts=useCallback(async()=>{
     const sequence=++loadSequence.current;setLoadingAccounts(true);setLoadError("");
     try{const accs=await readAll(erp.entities.Account,{is_active:{$ne:false}},"account_number");
-      if(sequence===loadSequence.current)setAccounts(accs.filter(a=>a.is_active!==false&&a.is_posting!==false&&a.allow_manual_journal!==false).sort((a,b)=>String(a.account_number||"").localeCompare(String(b.account_number||""),undefined,{numeric:true})));
+      if(sequence===loadSequence.current)setAccounts(accs.filter(a=>a.is_active!==false&&a.is_posting!==false&&a.allow_manual_journal!==false&&!a.is_control_account).sort((a,b)=>String(a.account_number||"").localeCompare(String(b.account_number||""),undefined,{numeric:true})));
     }catch(e){if(sequence===loadSequence.current)setLoadError(e.message);}
     finally{if(sequence===loadSequence.current)setLoadingAccounts(false);}
   },[]);

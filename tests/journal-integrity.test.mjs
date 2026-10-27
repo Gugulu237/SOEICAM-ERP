@@ -14,7 +14,7 @@ async function fixture(db) {
   const rows={
     Account:[{id:'cash',name:'Cash',account_number:'1000',normal_balance:'debit',balance:0,is_active:true,is_posting:true},{id:'capital',name:'Capital',account_number:'3000',normal_balance:'credit',balance:0,is_active:true,is_posting:true},
       {id:'wages',name:'Salary expense',account_type:'expense',account_number:'6100',normal_balance:'debit',balance:0,is_active:true,is_posting:true},{id:'payable',name:'Salaries payable',account_type:'liability',account_number:'4200',normal_balance:'credit',balance:0,is_active:true,is_posting:true}],
-    CompanySettings:[{id:'settings',next_journal_number:1}],AccountingPeriod:[{id:'period',start_date:date.slice(0,4)+'-01-01',end_date:date.slice(0,4)+'-12-31',status:'open'}],
+    PostingRule:[],CompanySettings:[{id:'settings',next_journal_number:1}],AccountingPeriod:[{id:'period',start_date:date.slice(0,4)+'-01-01',end_date:date.slice(0,4)+'-12-31',status:'open'}],
     Employee:[{id:'staff',full_name:'Employee',base_salary:100000,status:'active'}],JournalEntry:[],JournalLine:[],AuditLog:[],PayrollRun:[],PayrollLine:[],TreasuryAccount:[],Payment:[],TreasuryTransaction:[],
   };
   if (db) {
@@ -177,4 +177,19 @@ test('manual journals reject sub-cent amounts, unbalanced entries and unsafe tot
  [{debit:10},{account_id:'capital',credit:10}],
  Array.from({length:200},(_,i)=>({account_id:i%2?'cash':'capital',debit:i%2?1e12:0,credit:i%2?0:1e12}))
  ]){await assert.rejects(saveManualJournal(s,context,{...base,lines}));assert.deepEqual(rows,before);}
+});
+
+test('manual cash journals keep Treasury and GL in sync, block stale cash caches and reject bank access or source-control accounts',async()=>{
+ const f=await fixture(),s=f.stores,body=journalBody();
+ await s.Account.update('cash',{account_type:'asset'});await s.TreasuryAccount.create({name:'Till',account_type:'cash',gl_account_id:'cash',is_active:true,balance:0});
+ const journal=await saveManualJournal(s,context,body);assert.equal((await s.TreasuryAccount.list())[0].balance,1000);assert.equal((await s.Account.get('cash')).balance,1000);
+ await saveManualJournal(s,context,body);assert.equal((await s.TreasuryAccount.list())[0].balance,1000);
+ const t=(await s.TreasuryAccount.list())[0];await s.TreasuryAccount.update(t.id,{balance:999});const before=structuredClone(f.rows);
+ await assert.rejects(saveManualJournal(s,context,{...body,requestKey:crypto.randomUUID()}),/Reconcile treasury/);assert.deepEqual(f.rows,before);
+ await s.TreasuryAccount.update(t.id,{balance:1000,account_type:'bank'});
+ const cashier={user:{id:'cashier',role:'user'},role:'cashier',employee:{role:'cashier',status:'active',allowed_modules:['accounting']}};
+ await assert.rejects(saveManualJournal(s,cashier,{...body,requestKey:crypto.randomUUID()}),/Bank accounts/);
+ await s.TreasuryAccount.update(t.id,{account_type:'cash'});await s.PostingRule.create({rule_key:'customer_receivable',account_id:'cash',is_active:true});
+ await assert.rejects(saveManualJournal(s,context,{...body,requestKey:crypto.randomUUID()}),/control accounts/);
+ assert.ok(journal.is_immutable);
 });

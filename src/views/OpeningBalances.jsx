@@ -5,7 +5,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ui,uiMessage} from '@/lib/i18n';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {businessDate} from '@/lib/business-date';
-import {formatXAF,formatDate} from '@/lib/formatters';
+import {formatAccountingXAF as formatXAF,formatDate} from '@/lib/formatters';
 import {openingBalancesRequest} from '@/lib/opening-balances-client';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';

@@ -1,86 +1,19 @@
-
-/* localized-interface */
-import { ui } from '@/lib/i18n';
-import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState, useEffect } from "react";
-import { erp } from "@/api/erpClient";
-import { formatDate } from "@/lib/formatters";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
-import StatusBadge from "@/components/shared/StatusBadge";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
-
-export default function PeriodsManager() {
-  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-
-  const { user, isAdmin } = useCurrentUser();
-  const { toast } = useToast();
-  const [periods, setPeriods] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = () => erp.entities.AccountingPeriod.filter({})
-    .then((p) => setPeriods(p.sort((a, b) => a.start_date.localeCompare(b.start_date))))
-    .finally(() => setLoading(false));
-
-  useEffect(() => { load(); }, []);
-
-  async function transition(period, status, actionLabel) {
-    try {
-      await erp.entities.AccountingPeriod.update(period.id, { status });
-      await erp.entities.AuditLog.create({
-        action: `period_${status}`, module: "accounting", entity_type: "AccountingPeriod", entity_id: period.id,
-        user_id: user?.id || "", description: ui("{0} accounting period {1}", actionLabel, period.name),
-      });
-      toast({ title: ui("Period {0}", period.name), description: actionLabel });
-      load();
-    } catch (e) { toast({ title: ui("Error"), description: e.message, variant: "destructive" }); }
-  }
-
-  if (loading) return <div className="py-10 text-center text-slate-400">{ui("Loading periods…")}</div>;
-
-  return (
-    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-slate-50 border-b border-slate-200 text-left text-slate-500">
-            <th className="px-4 py-3">{ui("Period")}</th>
-            <th className="px-4 py-3">{ui("Fiscal Year")}</th>
-            <th className="px-4 py-3">{ui("Start")}</th>
-            <th className="px-4 py-3">{ui("End")}</th>
-            <th className="px-4 py-3">{ui("Status")}</th>
-            <th className="px-4 py-3 text-right">{ui("Actions")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {periods.map((p) => (
-            <tr key={p.id} className="border-b border-slate-100">
-              <td className="px-4 py-3 font-medium">{p.name}</td>
-              <td className="px-4 py-3">{p.fiscal_year}</td>
-              <td className="px-4 py-3">{formatDate(p.start_date)}</td>
-              <td className="px-4 py-3">{formatDate(p.end_date)}</td>
-              <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
-              <td className="px-4 py-3 text-right">
-                <div className="flex justify-end gap-1">
-                  {p.status === "open" && isAdmin && (
-                    <Button size="sm" variant="outline" onClick={() => transition(p, "closed", "Closed")}>{ui("Close")}</Button>
-                  )}
-                  {p.status === "closed" && isAdmin && (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => transition(p, "open", "Reopened")}>{ui("Reopen")}</Button>
-                      <Button size="sm" variant="destructive" onClick={() => transition(p, "locked", "Locked")}>{ui("Lock")}</Button>
-                    </>
-                  )}
-                  {p.status === "locked" && isAdmin && (
-                    <Button size="sm" variant="outline" onClick={() => transition(p, "closed", "Unlocked to closed")}>{ui("Unlock")}</Button>
-                  )}
-                  {!isAdmin && <span className="text-xs text-slate-400">{ui("GM only")}</span>}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="px-4 py-3 text-xs text-slate-500 bg-slate-50 border-t border-slate-200">{ui("Posting into closed or locked periods is blocked by the posting engine. Only the General Manager can close, reopen or lock periods — every change is audited.")}</p>
-    </div>
-  );
+import React,{useEffect,useState,useRef} from 'react';
+import {ui,uiMessage} from '@/lib/i18n';
+import {useLocaleRender} from '@/lib/localization';
+import {erp} from '@/api/erpClient';
+import {readAll} from '@/lib/field-pos';
+import {accountingControlRequest} from '@/lib/accounting-controls-client';
+import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {formatDate} from '@/lib/formatters';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import StatusBadge from '@/components/shared/StatusBadge';
+export default function PeriodsManager(){
+ useLocaleRender();const {isAdmin}=useCurrentUser(),[periods,setPeriods]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[selection,setSelection]=useState(null),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),flight=useRef(false),key=useRef('');
+ const load=async()=>{setLoading(true);setError('');try{setPeriods((await readAll(erp.entities.AccountingPeriod,{},'start_date')).sort((a,b)=>String(a.start_date).localeCompare(String(b.start_date))));}catch(e){setError(e.message);}finally{setLoading(false);}};
+ useEffect(()=>{load();},[]);
+ const choose=(period,status)=>{key.current=crypto.randomUUID();setSelection({period,status});setReason('');setError('');};
+ const save=async()=>{if(flight.current)return;flight.current=true;setBusy(true);setError('');try{await accountingControlRequest('periods',{action:'transition',periodId:selection.period.id,revision:Number(selection.period.accounting_period_revision||0),status:selection.status,reason:reason.trim(),requestKey:key.current});setSelection(null);await load();}catch(e){setError(e.message);}finally{flight.current=false;setBusy(false);}};
+ return <section className="min-w-0 space-y-3 rounded-xl border bg-white p-3">{error&&<div role="alert" className="flex flex-wrap gap-2 text-sm text-red-700"><span>{uiMessage(error)}</span><Button type="button" variant="outline" disabled={loading||busy} onClick={load}>{ui('Retry')}</Button></div>}{loading?<p role="status">{ui('Loading periods…')}</p>:<table className="mobile-table-cards w-full text-sm"><thead><tr><th className="p-2 text-left">{ui('Period')}</th><th className="p-2 text-left">{ui('Start')}</th><th className="p-2 text-left">{ui('End')}</th><th className="p-2 text-left">{ui('Status')}</th><th className="p-2 text-left">{ui('Actions')}</th></tr></thead><tbody>{periods.map(p=><tr className="border-t" key={p.id}><td data-label={ui('Period')} className="p-2">{p.name}</td><td data-label={ui('Start')} className="p-2">{formatDate(p.start_date)}</td><td data-label={ui('End')} className="p-2">{formatDate(p.end_date)}</td><td data-label={ui('Status')} className="p-2"><StatusBadge status={p.status}/></td><td data-label={ui('Actions')} className="p-2"><div className="flex flex-wrap gap-2">{isAdmin?(p.status==='open'?[['closed','Close']]:p.status==='closed'?[['open','Reopen'],['locked','Lock']]:[['closed','Unlock']]).map(([status,label])=><Button key={status} type="button" size="sm" variant="outline" disabled={busy} onClick={()=>choose(p,status)}>{ui(label)}</Button>):ui('GM only')}</div></td></tr>)}</tbody></table>}{selection&&<fieldset disabled={busy} className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-sm font-semibold">{selection.period.name} · {ui(selection.status==='open'?'Reopen':selection.status==='locked'?'Lock':'Close')}</p><label className="block text-xs">{ui('Reason for period change')}<Input aria-label={ui('Reason for period change')} value={reason} minLength={3} maxLength={1000} onChange={e=>setReason(e.target.value)}/></label><div className="flex flex-wrap gap-2"><Button type="button" disabled={reason.trim().length<3} onClick={save}>{ui('Confirm period change')}</Button><Button type="button" variant="outline" onClick={()=>setSelection(null)}>{ui('Cancel')}</Button></div></fieldset>}</section>;
 }

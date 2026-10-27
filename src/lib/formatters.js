@@ -6,6 +6,11 @@ export function formatXAF(amount) {
   return num.toLocaleString(getLocale()) + " XAF";
 }
 
+export function formatAccountingXAF(amount){
+  if(amount==null||!Number.isFinite(Number(amount)))return ui('Invalid amount');
+  return Number(amount).toLocaleString(getLocale(),{maximumFractionDigits:2})+' XAF';
+}
+
 export function formatNumber(num, decimals = 0) {
   if (num == null || isNaN(num)) return "0";
   return Number(num).toLocaleString(getLocale(), { minimumFractionDigits: decimals, maximumFractionDigits: decimals });

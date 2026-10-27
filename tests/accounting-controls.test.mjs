@@ -37,7 +37,7 @@ test('journal suggestions handle debit/credit, decimals and splits without overw
   assert.equal(balancingAmount([{...a,debit:-1},blank],1),null);
   assert.equal(balancingAmount([{...a,account_id:''},blank],1),null);
 });
-async function journalFixture(db){const f=await fixture(db),s=f.entities;await s.Account.update('till-gl',{allow_manual_journal:true});const capital=await s.Account.create(equity());return {...f,body:{requestKey:crypto.randomUUID(),entryDate:date,description:'Capital received',status:'posted',lines:[{account_id:'till-gl',debit:1500,credit:0},{account_id:capital.id,debit:0,credit:1500}]},capital};}
+async function journalFixture(db){const f=await fixture(db),s=f.entities;await s.Account.update('till-gl',{allow_manual_journal:true,balance:0});await s.TreasuryAccount.update('till',{balance:0});const capital=await s.Account.create(equity());return {...f,body:{requestKey:crypto.randomUUID(),entryDate:date,description:'Capital received',status:'posted',lines:[{account_id:'till-gl',debit:1500,credit:0},{account_id:capital.id,debit:0,credit:1500}]},capital};}
 test('manual journal uses verified accounts, balances once on retry and leaves draft amounts unposted',async()=>{
   const f=await journalFixture(),s=f.entities,opening=(await s.Account.get('till-gl')).balance;
   const j=await saveManualJournal(s,context,{...f.body,userId:'forged',lines:f.body.lines.map(l=>({...l,account_name:'forged'}))});

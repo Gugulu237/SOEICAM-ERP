@@ -3,7 +3,7 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
-import { formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
+import { formatAccountingXAF as formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Eye, RotateCcw, CheckCircle2 } from "lucide-react";
@@ -36,7 +36,7 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
         </thead>
         <tbody>
           {rows.map((j) => {
-            const out = Math.round((j.total_debit || 0) - (j.total_credit || 0)) !== 0;
+            const out = Math.round((Number(j.total_debit || 0) - Number(j.total_credit || 0))*100) !== 0;
             return (
               <tr
                 key={j.id}

@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {readAll} from "@/lib/field-pos";
 import { erp } from "@/api/erpClient";
 import { useParams, useNavigate, Link } from "@/lib/router";
-import { formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
+import { formatAccountingXAF as formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import { reverseJournal, postDraft } from "@/lib/posting";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import PageHeader from "@/components/shared/PageHeader";

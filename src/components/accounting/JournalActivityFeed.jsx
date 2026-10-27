@@ -1,6 +1,7 @@
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
+import {Button} from "@/components/ui/button";
+import { ui,uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
@@ -19,13 +20,14 @@ export default function JournalActivityFeed() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true),[error,setError]=useState(""),[revision,setRevision]=useState(0);
 
   useEffect(() => {
+    let active=true;setLoading(true);setError("");
     erp.entities.AuditLog.filter({ module: "accounting" }, { sort: "-created_date", limit: 15, include_total: false })
-      .then((page) => setEvents(page.items))
-      .finally(() => setLoading(false));
-  }, []);
+      .then(page=>{const rows=Array.isArray(page)?page:page?.items;if(!Array.isArray(rows))throw Error("Journal activity could not be loaded.");if(active)setEvents(rows);})
+      .catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};
+  }, [revision]);
 
   if (loading) return null;
 
@@ -36,7 +38,7 @@ export default function JournalActivityFeed() {
         <h3 className="font-semibold text-slate-700">{ui("Recent journal activity")}</h3>
         <span className="text-xs text-slate-500">{ui("What happened, and exactly when")}</span>
       </div>
-      {events.length === 0 ? (
+      {error?<div className="p-3"><p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p><Button type="button" variant="outline" onClick={()=>setRevision(r=>r+1)}>{ui("Retry activity")}</Button></div>:events.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-slate-400">{ui("No journal activity recorded yet.")}</p>
       ) : (
         <ul className="divide-y divide-slate-100">

@@ -13,6 +13,7 @@ import { Plus, ChevronDown } from "lucide-react";
 import PeriodsManager from "@/components/accounting/PeriodsManager";
 import PostingRulesManager from "@/components/accounting/PostingRulesManager";
 import ChartOfAccountsManager from "@/components/accounting/ChartOfAccountsManager";
+import AccountingPanelBoundary from '@/components/accounting/AccountingPanelBoundary';
 import JournalRegister from "@/components/accounting/JournalRegister";
 import PaymentRegister from "@/components/accounting/PaymentRegister";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -57,7 +58,7 @@ export default function Accounting() {
           <ChartOfAccountsManager />
         </TabsContent>
         <TabsContent value="journals" className="mt-4">
-          <JournalRegister />
+          <AccountingPanelBoundary><JournalRegister /></AccountingPanelBoundary>
         </TabsContent>
         <TabsContent value="payments" className="mt-4">
           <PaymentRegister />

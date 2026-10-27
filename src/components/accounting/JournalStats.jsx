@@ -3,7 +3,7 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
-import { formatXAF } from "@/lib/formatters";
+import { formatAccountingXAF as formatXAF } from "@/lib/formatters";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 const Card = ({ label, value, hint }) => (
@@ -14,10 +14,10 @@ const Card = ({ label, value, hint }) => (
   </div>
 );
 
-export default function JournalStats({ report, ledger }) {
+export default function JournalStats({ report, ledger, error }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const balanced = ledger ? Math.abs(ledger.difference) < 1 : null;
+  const balanced = ledger ? Math.round(Number(ledger.difference)*100) === 0 : null;
   const tone = balanced === null
     ? "border-slate-200 bg-white"
     : balanced ? "border-green-200 bg-green-50" : "border-slate-200 bg-slate-50";
@@ -42,14 +42,14 @@ export default function JournalStats({ report, ledger }) {
       <div className={`rounded-lg border p-3 ${tone}`}>
         <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Posted ledger")}</p>
         <div className={`flex items-center gap-1.5 font-semibold ${balanced === null ? "text-slate-500" : balanced ? "text-green-700" : "text-slate-800"}`}>
-          {balanced === null ? ui("Checking…") : balanced ? (
+          {error?ui("Ledger check unavailable"):balanced === null ? ui("Checking…") : balanced ? (
             <><CheckCircle2 size={16} />{ui(" Debits equal credits")}</>
           ) : (
             <><AlertTriangle size={16} />{ui(" Out by ")}{formatXAF(Math.abs(ledger.difference))}</>
           )}
         </div>
         <p className="text-xs text-slate-500">
-          {ledger ? ui("Dr {0} · Cr {1}", formatXAF(ledger.debit), formatXAF(ledger.credit)) : ui("From posted journal lines")}
+          {error?ui("Retry the ledger check before relying on these totals."):ledger ? ui("Dr {0} · Cr {1}", formatXAF(ledger.debit), formatXAF(ledger.credit)) : ui("From posted journal lines")}
         </p>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import {journalCents,journalDate,checkedJournalLines,journalPayload,ledgerStatuses} from './journal-validation.js';
 import { effectiveRole, hasRoleAccess } from './roles.js';
 import { businessDate } from '../../lib/business-date.js';
 export { effectiveRole };
@@ -58,8 +59,10 @@ export async function getAccountByNumber(base44, accountNumber) {
 }
 
 async function assertOpenPeriod(base44, dateStr) {
+  journalDate(dateStr);
   const periods = await base44.entities.AccountingPeriod.filter({});
-  const period = periods.find((p) => p.start_date <= dateStr && dateStr <= p.end_date);
+  const matches=periods.filter(p=>p.start_date<=dateStr&&dateStr<=p.end_date);
+  const period=matches.find(p=>['closed','locked'].includes(p.status))||matches.sort((a,b)=>String(b.start_date).localeCompare(String(a.start_date)))[0];
   if (period && (period.status === "closed" || period.status === "locked")) {
     throw new Error(`Accounting period ${period.name} is ${period.status} — posting blocked`);
   }
@@ -69,88 +72,45 @@ async function assertOpenPeriod(base44, dateStr) {
 export async function nextSequence(base44, field, prefix, width) {
   const settings = (await base44.entities.CompanySettings.list("-created_date", 1))[0];
   if (!settings) throw new Error("Company settings are not configured");
-  const current = Number(settings[field]) || 1;
-  await base44.entities.CompanySettings.update(settings.id, { [field]: current + 1 });
-  return `${prefix}-${String(current).padStart(width, "0")}`;
+  let current=Number(settings[field]??1);
+  if(!Number.isSafeInteger(current)||current<1)throw Error('Reconcile the document sequence before posting.');
+  if(field==='next_journal_number'){
+    for(let attempt=0;;attempt++,current++){if(attempt>=100||!Number.isSafeInteger(current))throw Error('Reconcile duplicate journal numbers before posting.');const number=prefix+'-'+String(current).padStart(width,'0');if(!(await base44.entities.JournalEntry.filter({journal_number:number},'id',1)).length)break;}
+  }
+  await base44.entities.CompanySettings.update(settings.id,{[field]:current+1});
+  return prefix+'-'+String(current).padStart(width,'0');
 }
 
 // Posts a balanced journal through the shared ledger. Idempotent per source
 // document: the same source document can never create two posted journals, so a
 // retried approval cannot duplicate the ledger.
 export async function postJournal(base44, { entryDate, description, sourceModule, sourceDocumentType, sourceDocumentId, lines, userId, status = "posted" }) {
-  const active = (lines || []).filter((l) => l.account_id && (round2(l.debit) > 0 || round2(l.credit) > 0));
-  if (active.length < 2) throw new Error("A journal requires at least two lines");
-
-  let totalDebit = 0;
-  let totalCredit = 0;
-  active.forEach((l) => {
-    if (round2(l.debit) > 0 && round2(l.credit) > 0) throw new Error("A journal line cannot carry both a debit and a credit");
-    totalDebit = round2(totalDebit + round2(l.debit));
-    totalCredit = round2(totalCredit + round2(l.credit));
-  });
-  if (totalDebit !== totalCredit) {
-    throw new Error(`Journal does not balance: debits ${totalDebit} vs credits ${totalCredit}`);
+  if(status!=='posted')throw Error('Business journals must be posted through their checked workflow.');
+  journalDate(entryDate);
+  const {lines:active,debit:totalDebit,credit:totalCredit}=checkedJournalLines(lines);
+  const payload=journalPayload({entryDate,description,sourceModule,sourceDocumentType,lines:active});
+  if(sourceDocumentId){
+    const existing=await base44.entities.JournalEntry.filter({source_document_id:sourceDocumentId,source_module:sourceModule||'',source_document_type:sourceDocumentType||'',status:{$in:ledgerStatuses}});
+    if(existing.length>1)throw Error('Multiple journals use this source. Reconcile the source before posting.');
+    if(existing.length){
+      const journal=existing[0],savedLines=await base44.entities.JournalLine.filter({journal_id:journal.id},'id',1001);
+      const saved=checkedJournalLines(savedLines);
+      const prior=journalPayload({entryDate:journal.entry_date,description:journal.description,sourceModule:journal.source_module,sourceDocumentType:journal.source_document_type,lines:saved.lines});
+      if(prior!==payload||journal.posting_payload&&journal.posting_payload!==payload||journalCents(journal.total_debit)!==journalCents(saved.debit)||journalCents(journal.total_credit)!==journalCents(saved.credit))throw Object.assign(Error('This source already has a different posted journal. Reconcile it instead of posting again.'),{status:409});
+      return {journal,reused:true};
+    }
   }
-
-  const period = await assertOpenPeriod(base44, entryDate);
-
-  if (sourceDocumentId) {
-    const existing = await base44.entities.JournalEntry.filter({ source_document_id: sourceDocumentId, status: "posted" });
-    if (existing.length) return { journal: existing[0], reused: true };
-  }
-
-  const journalNumber = await nextSequence(base44, "next_journal_number", "JV", 6);
-  const journal = await base44.entities.JournalEntry.create({
-    journal_number: journalNumber,
-    entry_date: entryDate,
-    description,
-    source_module: sourceModule,
-    source_document_type: sourceDocumentType,
-    source_document_id: sourceDocumentId || "",
-    period_id: period?.id || "",
-    status,
-    is_immutable: status === "posted",
-    total_debit: totalDebit,
-    total_credit: totalCredit,
-    posted_by: userId,
-    posted_at: status === "posted" ? new Date().toISOString() : "",
-  });
-
-  await base44.entities.JournalLine.bulkCreate(active.map((l) => ({
-    journal_id: journal.id,
-    status,
-    account_id: l.account_id,
-    account_number: l.account_number || "",
-    account_name: l.account_name || "",
-    debit: round2(l.debit),
-    credit: round2(l.credit),
-    description: l.description || description,
-    party_type: l.party_type || "",
-    party_id: l.party_id || "",
-  })));
-
-  const accountIds = [...new Set(active.map(l => l.account_id))];
-  const accounts = new Map((await base44.entities.Account.filter({ id: { $in: accountIds } }, 'id', accountIds.length)).map(account => [account.id, account]));
-  for (const id of accountIds) if (!accounts.has(id)) throw new Error('A journal account no longer exists');
-  for (const l of active) {
-    const account = accounts.get(l.account_id);
-    const delta = account.normal_balance === "debit"
-      ? round2(l.debit) - round2(l.credit)
-      : round2(l.credit) - round2(l.debit);
-    account.balance = round2((account.balance || 0) + delta);
-  }
-  for (const account of accounts.values()) await base44.entities.Account.update(account.id, { balance: account.balance });
-
-  await base44.entities.AuditLog.create({
-    action: "post_journal",
-    module: sourceModule || "field_sales",
-    entity_type: "JournalEntry",
-    entity_id: journal.id,
-    user_id: userId,
-    description: `Posted ${journalNumber}: ${description} (${totalDebit} XAF)`,
-  });
-
-  return { journal, reused: false };
+  const period=await assertOpenPeriod(base44,entryDate);
+  const accountIds=[...new Set(active.map(l=>l.account_id))],accounts=new Map();
+  for(let i=0;i<accountIds.length;i+=100)for(const a of await base44.entities.Account.filter({id:{$in:accountIds.slice(i,i+100)}},'id',100))accounts.set(a.id,a);
+  for(const id of accountIds){const a=accounts.get(id);if(!a||a.is_active===false||a.is_posting===false||!['debit','credit'].includes(a.normal_balance)||a.currency&&a.currency!=='XAF'||!Number.isFinite(Number(a.balance||0)))throw Error('Choose active posting accounts with valid XAF balances.');}
+  const journalNumber=await nextSequence(base44,'next_journal_number','JV',6);
+  const journal=await base44.entities.JournalEntry.create({journal_number:journalNumber,entry_date:entryDate,description,source_module:sourceModule||'',source_document_type:sourceDocumentType||'',source_document_id:sourceDocumentId||'',period_id:period?.id||'',status,is_immutable:true,total_debit:totalDebit,total_credit:totalCredit,posted_by:userId,posted_at:new Date().toISOString(),posting_payload:payload});
+  await base44.entities.JournalLine.bulkCreate(active.map(l=>({journal_id:journal.id,status,account_id:l.account_id,account_number:accounts.get(l.account_id).account_number||'',account_name:accounts.get(l.account_id).name||'',debit:l.debit,credit:l.credit,description:l.description||description,party_type:l.party_type||'',party_id:l.party_id||''})));
+  for(const l of active){const a=accounts.get(l.account_id),delta=a.normal_balance==='debit'?l.debit-l.credit:l.credit-l.debit;a.balance=round2(Number(a.balance||0)+delta);}
+  for(const a of accounts.values())await base44.entities.Account.update(a.id,{balance:a.balance});
+  await audit(base44,{action:'post_journal',module:sourceModule||'field_sales',entityType:'JournalEntry',entityId:journal.id,userId,description:'Posted '+journalNumber+': '+description+' ('+totalDebit+' XAF)'});
+  return {journal,reused:false};
 }
 
 // --------------------------------------------------------------- inventory
