@@ -3,7 +3,7 @@ export function googleMapsFailureMessage(error) {
   if(error?.code==='MAPS_AUTHORIZATION')return 'Google Maps access was refused. Check Maps JavaScript API, billing and the website restrictions for this address.';
   if(error?.code==='MAPS_REFRESH_REQUIRED')return 'The Google Maps settings changed. Reload this page to apply them.';
   if(error?.code==='MAPS_TIMEOUT')return 'Google Maps took too long to load. Check your connection and reload the page.';
-  return 'Google Maps could not start. OpenStreetMap is shown temporarily; reload the page to try Google Maps again.';
+  return 'Google Maps could not start. Check the connection and map configuration, then reload the page.';
 }
 export function safeGoogleMapsDiagnostic(error) {
   let message=String(error?.message||'Map initialization failed.');
@@ -16,7 +16,7 @@ export async function googleMapsLibrary(promise,timeoutMs=30000) {
   finally {clearTimeout(timer);}
 }
 export function loadGoogleMaps(apiKey) {
-  if(!apiKey)return Promise.reject(mapsError('MAPS_MISSING_KEY','The customer map is not configured yet. GPS capture and Google Maps directions are still available.'));
+  if(!apiKey)return Promise.reject(mapsError('MAPS_MISSING_KEY','The Google customer map is not configured yet. Customer GPS capture remains available.'));
   if(window.__soeicamMapsApiKey&&window.__soeicamMapsApiKey!==apiKey)return Promise.reject(mapsError('MAPS_REFRESH_REQUIRED','Reload this page to use the updated Google Maps configuration.'));
   if(window.__soeicamMapsAuthFailed)return Promise.reject(mapsError('MAPS_AUTHORIZATION','Google Maps authorization failed. Check the enabled API, billing and allowed website.'));
   if(window.google?.maps?.importLibrary)return Promise.resolve(window.google.maps);

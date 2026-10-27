@@ -1,6 +1,9 @@
 'use client';
-import React,{useEffect,useRef,useState} from 'react';
-import {ui} from '@/lib/i18n';
+import React,{useCallback,useEffect,useRef,useState} from 'react';
+import {getLanguage,ui} from '@/lib/i18n';
+import {Maximize2,Minimize2,Navigation,LocateFixed,MapPin,X} from 'lucide-react';
+import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
+import {computeDeliveryRoute,createDeliveryNavigator,emptyNavigation,deliveryNavigationMessage} from '@/lib/customer-map-navigation';
 import CustomerInfo from './CustomerInfo';
 import {customerPinElement,customerPinSize} from '@/lib/customer-map-pin';
 import {loadGoogleMaps,googleMapsLibrary,googleMapsFailureMessage,safeGoogleMapsDiagnostic} from '@/lib/google-maps';
@@ -33,13 +36,17 @@ export function leafletAdapter(L,element,onPoint,onZone,onVertex){
       else if(kind==='yaounde')map.setView([YAOUNDE_CENTER.lat,YAOUNDE_CENTER.lng],12);
       else {const located=points.filter(hasCustomerLocation);if(located.length)map.fitBounds(L.latLngBounds(located.map(p=>[Number(p.gps_lat),Number(p.gps_lng)])),{padding:[30,30],maxZoom:17});}
     },
+    setExpanded(value){if(value)map.scrollWheelZoom.enable();else map.scrollWheelZoom.disable();},
+    clearRoute(){},
     resize(){map.invalidateSize();},
     destroy(){tiles.off();map.remove();}
   };
 }
 export async function googleAdapter(element,key,onPoint,onZone,onVertex){
   const maps=await loadGoogleMaps(key),[{Map,Polygon,Polyline,Circle},{AdvancedMarkerElement}]=await googleMapsLibrary(Promise.all([maps.importLibrary('maps'),maps.importLibrary('marker')]));
-  const map=new Map(element,{center:YAOUNDE_CENTER,zoom:12,mapId:process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID||'DEMO_MAP_ID',gestureHandling:'cooperative',streetViewControl:false,mapTypeControl:false,fullscreenControl:false});
+  const map=new Map(element,{center:YAOUNDE_CENTER,zoom:12,mapId:process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID||'DEMO_MAP_ID',gestureHandling:'cooperative',streetViewControl:false,mapTypeControl:false,fullscreenControl:false,clickableIcons:false});
+  let routeLayers=[];
+  const clearRoute=()=>{routeLayers.forEach(layer=>layer.setMap(null));routeLayers=[];};
   let layers=[],listeners=[];const clear=()=>{listeners.forEach(l=>l.remove());listeners=[];layers.forEach(l=>{'setMap' in l?l.setMap(null):l.map=null;});layers=[];};
   const click=map.addListener('click',e=>{if(e.latLng)onVertex({lat:e.latLng.lat(),lng:e.latLng.lng()});});
   return {
@@ -61,37 +68,133 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
       else points.filter(hasCustomerLocation).forEach(p=>bounds.extend({lat:Number(p.gps_lat),lng:Number(p.gps_lng)}));
       if(!bounds.isEmpty()){map.fitBounds(bounds,30);if(kind!=='cameroon')maps.event.addListenerOnce(map,'idle',()=>{if(map.getZoom()>17)map.setZoom(17);});}
     },
+    setExpanded(value){map.setOptions({gestureHandling:value?'greedy':'cooperative'});},
+    computeRoute(origin,stops,language){return computeDeliveryRoute(maps,origin,stops,language);},
+    clearRoute,
+    showRoute(route,origin,stops){
+      clearRoute();
+      routeLayers=route.createPolylines();
+      for(const line of routeLayers){line.setOptions({strokeColor:'#059669',strokeOpacity:.95,strokeWeight:6,zIndex:5,clickable:false});line.setMap(map);}
+      routeLayers.push(new Circle({map,center:origin,radius:origin.accuracy,strokeColor:'#2563eb',strokeWeight:1,fillColor:'#2563eb',fillOpacity:.08,clickable:false}));
+      routeLayers.push(new Circle({map,center:origin,radius:6,strokeColor:'#ffffff',strokeWeight:2,fillColor:'#2563eb',fillOpacity:1,zIndex:20,clickable:false}));
+      const bounds=new maps.LatLngBounds();bounds.extend(origin);
+      route.path.forEach(p=>bounds.extend(p));
+      stops.forEach(p=>bounds.extend({lat:Number(p.gps_lat),lng:Number(p.gps_lng)}));
+      map.fitBounds(bounds,35);
+    },
     resize(){maps.event.trigger(map,'resize');},
-    destroy(){clear();click.remove();maps.event.clearInstanceListeners(map);element.replaceChildren();}
+    destroy(){clearRoute();clear();click.remove();maps.event.clearInstanceListeners(map);element.replaceChildren();}
   };
 }
-export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onZoneSelect,drawing=false,draft=[],onVertex,frame}){
-  const element=useRef(null),adapter=useRef(null),callbacks=useRef({}),[ready,setReady]=useState(0),[status,setStatus]=useState('loading'),[provider,setProvider]=useState(''),[error,setError]=useState(''),[useGoogle,setUseGoogle]=useState(true),[diagnostic,setDiagnostic]=useState('');
-  callbacks.current={onSelect,onZoneSelect,onVertex,drawing};
+export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,onClose,drawingControls}){
+  const element=useRef(null),fullHost=useRef(null),canvas=useRef(null),adapter=useRef(null),navigator=useRef(null),callbacks=useRef({}),latestPoints=useRef(points),lastRequest=useRef(null);
+  const [ready,setReady]=useState(0),[status,setStatus]=useState('loading'),[provider,setProvider]=useState(''),[error,setError]=useState(''),[useGoogle,setUseGoogle]=useState(true),[diagnostic,setDiagnostic]=useState('');
+  const [expanded,setExpanded]=useState(initialExpanded),[localSelected,setLocalSelected]=useState(selectedId),[navigation,setNavigation]=useState(emptyNavigation);
+  const expandedRef=useRef(expanded),navigationRef=useRef(navigation);
+  expandedRef.current=expanded;navigationRef.current=navigation;latestPoints.current=points;
+  callbacks.current={onSelect,onClearSelection,onZoneSelect,onVertex,drawing};
+  const moveCanvas=useCallback(()=>{
+    const host=expandedRef.current&&fullHost.current?fullHost.current:element.current;
+    if(canvas.current&&host&&canvas.current.parentNode!==host)host.append(canvas.current);
+    adapter.current?.setExpanded(expandedRef.current);adapter.current?.resize();
+  },[]);
+  const setFullHost=useCallback(node=>{fullHost.current=node;moveCanvas();},[moveCanvas]);
+  const closeFull=()=>{if(initialExpanded&&onClose)onClose();else setExpanded(false);};
+  const clearSelection=()=>{navigator.current?.clear();setLocalSelected('');callbacks.current.onClearSelection?.();};
+  const startRoute=stops=>{
+    setExpanded(true);
+    if(!adapter.current?.computeRoute){setNavigation({...emptyNavigation(),phase:'error',stops,error:'ROUTE_GOOGLE_REQUIRED'});return;}
+    navigator.current?.start(stops,getLanguage());
+  };
   useEffect(()=>{
     let active=true,instance,resize;
-    const canvas=document.createElement("div");canvas.style.cssText="height:100%;width:100%";element.current.append(canvas);
-    const authFailed=()=>{setError(ui(googleMapsFailureMessage({code:'MAPS_AUTHORIZATION'})));setDiagnostic('MAPS_AUTHORIZATION');setUseGoogle(false);};window.addEventListener("soeicam:maps-auth-error",authFailed);setStatus("loading");
-    const select=p=>callbacks.current.onSelect?.(p),selectZone=z=>callbacks.current.onZoneSelect?.(z),vertex=p=>{if(callbacks.current.drawing)callbacks.current.onVertex?.(p);};
+    const surface=document.createElement('div');surface.style.cssText='height:100%;width:100%';canvas.current=surface;moveCanvas();
+    const authFailed=()=>{setError(ui(googleMapsFailureMessage({code:'MAPS_AUTHORIZATION'})));setDiagnostic('MAPS_AUTHORIZATION');setUseGoogle(false);};
+    window.addEventListener('soeicam:maps-auth-error',authFailed);setStatus('loading');setNavigation(emptyNavigation());
+    const select=p=>{navigator.current?.clear();setLocalSelected(p.id);callbacks.current.onSelect?.(p);};
+    const selectZone=z=>callbacks.current.onZoneSelect?.(z),vertex=p=>{if(callbacks.current.drawing)callbacks.current.onVertex?.(p);};
     async function start(){
       const key=process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      try {
-        if(key&&useGoogle){try{instance=await googleAdapter(canvas,key,select,selectZone,vertex);if(active)setProvider('Google Maps');}catch(reason){if(active){setError(ui(googleMapsFailureMessage(reason)));setDiagnostic(safeGoogleMapsDiagnostic(reason));canvas.replaceChildren();}}}
-        if(!instance){const module=await import('leaflet');if(!active)return;instance=leafletAdapter(module.default||module,canvas,select,selectZone,vertex);if(active)setProvider('OpenStreetMap');}
+      try{
+        if(key&&useGoogle){try{instance=await googleAdapter(surface,key,select,selectZone,vertex);if(active)setProvider('Google Maps');}catch(reason){if(active){setError(ui(googleMapsFailureMessage(reason)));setDiagnostic(safeGoogleMapsDiagnostic(reason));surface.replaceChildren();}}}
+        if(!instance){if(active){setStatus('error');setProvider('');if(!key)setError(ui('Configure the Google Maps key and map ID to display customer locations.'));}return;}
         if(!active){instance.destroy();return;}
-        adapter.current=instance;resize=new ResizeObserver(()=>instance.resize());resize.observe(element.current);setStatus('ready');setReady(n=>n+1);
+        adapter.current=instance;
+        navigator.current=createDeliveryNavigator({compute:(origin,stops,language)=>instance.computeRoute(origin,stops,language),draw:(route,origin,stops)=>instance.showRoute(route,origin,stops),clear:()=>instance.clearRoute(),onChange:setNavigation});
+        resize=new ResizeObserver(()=>instance.resize());resize.observe(surface);
+        moveCanvas();setStatus('ready');setReady(n=>n+1);
       }catch{if(active){setStatus('error');setError(ui('The map could not load. Customer locations remain available in the list.'));}}
     }
-    start();return()=>{active=false;resize?.disconnect();instance?.destroy();adapter.current=null;canvas.remove();window.removeEventListener("soeicam:maps-auth-error",authFailed);};
-  },[useGoogle]);
-  useEffect(()=>{adapter.current?.render(points,zones,selectedId,draft,drawing);},[points,zones,selectedId,draft,drawing,ready]);
-  useEffect(()=>{if(frame)adapter.current?.frame(frame.kind,points);},[frame,ready,points]);
-  return <div className="min-w-0 space-y-2"><link rel="stylesheet" href="/maps/leaflet-1.9.4/leaflet.css" precedence="customer-map"/>
-    <div className="relative isolate overflow-hidden rounded-xl border bg-slate-100">
-      <div ref={element} className="h-[52svh] min-h-80 w-full sm:h-[560px]" role="region" aria-label={ui('Customer delivery map')}/>
-      {status==='loading'&&<p role="status" className="absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
-    </div>
-    <div className="flex flex-wrap justify-between gap-2 text-[11px] text-slate-500"><span>{provider}</span><span>{ui('YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.')}</span></div>
-    {error&&<div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-slate-700"><p className="min-w-0 flex-1">{error}</p><button type="button" onClick={()=>window.location.reload()} className="min-h-10 shrink-0 rounded-md border bg-white px-3 font-medium">{ui('Reload page')}</button>{diagnostic&&<CustomerInfo title={ui('Google Maps status')}><p>{ui('The Google Maps API key and map ID are configured. This map uses OpenStreetMap only when Google Maps cannot start.')}</p><p>{ui('Allow this website in Google Cloud: {0}',typeof window!=='undefined'?window.location.origin+'/*':'http://localhost:5175/*')}</p><p className="break-words font-mono">{diagnostic}</p></CustomerInfo>}</div>}
+    start();
+    return()=>{active=false;navigator.current?.destroy();navigator.current=null;resize?.disconnect();instance?.destroy();adapter.current=null;surface.remove();if(canvas.current===surface)canvas.current=null;window.removeEventListener('soeicam:maps-auth-error',authFailed);};
+  },[useGoogle,moveCanvas]);
+  useEffect(()=>{setLocalSelected(selectedId);},[selectedId]);
+  useEffect(()=>{adapter.current?.render(points,zones,localSelected,draft,drawing);},[points,zones,localSelected,draft,drawing,ready]);
+  // Changes to a selection, route or viewport size must not reset the camera.
+  useEffect(()=>{if(frame)adapter.current?.frame(frame.kind,latestPoints.current);},[frame,ready]);
+  useEffect(()=>{moveCanvas();},[expanded,ready,moveCanvas]);
+  useEffect(()=>{
+    if(status!=='ready'||!navigationRequest||lastRequest.current===navigationRequest)return;
+    lastRequest.current=navigationRequest;
+    const stops=navigationRequest.points||[];setExpanded(true);
+    if(stops[0])setLocalSelected(stops[0].id);
+    if(navigationRequest.viewOnly){navigator.current?.clear();adapter.current?.frame('points',stops);}
+    else startRoute(stops);
+  },[navigationRequest,ready,status]);
+  const signature=points.map(p=>[p.id,p.gps_lat,p.gps_lng].join(':')).join('|');
+  useEffect(()=>{
+    const state=navigationRef.current;
+    if(state.stops.some(p=>p.id&&!points.some(current=>current.id===p.id&&Number(current.gps_lat)===Number(p.gps_lat)&&Number(current.gps_lng)===Number(p.gps_lng))))navigator.current?.clear();
+  },[signature]);
+  useEffect(()=>{if(drawing){navigator.current?.clear();setLocalSelected('');}},[drawing]);
+  const selected=points.find(p=>p.id===localSelected&&hasCustomerLocation(p));
+  const busy=navigation.phase==='locating'||navigation.phase==='routing';
+  const actionClass='inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border bg-white px-3 text-xs font-medium text-slate-800 disabled:opacity-50';
+  const route=navigation.route,stops=navigation.stops;
+  const distance=meters=>Number.isFinite(meters)?(meters<1000?ui('{0} m',Math.round(meters)):ui('{0} km',(meters/1000).toFixed(1))):'';
+  function content(full){
+    return <div className={'flex min-h-0 min-w-0 flex-col bg-white '+(full?'h-full':'')}>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white p-2" style={full?{paddingTop:'max(.5rem, env(safe-area-inset-top))',paddingLeft:'max(.5rem, env(safe-area-inset-left))',paddingRight:'max(.5rem, env(safe-area-inset-right))'}:undefined}>
+        <div className="flex min-w-0 items-center gap-1.5"><MapPin size={16} className="shrink-0 text-emerald-700"/><span className="text-xs font-semibold">{ui('Delivery map')}</span></div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button" className={actionClass} disabled={status!=='ready'} onClick={()=>adapter.current?.frame('points',latestPoints.current)}><LocateFixed size={15}/>{ui('Show pins')}</button>
+          <button type="button" className={actionClass} aria-label={ui(full?'Close full map':'Expand map')} onClick={()=>full?closeFull():setExpanded(true)}>{full?<Minimize2 size={15}/>:<Maximize2 size={15}/>}<span>{ui(full?'Close':'Full map')}</span></button>
+        </div>
+      </div>
+      <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
+        <div ref={full?setFullHost:element} className="h-full w-full" role="region" aria-label={ui('Customer delivery map')}/>
+        {status==='loading'&&<p role="status" className="pointer-events-none absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
+      </div>
+      {status==='ready'&&!drawing&&(selected||navigation.phase!=='idle')&&<section aria-label={ui('Delivery directions')} className="max-h-[38dvh] shrink-0 space-y-2 overflow-y-auto overscroll-contain border-t p-3 text-sm">
+        <div className="flex items-start justify-between gap-2"><div className="min-w-0">
+          <p className="break-words font-semibold">{navigation.phase!=='idle'?stops.map(p=>p.business_name||ui('Customer')).join(' → '):selected?.business_name}</p>
+          {selected&&navigation.phase==='idle'&&<><p className="break-words text-xs text-slate-500">{[selected.address,selected.neighbourhood,selected.town].filter(Boolean).join(', ')}</p>{selected.gps_status!=='ready'&&<p className="text-xs text-amber-700">{ui('Delivery pin needs verification.')}</p>}</>}
+        </div><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label={ui('Close delivery directions')} onClick={clearSelection}><X size={17}/></button></div>
+        {navigation.phase==='idle'&&selected&&<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>}
+        {busy&&<div className="flex flex-wrap items-center justify-between gap-2"><p role="status" className="text-xs">{ui(navigation.phase==='locating'?'Finding your position...':'Calculating driving route...')}</p><button type="button" className={actionClass} onClick={()=>navigator.current?.clear()}>{ui('Cancel')}</button></div>}
+        {navigation.phase==='error'&&<div className="space-y-2"><p role="alert" className="text-xs text-amber-800">{ui(deliveryNavigationMessage(navigation.error))}</p><button type="button" className={actionClass} onClick={()=>startRoute(stops)}>{ui('Try again')}</button></div>}
+        {navigation.phase==='ready'&&route&&<>
+          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-emerald-800">{distance(route.distanceMeters)}{Number.isFinite(route.durationMillis)?' · '+ui('Approx. {0} min',Math.max(1,Math.ceil(route.durationMillis/60000))):''}</p><button type="button" className={actionClass} onClick={()=>startRoute(stops)}><LocateFixed size={15}/>{ui('Update from my position')}</button></div>
+          <details><summary className="min-h-11 cursor-pointer py-3 text-xs font-medium">{ui('Route steps')}</summary><div className="space-y-3 pb-2">{route.legs?.map((leg,i)=><div key={i}><p className="mb-2 break-words text-xs font-semibold">{ui('Stop {0}: {1}',i+1,stops[i]?.business_name||ui('Customer'))}</p><ol className="list-decimal space-y-2 pl-5 text-xs">{leg.steps?.map((step,index)=><li key={index} className="break-words pl-1">{step.instructions}<span className="ml-2 text-slate-500">{distance(step.distanceMeters)}</span></li>)}</ol></div>)}</div></details>
+          {route.warnings?.map((warning,index)=><p key={index} className="break-words text-xs text-amber-800">{warning}</p>)}
+          <CustomerInfo title={ui('About these directions')}><p>{ui('Driving route from your last requested GPS position. Use Update from my position to recalculate. This does not change customer pins.')}</p><p>{ui('The road route may stop before the saved entrance. Follow the YOLA pin for the exact customer location.')}</p>{navigation.origin?.accuracy>100&&<p>{ui('GPS accuracy: approximately {0} m.',Math.round(navigation.origin.accuracy))}</p>}</CustomerInfo>
+          <button type="button" className="min-h-11 text-xs font-medium text-slate-600" onClick={()=>navigator.current?.clear()}>{ui('Clear route')}</button>
+        </>}
+      </section>}
+      {drawing&&full&&<div className="max-h-[30dvh] shrink-0 overflow-y-auto border-t p-2">{drawingControls||<p className="text-xs">{ui('Tap the map to add corners around the delivery area.')}</p>}</div>}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 border-t bg-white px-3 py-2 text-[10px] text-slate-500" style={full?{paddingBottom:'max(.5rem, env(safe-area-inset-bottom))'}:undefined}><span>{provider}</span><CustomerInfo title={ui('Map display')}><p>{ui('YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.')}</p><p>{ui('Ordinary businesses and landmark labels are controlled by the published Google Cloud map style linked to this map ID.')}</p></CustomerInfo></div>
+      {error&&<div role="status" className="max-h-[22dvh] shrink-0 overflow-y-auto border-t border-amber-200 bg-amber-50 p-3 text-xs text-slate-700"><p>{error}</p><button type="button" onClick={()=>window.location.reload()} className="mt-2 min-h-10 rounded-md border bg-white px-3 font-medium">{ui('Reload page')}</button>{diagnostic&&<CustomerInfo title={ui('Google Maps status')}><p>{ui('Allow this website in Google Cloud: {0}',typeof window!=='undefined'?window.location.origin+'/*':'http://localhost:5175/*')}</p><p className="break-words font-mono">{diagnostic}</p></CustomerInfo>}</div>}
+    </div>;
+  }
+  return <div className="min-w-0">
+    <div hidden={expanded} className="overflow-hidden rounded-xl border">{content(false)}</div>
+    {expanded&&<p className="py-4 text-xs text-slate-500">{ui('Map expanded')}</p>}
+    <Dialog open={expanded} onOpenChange={value=>{if(!value)closeFull();}}>
+      <DialogContent style={{animation:'none'}} className="left-0 top-0 flex h-[100dvh] max-h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:rounded-none sm:p-0 duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none [&>button:last-child]:hidden" onOpenAutoFocus={event=>{event.preventDefault();fullHost.current?.parentNode?.parentNode?.querySelector('button')?.focus();}}>
+        <DialogTitle className="sr-only">{ui('Customer delivery map')}</DialogTitle>
+        <DialogDescription className="sr-only">{ui('Customer pins and driving directions inside the ERP.')}</DialogDescription>
+        {content(true)}
+      </DialogContent>
+    </Dialog>
   </div>;
 }

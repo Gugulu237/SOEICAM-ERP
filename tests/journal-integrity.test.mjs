@@ -233,3 +233,69 @@ test('reversal refuses mismatched original ledger evidence and never creates a p
  await assert.rejects(journalLifecycle(s,context,{action:'reverse',journalId:journal.id,reason:'Correct an error',reversalDate:date}),/original journal totals/);
  assert.deepEqual(f.rows,before);
 });
+
+async function cashReversalFixture(db){
+ const f=await fixture(db),s=f.stores;await s.Account.update('cash',{account_type:'asset'});
+ const till=await s.TreasuryAccount.create({name:'Factory till',account_type:'cash',gl_account_id:'cash',is_active:true,currency:'XAF',balance:0});
+ const journal=await saveManualJournal(s,context,journalBody());
+ return {...f,till,journal};
+}
+const reverseBody=(journal,treasuryReview)=>({action:'reverse',journalId:journal.id,reason:'Correct a mistaken cash journal',reversalDate:date,...(treasuryReview?{treasuryReview}:{})});
+const reviewedCash=(preview,till,balance)=>({snapshot:preview.snapshot,confirmed:true,verifiedBalances:[{treasuryId:till.id,balance}]});
+
+test('legacy manual cash reversals preview the mismatch and keep an already-correct treasury amount only after explicit review',async()=>{
+ const f=await cashReversalFixture(),s=f.stores;await s.TreasuryAccount.update(f.till.id,{balance:0});
+ const before=structuredClone(f.rows),preview=await journalLifecycle(s,context,{action:'previewReversal',journalId:f.journal.id});
+ assert.deepEqual(f.rows,before);assert.equal(preview.requires_review,true);assert.equal(preview.treasury[0].stored_balance,0);assert.equal(preview.treasury[0].ledger_balance,1000);assert.equal(preview.treasury[0].balance_after,0);assert.equal(preview.treasury[0].retains_treasury_balance,true);
+ await assert.rejects(journalLifecycle(s,context,reverseBody(f.journal)),{status:409});assert.deepEqual(f.rows,before);
+ const body=reverseBody(f.journal,reviewedCash(preview,f.till,'0')),mirror=await journalLifecycle(s,context,body);
+ assert.equal((await s.TreasuryAccount.get(f.till.id)).balance,0);assert.equal((await s.Account.get('cash')).balance,0);
+ assert.equal((await s.JournalEntry.list()).length,2);assert.equal((await s.TreasuryTransaction.list()).length,0);
+ const evidence=(await s.AuditLog.list()).find(a=>a.action==='reconcile_reversal_balances');assert.equal(evidence.accounting_control_reversal_review.treasury[0].ledger_balance,1000);assert.equal(evidence.accounting_control_reversal_review.verified_balances[0].balance,0);
+ assert.equal((await journalLifecycle(s,context,body)).id,mirror.id);assert.equal((await s.JournalEntry.list()).length,2);
+ await assert.rejects(journalLifecycle(s,context,{...body,treasuryReview:{...body.treasuryReview,verifiedBalances:[{treasuryId:f.till.id,balance:1}]}}),{status:409});
+});
+
+test('treasury reviews reject unverified, stale, wrong, duplicate and sub-cent balances without inventing opening entries',async()=>{
+ const f=await cashReversalFixture(),s=f.stores;await s.TreasuryAccount.update(f.till.id,{balance:5000});await s.Account.update('cash',{balance:4000});
+ const preview=await journalLifecycle(s,context,{action:'previewReversal',journalId:f.journal.id}),review=reviewedCash(preview,f.till,0),before=structuredClone(f.rows);
+ for(const invalid of [
+  {...review,confirmed:false},{...review,snapshot:'b'.repeat(64)},{...review,verifiedBalances:[]},
+  {...review,verifiedBalances:[{treasuryId:f.till.id,balance:5000}]},
+  {...review,verifiedBalances:[{treasuryId:f.till.id,balance:0.001}]},
+  {...review,verifiedBalances:[{treasuryId:f.till.id,balance:0},{treasuryId:f.till.id,balance:0}]}
+ ]){await assert.rejects(journalLifecycle(s,context,reverseBody(f.journal,invalid)));assert.deepEqual(f.rows,before);}
+ await s.TreasuryAccount.update(f.till.id,{balance:5001});const stale=structuredClone(f.rows);
+ await assert.rejects(journalLifecycle(s,context,reverseBody(f.journal,review)),{status:409});assert.deepEqual(f.rows,stale);
+ const fresh=await journalLifecycle(s,context,{action:'previewReversal',journalId:f.journal.id});
+ await journalLifecycle(s,context,reverseBody(f.journal,reviewedCash(fresh,f.till,0)));
+ assert.equal((await s.Account.get('cash')).balance,0);assert.equal((await s.TreasuryAccount.get(f.till.id)).balance,0);
+ assert.equal((await s.JournalEntry.list()).length,2);assert.ok((await s.JournalEntry.list()).every(j=>j.source_module==='manual'));
+});
+
+test('normal treasury reversals need no repair confirmation and a review cannot authorize negative physical cash',async()=>{
+ const normal=await cashReversalFixture(),p=await journalLifecycle(normal.stores,context,{action:'previewReversal',journalId:normal.journal.id});
+ assert.equal(p.requires_review,false);await journalLifecycle(normal.stores,context,reverseBody(normal.journal));assert.equal((await normal.stores.TreasuryAccount.get(normal.till.id)).balance,0);
+ const f=await cashReversalFixture(),s=f.stores;await saveManualJournal(s,context,{...journalBody(),requestKey:crypto.randomUUID(),description:'Later operating expense',lines:[{account_id:'wages',debit:800},{account_id:'cash',credit:800}]});
+ const preview=await journalLifecycle(s,context,{action:'previewReversal',journalId:f.journal.id}),before=structuredClone(f.rows);
+ assert.equal(preview.treasury[0].balance_after,-800);assert.match(preview.blocked[0],/negative cash/);
+ await assert.rejects(journalLifecycle(s,context,reverseBody(f.journal,reviewedCash(preview,f.till,-800))),/negative cash/);assert.deepEqual(f.rows,before);
+});
+
+test('the read-only preview protects bank information and a failed reconciliation audit rolls back the full reversal',async()=>{
+ const db=new PGlite();
+ try{
+  const f=await cashReversalFixture(db),s=f.stores;globalThis.__journalTest=f;const route=await bundle('src/app/api/accounting/journals/route.js');
+  await s.TreasuryAccount.update(f.till.id,{balance:0});
+  const url='http://localhost/api/accounting/journals?journalId='+f.journal.id;
+  const before=(await db.query('SELECT * FROM journal_fixture ORDER BY entity,id')).rows,response=await route.GET(new Request(url)),preview=await response.json();
+  assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/no-store/);assert.deepEqual((await db.query('SELECT * FROM journal_fixture ORDER BY entity,id')).rows,before);
+  f.context={user:{id:'cashier',role:'user'},role:'cashier',employee:{role:'cashier',status:'active',allowed_modules:['accounting']}};
+  const forbidden=await route.GET(new Request(url));assert.equal(forbidden.status,403);assert.doesNotMatch(await forbidden.text(),/Factory till/);f.context=context;
+  const body=reverseBody(f.journal,reviewedCash(preview,f.till,0)),create=s.AuditLog.create;
+  s.AuditLog.create=async row=>{if(row.action==='reconcile_reversal_balances')throw Error('Review audit unavailable');return create(row);};
+  assert.equal((await post(route,body)).status,400);assert.deepEqual((await db.query('SELECT * FROM journal_fixture ORDER BY entity,id')).rows,before);
+  s.AuditLog.create=create;assert.equal((await post(route,body)).status,200);assert.equal((await post(route,body)).status,200);
+  assert.equal((await s.JournalEntry.list()).length,2);assert.equal((await s.TreasuryAccount.get(f.till.id)).balance,0);assert.equal((await s.AuditLog.list()).filter(a=>a.action==='reconcile_reversal_balances').length,1);
+ }finally{delete globalThis.__journalTest;await db.close();}
+});

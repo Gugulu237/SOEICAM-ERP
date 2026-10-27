@@ -1,17 +1,20 @@
+'use client';
+import {ui} from '@/lib/i18n';
+import {useLocaleRender} from '@/lib/localization';
+import React,{useState} from 'react';
+import {MapPin,Navigation} from 'lucide-react';
+import {hasCustomerLocation} from '@/lib/customer-location';
+import GoogleCustomerMap from './GoogleCustomerMap';
 
-/* localized-interface */
-import { ui } from '@/lib/i18n';
-import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React from 'react';
-import { MapPin, Navigation } from 'lucide-react';
-import { customerMapUrl, hasCustomerLocation } from '@/lib/customer-location';
-
-export default function CustomerMapLinks({ customer }) {
-  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-
-  if (!hasCustomerLocation(customer)) return <span className="text-xs text-slate-400">{ui("No delivery pin recorded")}</span>;
-  return <div className="flex flex-wrap gap-3 text-sm font-medium text-blue-700">
-    <a className="inline-flex min-h-10 items-center gap-1.5 hover:underline" href={customerMapUrl(customer)} target="_blank" rel="noopener noreferrer"><MapPin size={15} />{ui("View on Maps")}</a>
-    <a className="inline-flex min-h-10 items-center gap-1.5 hover:underline" href={customerMapUrl(customer, true)} target="_blank" rel="noopener noreferrer"><Navigation size={15} />{ui("Directions")}</a>
+export default function CustomerMapLinks({customer,onViewMap,onNavigate}){
+  useLocaleRender();
+  const [session,setSession]=useState(null);
+  if(!hasCustomerLocation(customer))return <span className="text-xs text-slate-400">{ui('No delivery pin recorded')}</span>;
+  const open=viewOnly=>setSession({points:[{...customer,id:customer.id||'location-preview'}],viewOnly});
+  const action='inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50';
+  return <div className="flex flex-wrap gap-2">
+    <button type="button" className={action} onClick={()=>onViewMap?onViewMap():open(true)}><MapPin size={15}/>{ui('View map')}</button>
+    <button type="button" className={action} onClick={()=>onNavigate?onNavigate():open(false)}><Navigation size={15}/>{ui('Directions')}</button>
+    {session&&<GoogleCustomerMap customers={session.points} selectedId={session.points[0].id} navigationRequest={session} initialExpanded onClose={()=>setSession(null)}/>}
   </div>;
 }

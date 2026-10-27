@@ -3,7 +3,7 @@ import { requireAccountant } from './account-definitions.js';
 import { round2, nextSequence, audit } from './field-ops.js';
 
 // reversingManual is server-only: journalLifecycle supplies an exact, verified mirror.
-export async function saveManualJournal(stores, context, body, {reversingManual=false}={}) {
+export async function saveManualJournal(stores, context, body, {reversingManual=false,reversalPlan=null}={}) {
   requireAccountant(context);
   let draft = null;
   if(body?.journalId){
@@ -44,14 +44,17 @@ export async function saveManualJournal(stores, context, body, {reversingManual=
     totalDebit=totalDebitCents/100;totalCredit=totalCreditCents/100;
   }
   if(status==='posted'&&totalDebit!==totalCredit)throw Error('Journal debits and credits must balance before posting.');
-  const cashPlan=status==='posted'?await manualCashPlan(stores,context,lines,accounts,{reversingManual}):[];
+  const checkedPlan=reversingManual?reversalPlan:null;
+  if(checkedPlan&&(status!=='posted'||checkedPlan.accounts.length!==accounts.size||checkedPlan.accounts.some(a=>!accounts.has(a.id))))throw Error('Invalid manual reversal plan.');
+  const cashPlan=checkedPlan?checkedPlan.treasury.map(t=>({id:t.id,balance:t.balance_after})):status==='posted'?await manualCashPlan(stores,context,lines,accounts,{reversingManual}):[];
   const client={entities:stores},journal_number=draft?.journal_number||await nextSequence(client,'next_journal_number','JV',6);
   const journalData={journal_number,entry_date:entryDate,description,source_module:'manual',source_document_type:'manual_journal',source_document_id:'MAN-'+body.requestKey,period_id:period?.id||'',status,is_immutable:status==='posted',total_debit:totalDebit,total_credit:totalCredit,posted_by:status==='posted'?context.user.id:'',posted_at:status==='posted'?new Date().toISOString():'',manual_request_key:body.requestKey,manual_request_payload:fingerprint,created_by:context.user.email};
   const journal=draft?await stores.JournalEntry.update(draft.id,journalData):await stores.JournalEntry.create(journalData);
   if(draft){for(const l of await stores.JournalLine.filter({journal_id:draft.id}))await stores.JournalLine.update(l.id,{status:"posted"});}
   else await stores.JournalLine.bulkCreate(lines.map(l=>({...l,journal_id:journal.id,status})));
   if(status==='posted'){
-    for(const l of lines){const a=accounts.get(l.account_id);a.balance=round2(Number(a.balance||0)+(a.normal_balance==='debit'?l.debit-l.credit:l.credit-l.debit));}
+    if(checkedPlan){for(const row of checkedPlan.accounts)accounts.get(row.id).balance=row.balance_after;}
+    else for(const l of lines){const a=accounts.get(l.account_id);a.balance=round2(Number(a.balance||0)+(a.normal_balance==='debit'?l.debit-l.credit:l.credit-l.debit));}
     for(const a of accounts.values())await stores.Account.update(a.id,{balance:a.balance});
   }
   for(const change of cashPlan)await stores.TreasuryAccount.update(change.id,{balance:change.balance});

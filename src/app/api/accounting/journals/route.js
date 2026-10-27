@@ -4,6 +4,12 @@ import { database, transaction } from '@/server/db';
 import { saveManualJournal } from '@/server/domain/manual-journals';
 import { journalLifecycle } from '@/server/domain/journal-lifecycle';
 export const dynamic='force-dynamic';
+export async function GET(request){
+  try{const context=await authenticateRequest(),journalId=new URL(request.url).searchParams.get('journalId');
+    if(!journalId||journalId.length>200)throw Error('Choose an existing journal.');
+    return Response.json(await transaction(()=>journalLifecycle(serviceEntities,context,{action:'previewReversal',journalId})),{headers:{'Cache-Control':'private, no-store'}});
+  }catch(e){return apiError(e);}
+}
 export async function POST(request) {
   try{
     checkOrigin(request);const context=await authenticateRequest(),text=await request.text();if(text.length>300000)throw Error('Journal is too large.');

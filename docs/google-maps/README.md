@@ -16,7 +16,7 @@ SOEICAM customer and outlet pins and delivery polygons are application overlays.
 
 Using the same map ID applies the style to both the local and production Google maps without rebuilding the ERP. A replacement map ID would require updating the environment and rebuilding production.
 
-Google selects which landmarks have labels at each zoom. The preset keeps the relevant landmark categories; it does not provide a hand-picked list of named landmarks. Preview the actual Yaoundé coverage before publishing. Public place labels supplied by the OpenStreetMap fallback are part of its raster tiles and are not affected by Google styles.
+Google selects which landmarks have labels at each zoom. The preset keeps the relevant landmark categories; it does not provide a hand-picked list of named landmarks. Preview the actual Yaoundé coverage before publishing. The customer map keeps Google as its provider and shows a configuration/connection error if Google cannot initialize, so an unstyled fallback does not reintroduce unrelated business labels.
 
 ## Implementation
 
@@ -34,3 +34,7 @@ References:
 ## Dark theme
 
 [SOEICAM-Delivery-Dark-Map-Style.json](SOEICAM-Delivery-Dark-Map-Style.json) uses a dark navy basemap, readable roads, muted green parks and the same landmark-only POI filters as the light preset. Import and publish it as a dark style, then associate it with the existing map ID's **Dark mode** slot. The current ERP map uses Google's default light color scheme; displaying the dark style also requires initializing the map with **colorScheme: "DARK"**. Linking a dark style alone does not switch the app into dark mode. POI density is inherited from the map ID's light style settings.
+
+## Directions inside the ERP
+
+See [IN_APP_DIRECTIONS.md](IN_APP_DIRECTIONS.md) for the expanded map, current-position routing, staff workflow and Routes API setup. The basemap style itself needs no additional API; in-app driving directions require Routes API on the existing browser key.

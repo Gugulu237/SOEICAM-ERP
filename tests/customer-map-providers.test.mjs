@@ -9,7 +9,7 @@ const points=Array.from({length:260},(_,i)=>({id:String(i),business_name:'<b>Cus
 const zone={id:'area',colour:'green',boundary:[{lat:3.8,lng:11.4},{lat:3.9,lng:11.4},{lat:3.9,lng:11.6}]};
 test('Google map uses the maps namespace, plots all pins safely and removes overlays/listeners when refreshed or closed',async()=>{
  const {googleAdapter}=await adapters(),oldDocument=globalThis.document,layers=[],listeners=[],maps=[];
- class Layer{constructor(props){Object.assign(this,props);layers.push(this);}addListener(name,fn){const l={name,fn,removed:false,remove(){this.removed=true;}};listeners.push(l);return l;}setMap(map){this.map=map;}}
+ class Layer{constructor(props){Object.assign(this,props);layers.push(this);}addListener(name,fn){const l={name,fn,removed:false,remove(){this.removed=true;}};listeners.push(l);return l;}setMap(map){this.map=map;}setOptions(props){Object.assign(this,props);}}
  class MapView extends Layer{constructor(element,props){super(props);this.element=element;maps.push(this);}setCenter(c){this.center=c;}setZoom(z){this.zoom=z;}getZoom(){return this.zoom;}fitBounds(b){this.bounds=b;}}
  class Bounds{constructor(){this.points=[];}extend(p){this.points.push(p);}isEmpty(){return !this.points.length;}}
  globalThis.document=fakeDocument;globalThis.__maps={importLibrary:async name=>name==='maps'?{Map:MapView,Polygon:Layer,Polyline:Layer,Circle:Layer}:{AdvancedMarkerElement:Layer},LatLngBounds:Bounds,event:{clearInstanceListeners:()=>{},trigger:()=>{},addListenerOnce:(_map,_event,fn)=>{fn();return {remove(){}};}}};
@@ -19,6 +19,9 @@ test('Google map uses the maps namespace, plots all pins safely and removes over
    listeners.find(l=>l.name==='click'&&l!==listeners[0]).fn(); // zone click, safe independent callback
    listeners[0].fn({latLng:{lat:()=>3.85,lng:()=>11.5}});assert.deepEqual(vertices,[{lat:3.85,lng:11.5}]);
    adapter.frame('cameroon',points);assert.equal(maps[0].bounds.points.length,2);adapter.frame('points',points);assert.equal(maps[0].bounds.points.length,260);
+   assert.equal(maps[0].clickableIcons,false);adapter.setExpanded(true);assert.equal(maps[0].gestureHandling,'greedy');adapter.setExpanded(false);assert.equal(maps[0].gestureHandling,'cooperative');
+   const origin={lat:3.81,lng:11.49,accuracy:10},line=new Layer({path:[]}),route={path:[origin,{lat:3.85,lng:11.51}],createPolylines:()=>[line]};
+   adapter.showRoute(route,origin,[points[0]]);assert.equal(line.map,maps[0]);assert.equal(line.strokeColor,'#059669');assert.ok(maps[0].bounds.points.some(p=>p===origin));adapter.render(points,[zone],'1',[],false);assert.equal(line.map,maps[0]);adapter.clearRoute();assert.equal(line.map,null);
    adapter.render([],[],null,[],false);assert.ok(pins.every(p=>p.map===null));adapter.destroy();assert.ok(listeners.every(l=>l.removed));assert.equal(destroyed,1);
  }finally{globalThis.document=oldDocument;delete globalThis.__maps;}
 });
