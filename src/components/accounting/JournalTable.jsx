@@ -7,9 +7,9 @@ import {isManualJournal,canReverseManualJournal} from "@/lib/journal-reversal";
 import { formatAccountingXAF as formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Eye, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Eye, RotateCcw, CheckCircle2, Trash2 } from "lucide-react";
 
-export default function JournalTable({ rows, onOpen, onPost, onReverse, canReverse, working }) {
+export default function JournalTable({ rows, onOpen, onPost, onReverse, onDelete, canReverse, working }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   if (!rows.length) {
@@ -64,7 +64,7 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
                   {out && <span className="ml-1 text-[10px] font-semibold uppercase text-slate-700">{ui("one-sided")}</span>}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{formatDateTime(j.created_date)}</td>
-                <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{j.posted_at ? formatDateTime(j.posted_at) : "—"}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{j.posted_at ? formatDateTime(j.posted_at) : "â€”"}</td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="icon" title={ui("Open journal")} onClick={() => onOpen(j)}>
@@ -75,6 +75,7 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, canRever
                         <CheckCircle2 size={15} className="text-green-600" />
                       </Button>
                     )}
+                    {canReverse && onDelete && j.status === "draft" && isManualJournal(j) && <Button variant="ghost" size="icon" aria-label={ui("Delete draft journal")} title={ui("Delete draft journal")} disabled={working} onClick={() => onDelete(j)}><Trash2 size={15} className="text-rose-600" /></Button>}
                     {canReverseManualJournal(j) && canReverse && (
                       <Button variant="ghost" size="icon" aria-label={ui("Reverse this journal")} title={ui("Reverse this journal")} disabled={working} onClick={() => onReverse(j)}>
                         <RotateCcw size={15} className="text-rose-600" />

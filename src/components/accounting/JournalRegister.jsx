@@ -14,6 +14,10 @@ import { Button } from "@/components/ui/button";
 import { loadJournalPage, loadJournalReport, loadJournalSources, loadJournalExport, exportJournalsCsv } from "@/lib/journal-register";
 import { loadAccountBalances, ledgerTotals } from "@/lib/account-balances";
 import JournalReversalDialog from "./JournalReversalDialog";
+import { erp } from "@/api/erpClient";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { postDraft } from "@/lib/posting";
 import JournalStats from "@/components/accounting/JournalStats";
 import JournalFilters from "@/components/accounting/JournalFilters";
@@ -41,6 +45,8 @@ export default function JournalRegister() {
   const [exporting, setExporting] = useState(false);
   const [working, setWorking] = useState(false);
   const [reverseTarget,setReverseTarget]=useState(null);
+  const [deleteTarget,setDeleteTarget]=useState(null),[deleteReason,setDeleteReason]=useState(""),[deleteNumber,setDeleteNumber]=useState(""),[deleteError,setDeleteError]=useState("");
+  const deleteFlight=useRef(false);
   const [report, setReport] = useState(EMPTY_REPORT);
   const [ledger, setLedger] = useState(null);
   const [sources, setSources] = useState([]);
@@ -51,7 +57,7 @@ export default function JournalRegister() {
   }, [refreshKey]);
 
   // Ledger integrity comes from the posted journal lines, not the journal
-  // headers — a header can look balanced while its lines are one-sided.
+  // headers â€” a header can look balanced while its lines are one-sided.
   useEffect(() => {
     let active=true;setLedger(null);setLedgerError("");loadAccountBalances().then(balances=>{if(active)setLedger(ledgerTotals(balances));}).catch(e=>{if(active)setLedgerError(e.message);});return()=>{active=false;};
   }, [refreshKey]);
@@ -116,6 +122,13 @@ export default function JournalRegister() {
 
   function handleReverse(journal){setReverseTarget(journal);}
 
+  async function handleDelete(e) {
+    e.preventDefault();if(deleteFlight.current||!deleteTarget||deleteNumber!==deleteTarget.journal_number)return;
+    deleteFlight.current=true;setWorking(true);setDeleteError("");
+    try{await erp.accounting.saveJournal({action:"deleteDraft",journalId:deleteTarget.id,reason:deleteReason});setDeleteTarget(null);refresh();toast({title:ui("Draft journal deleted")});}
+    catch(e){setDeleteError(e.message);}finally{deleteFlight.current=false;setWorking(false);}
+  }
+
   async function handleExport() {
     setExporting(true);
     try {
@@ -133,6 +146,16 @@ export default function JournalRegister() {
   return (
     <div>
       <JournalReversalDialog journal={reverseTarget} onClose={()=>setReverseTarget(null)} onReversed={rev=>{toast({title:ui("Journal reversed"),description:ui("Reversal {0} posted",rev.journal_number)});refresh();}}/>
+      <Dialog open={!!deleteTarget} onOpenChange={open=>{if(!open&&!deleteFlight.current)setDeleteTarget(null);}}><DialogContent>
+        <DialogHeader><DialogTitle>{ui("Delete draft journal")}</DialogTitle><DialogDescription>{ui("This removes an unposted draft and its lines. An audit record is retained. Posted journals must be reversed.")}</DialogDescription></DialogHeader>
+        <form onSubmit={handleDelete} className="space-y-4">
+          <p className="font-semibold">{deleteTarget?.journal_number}</p>
+          <label className="block space-y-1 text-sm"><span>{ui("Reason for deletion")}</span><Textarea required minLength={3} maxLength={1000} disabled={working} value={deleteReason} onChange={e=>setDeleteReason(e.target.value)}/></label>
+          <label className="block space-y-1 text-sm"><span>{ui("Type the journal number to confirm")}</span><Input required disabled={working} value={deleteNumber} onChange={e=>setDeleteNumber(e.target.value)}/></label>
+          {deleteError&&<p role="alert" className="text-sm text-red-700">{uiMessage(deleteError)}</p>}
+          <DialogFooter><Button type="button" variant="outline" disabled={working} onClick={()=>setDeleteTarget(null)}>{ui("Cancel")}</Button><Button type="submit" variant="destructive" disabled={working||deleteReason.trim().length<3||deleteNumber!==deleteTarget?.journal_number}>{ui("Delete draft journal")}</Button></DialogFooter>
+        </form>
+      </DialogContent></Dialog>
       <JournalStats report={report} ledger={ledger} error={ledgerError} />
       <div className="mb-3 flex flex-wrap items-center gap-2"><Button type="button" variant="outline" disabled={loading} onClick={refresh}>{ui(error||ledgerError||sourceError?"Retry journal loading":"Refresh journals")}</Button>{[error,ledgerError,sourceError].filter(Boolean).map((message,i)=><p key={i} role="alert" className="text-sm text-red-700">{uiMessage(message)}</p>)}</div>
       <JournalFilters
@@ -162,6 +185,7 @@ export default function JournalRegister() {
             rows={rows}
             onOpen={(journal) => navigate(`/accounting/journals/${journal.id}`)}
             onPost={handlePost}
+            onDelete={journal=>{setDeleteReason("");setDeleteNumber("");setDeleteError("");setDeleteTarget(journal);}}
             onReverse={handleReverse}
             canReverse={isAdmin}
             working={working}
@@ -170,7 +194,7 @@ export default function JournalRegister() {
             <span>{rows.length}{ui(" of ")}{report.total}{ui(" journals shown")}</span>
             {hasMore && (
               <Button variant="outline" disabled={loadingMore} onClick={loadMore}>
-                {loadingMore ? ui("Loading…") : ui("Load more")}
+                {loadingMore ? ui("Loadingâ€¦") : ui("Load more")}
               </Button>
             )}
           </div>

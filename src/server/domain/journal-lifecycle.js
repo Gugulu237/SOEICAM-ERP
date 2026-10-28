@@ -12,6 +12,22 @@ export async function journalLifecycle(stores,context,body){
  const journal=await stores.JournalEntry.get(String(body.journalId||''));
  if(!journal)throw Error('Choose an existing journal.');
  if(!isManualJournal(journal))throw Error('Use the original business workflow to correct this journal and its linked stock, cash or payroll records.');
+ if(body.action==='deleteDraft'){
+  if(requireActiveContext(context)!=='admin')throw forbidden('Only the General Manager may delete a draft journal.');
+  if(journal.status!=='draft'||journal.is_immutable||journal.posted_at||journal.reversal_of||journal.reversed_by_journal)throw Error('Only unposted manual drafts can be deleted. Reverse a posted journal to correct its balances.');
+  const reason=typeof body.reason==='string'?body.reason.trim():'';
+  if(reason.length<3||reason.length>1000)throw Error('Enter a deletion reason of 3 to 1000 characters.');
+  const periods=await stores.AccountingPeriod.filter({});
+  if(periods.some(p=>p.start_date<=journal.entry_date&&journal.entry_date<=p.end_date&&['closed','locked'].includes(p.status)))throw Error('The accounting period is closed or locked.');
+  const lines=await stores.JournalLine.filter({journal_id:journal.id},'id',201);
+  if(lines.length>200||lines.some(l=>l.status&&l.status!=='draft'||l.party_id||l.opening_party_allocations?.length))throw Error('Review linked or posted lines before deleting this draft.');
+  const linked=(await stores.JournalEntry.filter({reversal_of:journal.id},'id',1)).length||(await stores.JournalEntry.filter({reversed_by_journal:journal.id},'id',1)).length;
+  if(linked)throw Error('A linked reversal journal cannot be deleted.');
+  await stores.AuditLog.create({action:'delete_draft_journal',module:'accounting',entity_type:'JournalEntry',entity_id:journal.id,user_id:context.user.id,audit_source:'server_verified',description:'Deleted draft '+journal.journal_number+': '+reason,reason,deleted_journal:journal,deleted_lines:lines});
+  await stores.JournalLine.deleteMany({journal_id:journal.id});
+  await stores.JournalEntry.deleteMany({id:journal.id});
+  return {id:journal.id,deleted:true};
+ }
  if(body.action==='postDraft'){
   if(journal.status==='posted')return journal;
   if(journal.status!=='draft')throw Error('Only draft journals can be posted.');
