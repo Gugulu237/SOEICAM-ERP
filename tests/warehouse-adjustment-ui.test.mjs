@@ -48,7 +48,7 @@ test('warehouse count shows old/new quantity and value change, preserves a faile
 test('a zero-stock catalogue item can be counted as a new lot, with explicit batch details and a quality-hold explanation',async()=>{
   const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[]}});
   const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',productId:'milk',onOpenChange:()=>{}});};
-  try{draw();await r.flush();const html=draw();assert.ok(element(r,'input','Lot number for Milk powder'));assert.ok(element(r,'input','Printed expiry for Milk powder'));assert.match(html,/New material lots stay on quality hold/);assert.equal(element(r,'input','Physical quantity for Milk powder').value,'');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+  try{draw();await r.flush();const html=draw();assert.ok(element(r,'input','Lot number for Milk powder'));assert.equal(element(r,'input','Printed expiry for Milk powder'),undefined);assert.match(html,/Adjusted quantities are available immediately/);assert.equal(element(r,'input','Physical quantity for Milk powder').value,'');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 test('large warehouse counts paginate and retain counted quantities across pages and searches',async()=>{
@@ -124,4 +124,12 @@ test('packaging counts do not present finished-product sale instructions',async(
  const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[{...workspace.rows[0],inventory_type:'packaging',product_name:'YOLA cups',production_order_id:''}],items:[{...workspace.items[0],inventory_type:'packaging'}]}});
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
  try{draw();await r.flush();const html=draw();assert.doesNotMatch(html,/Ready for sale/);assert.match(html,/Ingredients and packaging are for production use/);assert.ok(element(r,'input','Ready for production use: YOLA cups'));}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+
+test('existing adjusted stock can be selected for expiry-free release without changing counts',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,rows:[{...workspace.rows[0],inventory_type:'assembly',adjusted_stock:true,expiry_date:'2020-01-01',qc_status:'approved'}]}:postedReceipt(body,'')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
+ try{draw();await r.flush();draw();button(r,'Select adjusted stock to release without expiry').onClick();draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const body=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(body.rows[0].counted_quantity,10);assert.equal(body.rows[0].ready_for_sale,true);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });

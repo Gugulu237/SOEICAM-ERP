@@ -6808,5 +6808,9 @@
   "VAT included": "TVA incluse",
   "VAT included: ": "TVA incluse : ",
   "Unit price (VAT included)": "Prix unitaire TTC",
-  "Selling prices already include VAT. The total will not have VAT added on top.": "Les prix de vente sont déjà TTC. Aucune TVA supplémentaire ne sera ajoutée au total."
+  "Selling prices already include VAT. The total will not have VAT added on top.": "Les prix de vente sont déjà TTC. Aucune TVA supplémentaire ne sera ajoutée au total.",
+"Release adjusted stock for sale without expiry": "Libérer le stock ajusté pour la vente sans péremption",
+"Adjusted finished products are available for sale immediately, without an expiry date. Manufacturing batches keep their quality and expiry checks.": "Les produits finis ajustés sont immédiatement disponibles à la vente, sans date de péremption. Les lots fabriqués conservent leurs contrôles de qualité et de péremption.",
+"Ingredients and packaging are for production use. Adjusted quantities are available immediately without an expiry date.": "Les ingrédients et emballages sont destinés à la production. Les quantités ajustées sont disponibles immédiatement, sans date de péremption.",
+"Select adjusted stock to release without expiry": "Sélectionner le stock ajusté à libérer sans péremption"
 }

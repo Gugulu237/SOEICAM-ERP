@@ -67,10 +67,10 @@ test('concurrent stock, QC and valuation changes invalidate the count snapshot; 
   assert.equal((await s.StockMovement.list()).length,0);
 });
 
-test('new counted lots use established cost and remain quarantined; existing lots and forged costs cannot be duplicated',async()=>{
+test('new counted lots use established cost and are immediately available; existing lots and forged costs cannot be duplicated',async()=>{
   const f=await setup(),s=f.entities,body={...(await f.body()),rows:[{product_id:f.product.id,lot_number:'FOUND-LOT',expiry_date:'2027-02-01',unit_cost:10,counted_quantity:2}]};
   await assert.rejects(f.call({...body,rows:[{...body.rows[0],unit_cost:0.01}]}),/carrying cost changed/);
-  const result=await f.call(body),balance=await s.StockBalance.get(result.rows[0].balance_id);assert.equal(balance.quantity,2);assert.equal(balance.total_value,20);assert.equal(balance.qc_status,'quarantine');
+  const result=await f.call(body),balance=await s.StockBalance.get(result.rows[0].balance_id);assert.equal(balance.quantity,2);assert.equal(balance.total_value,20);assert.equal(balance.qc_status,'approved');assert.equal(balance.expiry_date,'');
   await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/already exists/);
   assert.equal((await s.Account.get('expense')).balance,-20);
 });
@@ -169,7 +169,7 @@ test('counted finished goods can be marked ready for sale without a manufacturin
 test('already counted stock on hold can be released with its same quantity and value, without another journal or stock movement',async()=>{
  const f=await finishedFixture(),s=f.entities;
  const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-HOLD',reason:'Opening finished goods counted',rows:[{product_id:f.product.id,lot_number:'OPEN-HOLD',expiry_date:'2099-12-31',unit_cost:10,counted_quantity:8}]});
- const id=first.rows[0].balance_id,held=await s.StockBalance.get(id);assert.equal(held.qc_status,'quarantine');
+ const id=first.rows[0].balance_id;await s.StockBalance.update(id,{qc_status:'quarantine',expiry_date:'2020-01-01'});const held=await s.StockBalance.get(id);assert.equal(held.qc_status,'quarantine');
  const beforeJ=(await s.JournalEntry.list()).length,beforeM=(await s.StockMovement.list()).length;
  const row=(await f.workspace()).rows.find(r=>r.balance_id===id);
  const release={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'QUALITY-CHECK',reason:'Physical condition and printed expiry verified',rows:[{balance_id:id,fingerprint:row.fingerprint,counted_quantity:8,ready_for_sale:true}]};
@@ -210,7 +210,25 @@ test('request flags cannot mark an ingredient or packaging item ready for sale',
 test('existing counted materials release without changing quantity, inventory value or posting a second journal',async()=>{
  const f=await setup(),s=f.entities;
  const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'MATERIAL-HOLD',reason:'Materials counted for production',rows:[{product_id:f.product.id,lot_number:'MATERIAL-HOLD',unit_cost:10,counted_quantity:3}]});
+ await s.StockBalance.update(first.rows[0].balance_id,{qc_status:'quarantine',expiry_date:'2020-01-01'});
  const row=(await f.workspace()).rows.find(r=>r.balance_id===first.rows[0].balance_id),before=await s.StockBalance.get(row.balance_id),journals=(await s.JournalEntry.list()).length;
  const saved=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'USE-VERIFIED',reason:'Material quality physically verified',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:3,ready_for_use:true}]});
  const after=await s.StockBalance.get(row.balance_id);assert.equal(after.qc_status,'approved');assert.equal(after.quantity,before.quantity);assert.equal(after.total_value,before.total_value);assert.equal((await s.JournalEntry.list()).length,journals);assert.equal(saved.journal_id,'');
+});
+
+
+test('adjusted finished goods need no expiry or release flag and are immediately saleable',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ const saved=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'FOUND-STOCK',reason:'Existing inventory counted',rows:[{product_id:f.product.id,lot_number:'NO-EXPIRY',unit_cost:10,counted_quantity:9}]});
+ const lot=await s.StockBalance.get(saved.rows[0].balance_id);assert.equal(lot.expiry_date,'');assert.equal(lot.qc_status,'approved');
+ const admin={id:'gm',role:'admin'};f.client.auth.me=async()=>admin;
+ const stock=await salesOrderAction(f.client,admin,{action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products.find(p=>p.id===f.product.id).available,14);
+});
+
+test('existing adjusted expiry is cleared even when approved; original values remain audited and retry is safe',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ await s.StockBalance.update(f.lots[1].id,{production_order_id:'',opening_batch_id:'opening-1',expiry_date:'2020-01-01'});
+ const row=(await f.workspace()).rows.find(r=>r.balance_id===f.lots[1].id);assert.equal(row.adjusted_stock,true);
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'CLEAR-EXPIRY',reason:'Remove expiry from adjusted opening stock',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:5,ready_for_sale:true}]};
+ const saved=await f.call(body),lot=await s.StockBalance.get(row.balance_id);assert.equal(lot.expiry_date,'');assert.equal(lot.quantity,5);assert.equal(lot.total_value,50);assert.equal(saved.journal_id,'');assert.equal(saved.rows[0].previous_expiry_date,'2020-01-01');assert.equal((await s.StockMovement.list()).length,0);assert.equal((await f.call(body)).reused,true);
 });
