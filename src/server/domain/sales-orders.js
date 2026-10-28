@@ -5,7 +5,7 @@ import {salesStockSource,salesSourceProducts} from './sales-stock-source.js';
 import {invoiceAction} from './sales-invoices.js';
 import {invoiceCompany,invoiceDefaults} from '../../lib/invoice-documents.js';
 import {finishedProduct,periodDates} from './commercial-rules.js';
-import {FACTORY_SALES_LOCATION_TYPES} from '../../lib/sales-stock.js';
+import {FACTORY_SALES_LOCATION_TYPES,companySalesWarehouse} from '../../lib/sales-stock.js';
 import {stockUnit} from '../../lib/item-units.js';
 
 export const SALES_ORDER_ACTIONS=['salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','recordSuppliedOrder'];
@@ -21,14 +21,14 @@ export async function salesOrderAction(client,user,body){
   const svc=client.asServiceRole,s=svc.entities,date=today();
   if(body.action==='salesOrderWorkspace'){
     const [runs,warehouses,staff,customers]=await Promise.all([
-      readRecords(s.Dispatch,{status:{$in:['loaded','in_transit']}}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Employee,{status:'active'}),readRecords(s.Customer,{is_active:true}),
+      readRecords(s.Dispatch,{status:{$in:['loaded','in_transit']}}),readRecords(s.Warehouse),readRecords(s.Employee,{status:'active'}),readRecords(s.Customer,{is_active:true}),
     ]);
     const sources=runs.filter(r=>r.vehicle_warehouse_id && !r.return_date && r.dispatch_date<=date && staff.some(e=>e.id===r.salesperson_id&&e.role==='commercial') && staff.some(e=>e.id===r.driver_id&&e.role==='driver'))
       .map(r=>({id:r.id,dispatch_number:r.dispatch_number,commercial_name:staff.find(e=>e.id===r.salesperson_id)?.full_name,driver_name:staff.find(e=>e.id===r.driver_id)?.full_name,vehicle_name:r.vehicle_name,dispatch_date:r.dispatch_date}));
     const currentSellerId=staff.some(e=>e.id===employee?.id&&!e.employee_removed_at)?employee.id:'user:'+user.id;
     const sellers=staff.filter(e=>!e.employee_removed_at).map(e=>({id:e.id,name:e.full_name}));
     if(currentSellerId.startsWith('user:'))sellers.unshift({id:currentSellerId,name:user.full_name||user.email||'Current user'});
-    return {sellers,currentSellerId,runs:sources,warehouses:warehouses.filter(w=>!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:customers.filter(c=>!c.customer_removed_at).map(c=>({id:c.id,business_name:c.business_name,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
+    return {sellers,currentSellerId,defaultSource:warehouses.some(companySalesWarehouse)?'company':'',runs:sources,warehouses:warehouses.filter(w=>w.is_active!==false&&!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:customers.filter(c=>!c.customer_removed_at).map(c=>({id:c.id,business_name:c.business_name,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
   }
   if(body.action==='salesOrderDeliveryPoints'){
     const customer=typeof body.customerId==='string'?await s.Customer.get(body.customerId):null;

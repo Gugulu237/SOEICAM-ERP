@@ -5,7 +5,7 @@ import { hasRoleAccess } from './permissions.js';
 import { INVENTORY_PATH, INVENTORY_ROLES } from './inventory-navigation.js';
 import { QUALITY_ROLES } from './quality-workspace.js';
 import { PURCHASE_ROLES } from './purchase-workspace.js';
-import { permitsWorkspace,workspacePath } from './workspace-navigation.js';
+import { permitsWorkspace,workspacePath,hasWorkspaceGrant } from './workspace-navigation.js';
 // Registry of ERP "applications" shown on the visual Home launcher.
 // Each module: identity (icon + color), route, roles, and a key into the
 // live-stats object computed by Home.jsx.
@@ -119,7 +119,7 @@ export const APP_MODULES = [
 
 export function modulesForRole(role,allowedModules){
  const destination=module=>role==='cashier'&&module.key==='team_workspaces'?'/team-workspaces?section=payroll':role==='hotesse'&&module.key==='sales'?'/outlet-reports':workspacePath(module.path,allowedModules);
- return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial')&&hasRoleAccess(role,module.roles)&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
+ return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial')&&(hasRoleAccess(role,module.roles)||hasWorkspaceGrant(role,destination(module),allowedModules))&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
 }
 
 export function mergeRoleWorkspaces(role,modules,actions){

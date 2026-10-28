@@ -6,3 +6,10 @@ export function workspacePath(path,modules){
 }
 export function permitsWorkspace(path,modules){const target=workspacePath(path,modules),module=moduleForPath(target);return !modules || !module || modules.includes(module);}
 export function employeeReportPath(role,employee=''){const params=new URLSearchParams({section:'reports',role});if(employee)params.set('employee',employee);return '/team-workspaces?'+params;}
+
+// An explicit saved module grant controls workspace visibility. Sensitive people,
+// payroll and administration screens still require their dedicated role checks.
+export function hasWorkspaceGrant(role,path,modules){
+ const module=moduleForPath(path);
+ return !!role && Array.isArray(modules) && !!module && !['admin','employees','payroll'].includes(module) && modules.includes(module);
+}

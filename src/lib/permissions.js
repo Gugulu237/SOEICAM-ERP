@@ -1,6 +1,7 @@
 
 /* localized-interface */
 import { ui } from './i18n.js';
+import {hasWorkspaceGrant} from './workspace-navigation.js';
 import { ACCOUNTING_REPORT_PATHS } from './management-access.js';
 import { normalizeRole, effectiveRole, hasRoleAccess, MANAGEMENT_HIERARCHY } from '../server/domain/roles.js';
 import { INVENTORY_ROLES } from './inventory-navigation.js';
@@ -265,13 +266,14 @@ export function canReceiveHandover(role) {
   return HANDOVER_RECEIVERS.includes(role);
 }
 // Field staff use dedicated workspaces; hiding navigation alone is insufficient.
-export function canOpenFieldPath(role, path) {
+export function canOpenFieldPath(role, path, allowedModules) {
   const [pathname,query='']=String(path||'').split('?');path=pathname;
   role = normalizeRole(role);
   if (!role) return false;
   if (role === 'admin') return true;
   if (path === '/profile' || path === '/profile/') return true;
   if (path === '/sales-reports') return true;
+  if (hasWorkspaceGrant(role,pathname+(query?'?'+query:''),allowedModules)) return true;
   const isWithin = root => root === '/' ? path === '/' : path === root || path.startsWith(root + '/');
   if (isWithin('/team-workspaces')) return role === 'admin'||role==='cashier'&&new URLSearchParams(query).get('section')==='payroll';
   if (isWithin('/commercial')) return ['commercial', 'production_manager'].includes(role) && path.replace(/\/+$/, '') === '/commercial';

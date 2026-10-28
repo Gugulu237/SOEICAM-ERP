@@ -77,8 +77,8 @@ export default function EmployeeDashboard() {
       </>}
     </div>;
   }
-  if (role === 'commercial' && (!allowedModules || allowedModules.includes('commercial'))) return <><CommercialWorkspace/><AssignedFeatures role={role} modules={allowedModules}/></>;
-  if (role === 'cashier' && (!allowedModules || allowedModules.includes('cashier'))) return <DashboardIdentity value={{roleName: roleLabel, employeeName: employee?.full_name || user?.full_name}}><CashierHome /><AssignedFeatures role={role} modules={allowedModules}/></DashboardIdentity>;
+  if (role === 'commercial' && (!allowedModules || allowedModules.includes('commercial'))) return <WorkspaceAccess modules={allowedModules}><CommercialWorkspace/><AssignedFeatures role={role} modules={allowedModules}/></WorkspaceAccess>;
+  if (role === 'cashier' && (!allowedModules || allowedModules.includes('cashier'))) return <WorkspaceAccess modules={allowedModules}><DashboardIdentity value={{roleName: roleLabel, employeeName: employee?.full_name || user?.full_name}}><CashierHome /><AssignedFeatures role={role} modules={allowedModules}/></DashboardIdentity></WorkspaceAccess>;
   return <LiveWorkspace profile={{ key:role === 'admin' ? 'admin' : assignedRole || role,template_role:role }} />;
 }
 
@@ -140,7 +140,7 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
       {template !== 'admin' && !independent && <select aria-label={ui("Workspace employee")} className="h-11 min-w-0 w-full rounded-lg border bg-white px-3 text-sm sm:w-auto" value={employeeId} onChange={e => setParams({section:'reports',role:mode,...(e.target.value ? {employee:e.target.value} : {})})}><option value="">{needsEmployee ? ui("Choose an employee") : ui("Department overview")}</option>{(data?.choices || []).map(staff => <option key={staff.id} value={staff.id}>{staff.full_name}{staff.status !== 'active' ? ' ('+staff.status+')' : ''}</option>)}</select>}
       <span className="ml-auto hidden items-center sm:flex gap-2 text-xs font-medium text-green-700"><span className="h-2 w-2 rounded-full bg-green-600" />{ui("Live workspace")}</span>
     </div></section>}
-    <AssignedFeatures role={profile.template_role} modules={modules} preview={readOnly}/>
+    <AssignedFeatures role={profile.template_role} modules={modules} preview={readOnly} nativeEnabled={!disabled}/>
     {disabled ? <p className="rounded-xl border bg-white p-5 text-sm text-slate-600">{ui("This workspace is disabled in the saved role permissions. The General Manager can adjust its access under Roles & organigram.")}</p> : <>
       {!independent && <div className="hidden items-center justify-between gap-2 text-xs text-slate-500 sm:flex"><span>{data?.date ? data.date + ' / Cameroon time' : ui("SOEICAM workspace")}{result?.scope === scope && result.updatedAt && ui(" / Updated {0}", result.updatedAt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))}</span><Button variant="ghost" size="sm" disabled={loading} onClick={refresh}><RefreshCw size={14} className={'mr-2 ' + (loading ? 'animate-spin' : '')} />{ui("Refresh")}</Button></div>}
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{ui("Could not refresh this workspace. ")}{uiMessage(error)} <button className="underline" onClick={refresh}>{ui("Retry")}</button></p>}

@@ -17,7 +17,7 @@ import { hasRoleAccess } from "@/lib/permissions";
 import { INVENTORY_PATH, INVENTORY_ROLES, isInventoryPath } from "@/lib/inventory-navigation";
 import { QUALITY_ROLES, isQualityPath } from '@/lib/quality-workspace';
 import { PURCHASE_ROLES } from '@/lib/purchase-workspace';
-import { permitsWorkspace,workspacePath } from '@/lib/workspace-navigation';
+import { permitsWorkspace,workspacePath,hasWorkspaceGrant } from '@/lib/workspace-navigation';
 
 const navItems = [
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
@@ -63,7 +63,7 @@ export default function AppSidebar() {
 
   const targetPath=path=>role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
-  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial') && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && hasRoleAccess(role, item.roles) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
+  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial') && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && (hasRoleAccess(role, item.roles) || hasWorkspaceGrant(role,targetPath(item.path),allowedModules)) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";

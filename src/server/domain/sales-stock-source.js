@@ -1,6 +1,6 @@
 import {readRecords} from './commercial-workspace.js';
 import {supplyRun,runManifest} from './commercial-runs.js';
-import {FACTORY_SALES_LOCATION_TYPES,finishedStockForSale} from '../../lib/sales-stock.js';
+import {FACTORY_SALES_LOCATION_TYPES,finishedStockForSale,companySalesWarehouse} from '../../lib/sales-stock.js';
 import {businessDate} from '../../lib/business-date.js';
 import {stockUnit} from '../../lib/item-units.js';
 
@@ -14,6 +14,12 @@ export async function salesStockSource(svc,input,date=businessDate()){
     const agent=await s.Employee.get(run.salesperson_id);
     return {...context,source_type:'issued',salesperson_id:agent.id,salesperson_name:agent.full_name};
   }
+  if(input.sourceType==='company'){
+    if(input.dispatchId||input.warehouseId)throw Error('Company stock is selected automatically. Do not attach an issued load or individual location.');
+    const warehouses=(await readRecords(s.Warehouse)).filter(companySalesWarehouse);
+    if(!warehouses.length)throw Error('No active company stock location is configured.');
+    return {source_type:'company',stock_warehouse_ids:warehouses.map(w=>w.id),stock_warehouse_id:'',stock_warehouse_name:'Company stock',dispatch_id:'',driver_id:'',driver_name:'',vehicle_id:'',vehicle_name:'',route_id:'',salesperson_id:'',salesperson_name:''};
+  }
   if(input.sourceType!=='warehouse')throw Error('Choose issued stock or the main finished-goods warehouse.');
   if(input.dispatchId)throw Error('A direct warehouse sale cannot use an issued load.');
   const warehouse=typeof input.warehouseId==='string'?await s.Warehouse.get(input.warehouseId):null;
@@ -22,11 +28,11 @@ export async function salesStockSource(svc,input,date=businessDate()){
 }
 
 export async function salesSourceProducts(svc,context,date=businessDate()){
-  const balances=await readRecords(svc.entities.StockBalance,{warehouse_id:context.stock_warehouse_id});
+  const balances=await readRecords(svc.entities.StockBalance,{warehouse_id:context.source_type==='company'?{$in:context.stock_warehouse_ids}:context.stock_warehouse_id});
   const ids=[...new Set(balances.filter(b=>Number(b.quantity)>0).map(b=>b.product_id))];
   const products=[];
   for(let offset=0;offset<ids.length;offset+=100)products.push(...await readRecords(svc.entities.Product,{id:{$in:ids.slice(offset,offset+100)}}));
-  let available=finishedStockForSale(products,balances,context.stock_warehouse_id,date>businessDate()?date:businessDate());
+  let available=finishedStockForSale(products,balances,context.source_type==='company'?context.stock_warehouse_ids:context.stock_warehouse_id,date>businessDate()?date:businessDate());
   if(context.dispatch_id){
     const manifest=await runManifest(svc,context.dispatch_id,context.stock_warehouse_id);
     available=available.map(p=>({...p,available:Math.min(p.available,Math.max(0,manifest.get(p.id)||0))})).filter(p=>p.available>0);

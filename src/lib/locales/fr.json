@@ -6787,5 +6787,10 @@
   "More than one ERP account has this email. Resolve the duplicate before changing sign-in.": "Plusieurs comptes ERP utilisent cet e-mail. Résolvez le doublon avant de modifier la connexion.",
   "Choose a staff login without independent administrator access.": "Choisissez un compte employé sans accès administrateur indépendant.",
   "This email is already the employee sign-in account.": "Cet e-mail est déjà le compte de connexion de l’employé.",
-  "Save profile changes before changing sign-in.": "Enregistrez les modifications du profil avant de modifier la connexion."
+  "Save profile changes before changing sign-in.": "Enregistrez les modifications du profil avant de modifier la connexion.",
+  "Choose stock source": "Choisir la source du stock",
+  "Company stock - available finished goods": "Stock de l’entreprise - produits finis disponibles",
+  "Saved stock location": "Emplacement du stock enregistré",
+  "Company stock combines available finished goods automatically, so you do not need to choose a warehouse. Goods already issued to a delivery team remain separate. Each sale deducts stock once and records its actual cost.": "Le stock de l’entreprise regroupe automatiquement les produits finis disponibles, sans choisir un entrepôt. Les marchandises déjà confiées à une équipe de livraison restent séparées. Chaque vente déduit le stock une seule fois et comptabilise son coût réel.",
+  "Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.": "Vérifiez que les produits finis sont approuvés et non périmés. Les marchandises bloquées par la qualité ou déjà sorties pour livraison sont exclues."
 }

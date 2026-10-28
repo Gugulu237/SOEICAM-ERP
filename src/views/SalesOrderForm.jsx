@@ -18,7 +18,7 @@ import {ArrowLeft,Plus,Trash2,Save,FileText} from 'lucide-react';
 
 const selectClass='h-11 w-full min-w-0 rounded-lg border bg-white px-3 text-sm';
 async function call(body){const {data}=await invokeFieldOps(body);if(data.error)throw Error(data.error);return data;}
-const sourceInput=value=>{const at=value.indexOf(':');return at<0?{}:value.slice(0,at)==='issued'?{sourceType:'issued',dispatchId:value.slice(at+1)}:{sourceType:'warehouse',warehouseId:value.slice(at+1)};};
+const sourceInput=value=>{if(value==='company')return {sourceType:'company'};const at=value.indexOf(':');return at<0?{}:value.slice(0,at)==='issued'?{sourceType:'issued',dispatchId:value.slice(at+1)}:{sourceType:'warehouse',warehouseId:value.slice(at+1)};};
 
 export default function SalesOrderForm(){
   useLocaleRender();
@@ -32,8 +32,8 @@ export default function SalesOrderForm(){
   useEffect(()=>{
     let active=true;setLoading(true);setLoadError('');
     Promise.all([call({action:'salesOrderWorkspace'}),id?Promise.all([erp.entities.SalesOrder.get(id),readAll(erp.entities.SalesOrderLine,{order_id:id})]):null])
-      .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(saved.dispatch_id?'issued:'+saved.dispatch_id:'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',date:saved.order_date||today,seller_id:saved.sales_supply_seller_id||saved.salesperson_id||data.currentSellerId||''});setLines(rows);}
-        else{setOrder(null);setForm(f=>({...f,seller_id:data.currentSellerId||''}));setSource(data.runs.length===1?'issued:'+data.runs[0].id:'');}})
+      .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(saved.dispatch_id?'issued:'+saved.dispatch_id:saved.sales_supply_source==='company'?'company':'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',date:saved.order_date||today,seller_id:saved.sales_supply_seller_id||saved.salesperson_id||data.currentSellerId||''});setLines(rows);}
+        else{setOrder(null);setForm(f=>({...f,seller_id:data.currentSellerId||''}));setSource(data.defaultSource==='company'?'company':data.runs.length===1?'issued:'+data.runs[0].id:data.warehouses.length===1?'warehouse:'+data.warehouses[0].id:'');}})
       .catch(e=>{if(active)setLoadError(e.message);}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
   },[id,retry]);
@@ -97,17 +97,17 @@ export default function SalesOrderForm(){
         <section className="space-y-2">
           <label className="block space-y-1 text-sm font-medium">{ui('Stock source *')}
             <select aria-label={ui('Stock source')} value={source} onChange={e=>setSource(e.target.value)} className={selectClass}>
-              <option value="">{ui('Choose issued stock or the main warehouse')}</option>
+              <option value="">{ui('Choose stock source')}</option>{(catalogue?.defaultSource==='company'||source==='company')&&<option value="company">{ui('Company stock - available finished goods')}</option>}
               <optgroup label={ui('Goods issued to Commercials')}>{catalogue?.runs.map(run=><option key={run.id} value={'issued:'+run.id}>{run.commercial_name} / {run.vehicle_name} / {run.dispatch_number}</option>)}</optgroup>
-              <optgroup label={ui('Main finished-goods warehouse - special customer orders')}>{catalogue?.warehouses.map(w=><option key={w.id} value={'warehouse:'+w.id}>{w.name}</option>)}</optgroup>
-              {locked&&!(source.startsWith('issued:')?catalogue?.runs.some(r=>'issued:'+r.id===source):catalogue?.warehouses.some(w=>'warehouse:'+w.id===source))&&<option value={source}>{source.startsWith('issued:')?[order.sales_supply_stockholder_name||order.salesperson_name,order.vehicle_name,order.warehouse_name].filter(Boolean).join(' / '):order.warehouse_name}</option>}
+              {catalogue?.defaultSource!=='company'&&<optgroup label={ui('Main finished-goods warehouse - special customer orders')}>{catalogue?.warehouses.map(w=><option key={w.id} value={'warehouse:'+w.id}>{w.name}</option>)}</optgroup>}
+              {source!=='company'&&((source.startsWith('warehouse:')&&catalogue?.defaultSource==='company')||(locked&&!(source.startsWith('issued:')?catalogue?.runs.some(r=>'issued:'+r.id===source):catalogue?.warehouses.some(w=>'warehouse:'+w.id===source))))&&<option value={source}>{source.startsWith('issued:')?[order?.sales_supply_stockholder_name||order?.salesperson_name,order?.vehicle_name,order?.warehouse_name].filter(Boolean).join(' / '):order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location')}</option>}
             </select>
           </label>
-          <div className="flex flex-wrap items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui('Choose where the goods are held now. The salesperson can differ from the stock holder. An issue from warehouse to agent is a transfer; the sale deducts sold goods once and its invoice reuses that sale.')}</p></LearnMore>{source&&!locked&&<Button type="button" variant="ghost" size="sm" disabled={sourceLoading} onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</Button>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui('Company stock combines available finished goods automatically, so you do not need to choose a warehouse. Goods already issued to a delivery team remain separate. Each sale deducts stock once and records its actual cost.')}</p></LearnMore>{source&&!locked&&<Button type="button" variant="ghost" size="sm" disabled={sourceLoading} onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</Button>}</div>
           {selectedRun&&<p className="break-words text-xs text-slate-600">{ui('Stock held by')}: {selectedRun.commercial_name} · {ui('Driver')}: {selectedRun.driver_name}</p>}
           {sourceLoading&&<p role="status" className="text-xs text-slate-500">{ui('Checking available finished stock...')}</p>}
           {sourceError&&<p role="alert" className="text-sm text-red-700">{uiMessage(sourceError)} <button type="button" className="underline" onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</button></p>}
-          {sourceData&&!products.length&&<p role="status" className="text-xs text-slate-500">{ui('No saleable finished products remain at this source.')}</p>}
+          {sourceData&&!products.length&&<p role="status" className="text-xs text-slate-500">{ui('No saleable finished products remain at this source.')} {ui('Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.')}</p>}
         </section>
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">{ui('Products supplied')}</h2>{!locked&&<Button type="button" variant="outline" size="sm" disabled={!products.length||sourceLoading} onClick={()=>setLines(previous=>[...previous,{product_id:'',quantity:1,unit_price:0,discount_pct:0,tax_rate:0}])}><Plus size={15} className="mr-1"/>{ui('Add product')}</Button>}</div>

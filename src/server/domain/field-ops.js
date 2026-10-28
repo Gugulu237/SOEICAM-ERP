@@ -120,14 +120,17 @@ export async function stockOnHand(base44, productId, warehouseId) {
   return round3(balances.reduce((s, b) => s + (b.quantity || 0), 0));
 }
 
-export async function stockIssue(base44, { productId, productName, warehouseId, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId }) {
+export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId }) {
   let remaining = round3(quantity);
   if (remaining <= 0) throw new Error("Quantity must be greater than zero");
 
   const dateStr = today();
+  const multiple=Array.isArray(warehouseIds);
+  if(multiple && (!warehouseIds.length || warehouseIds.some(id=>typeof id!=='string'||!id)))throw Error('Choose valid company stock locations.');
+  const warehouseFilter=multiple?{$in:[...new Set(warehouseIds)]}:warehouseId;
   const all = [];
   for (let skip=0;;skip+=200) {
-    const page=await base44.entities.StockBalance.filter({ product_id: productId, warehouse_id: warehouseId },'id',200,skip);
+    const page=await base44.entities.StockBalance.filter({ product_id: productId, warehouse_id: warehouseFilter },'id',200,skip);
     all.push(...page);
     if (page.length<200) break;
   }
@@ -153,6 +156,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       total_value: round2(newQty * (b.unit_cost || 0)),
     });
     layers.push({
+      ...(multiple?{warehouseId:b.warehouse_id}:{}),
       lotNumber: b.lot_number || "",
       expiryDate: b.expiry_date || "",
       quantity: take,
@@ -170,7 +174,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       product_name: productName || "",
       quantity: l.quantity,
       movement_type: movementType,
-      source_warehouse_id: warehouseId,
+      source_warehouse_id: l.warehouseId || warehouseId,
       lot_number: l.lotNumber,
       expiry_date: l.expiryDate || undefined,
       ...(l.productionOrderId ? { production_order_id: l.productionOrderId } : {}),

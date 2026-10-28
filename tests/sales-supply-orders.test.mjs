@@ -163,3 +163,64 @@ test('customer branches are selected explicitly and confirmed again when recordi
   const result=await f.call({...f.body,locationId:branch.id});assert.equal(result.order.location_id,branch.id);
   assert.equal((await f.s.StockMovement.list()).length,1);
 });
+
+
+test('new sales default to one company stock pool even when an issued load exists',async()=>{
+ const f=await setup(),catalogue=await f.call({action:'salesOrderWorkspace'});
+ assert.equal(catalogue.defaultSource,'company');assert.equal(catalogue.runs.length,1);
+ const stock=await f.call({action:'salesOrderStock',sourceType:'company',date});
+ assert.equal(stock.products.find(p=>p.id==='product-a').available,20,'issued van stock is excluded');
+ assert.equal(stock.source.stock_warehouse_name,'Company stock');
+});
+
+test('pooled sale issues earliest-expiring lots across company locations once and posts their exact combined costs',async()=>{
+ const f=await setup();
+ await f.s.StockBalance.update(f.factory.id,{quantity:1,total_value:300,expiry_date:'2099-12-31'});
+ const room=await f.s.Warehouse.create({name:'Old cold room',warehouse_type:'cold_room',is_active:true});
+ const extra=await f.s.StockBalance.create({warehouse_id:room.id,product_id:'product-a',quantity:2,total_value:800,unit_cost:400,qc_status:'approved',lot_number:'EARLY',expiry_date:'2099-01-01'});
+ const stock=await f.call({action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products[0].available,3);
+ const body={...f.body,sourceType:'company',dispatchId:'',paymentType:'credit',expectedTotal:1500,lines:[{...f.body.lines[0],quantity:3}]};
+ const result=await f.call(body),movements=await f.s.StockMovement.list();
+ assert.equal((await f.s.StockBalance.get(extra.id)).quantity,0);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,0);assert.equal((await f.s.StockBalance.get('stock')).quantity,10);
+ assert.deepEqual(movements.map(m=>m.source_warehouse_id),[room.id,'factory']);assert.deepEqual(movements.map(m=>m.quantity),[2,1]);
+ assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,1100);assert.equal((await f.s.Invoice.get(result.invoiceId)).balance,1500);
+ const ledger=await f.s.JournalLine.list();assert.equal(ledger.reduce((n,l)=>n+l.debit-l.credit,0),0);assert.equal((await f.s.JournalEntry.list()).length,1);
+ assert.equal((await f.call(body)).reused,true);assert.equal((await f.s.StockMovement.list()).length,2);
+ const printed=await invoiceAction(f.client,admin,{action:'createSalesInvoice',sourceType:'order',sourceId:result.order.id,invoiceDate:date,dueDate:date,options:invoiceDefaults({business_name:'Customer A'})});assert.equal(printed.reused,true);assert.equal((await f.s.StockMovement.list()).length,2);
+});
+
+test('pooled stock excludes isolated, expired, held, inactive, unfinished and delivery inventory',async()=>{
+ const f=await setup();
+ for(const type of ['vehicle','commercial_custody','field_delivery_pending','quarantine','damaged','wip']){
+  const w=await f.s.Warehouse.create({name:type,warehouse_type:type,is_active:true});await f.s.StockBalance.create({warehouse_id:w.id,product_id:'product-a',quantity:100,unit_cost:300,qc_status:'approved'});
+ }
+ const inactive=await f.s.Warehouse.create({name:'Inactive',warehouse_type:'cold_room',is_active:false});await f.s.StockBalance.create({warehouse_id:inactive.id,product_id:'product-a',quantity:100,qc_status:'approved'});
+ for(const data of [{qc_status:'quarantine'},{expiry_date:'2020-01-01'}])await f.s.StockBalance.create({warehouse_id:'factory',product_id:'product-a',quantity:100,unit_cost:300,...data});
+ assert.equal((await f.call({action:'salesOrderStock',sourceType:'company',date})).products[0].available,20);
+ await assert.rejects(f.call({...f.body,sourceType:'company',dispatchId:'' ,expectedTotal:10500,lines:[{...f.body.lines[0],quantity:21}]}),/quantity/);
+ assert.equal((await f.s.StockMovement.list()).length,0);
+ await assert.rejects(f.call({action:'salesOrderStock',sourceType:'company',warehouseId:'van-stock',date}),/automatically/);
+});
+
+test('approved finished stock in legacy general storage is available without creating another warehouse',async()=>{
+ const f=await setup();await f.s.Warehouse.update('factory',{warehouse_type:'raw_material'});
+ const stock=await f.call({action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products[0].available,20);
+ const result=await f.call({...f.body,sourceType:'company',dispatchId:'',paymentType:'credit'});assert.ok(result.invoiceId);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,18);
+});
+
+
+test('pooled sale fully rolls back both locations and the ledger if the final audit fails',async()=>{
+ const db=new PGlite();try{
+  const f=await setup(db),route=await functionRoute(),create=f.s.AuditLog.create;
+  await f.s.StockBalance.update(f.factory.id,{quantity:1,total_value:300});
+  const room=await f.s.Warehouse.create({name:'Second storage',warehouse_type:'general',is_active:true});await f.s.StockBalance.create({warehouse_id:room.id,product_id:'product-a',quantity:2,total_value:800,unit_cost:400,qc_status:'approved'});
+  globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+  f.s.AuditLog.create=async value=>{if(value.action==='record_supplied_order')throw Error('Late audit failure');return create(value);};
+  const body={...f.body,sourceType:'company',dispatchId:'',paymentType:'credit',expectedTotal:1500,lines:[{...f.body.lines[0],quantity:3}]};
+  const before=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows;
+  const call=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});
+  assert.equal((await call()).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
+  f.s.AuditLog.create=create;assert.equal((await call()).status,200);assert.equal((await (await call()).json()).reused,true);
+  assert.equal((await f.s.StockMovement.list()).length,2);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,1100);
+ }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+});

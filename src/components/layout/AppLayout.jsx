@@ -24,7 +24,7 @@ export default function AppLayout({ children }) {
   if (loading) return <div role="status" className="p-10 text-slate-500">{ui("Loading your workspace…")}</div>;
   if (error) return <div role="alert" className="p-10 text-red-700">{uiMessage(error)}<button className="ml-3 underline" onClick={() => window.location.reload()}>{ui("Refresh")}</button></div>;
   if (['commercial', 'driver', 'cashier', 'production_manager', 'hotesse'].includes(role) && employee?.status && employee.status !== 'active') return <div className="p-10 text-slate-700">{ui("Your staff account is not active. Please contact your manager.")}</div>;
-  if (!canOpenFieldPath(role, location.pathname+location.search) || !permitsWorkspace(location.pathname+location.search,allowedModules)) return <Navigate to="/" replace />;
+  if (!canOpenFieldPath(role, location.pathname+location.search, allowedModules) || !permitsWorkspace(location.pathname+location.search,allowedModules)) return <Navigate to="/" replace />;
   return (
     <NavigationProvider key={[user?.id, employee?.id, role, allowedModules?.join(',')].join(':')} identity={[user?.id, employee?.id, role, allowedModules?.join(',')].join(':')}><div className="flex min-h-screen bg-background">
       <AppSidebar />

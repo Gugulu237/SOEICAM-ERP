@@ -55,3 +55,47 @@ test('report-only Cashier dashboard and navigation show the saved feature with t
  r.session={...r.session,allowedModules:[]};r.beforeRender();const revoked=render('reports');assert.match(revoked,/not enabled for your role/);assert.doesNotMatch(revoked,/data-sales-readonly/);
  }finally{r.cleanup();delete globalThis.__roleUI;}
 });
+
+
+test('saved operational grants appear beyond legacy template lists and disappear on revocation',()=>{
+ for(const template of ['driver','hotesse','cashier','commercial','procurement','employee']){
+  const catalogue=catalogueFromStored({roles:{sync_worker:validateRoleProfile({key:'sync_worker',label:'Sync worker',category:'Operations',template_role:template,modules:['customers','inventory','purchases']})}});
+  const staff=decorateEmployee({role:'user'},{id:'staff',role:'sync_worker',status:'active'},catalogue);
+  const cards=modulesForRole(template,staff.allowed_modules);
+  for(const path of ['/customers','/inventory','/purchases']){
+   assert.ok(cards.some(c=>c.path===path),template+' must show '+path);
+   assert.equal(canOpenFieldPath(template,path,staff.allowed_modules),true);
+   assert.equal(permitsWorkspace(path,staff.allowed_modules),true);
+  }
+  assert.deepEqual(modulesForRole(template,[]),[]);
+  assert.equal(permitsWorkspace('/customers',[]),false);
+ }
+ // Module grants alone never expose people administration or payroll authority.
+ assert.ok(!modulesForRole('driver',['admin','employees','payroll']).length);
+ assert.equal(canOpenFieldPath('driver','/admin',['admin']),false);
+ assert.equal(canOpenFieldPath('driver','/team-workspaces',['employees']),false);
+});
+
+test('an open employee dashboard and sidebar apply grants and removals from refreshed profiles',async()=>{
+ const render=await renderer(),r=hookRuntime();
+ r.session={role:'driver',assignedRole:'driver',roleLabel:'Driver',employee:{id:'driver'},user:{id:'login'},allowedModules:['distribution'],loading:false};globalThis.__roleUI=r;
+ try{
+  r.beforeRender();let page=render('dashboard');assert.doesNotMatch(page,/Assigned features/);
+  r.session={...r.session,allowedModules:['distribution','inventory','customers']};
+  r.beforeRender();page=render('dashboard');assert.match(page,/Assigned features/);assert.match(page,/Inventory/);assert.match(page,/Customers/);
+  r.beforeRender();let sidebar=render('sidebar');assert.match(sidebar,/href="\/inventory"/);assert.match(sidebar,/href="\/customers"/);
+  r.session={...r.session,allowedModules:[]};r.beforeRender();page=render('dashboard');assert.doesNotMatch(page,/Assigned features/);assert.match(page,/workspace is disabled/);
+  r.beforeRender();sidebar=render('sidebar');assert.doesNotMatch(sidebar,/href="\/inventory"/);assert.doesNotMatch(sidebar,/href="\/customers"/);
+ }finally{r.cleanup();delete globalThis.__roleUI;}
+});
+
+test('disabled native workspace still offers every remaining assigned feature',async()=>{
+ const render=await renderer(),r=hookRuntime();r.session={role:'commercial',assignedRole:'commercial',employee:{id:'staff'},user:{id:'login'},allowedModules:['customers'],loading:false};globalThis.__roleUI=r;
+ try{r.beforeRender();const page=render('dashboard');assert.match(page,/Assigned features/);assert.match(page,/Customers/);assert.match(page,/workspace is disabled/);}finally{r.cleanup();delete globalThis.__roleUI;}
+});
+
+
+test('Cashier receives explicit links for accounting and purchasing outside the cash desk',async()=>{
+ const render=await renderer(),r=hookRuntime();r.session={role:'cashier',assignedRole:'cashier',employee:{id:'staff'},user:{id:'login'},allowedModules:['cashier','accounting','purchases'],loading:false};globalThis.__roleUI=r;
+ try{r.beforeRender();const page=render('dashboard');assert.match(page,/Assigned features/);assert.match(page,/Finance/);assert.match(page,/Purchases/);}finally{r.cleanup();delete globalThis.__roleUI;}
+});

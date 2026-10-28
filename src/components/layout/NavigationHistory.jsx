@@ -20,7 +20,7 @@ export default function NavigationHistory() {
   const current = history.entries[history.cursor]?.href;
   const recent = history.recent.filter(href => {
     const pathname = href.split('?')[0], module = moduleForPath(pathname);
-    return canOpenFieldPath(role, pathname) && (role === 'admin' || !module || !allowedModules || allowedModules.includes(module));
+    return canOpenFieldPath(role, href, allowedModules) && (role === 'admin' || !module || !allowedModules || allowedModules.includes(module));
   });
   return <nav aria-label={ui("Page history")} className="flex min-w-0 items-center gap-2 border-t border-green-50 px-3 py-1 sm:px-5 xl:px-8">
     <div className="flex shrink-0 items-center gap-1">

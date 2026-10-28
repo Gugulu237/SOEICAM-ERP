@@ -25,9 +25,9 @@ async function bundle(){
 }
 const options={currentSellerId:'seller',sellers:[{id:'seller',name:'Salesperson A'},{id:'other',name:'Salesperson B'}],date:'2026-10-25',runs:[{id:'run-a',commercial_name:'Agent A',driver_name:'Driver A',vehicle_name:'Van A',dispatch_number:'DSP-1'}],warehouses:[{id:'main',name:'Main Cold Room'}],customers:[{id:'customer',business_name:'Customer',payment_terms_days:0}]};
 const stock={source:{stock_warehouse_id:'van'},products:[{id:'yola',name:'YOLA 500 g',unit:'ea',inventory_type:'assembly',available:10,selling_price:500,tax_rate:0}]};
-function setup(render){
+function setup(render,workspace=options){
   const r=hookRuntime(),calls=[];r.client={entities:{CustomerLocation:{filter:async()=>[]},Customer:{filter:async()=>[]}}};r.fail=true;r.routeId=undefined;
-  r.invoke=async body=>{calls.push(body);if(body.action==='salesOrderWorkspace')return {data:options};if(body.action==='salesOrderStock')return {data:stock};if(body.action==='salesOrderDeliveryPoints')return {data:{points:[]}};if(r.fail)throw Error('Connection interrupted');return {data:{order:{id:'order'},invoiceId:'invoice'}};};
+  r.invoke=async body=>{calls.push(body);if(body.action==='salesOrderWorkspace')return {data:workspace};if(body.action==='salesOrderStock')return {data:stock};if(body.action==='salesOrderDeliveryPoints')return {data:{points:[]}};if(r.fail)throw Error('Connection interrupted');return {data:{order:{id:'order'},invoiceId:'invoice'}};};
   globalThis.__suppliedOrderUI=r;
   const paint=()=>{r.beforeRender();return render();},control=label=>r.controls.find(c=>c['aria-label']===label),button=label=>r.buttons.find(b=>b.label===label);
   return {r,calls,paint,control,button,async ready(){paint();await r.flush();paint();await r.flush();return paint();},close(){r.cleanup();delete globalThis.__suppliedOrderUI;}};
@@ -74,4 +74,22 @@ test('customer and sale details precede stock source; changing the salesperson o
     const write=f.calls.find(b=>b.action==='recordSuppliedOrder');
     assert.equal(write.sellerId,'other');assert.equal(write.dispatchId,'run-a');assert.equal(write.date,past);
   }finally{f.close();}
+});
+
+
+test('new sale automatically shows company stock and hides individual warehouse choices',async()=>{
+ const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',warehouses:[...options.warehouses,{id:'other',name:'Second storage'}]});
+ try{
+  const html=await f.ready();assert.equal(f.control('Stock source').value,'company');assert.match(html,/Company stock/);assert.doesNotMatch(html,/Main Cold Room|Second storage/);
+  const read=f.calls.filter(c=>c.action==='salesOrderStock').at(-1);assert.equal(read.sourceType,'company');assert.equal(read.warehouseId,undefined);assert.equal(read.dispatchId,undefined);
+  f.control('Customer').onChange({target:{value:'customer'}});f.paint();await f.r.flush();f.paint();f.button('Add product').onClick();f.paint();f.control('Product 1').onChange({target:{value:'yola'}});f.paint();f.r.fail=false;
+  await f.button('Record sale & deduct stock').onClick();const write=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(write.sourceType,'company');assert.equal(write.warehouseId,undefined);assert.equal(write.dispatchId,undefined);
+ }finally{f.close();}
+});
+
+
+test('an older unsupplied order retains its recorded warehouse when opened under company-stock mode',async()=>{
+ const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'});f.r.routeId='old';
+ f.r.client.entities.SalesOrder={get:async()=>({id:'old',status:'draft',warehouse_id:'main',warehouse_name:'Main Cold Room',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'seller'})};f.r.client.entities.SalesOrderLine={filter:async()=>[]};
+ try{const html=await f.ready();assert.equal(f.control('Stock source').value,'warehouse:main');assert.match(html,/Main Cold Room/);assert.equal(f.calls.filter(c=>c.action==='salesOrderStock').at(-1).warehouseId,'main');}finally{f.close();}
 });

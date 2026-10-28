@@ -88,3 +88,21 @@ test('a role save supersedes an older in-flight profile and storage events refre
   requests[2](before);await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,['cashier'],'revocations also reach an open employee tab');
  }finally{runtime.cleanup();delete globalThis.__authUI;globalThis.window=previous.window;globalThis.document=previous.document;}
 });
+
+
+test('another device changing a role is picked up by profile polling without signing out',async()=>{
+ const render=await renderer(),runtime=hookRuntime(),previous={window:globalThis.window,document:globalThis.document};let poll;
+ runtime.sdk={isLoaded:false};runtime.invalidations=0;
+ let profile={id:'test-user',staff_access:true,employee_profile:{id:'staff',status:'active',role:'employee',access_template:'employee',allowed_modules:['inventory']}};
+ runtime.me=async()=>structuredClone(profile);
+ const win=new EventTarget();win.setInterval=callback=>{poll=callback;return 1;};win.clearInterval=()=>{};
+ globalThis.window=win;globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};globalThis.__authUI=runtime;
+ const draw=()=>{runtime.beforeRender();render();return runtime.value;};
+ try{
+  draw();await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,['inventory']);
+  profile={...profile,employee_profile:{...profile.employee_profile,role:'warehouse_manager',access_template:'warehouse_manager',allowed_modules:['inventory','purchases']}};
+  poll();await runtime.flush();assert.equal(draw().employee.access_template,'warehouse_manager');assert.deepEqual(draw().employee.allowed_modules,['inventory','purchases']);
+  profile={...profile,employee_profile:{...profile.employee_profile,allowed_modules:[]}};
+  win.dispatchEvent(new Event('focus'));await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,[]);assert.equal(draw().isAuthenticated,true);
+ }finally{runtime.cleanup();delete globalThis.__authUI;globalThis.window=previous.window;globalThis.document=previous.document;}
+});
