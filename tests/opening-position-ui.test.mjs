@@ -8,7 +8,7 @@ async function renderer(){
  const mocks={
  '@/hooks/useCurrentUser':'export const useCurrentUser=()=>({role:globalThis.__positionUI.role||"admin",loading:false});',
  '@/lib/localization':'export const useLocaleRender=()=>{};',
- '@/lib/router':'import React from "react";export const Link=({children,to})=>React.createElement("a",{href:to},children);',
+ '@/lib/router':'import React from "react";export const Link=({children,to})=>React.createElement("a",{href:to},children);export const useSearchParams=()=>[new URLSearchParams(globalThis.__positionUI.query||"")];',
  '@/lib/opening-position-client':'export const openingPositionRequest=body=>globalThis.__positionUI.request(body);',
  '@/components/shared/HelpNotice':'export default ()=>null;',
  '@/components/ui/button':'import React from "react";export const Button=({children,asChild,...props})=>{globalThis.__positionUI.capture("button",props,children);return React.createElement("button",props,children);};',
@@ -47,4 +47,10 @@ test('opening equity counterpart is explicit, automatically recalculated and inc
  draw();assert.equal(button('Review before posting').disabled,true);field('Opening equity account').onChange({target:{value:'equity'}});assert.match(draw(),/Counterpart/);assert.equal(button('Review before posting').disabled,false);
  field('Opening amount').onChange({target:{value:'2000'}});draw();r.form.onSubmit({preventDefault(){}});draw();assert.ok(button('Confirm opening position'));r.form.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);assert.deepEqual(calls[0].lines,[{account_id:'equity',debit:0,credit:2000}]);
  }finally{r.cleanup();delete globalThis.__positionUI;}
+});
+
+
+test('Inventory opening-stock shortcut shows quantity and cost without a compulsory lot or expiry',async()=>{
+ const r=hookRuntime(),render=await renderer();r.query='kind=stock';r.request=async()=>({...setup,products:[{id:'finished',name:'Finished yogurt',inventory_type:'assembly',account_id:'inventory'}],warehouses:[{id:'factory',name:'Company store',warehouse_type:'general'}]});globalThis.__positionUI=r;
+ try{r.beforeRender();render();await r.flush();r.beforeRender();const html=render();assert.match(html,/Quantity in storage units/);assert.match(html,/Unit cost in XAF/);assert.doesNotMatch(html,/Printed expiry date/);assert.equal(r.controls.find(c=>c['aria-label']==='Lot \/ batch reference').required,false);assert.match(html,/Company store/);}finally{r.cleanup();delete globalThis.__positionUI;}
 });

@@ -53,7 +53,7 @@ test('opening position posts one balanced batch, fills registers and preserves p
  const result=await saveOpeningPosition(s,context,f.body),j=await s.JournalEntry.get(result.journal.id);
  assert.equal(j.total_debit,180000);assert.equal(j.total_credit,180000);assert.equal(j.source_module,'opening_balances');
  assert.equal((await s.TreasuryAccount.get('till')).balance,50000);
- const stock=await s.StockBalance.get(result.stock[0]);assert.equal(stock.quantity,10);assert.equal(stock.total_value,5000);assert.equal(stock.qc_status,'quarantine');
+ const stock=await s.StockBalance.get(result.stock[0]);assert.equal(stock.quantity,10);assert.equal(stock.total_value,5000);assert.equal(stock.qc_status,'approved');assert.equal(stock.expiry_date,'');
  const asset=await s.FixedAsset.get(result.assets[0]);assert.equal(asset.accumulated_depreciation,20000);assert.equal(asset.net_book_value,80000);assert.equal(scheduleThrough(asset,opening.slice(0,7)).length,0);assert.equal(scheduleThrough(asset,date.slice(0,7)).length,1);
  assert.equal((await s.Customer.get('customer-a')).balance,25000);assert.equal((await s.Supplier.get('supplier')).balance,10000);
  assert.equal(await verifiedOpeningDocument(s,await s.Invoice.get(result.receivables[0]),'Invoice'),true);
@@ -184,4 +184,16 @@ test('detailed opening debits reject posting alone and accept only their full re
  assert.equal(offset.line.credit,50000);const result=await saveOpeningPosition(s,context,{...body,lines:[offset.line]});
  const journal=await s.JournalEntry.get(result.journal.id);assert.equal(journal.total_debit,50000);assert.equal(journal.total_credit,50000);
  const lines=await s.JournalLine.filter({journal_id:journal.id});assert.equal(lines.find(l=>l.account_id==='till-gl').debit,lines.find(l=>l.account_id===f.equity.id).credit);
+});
+
+
+test('existing finished inventory opens at cost without expiry, quarantine or manufacturing and offsets equity',async()=>{
+ const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{inventory_type:'assembly',inventory_account_id:'inventory',expiry_tracking:true});
+ const body={...f.body,details:[{kind:'stock',product_id:f.product.id,warehouse_id:'factory',quantity:10,unit_cost:500}],lines:[{account_id:f.equity.id,credit:5000}]};
+ const saved=await saveOpeningPosition(s,context,body),b=await s.StockBalance.get(saved.stock[0]);
+ assert.equal(b.qc_status,'approved');assert.equal(b.expiry_date,'');assert.equal(b.production_order_id,undefined);assert.equal(b.quantity,10);assert.equal(b.total_value,5000);assert.equal(b.lot_number,'OPEN-'+opening);
+ const lines=await s.JournalLine.list();assert.equal(lines.find(l=>l.account_id==='inventory').debit,5000);assert.equal(lines.find(l=>l.account_id===f.equity.id).credit,5000);assert.ok(!lines.some(l=>l.account_id==='expense'));
+ assert.equal((await s.StockMovement.list()).filter(m=>m.document_type==='ProductionOrder').length,0);
+ const {finishedStockForSale}=await import('../src/lib/sales-stock.js');assert.equal(finishedStockForSale([await s.Product.get(f.product.id)],[b],'factory',date)[0].available,10);
+ await assert.rejects(saveOpeningPosition(s,context,{...body,requestKey:crypto.randomUUID()}),/already has stock activity/);
 });

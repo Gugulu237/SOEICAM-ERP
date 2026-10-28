@@ -1,7 +1,7 @@
 // One classification for transaction boundaries and client invalidation. Unknown
 // actions are treated as writes; session data is never cached here.
 const fieldReads = new Set([
-  'customerAcquisitionOptions', 'warehouseAdjustmentWorkspace',
+  'customerAcquisitionOptions', 'warehouseAdjustmentWorkspace', 'existingStockWorkspace',
   'fieldStockInventory', 'driverReturnsWorkspace',
   'inventoryAuditWorkspace', 'inventoryAuditDetail', 'inventoryAuditMovements',
   'assetWorkspace', 'assetDepreciationPreview', 'commercialCashiers', 'cashierHandoverHistory', 'cashierWorkspace', 'purchasesWorkspace',

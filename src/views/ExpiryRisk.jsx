@@ -68,7 +68,7 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
     return () => { active = false; };
   }, [canTrace]);
   const cutoff = new Date(businessDate() + 'T12:00:00Z'); cutoff.setUTCDate(cutoff.getUTCDate() + days);
-  const suppliedRisk = supplied.filter(b => b.supplied_quantity > 0 && (!b.expiry_date || b.expiry_date <= cutoff.toISOString().slice(0, 10)));
+  const suppliedRisk = supplied.filter(b => b.supplied_quantity > 0 && b.expiry_date && b.expiry_date <= cutoff.toISOString().slice(0, 10));
 
   const expired = rows.filter(r => r.risk === "expired");
   const critical = rows.filter(r => r.risk === "critical");

@@ -1,3 +1,5 @@
+import {businessDate} from '@/lib/business-date';
+import {companySalesWarehouse} from '@/lib/sales-stock';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -34,6 +36,7 @@ import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, Package
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
+const ExistingStockCorrection = lazy(() => import('@/components/inventory/ExistingStockCorrection'));
 const ProductionCountRequests = lazy(() => import('@/components/inventory/ProductionCountRequests'));
 const WarehouseDialog = lazy(() => import("@/components/admin/WarehouseDialog"));
 const ExpiryRecovery = lazy(() => import("@/components/inventory/ExpiryRecovery"));
@@ -51,7 +54,7 @@ export default function Inventory() {
 
   const navigate = useNavigate(), [params, setParams] = useSearchParams();
   const workspace = inventoryWorkspaceState(params);
-  const { role, employee, allowedModules } = useCurrentUser(), { toast } = useToast();
+  const { role, principalRole, employee, allowedModules } = useCurrentUser(), { toast } = useToast();
   const hasModule=key=>role==='admin' || !allowedModules || allowedModules.includes(key);
   const canReceive = purchasePermissions(role, employee?.assigned_role).receive && hasModule('purchases');
   const canEdit = ["admin", "warehouse_manager", "procurement", "production_manager"].includes(role);
@@ -65,6 +68,7 @@ export default function Inventory() {
   const [view, setView] = usePageState("inventory:view", "visual", { scope: "path" });
   const [locationDialog,setLocationDialog] = useState(null);
   const [countsOpen,setCountsOpen]=useState(false);
+  const [correctStock,setCorrectStock]=useState(params.get('correct')==='existing');
   const [alertsOpen,setAlertsOpen]=useState(false);
   const [showIssue, setShowIssue] = useState(false), [showRecoveryReceipt, setShowRecoveryReceipt] = useState(false);
   const lowStock = useMemo(() => inventoryLowStock(products, balances), [products, balances]);
@@ -145,6 +149,7 @@ export default function Inventory() {
     { key: "product_name", label: ui("Item"), render: (value, row) => <div className="flex items-center gap-3"><ProductThumb product={productById.get(row.product_id)} name={value} size={40} />{canEdit && productById.has(row.product_id) ? <button type="button" className="text-left font-medium text-green-800 underline-offset-2 hover:underline" onClick={()=>editItem(productById.get(row.product_id))}>{productById.get(row.product_id).name}</button> : <span>{value}</span>}</div> },
     { key: "warehouse_name", label: ui("Warehouse"), render: (value,row) => warehouses.find(w => w.id === row.warehouse_id)?.name || value }, { key: "lot_number", label: ui("Lot") },
     { key: "expiry_date", label: ui("Expiry"), render: value => value ? formatDate(value) : "—" },
+    { key: 'qc_status', label: ui('Availability'), render: (value,row) => ui(value==='rejected'?'Rejected':value&&value!=='approved'?'On quality hold':row.expiry_date&&row.expiry_date<businessDate()?'Expired':companySalesWarehouse(warehouses.find(w=>w.id===row.warehouse_id))?'Available':'Outside company stock') },
     { key: "quantity", label: ui("Quantity"), className: "text-right", render: value => formatNumber(value, 3) },
     { key: "_unit", label: ui("U/M"), sortable: false, render: (_, row) => productById.has(row.product_id) ? stockUnit(productById.get(row.product_id)) : "—" },
   ];
@@ -169,8 +174,10 @@ export default function Inventory() {
         {canEdit && <Button className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/>{ui('New item')}</Button>}
       </div>
     </header>
+    {(principalRole||role)==='admin'&&hasModule('accounting')&&<p className="rounded-xl border bg-slate-50 p-3 text-sm">{ui('Moving an existing business? Enter your starting quantities and carrying costs as opening inventory. Use adjustments for later physical count differences.')} <Button variant="link" onClick={()=>navigate('/accounting/opening-position?kind=stock')}>{ui('Enter opening inventory')}</Button></p>}
     {(canReceive || canAdjustStock || canMoveStock && hasModule('distribution')) && <div className="grid gap-2 sm:flex">
       {canAdjustStock&&<Button variant="outline" className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" disabled={loading} onClick={()=>setShowAdjust({warehouseId:params.get('warehouse')||''})}><ClipboardCheck size={18} className="shrink-0"/>{ui('Adjust quantity')}</Button>}
+      {canAdjustStock&&<Button variant="outline" onClick={()=>setCorrectStock(true)}>{ui('Correct existing stock')}</Button>}
       {canReceive && <Button className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" onClick={() => navigate('/purchases?section=receiving')}><PackageCheck size={18} className="shrink-0"/>{ui('Receive inventory')}</Button>}
       {canMoveStock && hasModule('distribution') && <Button variant="outline" className="h-auto min-h-11 gap-2 whitespace-normal rounded-xl px-4 py-3" onClick={() => setShowIssue(true)}><ArrowLeftRight size={18} className="shrink-0"/>{ui('Issue to driver & agent')}</Button>}
     </div>}
@@ -193,7 +200,7 @@ export default function Inventory() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2">{canEdit && isAssemblyInventoryType(item.inventory_type) && <div className="w-full"><AssemblyProfitability compact cost={assemblyEstimate(item.components,productById)} sellingPrice={item.selling_price}/></div>}{!item.item_removed_at&&quickEditor(item)}{canEdit && !item.item_removed_at&&<ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
+    {loading ? <Pending/> : <GroupedItems key={workspace.filter + workspace.subtype} products={filtered} filter={workspace.filter} quantities={stock.quantities} onEdit={canEdit ? editItem : undefined} table={view === 'table'} renderDetails={item => <div className="flex flex-wrap gap-2"><p className="w-full text-xs font-medium text-slate-700">{ui(isAssemblyInventoryType(item.inventory_type)?'Available for sale: {0}':'Available for production use: {0}',formatNumber(item.is_active===false||item.configuration_status==='draft'?0:stock.availableQuantities.get(item.id)||0,3))} {stockUnit(item)}</p>{canEdit && isAssemblyInventoryType(item.inventory_type) && <div className="w-full"><AssemblyProfitability compact cost={assemblyEstimate(item.components,productById)} sellingPrice={item.selling_price}/></div>}{!item.item_removed_at&&quickEditor(item)}{canEdit && !item.item_removed_at&&<ItemAvailabilityAction item={item} onEdit={editItem} onSaved={item => { savedItem(item); loadData(); }}/>}</div>}/>}
     <Dialog open={['stock','movements'].includes(workspace.section)} onOpenChange={open => { if (!open) closePanel(); }}>
       <DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto">
         <DialogHeader><DialogTitle>{SECTIONS[workspace.section] || ui('Inventory')}</DialogTitle><DialogDescription className="sr-only">{ui('Inventory details')}</DialogDescription></DialogHeader>
@@ -217,6 +224,7 @@ export default function Inventory() {
 
       </DialogContent>
     </Dialog>
+    {canAdjustStock&&correctStock&&<Dialog open onOpenChange={open=>{setCorrectStock(open);if(!open&&params.get('correct'))setParams(q=>{q.delete('correct');return q;},{replace:true});}}><DialogContent className="max-h-[92dvh] max-w-5xl overflow-y-auto"><DialogHeader><DialogTitle>{ui('Correct existing stock')}</DialogTitle><DialogDescription>{ui('Correct imported quality and expiry settings while retaining the original inventory and accounting history.')}</DialogDescription></DialogHeader><Suspense fallback={<Pending/>}><ExistingStockCorrection onSaved={loadData}/></Suspense></DialogContent></Dialog>}
     {showRecoveryReceipt && <Dialog open onOpenChange={setShowRecoveryReceipt}><DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{ui('Recovered packaging')}</DialogTitle><DialogDescription>{ui('Receive recovered packaging after accounting treatment. Quality inspection is required before reuse.')}</DialogDescription></DialogHeader><Suspense fallback={<Pending/>}><ExpiryRecovery mode="warehouse" onSaved={loadData}/></Suspense></DialogContent></Dialog>}
     {showIssue && <Suspense fallback={<Pending/>}><IssueGoods onClose={() => setShowIssue(false)} onSaved={() => { setShowIssue(false); loadData(); }}/></Suspense>}
     <Dialog open={!!editingItem} onOpenChange={open=>{if(!open)closeItemEditor();}}>

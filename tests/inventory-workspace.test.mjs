@@ -26,3 +26,10 @@ test('stock quantities remain per product and stock value uses recorded costs ra
   assert.equal(stock.quantities.get('milk'), 3.5); assert.equal(stock.quantities.get('yogurt'), 4);
   assert.equal(stock.totalValue, 210); assert.equal(stock.wipValue, 30); assert.equal(stock.deliveryValue, 80);
 });
+
+
+test('Inventory availability matches saleable company stock while preserving all recorded quantities and values',()=>{
+ const warehouses=[{id:'store',warehouse_type:'general'},{id:'truck',warehouse_type:'vehicle'},{id:'hold',warehouse_type:'quarantine'}];
+ const balances=[{warehouse_id:'store',quantity:10,qc_status:'approved'},{warehouse_id:'store',quantity:2,qc_status:'quarantine'},{warehouse_id:'store',quantity:3,qc_status:'rejected'},{warehouse_id:'store',quantity:4,qc_status:'approved',expiry_date:'2020-01-01'},{warehouse_id:'truck',quantity:5},{warehouse_id:'hold',quantity:6}].map(b=>({...b,product_id:'finished',total_value:b.quantity*100}));
+ const index=inventoryStockIndex(balances,warehouses,'2026-10-28');assert.equal(index.quantities.get('finished'),30);assert.equal(index.availableQuantities.get('finished'),10);assert.equal(index.totalValue,3000);
+});

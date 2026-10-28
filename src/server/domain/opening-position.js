@@ -4,7 +4,7 @@ import {assertModule} from './role-catalogue.js';
 import {readRecords} from './commercial-workspace.js';
 import {openingBalancesWorkspace,postOpeningBalances} from './opening-balances.js';
 import {stockUnit} from '../../lib/item-units.js';
-import {requireFinishedStorage} from '../../lib/finished-product-storage.js';
+import {companySalesWarehouse} from '../../lib/sales-stock.js';
 import {MANAGED_WAREHOUSE_TYPES} from '../../lib/warehouse-workspace.js';
 import {assetDate,assetMonths,shiftMonth} from '../../lib/asset-schedule.js';
 import {openingPartyLines} from '../../lib/opening-records.js';
@@ -64,12 +64,11 @@ async function prepare(stores,context,body){
   }else if(row.kind==='stock'){
    const p=by('products',row.product_id),w=by('warehouses',row.warehouse_id);
    if(!p||!w)throw fail('Choose a configured inventory item and an active factory warehouse.');
-   requireFinishedStorage(p,w,{isolation:true});
+   if(!companySalesWarehouse(w))throw fail('Choose an active company stock location for opening inventory.');
    const quantity=Number(row.quantity),cost=Number(row.unit_cost);
    if(!['number','string'].includes(typeof row.quantity)||!String(row.quantity).trim()||!Number.isFinite(quantity)||quantity<=0||quantity>1e9||Math.abs(quantity*1000-Math.round(quantity*1000))>0.00001)throw fail('Enter a positive opening quantity with at most three decimal places.');
    if(!['number','string'].includes(typeof row.unit_cost)||!String(row.unit_cost).trim()||!Number.isFinite(cost)||cost<=0||cost>1e12||Math.abs(cost*1e6-Math.round(cost*1e6))>0.0001)throw fail('Enter a positive opening unit cost with at most six decimal places.');
-   const lot=reference(row.lot_number),expiry=row.expiry_date?assetDate(row.expiry_date):'';
-   if((p.expiry_tracking||['assembly','finished_product'].includes(p.inventory_type))&&!expiry)throw fail('Record the printed expiry date for opening finished-product lots.');
+   const lot=row.lot_number?reference(row.lot_number):'OPEN-'+date,expiry='';
    if(balances.some(b=>b.product_id===p.id&&b.warehouse_id===w.id&&(Number(b.quantity??0)!==0||Number(b.total_value??0)!==0))||movements.some(m=>m.product_id===p.id&&[m.source_warehouse_id,m.destination_warehouse_id,m.warehouse_id].includes(w.id)))throw fail('This item already has stock activity in that warehouse. Reconcile its stock in Inventory instead of importing it again.');
    const value=Math.round(quantity*cost*100);if(!Number.isSafeInteger(value)||value<=0||value>1e14)throw fail('The opening stock value is outside the supported range.');
    const empty=balances.find(b=>b.product_id===p.id&&b.warehouse_id===w.id&&norm(b.lot_number)===norm(lot));
@@ -118,7 +117,7 @@ async function writeDetails(stores,context,prepared,id,accountJournals){
   if(row.kind==='cash')continue;
   const journalId=accountJournals.get(row.account_id||row.asset_account_id)?.id;
   if(row.kind==='stock'){
-   const values={product_id:row.product_id,product_name:row.product_name,warehouse_id:row.warehouse_id,warehouse_name:row.warehouse_name,quantity:row.quantity,total_value:row.total_value,unit_cost:row.unit_cost,lot_number:row.lot_number,expiry_date:row.expiry_date||undefined,qc_status:'quarantine',...marker};
+   const values={product_id:row.product_id,product_name:row.product_name,warehouse_id:row.warehouse_id,warehouse_name:row.warehouse_name,quantity:row.quantity,total_value:row.total_value,unit_cost:row.unit_cost,lot_number:row.lot_number,expiry_date:'',qc_status:'approved',...marker};
    const balance=row.balance_id?await stores.StockBalance.update(row.balance_id,values):await stores.StockBalance.create(values);
    await stores.StockMovement.create({product_id:row.product_id,product_name:row.product_name,destination_warehouse_id:row.warehouse_id,movement_type:'opening_balance',movement_date:date,quantity:row.quantity,unit_cost:row.unit_cost,total_value:row.total_value,lot_number:row.lot_number,expiry_date:row.expiry_date||undefined,status:'approved',document_type:'OpeningBalances',document_id:id,journal_id:journalId,reason:'Opening inventory',created_by:context.user.id,...marker});
    result.stock.push(balance.id);

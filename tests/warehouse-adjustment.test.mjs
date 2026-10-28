@@ -98,9 +98,9 @@ test('the real HTTP transaction rolls back every stock, journal and audit write 
   }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 
-test('finished-product warehouse surpluses require Cold Room while legacy stock can be reduced and reconciled',async()=>{
+test('finished-product counts use the existing company location while retaining manufacturing QC',async()=>{
  const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{inventory_type:'assembly'});
- await assert.rejects(f.call(await f.body([11,5])),/Cold Room/);assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,10);
+ await f.call(await f.body([11,5]));assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,11);assert.equal((await s.StockBalance.get(f.lots[0].id)).qc_status,'quarantine');
  await f.call(await f.body([9,5]));assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,9);
  await s.Warehouse.update(f.warehouse.id,{warehouse_type:'cold_room'});await f.call(await f.body([10,5]));assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,10);
 });
@@ -150,8 +150,8 @@ test('an item-specific count opens the warehouse that currently holds its stock;
 });
 
 
-async function finishedFixture(){
- const f=await setup(),s=f.entities;
+async function finishedFixture(db){
+ const f=await setup(db),s=f.entities;
  await s.Warehouse.update(f.warehouse.id,{warehouse_type:'cold_room'});
  await s.Product.update(f.product.id,{inventory_type:'assembly'});
  return f;
@@ -231,4 +231,63 @@ test('existing adjusted expiry is cleared even when approved; original values re
  const row=(await f.workspace()).rows.find(r=>r.balance_id===f.lots[1].id);assert.equal(row.adjusted_stock,true);
  const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'CLEAR-EXPIRY',reason:'Remove expiry from adjusted opening stock',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:5,ready_for_sale:true}]};
  const saved=await f.call(body),lot=await s.StockBalance.get(row.balance_id);assert.equal(lot.expiry_date,'');assert.equal(lot.quantity,5);assert.equal(lot.total_value,50);assert.equal(saved.journal_id,'');assert.equal(saved.rows[0].previous_expiry_date,'2020-01-01');assert.equal((await s.StockMovement.list()).length,0);assert.equal((await f.call(body)).reused,true);
+});
+
+
+async function existingStockFixture(db){
+ const f=await finishedFixture(db),s=f.entities;
+ const b=await s.StockBalance.create({product_id:f.product.id,product_name:f.product.name,warehouse_id:f.warehouse.id,lot_number:'EXISTING',quantity:7,total_value:70,unit_cost:10,opening_batch_id:'OPEN-1',qc_status:'quarantine',expiry_date:'2020-01-01'});
+ return {...f,existing:b};
+}
+
+test('existing stock correction releases imported stock across locations without touching stock, GL or production history',async()=>{
+ const f=await existingStockFixture(),s=f.entities;
+ const workspace=await f.call({action:'existingStockWorkspace'});assert.equal(workspace.lots.length,1);
+ const beforeJ=await s.JournalEntry.list(),beforeM=await s.StockMovement.list(),beforeP=await s.ProductionOrder.list();
+ const body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'MIGRATION-FIX',reason:'Existing business stock is usable',rows:workspace.lots.map(({id,fingerprint})=>({id,fingerprint}))};
+ const saved=await f.call(body),b=await s.StockBalance.get(f.existing.id);assert.equal(saved.corrected,1);assert.equal(b.qc_status,'approved');assert.equal(b.expiry_date,'');assert.equal(b.quantity,7);assert.equal(b.total_value,70);assert.equal(b.unit_cost,10);assert.equal(saved.rows[0].previous_qc_status,'quarantine');assert.equal(saved.rows[0].previous_expiry_date,'2020-01-01');
+ assert.deepEqual(await s.JournalEntry.list(),beforeJ);assert.deepEqual(await s.StockMovement.list(),beforeM);assert.deepEqual(await s.ProductionOrder.list(),beforeP);assert.equal((await f.call(body)).reused,true);
+ await assert.rejects(f.call({...body,reason:'Changed reason'}),/different details/);
+ const admin={id:'gm',role:'admin'};f.client.auth.me=async()=>admin;const stock=await salesOrderAction(f.client,admin,{action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products.find(p=>p.id===f.product.id).available,12);
+});
+
+test('rejected imported stock requires real GM and explicit physical-usability confirmation',async()=>{
+ const f=await existingStockFixture(),s=f.entities;await s.StockBalance.update(f.existing.id,{qc_status:'rejected'});
+ const workspace=await f.call({action:'existingStockWorkspace'}),body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'MIGRATION-FIX',reason:'Accidental rejection of existing stock',rows:workspace.lots.map(({id,fingerprint})=>({id,fingerprint}))};
+ assert.equal(workspace.can_correct_rejected,false);await assert.rejects(f.call({...body,confirm_rejected_stock:true}),/General Manager/);
+ await s.Employee.update('cashier',{role:'admin'});await assert.rejects(f.call(body),/General Manager/);await f.call({...body,confirm_rejected_stock:true});assert.equal((await s.StockBalance.get(f.existing.id)).qc_status,'approved');
+});
+
+test('existing stock correction cannot release production, legacy production, recovered or issued goods and rejects stale snapshots',async()=>{
+ for(const mode of ['production','legacy-production','recovery','vehicle']){
+  const f=await existingStockFixture(),s=f.entities;
+  if(mode==='production')await s.StockBalance.update(f.existing.id,{production_order_id:'PROD-1'});
+  if(mode==='legacy-production')await s.StockMovement.create({product_id:f.product.id,destination_warehouse_id:f.warehouse.id,lot_number:'EXISTING',movement_type:'production_output'});
+  if(mode==='recovery')await s.StockBalance.update(f.existing.id,{inventory_recovery_id:'REC-1'});
+  if(mode==='vehicle')await s.Warehouse.update(f.warehouse.id,{warehouse_type:'vehicle'});
+  assert.equal((await f.call({action:'existingStockWorkspace'})).lots.length,0);
+  await assert.rejects(f.call({action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'TEST-FIX',reason:'Do not release manufactured stock',rows:[{id:f.existing.id,fingerprint:'forged'}]}),/cannot be corrected/);
+ }
+ const f=await existingStockFixture(),row=(await f.call({action:'existingStockWorkspace'})).lots[0];await f.entities.StockBalance.update(row.id,{quantity:6});
+ await assert.rejects(f.call({action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'STALE-FIX',reason:'Check stale count protection',rows:[{id:row.id,fingerprint:row.fingerprint}]}),/Stock changed/);
+});
+
+
+test('existing-stock correction rolls back quality metadata on audit failure and retries once through the real route',async()=>{
+ const db=new PGlite();try{
+  const f=await existingStockFixture(db),s=f.entities,route=await functionRoute();globalThis.__cashierClient=f.client;
+  globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+  const rows=(await f.call({action:'existingStockWorkspace'})).lots.map(({id,fingerprint})=>({id,fingerprint}));
+  const body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'ATOMIC-FIX',reason:'Remove mistaken manufacturing controls',rows};
+  const original=s.AuditLog.create;s.AuditLog.create=async()=>{throw Error('Audit unavailable');};
+  const post=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});
+  assert.equal((await post()).status,400);assert.equal((await s.StockBalance.get(f.existing.id)).qc_status,'quarantine');assert.equal((await s.StockBalance.get(f.existing.id)).expiry_date,'2020-01-01');
+  s.AuditLog.create=original;const response=await post();assert.equal(response.status,200,JSON.stringify(await response.clone().json()));assert.equal((await post()).status,200);assert.equal((await s.StockBalance.get(f.existing.id)).qc_status,'approved');assert.equal((await s.AuditLog.list()).filter(a=>a.action==='correct_existing_stock').length,1);
+ }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+});
+
+
+test('opening and adjusted stock quality and expiry cannot be changed through the generic API',()=>{
+ const context={user:{id:'gm',role:'admin'},role:'admin',employee:null};
+ for(const marker of [{opening_batch_id:'OPEN-1'},{stock_origin:'adjustment'}])for(const change of [{qc_status:'rejected'},{expiry_date:'2026-10-29'},{stock_origin:'manufacturing'}])assert.throws(()=>guardMutation(context,'StockBalance','update',change,{...marker,id:'existing'}),/checked/);
 });

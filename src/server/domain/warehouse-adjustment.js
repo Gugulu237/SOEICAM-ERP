@@ -1,8 +1,9 @@
+import {stockOrigin,isExistingStockOrigin} from '../../lib/stock-origin.js';
+import {EXISTING_STOCK_ACTIONS,existingStockAction} from './existing-stock.js';
 import {isAssemblyInventoryType} from '../../lib/item-types.js';
 import {companySalesWarehouse} from '../../lib/sales-stock.js';
 import { warehouseCountState, warehouseCountVariance } from '../../lib/warehouse-count.js';
 import { adjustmentAccess } from './inventory-adjustment-access.js';
-import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
 import { createHash } from 'node:crypto';
 import { requireStaff, postJournal } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
@@ -11,7 +12,7 @@ import { stockUnit } from '../../lib/item-units.js';
 import { roundMoney, roundQuantity } from '../../lib/inventory-audit.js';
 import { MANAGED_WAREHOUSE_TYPES } from '../../lib/warehouse-workspace.js';
 
-export const WAREHOUSE_ADJUSTMENT_ACTIONS=['warehouseAdjustmentWorkspace','postWarehouseAdjustment'];
+export const WAREHOUSE_ADJUSTMENT_ACTIONS=['warehouseAdjustmentWorkspace','postWarehouseAdjustment',...EXISTING_STOCK_ACTIONS];
 const hash=value=>createHash('sha256').update(JSON.stringify(value,(_,v)=>v && typeof v==='object' && !Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
 const validDate=value=>typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value;
 const factory=w=>w && w.is_active!==false && !MANAGED_WAREHOUSE_TYPES.includes(w.warehouse_type);
@@ -34,6 +35,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
   if (employee?.status && employee.status!=='active' || role!=='admin' && employee?.status!=='active') throw Error('An active warehouse management account is required.');
   const access=await adjustmentAccess(client,role,employee);
   const s=client.asServiceRole.entities;
+  if(EXISTING_STOCK_ACTIONS.includes(body.action))return existingStockAction(s,user,employee,body);
   let eventId,payload;
   if(body.action==='postWarehouseAdjustment') {
     if(!/^[a-f0-9-]{36}$/i.test(body.requestKey || '')) throw Error('Reopen the adjustment to get a valid save reference.');
@@ -54,9 +56,8 @@ export async function warehouseAdjustmentAction(client,user,body) {
     (inventory?a.account_type==='asset' && a.normal_balance==='debit':['expense','other_expense','cogs'].includes(a.account_type) && a.normal_balance==='debit');
   const byProduct=new Map(products.map(p=>[p.id,p]));
   const balances=await readRecords(s.StockBalance,{warehouse_id:warehouse.id});
-  const adjustmentMovements=await readRecords(s.StockMovement,{document_type:'WarehouseAdjustment'});
-  const countedIds=new Set(adjustmentMovements.map(m=>m.warehouse_adjustment_balance_id).filter(Boolean));
-  const counted=b=>!b.production_order_id && !!(b.opening_batch_id || countedIds.has(b.id)) && ['approved','quarantine','quarantined'].includes(b.qc_status || 'approved') && companySalesWarehouse(warehouse);
+  const adjustmentMovements=await readRecords(s.StockMovement);
+  const counted=b=>isExistingStockOrigin(stockOrigin(b,adjustmentMovements)) && ['approved','quarantine','quarantined'].includes(b.qc_status || 'approved') && companySalesWarehouse(warehouse);
   if(body.action==='warehouseAdjustmentWorkspace') return {...access,warehouse:{id:warehouse.id,name:warehouse.name},date:businessDate(),warehouses:warehouses.filter(factory).map(w=>({id:w.id,name:w.name})),
     rows:balances.filter(b=>configured(byProduct.get(b.product_id))).map(b=>({...stockSnapshot(b,byProduct.get(b.product_id),warehouse),adjusted_stock:counted(b)})),
     items:products.filter(configured).map(p=>({id:p.id,name:p.name,sku:p.sku || '',unit:stockUnit(p),unit_cost:Number(p.current_cost || 0),inventory_type:p.inventory_type,requires_expiry:false})),
@@ -104,7 +105,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
     if(requestedRelease && (!adjustedStock || variance.counted_quantity<=0))throw Error('Only verified counted stock can be released here. Production batches use their quality-release workflow.');
     const release=adjustedStock && (row.qc_status!=='approved' || !!row.expiry_date);
     if(!variance.difference && !variance.value_difference && !(requestedRelease && release))continue;
-    if(variance.difference>0)requireFinishedStorage(product,warehouse,{isolation:true});
+    if(variance.difference>0 && !companySalesWarehouse(warehouse))throw Error('Choose an active company stock location for counted inventory.');
 
     const rule=['assembly','finished_product'].includes(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
     const inventory=accounts.find(a=>a.id===(product.inventory_account_id || rules.find(r=>r.rule_key===rule)?.account_id));
@@ -124,7 +125,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
     const stock={quantity:row.counted_quantity,total_value:row.value_after,unit_cost:row.counted_quantity>0?row.value_after/row.counted_quantity:Number.isFinite(row.unit_cost) && row.unit_cost>0?row.unit_cost:0};
     if(row.adjusted_stock)Object.assign(stock,{expiry_date:'',qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:'Counted stock available without manufacturing expiry: '+reference+' - '+reason});
     if(row.balance_id)await s.StockBalance.update(row.balance_id,stock);
-    else row.balance_id=(await s.StockBalance.create({...stock,product_id:row.product_id,product_name:row.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:row.lot_number,expiry_date:'',qc_status:'approved'})).id;
+    else row.balance_id=(await s.StockBalance.create({...stock,product_id:row.product_id,product_name:row.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:row.lot_number,expiry_date:'',qc_status:'approved',stock_origin:'adjustment'})).id;
     if(row.difference || row.value_difference)await s.StockMovement.create({product_id:row.product_id,product_name:row.product_name,quantity:Math.abs(row.difference),source_warehouse_id:row.difference<0 || !row.difference && row.value_difference<0?warehouse.id:'',destination_warehouse_id:row.difference>0 || !row.difference && row.value_difference>0?warehouse.id:'',movement_type:'stock_count_variance',movement_date:date,status:'approved',lot_number:row.lot_number,batch_number:row.batch_number || '',expiry_date:row.expiry_date || undefined,production_order_id:row.production_order_id || '',unit_cost:row.reconciliation_confirmed?Number(row.verified_unit_cost || 0):row.book_quantity>0?row.book_value/row.book_quantity:row.unit_cost,total_value:Math.abs(row.value_difference),document_type:'WarehouseAdjustment',document_id:eventId,journal_id:journal?.id || '',warehouse_adjustment_balance_id:row.balance_id,reason:reference+' — '+reason,created_by:user.id});
   }
   for(const id of new Set(rows.map(r=>r.product_id))) {
