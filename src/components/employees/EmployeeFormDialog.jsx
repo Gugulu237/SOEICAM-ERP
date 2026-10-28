@@ -1,4 +1,5 @@
 import EmployeeRemovalAction from './EmployeeRemovalAction';
+import EmployeeSignInAction from './EmployeeSignInAction';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
@@ -43,8 +44,12 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
     if (!open) return;
     setForm(employee ? { ...EMPTY, ...employee, role: roleDefinitions.some(def => def.key === employee.role) ? employee.role : normalizeRole(employee.role) || employee.role } : EMPTY);
     setSendInvitation(usesClerk() && !employee);
+    if (employee) { setUsers([]); return; }
     let active=true;erp.entities.User.list().then(res => {if(active)setUsers(Array.isArray(res) ? res : res?.items || []);}).catch(()=>{if(active)setUsers([]);});return()=>{active=false;};
   }, [open, employee?.id]);
+
+  const savedForm = employee ? { ...EMPTY, ...employee, role: roleDefinitions.some(def => def.key === employee.role) ? employee.role : normalizeRole(employee.role) || employee.role } : EMPTY;
+  const profileDirty = !!employee && JSON.stringify(form) !== JSON.stringify(savedForm);
 
   const dutiesOf = (key) => (roleDefinitions.find(def => def.key === key)?.duties || []).join(' · ');
 
@@ -89,8 +94,7 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
       base_salary: Number(form.base_salary) || 0,
       payment_method: form.payment_method,
       status: form.status,
-      user_id: form.user_id,
-      user_email: linked?.email || "",
+      ...(!employee ? { user_id: form.user_id, user_email: linked?.email || "" } : {}),
     };
     try {
       const saved = employee?.id
@@ -168,6 +172,7 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
             <Textarea id="commercial-bonus-plan" value={form.bonus_plan || ''} maxLength={2000} rows={3} onChange={e => set("bonus_plan")(e.target.value)} placeholder={ui("Record the agreed rates, targets, qualifying sales and review period.")} />
             <p className="mt-1 text-xs text-slate-500">{ui("Dashboard estimates use current rates and monthly posted net sales, including credit, plus verified acquisitions. Free replacements and tax are excluded. Payment requires management review; changing rates recalculates the estimate.")}</p>
           </div>}
+          {employee ? <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0 text-sm"><p className="text-xs text-slate-500">{ui("Current sign-in email")}</p><p className="break-all">{employee.user_email || ui("Not linked")}</p></div><EmployeeSignInAction employee={employee} disabled={saving || profileDirty} onSaved={() => { onOpenChange(false); onSaved?.(); }} />{profileDirty && <p className="w-full text-xs text-slate-500">{ui("Save profile changes before changing sign-in.")}</p>}</div> : <>
           <div className="col-span-2">
             <Label>{ui("Linked user account")}</Label>
             <Select value={form.user_id || "none"} onValueChange={v => set("user_id")(v === "none" ? "" : v)}>
@@ -179,6 +184,7 @@ export default function EmployeeFormDialog({ open, onOpenChange, employee, emplo
             </Select>
             <p className="mt-1 text-xs text-slate-500">{ui("Choose an existing ERP account, or leave this blank and invite the saved email. The verified login receives this employee's saved role.")}</p>
           </div>
+          </>}
 
           <div>
             <Label>{ui("Phone")}</Label>

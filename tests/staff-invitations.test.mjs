@@ -77,6 +77,8 @@ test('only an active GM can invite; duplicate links and mismatched emails cannot
   await insertSnapshot(db, { Employee: [{ id: 'other', full_name: 'Other', role: 'driver', job_title: 'Driver', status: 'active', email: 'cashier@example.test' }] });
   await assert.rejects(() => prepareStaffInvitation(context, 'other', deps), /already assigned/);
   await employees.update('cashier', { email: 'changed@example.test' });
+  assert.equal((await prepareStaffInvitation(context, 'cashier', deps)).email, 'cashier@example.test', 'contact edits do not change sign-in');
+  await employees.update('cashier', { user_email: 'changed@example.test' });
   await assert.rejects(() => prepareStaffInvitation(context, 'cashier', deps), /different email/);
   assert.equal((await users.get(profile.id)).role, 'user');
   await employees.update('cashier', { status: 'suspended' });

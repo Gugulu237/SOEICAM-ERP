@@ -16,7 +16,7 @@ export async function staffInvitationStatuses(context, db) {
       WHERE identity.provider='clerk' AND identity.erp_user_id=employee.user_id) AS linked,
     employee.extra_data->>'invited_at' AS invited_at,
     employee.extra_data->>'invited_email' AS invited_email,
-    employee.email
+    CASE WHEN coalesce(employee.user_id,'') <> '' THEN employee.user_email ELSE employee.email END AS email
     FROM public.employee employee`);
   return Object.fromEntries(rows.map(row => [row.id, {
     status: row.linked ? 'linked' : row.invited_at && emailOf(row.invited_email) === emailOf(row.email) ? 'invited' : row.user_id ? 'ready' : 'unlinked',
@@ -32,7 +32,7 @@ export async function prepareStaffInvitation(context, employeeId, { db, entities
   if (typeof employeeId !== 'string' || !employeeId || employeeId.length > 128) throw invalid('Choose an employee.');
   const employee = await entities.Employee.get(employeeId);
   if (!employee) throw Object.assign(new Error('Employee not found.'), { status: 404 });
-  const email = emailOf(employee.email);
+  const email = emailOf(employee.user_id ? employee.user_email : employee.email);
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid('Save a valid employee email before inviting.');
   if (employee.role !== 'admin' && !(context.roleCatalogue?.roles?.[employee.role] || (!context.roleCatalogue && normalizeRole(employee.role) === employee.role))) throw invalid('Assign a system role before inviting.');
   if (employee.status !== 'active') throw invalid('Activate the employee before inviting.');

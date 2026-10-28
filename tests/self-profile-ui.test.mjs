@@ -12,7 +12,7 @@ async function renderer(authProvider=false){
     const mocks={
       '@/lib/localization':"import {configureLanguage} from './src/lib/i18n.js';export const useLocaleRender=()=>{},activateAccountLanguage=p=>configureLanguage({userId:p.id,preferredLanguage:p.preferred_language,defaultLanguage:p.company_language});",
       '@/api/erpClient':"export const erp={auth:{me:async()=>globalThis.__profileUI.account,logout:()=>{},redirectToLogin:()=>{}}},invalidateERPReads=()=>{};",
-      '@/lib/supabase/browser':"export const supabaseBrowser=()=>({auth:{onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}});",
+      '@/lib/supabase/browser':"export const supabaseBrowser=async()=>({auth:{onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}});",
       '@/lib/auth-provider':"export const usesClerk=()=>false;",
       '@/lib/item-lookup-cache':"export const setItemLookupIdentity=()=>{};",
       '@clerk/nextjs':"export const useAuth=()=>({}),useClerk=()=>({});",

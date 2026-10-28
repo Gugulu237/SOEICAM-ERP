@@ -36,3 +36,22 @@ test('duty editor sends the same employee with selected dates and notes; contrac
 test('own role switch sends no other employee and reloads after server acceptance',async()=>{const {r,draw,close}=await setup(),oldFetch=globalThis.fetch,calls=[];r.session={role:'employee',employee:worker};globalThis.fetch=async(url,options)=>{if(options?.method==='POST'){calls.push(JSON.parse(options.body));return Response.json({});}return Response.json({roles:[{key:'productionassistants',label:'Production Assistants'},{key:'cashier',label:'Cashier'}],active_role:'productionassistants',revision:3});};try{draw('switcher');await r.flush();draw('switcher');r.fields.find(f=>f['aria-label']==='My work role').onChange({target:{value:'cashier'}});draw('switcher');await button(r,'Switch').onClick();assert.deepEqual(calls,[{action:'activate',roleKey:'cashier',revision:3}]);assert.deepEqual(r.navigation,['/']);}finally{globalThis.fetch=oldFetch;close();}});
 test('Employees loads people once and clicking a role opens its worker within the landing page',async()=>{const {r,draw,close}=await setup(),oldFetch=globalThis.fetch;let reads=0;r.client.entities.Employee.filter=async()=>{reads++;return[worker];};globalThis.fetch=async()=>Response.json(catalogue);try{draw('employees',{embedded:true});await r.flush();let html=draw('employees',{embedded:true});assert.doesNotMatch(html,/Factory Worker/);r.buttons.find(b=>b['data-role']==='productionassistants').onClick();html=draw('employees',{embedded:true});assert.match(html,/Factory Worker/);assert.match(html,/role="dialog"/);assert.equal(reads,1);assert.deepEqual(r.navigation,[]);}finally{globalThis.fetch=oldFetch;close();}});
 test('new Hotesse defaults to temporary while existing employee contracts are retained',async()=>{for(const employee of [null,{...worker,role:'employee',contract_type:'permanent'}]){const {r,draw,close}=await setup(),props={open:true,onOpenChange(){},employee,employees:[],roleDefinitions:definitions,onSaved(){}};try{draw('form',props);await r.flush();draw('form',props);r.selects.find(s=>s.value===(employee?'employee':'')).onValueChange('hotesse');draw('form',props);assert.ok(r.selects.some(s=>s.value===(employee?'permanent':'temporary')));}finally{close();}}});
+
+test('employee edits preserve the checked login link and require saving drafts before changing sign-in',async()=>{
+  const {r,draw,close}=await setup(),employee={...worker,job_title:'Factory worker',user_id:'old-login',user_email:'old@example.test',email:'contact@example.test'},updates=[];
+  const props={open:true,onOpenChange(){},employee,employees:[employee],roleDefinitions:definitions,onSaved(){}};
+  let userReads=0;r.client.entities.User.list=async()=>{userReads++;return[];};
+  r.client.entities.Employee.update=async(id,payload)=>{updates.push({id,payload});return{...employee,...payload};};
+  try{
+    draw('form',props);await r.flush();draw('form',props);
+    assert.equal(button(r,'Change sign-in').disabled,false);assert.equal(userReads,0);
+    r.fields.find(field=>field.type==='email').onChange({target:{value:'new-contact@example.test'}});
+    assert.match(draw('form',props),/Save profile changes before changing sign-in/);
+    assert.equal(button(r,'Change sign-in').disabled,true);
+    const save=r.buttons.find(row=>row.label.trim()==='Save changes');assert.ok(save);await save.onClick();
+    assert.equal(updates.length,1);assert.equal(updates[0].id,employee.id);
+    assert.equal(updates[0].payload.email,'new-contact@example.test');
+    assert.equal(Object.hasOwn(updates[0].payload,'user_id'),false);
+    assert.equal(Object.hasOwn(updates[0].payload,'user_email'),false);
+  }finally{close();}
+});

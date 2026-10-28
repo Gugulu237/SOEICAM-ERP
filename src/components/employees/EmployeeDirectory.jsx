@@ -34,7 +34,7 @@ export default function EmployeeDirectory({employees,definitions,onEdit,onRole,o
           <DropdownMenuItem asChild><Link to={'/employees/'+encodeURIComponent(row.id)}>{ui('Open profile')}</Link></DropdownMenuItem>
           <DropdownMenuItem onSelect={()=>onEdit(row)}>{ui('Edit employee')}</DropdownMenuItem>
           {row.role&&definitions.some(r=>r.key===row.role)&&<DropdownMenuItem asChild><Link to={'/team-workspaces?role='+encodeURIComponent(row.role)+'&employee='+encodeURIComponent(row.id)}>{ui('View employee dashboard')}</Link></DropdownMenuItem>}
-          {onInvite&&<DropdownMenuItem disabled={!!inviting||row.status!=='active'||!row.email||!row.role} onSelect={()=>onInvite(row)}>{inviting===row.id?ui('Sending...'):ui('Invite / check account')}</DropdownMenuItem>}
+          {onInvite&&<DropdownMenuItem disabled={!!inviting||row.status!=='active'||!(row.user_email||row.email)||!row.role} onSelect={()=>onInvite(row)}>{inviting===row.id?ui('Sending...'):ui('Invite / check account')}</DropdownMenuItem>}
         </DropdownMenuContent></DropdownMenu></div>
       </li>)}</ul>
       {!shown.length&&<p className="p-8 text-center text-sm text-slate-500">{ui('No employees in this category yet')}</p>}

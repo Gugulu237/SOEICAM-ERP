@@ -17,12 +17,14 @@ export function assertEmployeeActor(context, user, requestedId, expectedRole, ac
 const acquisitionFields=['acquired_by_id','acquired_by_name','acquisition_date','acquisition_source','acquisition_verified','acquisition_verified_by','acquisition_verified_at','acquisition_notes','registered_by_id','registered_by_name','registered_at','registration_request_key','registration_request_hash'];
 export function guardEmployeeAttribution(context, entity, operation, input, existing) {
   const creating=['create','bulkCreate'].includes(operation), removing=['delete','deleteMany'].includes(operation);
+  if (entity==='Employee' && Object.keys(input).some(key=>key.startsWith('employee_signin_'))) throw denied('Employee sign-in evidence is managed by the checked staff identity workflow.');
+  if (entity==='AuditLog' && ([input,existing].some(row=>row && (row.action==='change_employee_signin' || Object.keys(row).some(key=>key.startsWith('employee_signin_')) || String(row.id||'').startsWith('employee-signin-'))))) throw denied('Employee sign-in audits are managed by the checked staff identity workflow.');
   if(entity==='Employee'&&Object.keys(input).some(key=>/^staff_(role|active_role|dut|contract)/.test(key)))throw denied('Duties, rotation and contract extensions must use the checked staff workflow.');
   if(entity==='CompanySettings'&&Object.hasOwn(input,'staff_role_catalogue'))throw denied('Role changes must use the checked role workflow.');
   if (entity==='AuditLog' && ['production_material_audit_requested','production_material_audit_resolved'].includes(input.action)) throw denied('Production material count tasks must use the checked manufacturing review workflow.');
   if (existing && changes(input,existing,['recorded_by','recorded_by_name','recorded_at','prepared_by','prepared_by_name','prepared_at','registered_by_id','registered_by_name','registered_at'])) throw denied('Recorded actor identity and event timestamps are immutable.');
   if (entity==='Customer' && removing) throw denied('Make the customer inactive to preserve sales, acquisition and accounting history.');
-  if (entity==='Employee' && existing?.user_id && changes(input,existing,['user_id'])) throw denied('An existing employee sign-in link cannot be reassigned or removed. Use the checked staff identity workflow.');
+  if (entity==='Employee' && existing?.user_id && changes(input,existing,['user_id','user_email'])) throw denied('An existing employee sign-in link cannot be reassigned or removed. Use the checked staff identity workflow.');
   if (entity==='Customer' && acquisitionFields.some(key=>Object.hasOwn(input,key) && (creating ? input[key]!=null && input[key]!=='' : changes(input,existing,[key])))) throw denied('Customer acquisition and registration history must use the checked staff registration or acquisition review workflow.');
   if (entity==='ExpenseRequest') {
     if (['approved_by_user_id','rejected_by_user_id'].some(key=>Object.hasOwn(input,key))) throw denied('Expense decision identities are recorded by the server.');
