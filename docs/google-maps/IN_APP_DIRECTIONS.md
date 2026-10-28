@@ -42,3 +42,15 @@ References:
 - https://developers.google.com/maps/documentation/javascript/routes/get-a-route
 - https://developers.google.com/maps/documentation/routes/get-api-key
 - https://developers.google.com/maps/documentation/javascript/cloud-customization
+
+## Routing request and GPS diagnostics correction (28 October 2026)
+
+The original browser request supplied `units: 'METRIC'`, the Routes REST value. Maps JavaScript uses `google.maps.UnitSystem.METRIC`, whose value is numeric zero. The quarterly JavaScript SDK v3.65.14a throws `Unknown UnitSystem: METRIC` while converting that string, before sending the request. The integration now supplies the SDK enum when present, retaining zero; otherwise it lets Google infer units from the origin. The app continues to display metres/kilometres.
+
+Routing failures preserve whether GPS succeeded and distinguish request validation, configuration/access, quotas, no route, network failure and rendering failure. The small Directions diagnostics notice displays only an allowlisted status and failure stage. Raw provider messages, keys, URLs and GPS coordinates are not logged or exposed in that notice. Routes API must still be enabled and allowed on the existing browser key; a working basemap alone does not prove routing permission.
+
+Customer names now appear in compact white labels above the YOLA icons. Long labels shorten visually; the full name remains in the marker title and selected-customer panel. Text is inserted with textContent, and the labels are absolutely positioned so they do not change the marker dimensions, bottom anchor or saved GPS. The linked Cloud map style is unchanged.
+
+Regression coverage includes the JavaScript enum value, nested/numeric Google error formats, preserving a successful GPS fix on routing errors, partial-render cleanup, safe customer-name labels, unchanged anchors and existing customer/zone workflows. The production build and isolated tests run without company data or API keys. Live routing authorization and on-device GPS still need verification on the allowed local/live ERP origin after applying the source update.
+
+Reference: https://developers.google.com/maps/documentation/javascript/routes/localized-values

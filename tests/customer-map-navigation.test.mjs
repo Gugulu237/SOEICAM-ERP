@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const compiled=await build({entryPoints:['src/lib/customer-map-navigation.js'],bundle:true,platform:'node',format:'cjs',write:false});
 const module={exports:{}};new Function('require','module','exports',compiled.outputFiles[0].text)(require,module,module.exports);
-const {currentDeliveryPosition,deliveryRouteRequest,computeDeliveryRoute,createDeliveryNavigator}=module.exports;
+const {currentDeliveryPosition,deliveryRouteRequest,computeDeliveryRoute,createDeliveryNavigator,deliveryRouteFailure,deliveryNavigationMessage}=module.exports;
 const stops=[{id:'outlet-1',business_name:'First entrance',gps_lat:'3.854321',gps_lng:'11.512345'},{id:'outlet-2',gps_lat:3.86,gps_lng:11.52},{id:'outlet-3',gps_lat:3.87,gps_lng:11.53}];
 const origin={lat:3.81,lng:11.49,accuracy:12};
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
@@ -78,4 +78,53 @@ test('failed GPS never computes a route or silently uses the city centre as orig
  const navigator=createDeliveryNavigator({locate:async()=>{throw {code:'GPS_DENIED'};},compute:()=>computed++,draw:()=>assert.fail(),clear(){},onChange:s=>{last=s;}});
  await navigator.start([stops[0]]);assert.equal(computed,0);assert.equal(last.error,'GPS_DENIED');
  navigator.destroy();
+});
+
+// Google Maps JS UnitSystem is numeric. The REST string passed validation but
+// failed SDK wire conversion with "Unknown UnitSystem: METRIC" in v3.65.14a.
+test('routing passes the Google JavaScript METRIC enum including its zero value',async()=>{
+ let captured;
+ const route={path:[origin,stops[0]]};
+ const maps={UnitSystem:{METRIC:0,IMPERIAL:1},importLibrary:async()=>({Route:{computeRoutes:async request=>{
+  captured=request;
+  if(request.units!==0&&request.units!==1)throw Error('Unknown UnitSystem: '+request.units);
+  return {routes:[route]};
+ }}})};
+ assert.equal(await computeDeliveryRoute(maps,origin,[stops[0]],'fr'),route);
+ assert.equal(captured.units,0);assert.notEqual(captured.units,'METRIC');
+ assert.equal(Object.hasOwn(deliveryRouteRequest(origin,[stops[0]]),'units'),false);
+ delete maps.UnitSystem;
+ maps.importLibrary=async()=>({Route:{computeRoutes:async request=>{assert.equal(Object.hasOwn(request,'units'),false);return {routes:[route]};}}});
+ assert.equal(await computeDeliveryRoute(maps,origin,[stops[0]],'fr'),route);
+});
+
+test('numeric and nested Google failures distinguish configuration, request, quota, network and timeout without leaking data',()=>{
+ const cases=[
+  [{code:7,message:'Permission denied'},'ROUTE_CONFIGURATION','PERMISSION_DENIED'],
+  [{status:'403'},'ROUTE_CONFIGURATION','PERMISSION_DENIED'],
+  [{cause:{code:16}},'ROUTE_CONFIGURATION','PERMISSION_DENIED'],
+  [{error:{details:[{reason:'SERVICE_DISABLED'}]}},'ROUTE_CONFIGURATION','SERVICE_DISABLED'],
+  [{response:{data:{error:{code:403,details:[{reason:'API_KEY_SERVICE_BLOCKED'}]}}}},'ROUTE_CONFIGURATION','PERMISSION_DENIED'],
+  [{code:8},'ROUTE_QUOTA','RESOURCE_EXHAUSTED'],
+  [{status:429},'ROUTE_QUOTA','RESOURCE_EXHAUSTED'],
+  [{code:3},'ROUTE_INVALID_REQUEST','INVALID_ARGUMENT'],
+  [Object.assign(Error('Unknown UnitSystem: METRIC'),{name:'InvalidValueError'}),'ROUTE_INVALID_REQUEST','INVALID_ARGUMENT'],
+  [{status:400},'ROUTE_INVALID_REQUEST','INVALID_ARGUMENT'],
+  [{code:5},'ROUTE_NOT_FOUND','NOT_FOUND'],
+  [{code:4},'ROUTE_TIMEOUT','DEADLINE_EXCEEDED'],
+  [TypeError('Failed to fetch'),'ROUTE_NETWORK','NETWORK_ERROR'],
+  [{message:'Unexpected provider error'},'ROUTE_UNAVAILABLE','UNKNOWN']
+ ];
+ for(const [input,code,providerCode] of cases){input.private='https://example.test/?key=AIzaFixtureSecret&origin=3.854321,11.512345';const error=deliveryRouteFailure(input);assert.equal(error.code,code);assert.equal(error.providerCode,providerCode);assert.doesNotMatch(JSON.stringify(error),/AIza|3\.854321|example\.test/);}
+ const cyclic={code:7};cyclic.cause=cyclic;assert.equal(deliveryRouteFailure(cyclic).code,'ROUTE_CONFIGURATION');
+ assert.doesNotMatch(deliveryNavigationMessage('ROUTE_INVALID_REQUEST'),/connection/i);
+ assert.doesNotMatch(deliveryNavigationMessage('ROUTE_UNAVAILABLE'),/connection/i);
+});
+
+test('a failed route request preserves successful GPS and a render failure clears partial overlays',async()=>{
+ let state,cleared=0;
+ const navigator=createDeliveryNavigator({locate:async()=>origin,compute:async()=>{throw Object.assign(Error('Access blocked'),{code:'ROUTE_CONFIGURATION',providerCode:'PERMISSION_DENIED'});},draw:()=>assert.fail(),clear:()=>cleared++,onChange:s=>{state=s;}});
+ await navigator.start([stops[0]]);assert.equal(state.phase,'error');assert.equal(state.failureStage,'request');assert.equal(state.origin,origin);assert.equal(state.providerCode,'PERMISSION_DENIED');navigator.destroy();
+ const rendering=createDeliveryNavigator({locate:async()=>origin,compute:async()=>({path:[origin]}),draw:()=>{throw Error('Synthetic overlay failure');},clear:()=>cleared++,onChange:s=>{state=s;}});
+ const before=cleared;await rendering.start([stops[0]]);assert.equal(state.error,'ROUTE_DISPLAY');assert.equal(state.failureStage,'display');assert.equal(state.origin,origin);assert.equal(cleared,before+2);rendering.destroy();
 });

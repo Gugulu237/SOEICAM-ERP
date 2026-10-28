@@ -4,7 +4,7 @@ export const YOLA_LOGO_ORIGINAL='https://raw.githubusercontent.com/Gugulu237/SOE
 export const YOLA_LOGO_SRC='/_next/image?url='+encodeURIComponent(YOLA_LOGO_ORIGINAL)+'&w=128&q=75';
 export const customerPinSize=selected=>selected?{width:56,height:70}:{width:48,height:62};
 export function customerPinElement({colour='#059669',selected=false,title='YOLA'}={}){
- const {width,height}=customerPinSize(selected),root=document.createElement('div'),tip=document.createElement('span'),face=document.createElement('span'),image=document.createElement('img'),fallback=document.createElement('span');
+ const {width,height}=customerPinSize(selected),root=document.createElement('div'),tip=document.createElement('span'),face=document.createElement('span'),image=document.createElement('img'),fallback=document.createElement('span'),label=document.createElement('span');
  root.className='yola-customer-pin';root.title=String(title||'YOLA');
  root.style.cssText='position:relative;box-sizing:border-box;width:'+width+'px;height:'+height+'px;filter:drop-shadow(0 2px 3px #0f172a55);cursor:pointer';
  tip.style.cssText='position:absolute;box-sizing:border-box;width:16px;height:16px;bottom:3px;left:calc(50% - 8px);transform:rotate(45deg);background:'+colour;
@@ -13,5 +13,7 @@ export function customerPinElement({colour='#059669',selected=false,title='YOLA'
  image.style.cssText='display:block;width:calc(100% - 6px);height:calc(100% - 6px);object-fit:contain';
  fallback.textContent='YOLA';fallback.hidden=true;fallback.style.cssText='font:800 12px system-ui;color:#123c78';
  let direct=false;image.onerror=()=>{if(!direct){direct=true;image.src=YOLA_LOGO_ORIGINAL;}else{image.hidden=true;image.style.display='none';fallback.hidden=false;}};
- face.append(image,fallback);root.append(tip,face);return root;
+ label.className='yola-customer-pin-name';label.textContent=String(title||'YOLA');
+ label.style.cssText='position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:'+ (selected?'200':'160') +'px;padding:3px 7px;border:1px solid '+colour+';border-radius:5px;background:#fff;color:#0f172a;font:600 11px/15px system-ui;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 1px 3px #0f172a22';
+ face.append(image,fallback);root.append(tip,face,label);return root;
 }

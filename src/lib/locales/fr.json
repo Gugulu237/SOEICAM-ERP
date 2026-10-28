@@ -6748,5 +6748,15 @@
   " active customers have saved pins. Choose up to three stops and put them in delivery order. Directions stay inside the ERP.": " clients actifs ont une position enregistrée. Choisissez jusqu’à trois arrêts et leur ordre de livraison. Les itinéraires restent dans l’ERP.",
   "Configure the Google Maps key and map ID to display customer locations.": "Configurez la clé Google Maps et l’identifiant de carte pour afficher les positions des clients.",
   "Google Maps could not start. Check the connection and map configuration, then reload the page.": "Google Maps n’a pas pu démarrer. Vérifiez la connexion et la configuration de la carte, puis rechargez la page.",
-  "Configure NEXT_PUBLIC_GOOGLE_MAPS_API_KEY and a map ID with Maps JavaScript API enabled and billing configured. Enable Routes API on the same key for directions inside the ERP.": "Configurez NEXT_PUBLIC_GOOGLE_MAPS_API_KEY et un identifiant de carte avec Maps JavaScript API et la facturation activées. Activez Routes API pour la même clé afin de calculer les itinéraires dans l’ERP."
+  "Configure NEXT_PUBLIC_GOOGLE_MAPS_API_KEY and a map ID with Maps JavaScript API enabled and billing configured. Enable Routes API on the same key for directions inside the ERP.": "Configurez NEXT_PUBLIC_GOOGLE_MAPS_API_KEY et un identifiant de carte avec Maps JavaScript API et la facturation activées. Activez Routes API pour la même clé afin de calculer les itinéraires dans l’ERP.",
+  "The directions request was rejected. Ask an administrator to check the map integration.": "La demande d’itinéraire a été refusée. Demandez à un administrateur de vérifier l’intégration de la carte.",
+  "Directions were received, but the route could not be displayed. Reload the page and try again.": "L’itinéraire a été reçu, mais son affichage a échoué. Rechargez la page et réessayez.",
+  "The browser could not reach Google directions. Check browser blocking and your connection, then try again.": "Le navigateur n’a pas pu joindre le service d’itinéraires Google. Vérifiez les blocages du navigateur et votre connexion, puis réessayez.",
+  "Google could not calculate directions. Try again or ask an administrator to check routing access.": "Google n’a pas pu calculer l’itinéraire. Réessayez ou demandez à un administrateur de vérifier l’accès aux itinéraires.",
+  "Your GPS position was obtained.": "Votre position GPS a été obtenue.",
+  "Directions diagnostics": "Diagnostic de l’itinéraire",
+  "The route response was received; displaying it failed.": "La réponse du service d’itinéraires a été reçue ; son affichage a échoué.",
+  "GPS succeeded; the directions service request failed.": "La localisation GPS a réussi ; la demande au service d’itinéraires a échoué.",
+  "The device position could not be obtained.": "La position de l’appareil n’a pas pu être obtenue.",
+  "Enable Routes API in Google Cloud and allow it in the existing map key API restrictions. Keep the website restrictions for this ERP address.": "Activez Routes API dans Google Cloud et autorisez ce service dans les restrictions de la clé de carte existante. Conservez les restrictions de sites Web pour l’adresse de cet ERP."
 }

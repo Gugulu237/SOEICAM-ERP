@@ -49,6 +49,7 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
   const clearRoute=()=>{routeLayers.forEach(layer=>layer.setMap(null));routeLayers=[];};
   let layers=[],listeners=[];const clear=()=>{listeners.forEach(l=>l.remove());listeners=[];layers.forEach(l=>{'setMap' in l?l.setMap(null):l.map=null;});layers=[];};
   const click=map.addListener('click',e=>{if(e.latLng)onVertex({lat:e.latLng.lat(),lng:e.latLng.lng()});});
+  const pinPadding=()=>({top:Math.min(110,(element.clientHeight||480)*.4),right:Math.min(95,(element.clientWidth||600)*.23),bottom:Math.min(35,(element.clientHeight||480)*.1),left:Math.min(95,(element.clientWidth||600)*.23)});
   return {
     render(points,zones,selected,draft,drawing){
       clear();
@@ -66,7 +67,7 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
       const bounds=new maps.LatLngBounds();
       if(kind==='cameroon')CAMEROON_BOUNDS.forEach(([lat,lng])=>bounds.extend({lat,lng}));
       else points.filter(hasCustomerLocation).forEach(p=>bounds.extend({lat:Number(p.gps_lat),lng:Number(p.gps_lng)}));
-      if(!bounds.isEmpty()){map.fitBounds(bounds,30);if(kind!=='cameroon')maps.event.addListenerOnce(map,'idle',()=>{if(map.getZoom()>17)map.setZoom(17);});}
+      if(!bounds.isEmpty()){map.fitBounds(bounds,kind==='cameroon'?30:pinPadding());if(kind!=='cameroon')maps.event.addListenerOnce(map,'idle',()=>{if(map.getZoom()>17)map.setZoom(17);});}
     },
     setExpanded(value){map.setOptions({gestureHandling:value?'greedy':'cooperative'});},
     computeRoute(origin,stops,language){return computeDeliveryRoute(maps,origin,stops,language);},
@@ -75,12 +76,13 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
       clearRoute();
       routeLayers=route.createPolylines();
       for(const line of routeLayers){line.setOptions({strokeColor:'#059669',strokeOpacity:.95,strokeWeight:6,zIndex:5,clickable:false});line.setMap(map);}
-      routeLayers.push(new Circle({map,center:origin,radius:origin.accuracy,strokeColor:'#2563eb',strokeWeight:1,fillColor:'#2563eb',fillOpacity:.08,clickable:false}));
-      routeLayers.push(new Circle({map,center:origin,radius:6,strokeColor:'#ffffff',strokeWeight:2,fillColor:'#2563eb',fillOpacity:1,zIndex:20,clickable:false}));
-      const bounds=new maps.LatLngBounds();bounds.extend(origin);
+      const position={lat:origin.lat,lng:origin.lng};
+      routeLayers.push(new Circle({map,center:position,radius:origin.accuracy,strokeColor:'#2563eb',strokeWeight:1,fillColor:'#2563eb',fillOpacity:.08,clickable:false}));
+      routeLayers.push(new Circle({map,center:position,radius:6,strokeColor:'#ffffff',strokeWeight:2,fillColor:'#2563eb',fillOpacity:1,zIndex:20,clickable:false}));
+      const bounds=new maps.LatLngBounds();bounds.extend(position);
       route.path.forEach(p=>bounds.extend(p));
       stops.forEach(p=>bounds.extend({lat:Number(p.gps_lat),lng:Number(p.gps_lng)}));
-      map.fitBounds(bounds,35);
+      map.fitBounds(bounds,pinPadding());
     },
     resize(){maps.event.trigger(map,'resize');},
     destroy(){clearRoute();clear();click.remove();maps.event.clearInstanceListeners(map);element.replaceChildren();}
@@ -172,7 +174,17 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
         </div><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label={ui('Close delivery directions')} onClick={clearSelection}><X size={17}/></button></div>
         {navigation.phase==='idle'&&selected&&<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>}
         {busy&&<div className="flex flex-wrap items-center justify-between gap-2"><p role="status" className="text-xs">{ui(navigation.phase==='locating'?'Finding your position...':'Calculating driving route...')}</p><button type="button" className={actionClass} onClick={()=>navigator.current?.clear()}>{ui('Cancel')}</button></div>}
-        {navigation.phase==='error'&&<div className="space-y-2"><p role="alert" className="text-xs text-amber-800">{ui(deliveryNavigationMessage(navigation.error))}</p><button type="button" className={actionClass} onClick={()=>startRoute(stops)}>{ui('Try again')}</button></div>}
+        {navigation.phase==='error'&&<div className="space-y-2">
+          {navigation.origin&&<p role="status" className="text-xs text-emerald-800">{ui('Your GPS position was obtained.')}</p>}
+          <p role="alert" className="text-xs text-amber-800">{ui(deliveryNavigationMessage(navigation.error))}</p>
+          <div className="flex items-center gap-2"><button type="button" className={actionClass} onClick={()=>startRoute(stops)}>{ui('Try again')}</button>
+            <CustomerInfo title={ui('Directions diagnostics')}>
+              <p>{ui(navigation.failureStage==='display'?'The route response was received; displaying it failed.':navigation.origin?'GPS succeeded; the directions service request failed.':'The device position could not be obtained.')}</p>
+              <p className="break-words font-mono">{navigation.error}{navigation.providerCode?' / '+navigation.providerCode:''}</p>
+              {navigation.error==='ROUTE_CONFIGURATION'&&<p>{ui('Enable Routes API in Google Cloud and allow it in the existing map key API restrictions. Keep the website restrictions for this ERP address.')}</p>}
+            </CustomerInfo>
+          </div>
+        </div>}
         {navigation.phase==='ready'&&route&&<>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-emerald-800">{distance(route.distanceMeters)}{Number.isFinite(route.durationMillis)?' · '+ui('Approx. {0} min',Math.max(1,Math.ceil(route.durationMillis/60000))):''}</p><button type="button" className={actionClass} onClick={()=>startRoute(stops)}><LocateFixed size={15}/>{ui('Update from my position')}</button></div>
           <details><summary className="min-h-11 cursor-pointer py-3 text-xs font-medium">{ui('Route steps')}</summary><div className="space-y-3 pb-2">{route.legs?.map((leg,i)=><div key={i}><p className="mb-2 break-words text-xs font-semibold">{ui('Stop {0}: {1}',i+1,stops[i]?.business_name||ui('Customer'))}</p><ol className="list-decimal space-y-2 pl-5 text-xs">{leg.steps?.map((step,index)=><li key={index} className="break-words pl-1">{step.instructions}<span className="ml-2 text-slate-500">{distance(step.distanceMeters)}</span></li>)}</ol></div>)}</div></details>
