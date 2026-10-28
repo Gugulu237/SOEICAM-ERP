@@ -1,6 +1,6 @@
-// A managed role inherits its existing server-side transaction checks from a
-// non-admin template. The module selection may only narrow those permissions.
-import { ROLE_KEYS, normalizeRole } from './roles.js';
+// A template chooses the native dashboard. Explicit module selections grant
+// access to that feature; checked workflows retain their data invariants.
+import { ROLE_KEYS, normalizeRole, FEATURE_AUTHORITY } from './roles.js';
 import {ui} from '../../lib/i18n.js';
 import { activeStaffRole,deletedRoleKeys } from '../../lib/staff-role-assignments.js';
 import { businessDate } from '../../lib/business-date.js';
@@ -59,6 +59,7 @@ export function catalogueFromStored(stored) {
     const payrollDefaults=template==='cashier' && Number(profile.module_permissions_version || 0)<5 && (!Array.isArray(profile.modules) || profile.modules.includes('cashier'))?['payroll']:[];
     roles[key] = {
       ...profile, key, template_role:template,
+      full_access_modules:Array.isArray(profile.modules)&&Number(profile.module_permissions_version||0)>=5?profile.modules.filter(m=>max.includes(m)):[],
       ...(key === 'supply_chain_manager' ? { category:'Management' } : {}),
       modules:Array.isArray(profile.modules) ? [...new Set([...profile.modules.filter(module => max.includes(module)),...managementDefaults,...adjustmentDefaults,...payrollDefaults,...(key==='supply_chain_manager'&&Number(profile.module_permissions_version||0)<2?['sales_reports']:[])])] : [...(key==='supply_chain_manager'?SUPPLY_CHAIN_MANAGER.modules:TEMPLATE_MODULES[template])],
     };
@@ -90,13 +91,16 @@ export function decorateEmployee(user, employee, catalogue) {
   if (!employee || String(user?.role || '').toLowerCase() === 'admin') return employee;
   const primary=normalizeRole(employee.role) || employee.role;
   const profile=activeStaffRole(employee,catalogue,businessDate()),key=profile?.key || primary;
-  if (!profile) return { ...employee, access_template:'employee', allowed_modules:[], assigned_role:key, role_label:'Unrecognized role' };
-  return { ...employee, primary_role:primary, access_template:profile.template_role, allowed_modules:profile.modules, assigned_role:key, role_label:profile.label || key };
+  if (!profile) return { ...employee, access_template:'employee', allowed_modules:[], full_access_modules:[], assigned_role:key, role_label:'Unrecognized role' };
+  return { ...employee, primary_role:primary, access_template:profile.template_role, allowed_modules:profile.modules, full_access_modules:profile.full_access_modules || [], assigned_role:key, role_label:profile.label || key };
 }
 
+export const approvalActionTargets={approveSupplierOrder:'purchases',rejectSupplierOrder:'purchases',approvePurchasePayment:'purchases',rejectPurchasePayment:'purchases',approveProductionOrder:'manufacturing',rejectProductionOrder:'manufacturing',approveYogurtRecipe:'manufacturing',rejectYogurtRecipe:'manufacturing',approveDispatch:'distribution',approveDispatchRequest:'distribution',approveSale:'commercial',rejectSale:'commercial',returnSale:'commercial'};
 export function assertModule(context, module) {
   if(!module)return;
-  if(context.role==='admin'){const modules=context.roleCatalogue?.roles?.admin?.modules;if(!modules||['admin','employees'].includes(module)||modules.includes(module))return;throw Object.assign(new Error('This module is disabled in the Super Admin role configuration.'),{status:403});}
+  const scope=context.user?.[FEATURE_AUTHORITY];
+  if(scope?.module==='approvals'&&approvalActionTargets[scope.action]===module)return;
+  if(context.role==='admin'&&!context.user?.[FEATURE_AUTHORITY]){const modules=context.roleCatalogue?.roles?.admin?.modules;if(!modules||['admin','employees'].includes(module)||modules.includes(module))return;throw Object.assign(new Error('This module is disabled in the Super Admin role configuration.'),{status:403});}
   if (!context.employee || !Array.isArray(context.employee.allowed_modules)) return;
   if (!context.employee?.allowed_modules?.includes(module)) throw Object.assign(new Error(`Your role does not allow ${MODULES.find(m => m.key === module)?.label || module}.`), { status:403 });
 }
@@ -113,8 +117,45 @@ export const entityModules = {
   ExpenseRequest:['expenses','approvals'],Budget:['expenses'],PayrollRun:['payroll'],PayrollLine:['payroll'],Employee:['employees','distribution','commercial','outlets'],User:['employees'],Department:['employees','expenses'],Branch:['admin','distribution'],CompanySettings:['admin','inventory','distribution','sales','purchases'],AuditLog:['admin'],
 };
 
+// A full feature includes its form lookups, not write access to unrelated features.
+export const FEATURE_KEYS=MODULES.map(m=>m.key);
+export const featureWriteEntities={
+ inventory:['Product','Warehouse','StockBalance','StockMovement'],
+ purchases:['Supplier','PurchaseOrder','PurchaseOrderLine','PurchaseItem','GoodsReceipt','GoodsReceiptLine','Bill'],
+ sales:['SalesOrder','SalesOrderLine','Invoice','InvoiceLine'],
+ customers:['Customer','CustomerLocation','Route'],
+ manufacturing:['ProductionOrder','ProductionMaterial','Recipe','RecipeLine','QualityCheck'],
+ quality:['QualityCheck','SpoilageRecord','StockBalance'],
+ distribution:['Dispatch','DispatchLine','DispatchRequest','Vehicle','Route'],
+ cashier:['TreasuryAccount','TreasuryTransaction','Payment','PaymentAllocation','CashHandover','CashHandoverAllocation','CashCollection'],
+ accounting:['Account','AccountingPeriod','JournalEntry','JournalLine','PostingRule','FixedAsset','DepreciationEntry','TreasuryAccount','TreasuryTransaction','Payment','PaymentAllocation'],
+ approvals:['PurchaseOrder','ExpenseRequest','Recipe','DispatchRequest'],expenses:['ExpenseRequest','Budget'],employees:['Employee','User','Department'],payroll:['PayrollRun','PayrollLine'],admin:['CompanySettings','Branch','Department','AuditLog'],
+};
+const featureReadDependencies={
+ inventory:['Account','PostingRule','CompanySettings','Employee','Vehicle'],
+ inventory_adjustments:['Product','StockBalance','StockMovement','Warehouse','Account','AccountingPeriod','PostingRule','CompanySettings'],
+ purchases:['Product','StockBalance','Warehouse','Account','PostingRule','Employee','Department','CompanySettings','Payment','PaymentAllocation','TreasuryAccount'],
+ sales:['Product','StockBalance','Warehouse','Customer','CustomerLocation','Employee','CompanySettings','Dispatch','DispatchLine','Account','PostingRule'],
+ customers:['CompanySettings','Employee','SalesOrder','Invoice','InvoiceLine','Route'],
+ manufacturing:['Product','StockBalance','StockMovement','Warehouse','Account','AccountingPeriod','PostingRule','Employee','Department','CompanySettings','QualityCheck'],
+ quality:['Product','StockBalance','StockMovement','Warehouse','ProductionOrder','ProductionMaterial','Recipe','RecipeLine','Employee','CompanySettings'],
+ distribution:['Product','StockBalance','StockMovement','Warehouse','Employee','Department','CompanySettings','SalesOrder','SalesOrderLine','Customer','CustomerLocation','Route'],
+ cashier:['Account','AccountingPeriod','PostingRule','Employee','Customer','CustomerLocation','Invoice','InvoiceLine','Supplier','PurchaseOrder','PurchaseOrderLine','Bill','ExpenseRequest','Department','CompanySettings'],
+ accounting:['Customer','CustomerLocation','Supplier','Bill','Employee','Department','CompanySettings','Invoice','InvoiceLine','Product','StockBalance','StockMovement','Warehouse'],
+ payroll:['Employee','Department','CompanySettings','Account','AccountingPeriod','PostingRule','TreasuryAccount'],
+ expenses:['Employee','Department','Account','TreasuryAccount','CompanySettings'],
+ employees:['Department','CompanySettings'],admin:['CompanySettings','Department','Branch'],
+ approvals:['PurchaseOrder','PurchaseOrderLine','ExpenseRequest','Department','Recipe','RecipeLine','Product','ProductionOrder','Employee','CompanySettings'],
+ reports:['Invoice','InvoiceLine','FieldSale','FieldSaleLine','Payment','Customer','Supplier','Product','StockBalance','StockMovement','Warehouse','CompanySettings'],
+};
+export function featureAllowsEntity(module,entity,reading){
+ return reading ? !!(entityModules[entity]?.includes(module)||featureReadDependencies[module]?.includes(entity)||featureWriteEntities[module]?.includes(entity)) : !!featureWriteEntities[module]?.includes(entity);
+}
+
 export function assertEntityModule(context, entity, operation) {
-  if(context.role==='admin'){const modules=context.roleCatalogue?.roles?.admin?.modules;if(!modules)return;const choices=entityModules[entity]||[];if(choices.some(m=>['admin','employees'].includes(m)||modules.includes(m)))return;throw Object.assign(new Error('This module is disabled in the Super Admin role configuration.'),{status:403});}
+  const scope=context.user?.[FEATURE_AUTHORITY];
+  if(scope){if(!featureAllowsEntity(scope.module,entity,['get','list','filter','aggregate','count'].includes(operation)))throw Object.assign(Error('This feature does not authorize changes in another feature.'),{status:403});return;}
+  if(context.role==='admin'&&!context.user?.[FEATURE_AUTHORITY]){const modules=context.roleCatalogue?.roles?.admin?.modules;if(!modules)return;const choices=entityModules[entity]||[];if(choices.some(m=>['admin','employees'].includes(m)||modules.includes(m)))return;throw Object.assign(new Error('This module is disabled in the Super Admin role configuration.'),{status:403});}
   if (!context.employee || !Array.isArray(context.employee.allowed_modules)) return;
   const choices = entityModules[entity] || [];
   const writes = ['create','bulkCreate','update','updateMany','delete','deleteMany'].includes(operation);

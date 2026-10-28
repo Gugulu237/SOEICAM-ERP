@@ -1,5 +1,5 @@
 import { COMPANY_PROFILE_FIELDS } from '../lib/company-profile.js';
-import { effectiveRole } from './domain/roles.js';
+import { effectiveRole, FEATURE_AUTHORITY } from './domain/roles.js';
 import { assertEntityModule, assertModule } from './domain/role-catalogue.js';
 import { canReadManagementAccounting } from '../lib/management-access.js';
 import { CASH_ACCOUNT_TYPES } from '../lib/treasury-access.js';
@@ -91,6 +91,8 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if(context.user?.[FEATURE_AUTHORITY]?.module==='approvals'&&(!['update','updateMany'].includes(operation)||Object.keys(value).some(k=>!['status','approved_by','approved_at','rejected_by','rejected_at','rejection_reason','rejection_notes','review_notes'].includes(k))))throw forbidden('Approval access permits review decisions, not edits to the original request.');
+  if(context.user?.[FEATURE_AUTHORITY]&&((entity==='User'&&Object.keys(value).some(k=>['role','auth_user_id','email'].includes(k)))||(entity==='Employee'&&(value.role==='admin'||existing?.role==='admin'||existing&&'role' in value&&value.role!==existing.role||!existing&&(value.user_id||value.role&&value.role!=='employee')))))throw forbidden('Only the General Manager may change administrator identities or grant General Manager authority.');
   if(entity==='PostingRule'&&['delete','deleteMany'].includes(operation))throw forbidden('Deactivate posting rules instead of deleting their configuration history.');
   if(entity==='Payment'&&(value.status==='posted'||existing?.status==='posted'||'journal_id' in value||existing?.journal_id))throw forbidden('Posted payments and their journal links are immutable. Use the checked payment workflow.');
   if(entity==='ExpenseRequest'&&existing?.status==='paid'&&(operation!=='update'||Object.keys(value).some(k=>!['receipt_url','receipt_collected_at'].includes(k))))throw forbidden('Paid expense vouchers are immutable except for their receipt evidence.');
@@ -213,7 +215,7 @@ export function guardMutation(context, entity, operation, payload, existing) {
   if (entity === 'ExpenseRequest' && !['production_manager','cashier'].includes(role) && (['approved','paid','rejected'].includes(value.status) || ['approved_by','approved_at'].some(key=>key in value))) throw forbidden('This expense decision requires a manager.');
 }
 export function visibleRecord(context, entity, row) {
-  if (!row || effectiveRole(context.user,context.employee) === 'admin') return row;
+  if (!row || effectiveRole(context.user,context.employee) === 'admin' && (!context.user?.[FEATURE_AUTHORITY] || context.user[FEATURE_AUTHORITY].module==='employees' || !['Employee','User'].includes(entity))) return row;
   if (entity === 'Employee' && row.id !== context.employee?.id) return Object.fromEntries(['id','full_name','role','status'].map(key=>[key,row[key]]));
   if (entity === 'User') { const { auth_user_id, ...profile } = row; return profile; }
   return row;

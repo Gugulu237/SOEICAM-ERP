@@ -1,3 +1,4 @@
+import {entityFeatureContext} from './feature-access.js';
 import {preparePostingRule} from './domain/posting-rule-definition.js';
 import {prepareTreasuryAccount} from './domain/treasury-definition.js';
 import {audit} from './domain/field-ops.js';
@@ -22,6 +23,7 @@ import { authenticatedRecordChanges, recordAuthenticatedDecision } from './domai
 import { guardRecipeMutation, finishRecipeApproval } from './domain/recipe-integrity.js';
 
 export async function entityOperation(context,name,operation,args = []) {
+  context=entityFeatureContext(context,name,operation);
   if (!Array.isArray(args) || args.length > 5) throw new Error('Invalid arguments');
   const allowed = ['filter','list','get','count','aggregate','create','bulkCreate','update','updateMany','delete','deleteMany'];
   if (!allowed.includes(operation)) throw forbidden('Unsupported table operation.');

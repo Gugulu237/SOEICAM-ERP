@@ -31,7 +31,7 @@ export default function Employees({ embedded=false, section='people', initialRol
   const [category,setCategory]=usePageState('employees:category','All'), [roleFilter,setRoleFilter]=usePageState('employees:role','all');
   const [showForm,setShowForm]=useState(false), [editing,setEditing]=useState(null), [showRoles,setShowRoles]=useState(false), [roleToOpen,setRoleToOpen]=useState('');
   const [inviting,setInviting]=useState('');
-  const request=useRef(0), {toast}=useToast(),{role:myRole}=useCurrentUser(),canManage=myRole==='admin',today=businessDate();
+  const request=useRef(0), {toast}=useToast(),{role:myRole,principalRole}=useCurrentUser(),canManageRoles=(principalRole||myRole)==='admin',canManage=myRole==='admin',today=businessDate();
   const [selectedRole,setSelectedRole]=useState(''),[roleDraft,setRoleDraft]=useState(null);
   const definitions=useMemo(()=>roleDefinitions(roleCatalogue,ROLE_DEFINITIONS),[roleCatalogue]);
   const load=useCallback(async()=>{
@@ -72,7 +72,7 @@ export default function Employees({ embedded=false, section='people', initialRol
     {form}
     {canManage&&removedEmployees.length>0&&<details className="mt-5 rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{ui('Removed employees')} ({removedEmployees.length})</summary><ul className="mt-3 divide-y">{removedEmployees.map(person=><li key={person.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm">{person.full_name}</span><EmployeeRemovalAction employee={person} onSaved={load}/></li>)}</ul></details>}
     <RoleAccessReference open={showRoles} onOpenChange={setShowRoles} catalogue={roleCatalogue} initialRole={roleToOpen} onSaved={load} {...shared}/>
-    {selectedRole&&definitions.some(r=>r.key===selectedRole)&&<EmployeeRoleDrawer key={selectedRole} open onOpenChange={value=>{if(!value)setSelectedRole('');}} role={definitions.find(r=>r.key===selectedRole)} definitions={definitions} catalogue={roleCatalogue} onSaved={load} canManage={canManage} onEditRole={canManage?profile=>setRoleDraft(profile):undefined} {...shared}/>}
+    {selectedRole&&definitions.some(r=>r.key===selectedRole)&&<EmployeeRoleDrawer key={selectedRole} open onOpenChange={value=>{if(!value)setSelectedRole('');}} role={definitions.find(r=>r.key===selectedRole)} definitions={definitions} catalogue={roleCatalogue} onSaved={load} canManage={canManage} onEditRole={canManageRoles?profile=>setRoleDraft(profile):undefined} {...shared}/>}
     {roleDraft&&<RoleEditorSheet key={roleDraft.key} profile={roleDraft} catalogue={roleCatalogue} definitions={definitions} onClose={()=>setRoleDraft(null)} onSaved={load}/>}
 
   </div>;

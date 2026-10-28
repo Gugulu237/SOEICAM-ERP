@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const denied = () => Object.assign(new Error('Only the General Manager can manage roles.'),{ status:403 });
 export async function GET() {
-  try { const context = await authenticateRequest(); if (context.role !== 'admin') throw denied(); return Response.json(await loadRoleCatalogue(),{ headers:{ 'Cache-Control':'private, no-store' } }); }
+  try { const context = await authenticateRequest('employees'); if (context.role !== 'admin') throw denied(); return Response.json(await loadRoleCatalogue(),{ headers:{ 'Cache-Control':'private, no-store' } }); }
   catch(error) { return apiError(error); }
 }
 export async function PUT(request) {

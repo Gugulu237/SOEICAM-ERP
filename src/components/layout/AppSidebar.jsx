@@ -21,7 +21,7 @@ import { permitsWorkspace,workspacePath,hasWorkspaceGrant } from '@/lib/workspac
 
 const navItems = [
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
-  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"] },
+  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"], children:[{get label(){return ui("Payroll");},path:"/team-workspaces?section=payroll",roles:["admin","cashier"]}] },
   { get label(){return ui("Supply Chain Dashboard");}, icon: Truck, path: "/supply-chain", roles: ["warehouse_manager"], assignedRole: "supply_chain_manager" },
   { get label(){return ui("Commercial Dashboard");}, icon: ShoppingBag, path: "/commercial", roles: ["commercial"], personalCommercial: true, children: [
     { get label(){return ui("Record sale");}, path: "/commercial?section=pos&new=1", roles: ["commercial"] },
@@ -47,7 +47,7 @@ export default function AppSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingHref,setPendingHref] = useState('');
   const location = useLocation();
-  const { role, assignedRole, allowedModules } = useCurrentUser();
+  const { role, principalRole, assignedRole, allowedModules } = useCurrentUser();
   const { logout } = useAuth();
 
   // Keep the drawer's Back entry until Next commits the selected route. Closing
@@ -63,7 +63,7 @@ export default function AppSidebar() {
 
   const targetPath=path=>role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
-  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial') && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && (hasRoleAccess(role, item.roles) || hasWorkspaceGrant(role,targetPath(item.path),allowedModules)) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
+  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial' || (principalRole||role)!=='admin'&&allowedModules?.includes('commercial')) && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && (hasRoleAccess(role, item.roles) || hasWorkspaceGrant(role,targetPath(item.path),allowedModules)) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";
@@ -111,7 +111,7 @@ export default function AppSidebar() {
             {!compact && <span>{item.label}</span>}
           </Link>
           }
-          {(item.children || []).filter(child => child.path !== targetPath(item.path) && hasRoleAccess(role, child.roles) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (compact ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!compact && child.label}</Link>)}
+          {(item.children || []).filter(child => child.path !== targetPath(item.path) && (hasRoleAccess(role, child.roles)||hasWorkspaceGrant(role,child.path,allowedModules)) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (compact ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!compact && child.label}</Link>)}
           </React.Fragment>
         ))}
       </nav>

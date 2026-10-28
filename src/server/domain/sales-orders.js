@@ -1,3 +1,4 @@
+import {inclusiveSaleLine} from '../../lib/sale-vat.js';
 import {createHash} from 'node:crypto';
 import {requireStaff,round2,round3,today} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
@@ -68,8 +69,8 @@ export async function salesOrderAction(client,user,body){
     const quantity=number(row.quantity,'quantity'),price=number(row.unit_price,'unit price'),discountPct=number(row.discount_pct??0,'discount',100),taxRate=number(p.tax_rate??0,'tax rate',100);
     if(quantity<=0||round3(quantity)!==quantity||quantity>p.available)throw Error('Review the supplied quantity for '+p.name+'.');
     if(price!==round2(price))throw Error('Use unit prices with at most two decimal places.');
-    const subtotal=round2(quantity*price),discount=round2(subtotal*discountPct/100),tax=round2((subtotal-discount)*taxRate/100);
-    return {product_id:p.id,product_name:p.name,unit:p.unit||stockUnit(p),quantity,unit_price:price,discount_pct:discountPct,discount_amount:discount,tax_rate:taxRate,tax_amount:tax,total:round2(subtotal-discount+tax)};
+    const amounts=inclusiveSaleLine(quantity,price,taxRate,discountPct);
+    return {product_id:p.id,product_name:p.name,unit:p.unit||stockUnit(p),quantity,unit_price:price,price_includes_vat:true,discount_pct:discountPct,discount_amount:amounts.discount,tax_rate:taxRate,tax_amount:amounts.tax,total:amounts.total};
   });
   const subtotal=round2(lines.reduce((n,l)=>n+l.total-l.tax_amount,0)),tax=round2(lines.reduce((n,l)=>n+l.tax_amount,0)),total=round2(subtotal+tax);
   if(total<=0||total>1e12)throw Error('Enter a positive sale total.');
@@ -83,7 +84,7 @@ export async function salesOrderAction(client,user,body){
   if((branches.length||locations.some(l=>l.assigned_hotesse_ids?.length)||customer.financial_centralization_mode==='decentralized')&&!point)throw Error('Choose the customer branch that received this supply.');
   const terms=number(customer.payment_terms_days??0,'payment terms',3650);if(!Number.isInteger(terms))throw Error('Enter whole days for the customer payment terms.');
   const now=new Date().toISOString();
-  const values={customer_id:customer.id,customer_name:customer.business_name,location_id:input.locationId,location_name:point?.name||point?.business_name||'',warehouse_id:context.stock_warehouse_id,warehouse_name:context.stock_warehouse_name,dispatch_id:context.dispatch_id,vehicle_id:context.vehicle_id,vehicle_name:context.vehicle_name,driver_id:context.driver_id,driver_name:context.driver_name,salesperson_id:seller.id,salesperson_name:seller.name,route_id:context.route_id,order_date:suppliedOn,delivery_date:suppliedOn,payment_type:body.paymentType,payment_terms_days:terms,notes:input.notes,subtotal,discount_total:round2(lines.reduce((n,l)=>n+l.discount_amount,0)),tax_total:tax,total,status:'draft',sales_supply_source:context.source_type,sales_supply_seller_id:input.sellerId,sales_supply_stockholder_id:context.salesperson_id||'',sales_supply_stockholder_name:context.salesperson_name||'',sales_supply_recorded_by:user.id,sales_supply_recorded_at:now,sales_supply_request_id:requestId};
+  const values={price_includes_vat:true,customer_id:customer.id,customer_name:customer.business_name,location_id:input.locationId,location_name:point?.name||point?.business_name||'',warehouse_id:context.stock_warehouse_id,warehouse_name:context.stock_warehouse_name,dispatch_id:context.dispatch_id,vehicle_id:context.vehicle_id,vehicle_name:context.vehicle_name,driver_id:context.driver_id,driver_name:context.driver_name,salesperson_id:seller.id,salesperson_name:seller.name,route_id:context.route_id,order_date:suppliedOn,delivery_date:suppliedOn,payment_type:body.paymentType,payment_terms_days:terms,notes:input.notes,subtotal,discount_total:round2(lines.reduce((n,l)=>n+l.discount_amount,0)),tax_total:tax,total,status:'draft',sales_supply_source:context.source_type,sales_supply_seller_id:input.sellerId,sales_supply_stockholder_id:context.salesperson_id||'',sales_supply_stockholder_name:context.salesperson_name||'',sales_supply_recorded_by:user.id,sales_supply_recorded_at:now,sales_supply_request_id:requestId};
   const order=existing?await s.SalesOrder.update(existing.id,values):await s.SalesOrder.create({...values,order_number:'SO-'+crypto.randomUUID().slice(0,12).toUpperCase(),created_by:user.id});
   if(existing)await s.SalesOrderLine.deleteMany({order_id:order.id});
   await s.SalesOrderLine.bulkCreate(lines.map(l=>({...l,order_id:order.id,sales_supply_order_id:order.id})));

@@ -7,7 +7,7 @@ export const dynamic='force-dynamic';
 export async function POST(request,{params}){
   try{
     checkOrigin(request);
-    const context=await authenticateRequest(),text=await request.text();
+    const context=await authenticateRequest('inventory'),text=await request.text();
     if(text.length>4000)throw Object.assign(Error('Item request is too large.'),{status:413});
     const input=JSON.parse(text),{id}=await params;
     return Response.json(await transaction(()=>itemLifecycle(context,serviceEntities,id,input)),{headers:{'Cache-Control':'private, no-store'}});

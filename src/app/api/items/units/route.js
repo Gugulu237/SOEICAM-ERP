@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export async function POST(request) {
   try {
     checkOrigin(request);
-    const context = await authenticateRequest();
+    const context = await authenticateRequest('inventory');
     assertEntityAccess(context, 'Product', 'create');
     const body = await request.json();
     return Response.json(await transaction(() => addItemUnit(serviceEntities, body)), { headers: { 'Cache-Control': 'private, no-store' } });

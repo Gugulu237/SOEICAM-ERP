@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request, { params }) {
   try {
     checkOrigin(request);
-    const context = await authenticateRequest();
+    const context = await authenticateRequest('customers');
     if (context.role !== 'admin') throw Object.assign(Error('Only the General Manager can delete or restore customers.'), { status: 403 });
     const text = await request.text();
     if (text.length > 4000) throw Object.assign(Error('Customer request is too large.'), { status: 413 });

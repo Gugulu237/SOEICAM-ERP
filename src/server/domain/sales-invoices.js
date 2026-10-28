@@ -1,3 +1,5 @@
+import {splitIncludedVat} from '../../lib/sale-vat.js';
+import {FEATURE_AUTHORITY} from './roles.js';
 import {isOpeningRecord} from '../../lib/opening-records.js';
 import {salesStockSource} from './sales-stock-source.js';
 import {assertRunSupplyStock} from './commercial-runs.js';
@@ -12,6 +14,7 @@ import { postedInvoiceStatuses } from '../../lib/company-sales.js';
 export const CASHIER_INVOICE_ACTIONS=['invoiceWorkspace','invoiceDetail','customizeSalesInvoice'];
 export const INVOICE_ACTIONS = ['invoiceWorkspace','invoiceDetail','invoiceSource','createSalesInvoice','customizeSalesInvoice','saveInvoiceCompany'];
 const pick = (row, keys) => Object.fromEntries(keys.split(' ').map(key=>[key,row?.[key]]));
+const fieldDiscount=(line,source)=>round2(Number(line.quantity)*Number(line.unit_price)-Number(line.line_total)-(line.price_includes_vat||source.price_includes_vat?Number(line.tax_amount||0):0))||0;
 const addDays = (date,days) => new Date(Date.parse(date+'T00:00:00Z')+Number(days || 0)*86400000).toISOString().slice(0,10);
 const issued = invoice => !['cancelled','credited'].includes(invoice.status);
 function dateOf(date) { periodDates(date,date); return date; }
@@ -44,7 +47,7 @@ async function detail(stores,id) {
   const company=invoice.invoice_document?.company || invoiceCompany(settings[0]);
   const options={...invoiceDefaults(customer,company),...invoice.invoice_document?.options};
   const accountingVerified=journal?.status==='posted' && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
-  return {invoice:{...pick(invoice,'id invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
+  return {invoice:{...pick(invoice,'id price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
 }
 async function workspace(stores,role) {
   const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),role==='cashier'?[]:readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),role==='cashier'?[]:readRecords(stores.Customer),readRecords(stores.CompanySettings)]);
@@ -75,9 +78,10 @@ export async function invoiceAction(client,user,body) {
   const allowed=body.action==='saveInvoiceCompany'?['admin']:CASHIER_INVOICE_ACTIONS.includes(body.action)?['admin','employee','cashier']:['admin','employee'];
   const {role,employee}=await requireStaff(client,user,allowed,'customer invoicing');
   if(role!=='admin' && employee?.status!=='active')throw Error('An active sales staff account is required.');
-  client.auth.assertModule?.(role==='cashier'?'cashier':'sales');
+  const feature=user[FEATURE_AUTHORITY]?.module;
+  client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;
-  if(body.action==='invoiceWorkspace')return workspace(s,role);
+  if(body.action==='invoiceWorkspace')return workspace(s,feature&&feature!=='sales'?'cashier':role);
   if(body.action==='invoiceDetail')return detail(s,body.invoiceId);
   if(body.action==='invoiceSource') {
     if(!['order','field'].includes(body.sourceType))throw Error('Choose an invoice source.');
@@ -87,7 +91,7 @@ export async function invoiceAction(client,user,body) {
     const company=invoiceCompany(settings[0]),defaults=invoiceDefaults(customer,company),billTo=await billing(s,source,customer);
     const options={...defaults,bill_to_address:billTo.options.bill_to_address || defaults.bill_to_address};
     const invoiceDate=body.sourceType==='field'?source.transaction_date:today(),terms=Number(source.payment_terms_days ?? customer.payment_terms_days ?? 0);
-    return {options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?round2(Number(l.quantity)*Number(l.unit_price)-Number(l.line_total)):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
+    return {options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id price_includes_vat customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?fieldDiscount(l,source):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
   }
   if(body.action==='saveInvoiceCompany') {
     const settings=(await readRecords(s.CompanySettings))[0]; if(!settings)throw Error('Company settings are missing.');
@@ -125,12 +129,12 @@ export async function invoiceAction(client,user,body) {
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);if(!company.company_name)throw Error('Set up the company letterhead before issuing invoices.');
   const billTo=await billing(s,source,customer,options),number=await uniqueNumber(svc);
   let invoice,lines;
-  const base={invoice_number:number,customer_id:customer.id,customer_name:customer.business_name,location_id:source.location_id || '',location_name:source.location_name || '',billing_mode:billTo.billing_mode,bill_to_location_id:billTo.bill_to_location_id,bill_to_location_name:billTo.bill_to_location_name,invoice_date:invoiceDate,due_date:due,invoice_document:{company,options},document_revision:1,document_created_by:user.id,source_number:source.order_number || source.sale_number};
+  const base={price_includes_vat:source.price_includes_vat===true,invoice_number:number,customer_id:customer.id,customer_name:customer.business_name,location_id:source.location_id || '',location_name:source.location_name || '',billing_mode:billTo.billing_mode,bill_to_location_id:billTo.bill_to_location_id,bill_to_location_name:billTo.bill_to_location_name,invoice_date:invoiceDate,due_date:due,invoice_document:{company,options},document_revision:1,document_created_by:user.id,source_number:source.order_number || source.sale_number};
   if(body.sourceType==='field') {
     if(source.status!=='approved_posted')throw Error('Generate a supply invoice only after the sale is posted.');
     await sourceJournal(s,source,'FieldSale');
     const sourceLines=await readRecords(s.FieldSaleLine,{field_sale_id:source.id});
-    lines=sourceLines.map(l=>({product_id:l.product_id,product_name:l.product_name,quantity:Number(l.quantity),unit:l.unit,unit_price:Number(l.unit_price),discount_amount:round2(Number(l.quantity)*Number(l.unit_price)-Number(l.line_total)),tax_amount:round2(l.tax_amount),total:round2(Number(l.line_total)+Number(l.tax_amount || 0)),unit_cost:Number(l.unit_cost || 0),cogs_total:round2(l.line_cost)}));
+    lines=sourceLines.map(l=>({product_id:l.product_id,product_name:l.product_name,quantity:Number(l.quantity),unit:l.unit,unit_price:Number(l.unit_price),discount_amount:fieldDiscount(l,source),tax_amount:round2(l.tax_amount),total:round2(Number(l.line_total)+Number(l.tax_amount || 0)),unit_cost:Number(l.unit_cost || 0),cogs_total:round2(l.line_cost)}));
     const balance=round2(safeNumber(source.amount_due,'supply balance'));
     invoice=await s.Invoice.create({...base,field_sale_id:source.id,accounting_source:'field_sale',subtotal:round2(source.subtotal),tax_total:round2(source.tax_total),total:round2(source.total),amount_paid:round2(Number(source.total)-balance),balance,status:balance===0?'paid':balance<round2(source.total)?'partially_paid':'posted',payment_type:balance>0?'credit':'cash',journal_id:source.journal_id});
     await s.FieldSale.update(source.id,{invoice_id:invoice.id,invoice_number:number,due_date:due});
@@ -149,10 +153,11 @@ export async function invoiceAction(client,user,body) {
       const quantity=round3(safeNumber(line.quantity,'quantity',true)),unitPrice=safeNumber(line.unit_price,'unit price'),discount=round2(safeNumber(line.discount_amount || 0,'discount')),taxRate=safeNumber(line.tax_rate || 0,'tax rate');
       if(quantity!==Number(line.quantity))throw Error('Use quantities with at most three decimal places.');
       if(taxRate>100 || discount>round2(quantity*unitPrice))throw Error('Review line discounts and tax rates.');
-      const net=round2(quantity*unitPrice-discount),tax=round2(net*taxRate/100),total=round2(net+tax);
+      const amount=round2(quantity*unitPrice-discount),included=source.price_includes_vat===true||line.price_includes_vat===true,split=included?splitIncludedVat(amount,taxRate):null;
+      const net=included?split.net:amount,tax=included?split.tax:round2(net*taxRate/100),total=included?split.total:round2(net+tax);
       if(total!==round2(line.total) || tax!==round2(line.tax_amount))throw Error('Saved order line totals do not match quantities, prices and taxes. Save corrected lines first.');
       if(line.unit && line.unit!==stockUnit(p))throw Error('Review the order unit of measure for '+p.name+' before invoicing.');
-      lines.push({product_id:p.id,product_name:p.name,quantity,unit:stockUnit(p),unit_price:unitPrice,discount_amount:discount,tax_amount:tax,total});
+      lines.push({product_id:p.id,product_name:p.name,quantity,unit:stockUnit(p),unit_price:unitPrice,price_includes_vat:included,discount_amount:discount,tax_amount:tax,total});
     }
     const subtotal=round2(lines.reduce((sum,l)=>sum+l.total-l.tax_amount,0)),tax=round2(lines.reduce((sum,l)=>sum+l.tax_amount,0)),total=round2(subtotal+tax);
     if(total<=0 || total!==round2(source.total) || tax!==round2(source.tax_total))throw Error('Saved order totals do not match its lines. Save the corrected order first.');

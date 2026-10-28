@@ -137,3 +137,13 @@ test('Cashier can customize an existing customer invoice but cannot issue sales 
  await assert.rejects(invoiceAction(f.client,cashier,{action:'saveInvoiceCompany',company:invoiceCompany({company_name:'Tampered'})}),/restricted/);
  await f.entities.Employee.update('cashier',{status:'inactive'});await assert.rejects(invoiceAction(f.client,cashier,{action:'invoiceWorkspace'}),/active/);
 });
+
+
+test('VAT-inclusive supplies retain the listed price and never present VAT as an extra discount',async()=>{
+ const f=await setup(),sale=await field(f),line=(await f.entities.FieldSaleLine.list())[0];
+ await f.entities.FieldSale.update(sale.id,{price_includes_vat:true,subtotal:838.57,tax_total:161.43,total:1000,amount_due:600});
+ await f.entities.FieldSaleLine.update(line.id,{price_includes_vat:true,line_total:838.57,tax_amount:161.43,tax_rate:19.25});
+ const result=await invoiceAction(f.client,admin,body(sale,'field'));assert.equal(result.invoice.total,1000);assert.equal(result.invoice.subtotal,838.57);assert.equal(result.invoice.tax_total,161.43);assert.equal(result.lines[0].discount_amount,0);assert.equal(result.lines[0].total,1000);assert.equal(result.invoice.price_includes_vat,true);
+ assert.match(invoiceHtml(result),/VAT included/);assert.match(invoiceText(result),/VAT included:/);
+ assert.equal((await f.entities.StockMovement.list()).length,0);
+});

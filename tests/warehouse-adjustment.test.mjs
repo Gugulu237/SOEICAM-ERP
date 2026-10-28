@@ -1,3 +1,4 @@
+import {salesOrderAction} from '../src/server/domain/sales-orders.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
@@ -146,4 +147,70 @@ test('an item-specific count opens the warehouse that currently holds its stock;
  const cold=await s.Warehouse.create({name:'Cold Room',warehouse_type:'cold_room',is_active:true});
  const finished=await s.Product.create({name:'500 g yogurt',inventory_type:'assembly',is_active:true,current_cost:100,configuration_status:'ready'});
  workspace=await warehouseAdjustmentAction(f.client,user,{action:'warehouseAdjustmentWorkspace',productId:finished.id});assert.equal(workspace.warehouse.id,cold.id);
+});
+
+
+async function finishedFixture(){
+ const f=await setup(),s=f.entities;
+ await s.Warehouse.update(f.warehouse.id,{warehouse_type:'cold_room'});
+ await s.Product.update(f.product.id,{inventory_type:'assembly'});
+ return f;
+}
+test('counted finished goods can be marked ready for sale without a manufacturing order',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'OPEN-COUNT',reason:'Existing finished goods physically checked',rows:[{product_id:f.product.id,lot_number:'OPEN-2026',expiry_date:'2099-12-31',unit_cost:10,counted_quantity:12,ready_for_sale:true}]};
+ const saved=await f.call(body),lot=await s.StockBalance.get(saved.rows[0].balance_id);
+ assert.equal(lot.qc_status,'approved');assert.equal(lot.quantity,12);assert.equal(lot.production_order_id,undefined);assert.equal(lot.qc_released_by_user_id,user.id);
+ f.client.auth.me=async()=>({id:'gm',role:'admin'});
+ const stock=await salesOrderAction(f.client,{id:'gm',role:'admin'},{action:'salesOrderStock',sourceType:'company',date});
+ assert.equal(stock.products.find(p=>p.id===f.product.id).available,17); // Includes the earlier approved lot of five.
+ assert.equal((await s.JournalEntry.list()).length,1);
+});
+test('already counted stock on hold can be released with its same quantity and value, without another journal or stock movement',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-HOLD',reason:'Opening finished goods counted',rows:[{product_id:f.product.id,lot_number:'OPEN-HOLD',expiry_date:'2099-12-31',unit_cost:10,counted_quantity:8}]});
+ const id=first.rows[0].balance_id,held=await s.StockBalance.get(id);assert.equal(held.qc_status,'quarantine');
+ const beforeJ=(await s.JournalEntry.list()).length,beforeM=(await s.StockMovement.list()).length;
+ const row=(await f.workspace()).rows.find(r=>r.balance_id===id);
+ const release={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'QUALITY-CHECK',reason:'Physical condition and printed expiry verified',rows:[{balance_id:id,fingerprint:row.fingerprint,counted_quantity:8,ready_for_sale:true}]};
+ const result=await f.call(release);assert.equal(result.journal_id,'');assert.equal((await s.StockBalance.get(id)).qc_status,'approved');assert.equal((await s.StockBalance.get(id)).total_value,held.total_value);assert.equal((await s.StockBalance.get(id)).quantity,held.quantity);
+ assert.equal((await s.JournalEntry.list()).length,beforeJ);assert.equal((await s.StockMovement.list()).length,beforeM);assert.equal((await f.call(release)).reused,true);
+ await assert.rejects(f.call({...release,requestKey:crypto.randomUUID()}),/changed/);
+});
+test('ready-for-sale confirmation cannot release production batches, rejected lots or expired goods',async()=>{
+ for(const mode of ['production','expired','rejected']){
+  const f=await finishedFixture(),s=f.entities;
+  await s.StockBalance.update(f.lots[0].id,{...(mode!=='production'?{production_order_id:''}:{}),...(mode==='expired'?{expiry_date:'2020-01-01'}:{}),...(mode==='rejected'?{qc_status:'rejected'}:{})});
+  const row=(await f.workspace()).rows.find(r=>r.balance_id===f.lots[0].id);
+  await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'CHECK',reason:'Verify physical stock',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:row.book_quantity,ready_for_sale:true}]}),/Only verified/);
+  assert.equal((await s.StockBalance.get(row.balance_id)).qc_status,mode==='rejected'?'rejected':'quarantine');assert.equal((await s.JournalEntry.list()).length,0);
+ }
+});
+
+
+test('counted ingredients and packaging can be released for production without making them sale products',async()=>{
+ for(const type of ['raw_material','packaging']){
+  const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{inventory_type:type});
+  const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'MATERIAL-COUNT',reason:'Materials counted and checked for production use',rows:[{product_id:f.product.id,lot_number:'COUNTED-MATERIAL',unit_cost:10,counted_quantity:4,ready_for_use:true}]};
+  const saved=await f.call(body),lot=await s.StockBalance.get(saved.rows[0].balance_id);assert.equal(lot.qc_status,'approved');assert.equal(lot.quantity,4);assert.equal(saved.rows[0].release_for_sale,false);assert.equal(saved.rows[0].release_for_use,true);
+  const admin={id:'gm',role:'admin'};f.client.auth.me=async()=>admin;
+  const stock=await salesOrderAction(f.client,admin,{action:'salesOrderStock',sourceType:'company',date});assert.ok(!stock.products.some(p=>p.id===f.product.id));
+  const workspace=await f.workspace();assert.equal(workspace.items.find(p=>p.id===f.product.id).inventory_type,type);
+ }
+});
+
+test('request flags cannot mark an ingredient or packaging item ready for sale',async()=>{
+ for(const type of ['raw_material','packaging']){
+  const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{inventory_type:type});
+  await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-TEST',reason:'Physical materials count verified',rows:[{product_id:f.product.id,lot_number:'MATERIAL-LOT',expiry_date:'2099-01-01',unit_cost:10,counted_quantity:4,ready_for_sale:true}]}),/Only finished products/);
+  assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.StockMovement.list()).length,0);
+ }
+});
+
+test('existing counted materials release without changing quantity, inventory value or posting a second journal',async()=>{
+ const f=await setup(),s=f.entities;
+ const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'MATERIAL-HOLD',reason:'Materials counted for production',rows:[{product_id:f.product.id,lot_number:'MATERIAL-HOLD',unit_cost:10,counted_quantity:3}]});
+ const row=(await f.workspace()).rows.find(r=>r.balance_id===first.rows[0].balance_id),before=await s.StockBalance.get(row.balance_id),journals=(await s.JournalEntry.list()).length;
+ const saved=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'USE-VERIFIED',reason:'Material quality physically verified',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:3,ready_for_use:true}]});
+ const after=await s.StockBalance.get(row.balance_id);assert.equal(after.qc_status,'approved');assert.equal(after.quantity,before.quantity);assert.equal(after.total_value,before.total_value);assert.equal((await s.JournalEntry.list()).length,journals);assert.equal(saved.journal_id,'');
 });

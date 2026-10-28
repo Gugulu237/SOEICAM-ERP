@@ -48,7 +48,7 @@ test('warehouse count shows old/new quantity and value change, preserves a faile
 test('a zero-stock catalogue item can be counted as a new lot, with explicit batch details and a quality-hold explanation',async()=>{
   const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[]}});
   const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',productId:'milk',onOpenChange:()=>{}});};
-  try{draw();await r.flush();const html=draw();assert.ok(element(r,'input','Lot number for Milk powder'));assert.ok(element(r,'input','Printed expiry for Milk powder'));assert.match(html,/Newly counted lots remain on quality hold/);assert.equal(element(r,'input','Physical quantity for Milk powder').value,'');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+  try{draw();await r.flush();const html=draw();assert.ok(element(r,'input','Lot number for Milk powder'));assert.ok(element(r,'input','Printed expiry for Milk powder'));assert.match(html,/New material lots stay on quality hold/);assert.equal(element(r,'input','Physical quantity for Milk powder').value,'');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 test('large warehouse counts paginate and retain counted quantities across pages and searches',async()=>{
@@ -100,4 +100,28 @@ test('rapid repeated quantity submission writes once and reports busy state unti
   const save=button(r,'Save quantity adjustment'),waiting=save.onClick();await save.onClick();assert.equal(writes,1);draw();assert.equal(button(r,'Cancel').disabled,true);
   finish();await waiting;assert.match(draw(),/Save or print the posted receipt/);assert.deepEqual(busy,[true,false]);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+
+test('ready-for-sale release submits the existing count without inventing another quantity adjustment',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
+ const readyWorkspace={...workspace,rows:[{...workspace.rows[0],product_name:'YOLA',inventory_type:'assembly',requires_expiry:true,production_order_id:'',expiry_date:'2099-01-01'}]};
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?readyWorkspace:postedReceipt(body,'')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
+ try{draw();await r.flush();draw();assert.equal(element(r,'input','Physical quantity for YOLA').value,'');element(r,'input','Ready for sale: YOLA').onChange({target:{checked:true}});element(r,'input','Count sheet / reference').onChange({target:{value:'CHECKED'}});element(r,'input','Adjustment reason').onChange({target:{value:'Printed expiry and quality physically verified'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const body=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(body.rows[0].counted_quantity,10);assert.equal(body.rows[0].ready_for_sale,true);assert.equal(body.rows[0].fingerprint,'server-snapshot');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+
+test('expiry-tracked ingredients show production-use controls and never sale controls',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
+ const materials={...workspace,items:[{...workspace.items[0],inventory_type:'raw_material',requires_expiry:true}],rows:[{...workspace.rows[0],inventory_type:'raw_material',requires_expiry:true,expiry_date:'2099-01-01',production_order_id:''}]};
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?materials:postedReceipt(body,'')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
+ try{draw();await r.flush();const html=draw();assert.doesNotMatch(html,/Ready for sale/);assert.ok(element(r,'input','Ready for production use: Milk powder'));element(r,'input','Ready for production use: Milk powder').onChange({target:{checked:true}});element(r,'input','Count sheet / reference').onChange({target:{value:'USE-CHECK'}});element(r,'input','Adjustment reason').onChange({target:{value:'Materials physically checked for production'}});draw();await button(r,'Save quantity adjustment').onClick();const row=calls.find(c=>c.action==='postWarehouseAdjustment').rows[0];assert.equal(row.ready_for_use,true);assert.equal(Object.hasOwn(row,'ready_for_sale'),false);assert.equal(row.counted_quantity,10);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+test('packaging counts do not present finished-product sale instructions',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[{...workspace.rows[0],inventory_type:'packaging',product_name:'YOLA cups',production_order_id:''}],items:[{...workspace.items[0],inventory_type:'packaging'}]}});
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
+ try{draw();await r.flush();const html=draw();assert.doesNotMatch(html,/Ready for sale/);assert.match(html,/Ingredients and packaging are for production use/);assert.ok(element(r,'input','Ready for production use: YOLA cups'));}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });

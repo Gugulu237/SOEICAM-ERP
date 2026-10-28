@@ -25,9 +25,9 @@ async function bundle(){
 }
 const options={currentSellerId:'seller',sellers:[{id:'seller',name:'Salesperson A'},{id:'other',name:'Salesperson B'}],date:'2026-10-25',runs:[{id:'run-a',commercial_name:'Agent A',driver_name:'Driver A',vehicle_name:'Van A',dispatch_number:'DSP-1'}],warehouses:[{id:'main',name:'Main Cold Room'}],customers:[{id:'customer',business_name:'Customer',payment_terms_days:0}]};
 const stock={source:{stock_warehouse_id:'van'},products:[{id:'yola',name:'YOLA 500 g',unit:'ea',inventory_type:'assembly',available:10,selling_price:500,tax_rate:0}]};
-function setup(render,workspace=options){
+function setup(render,workspace=options,stockData=stock){
   const r=hookRuntime(),calls=[];r.client={entities:{CustomerLocation:{filter:async()=>[]},Customer:{filter:async()=>[]}}};r.fail=true;r.routeId=undefined;
-  r.invoke=async body=>{calls.push(body);if(body.action==='salesOrderWorkspace')return {data:workspace};if(body.action==='salesOrderStock')return {data:stock};if(body.action==='salesOrderDeliveryPoints')return {data:{points:[]}};if(r.fail)throw Error('Connection interrupted');return {data:{order:{id:'order'},invoiceId:'invoice'}};};
+  r.invoke=async body=>{calls.push(body);if(body.action==='salesOrderWorkspace')return {data:workspace};if(body.action==='salesOrderStock')return {data:stockData};if(body.action==='salesOrderDeliveryPoints')return {data:{points:[]}};if(r.fail)throw Error('Connection interrupted');return {data:{order:{id:'order'},invoiceId:'invoice'}};};
   globalThis.__suppliedOrderUI=r;
   const paint=()=>{r.beforeRender();return render();},control=label=>r.controls.find(c=>c['aria-label']===label),button=label=>r.buttons.find(b=>b.label===label);
   return {r,calls,paint,control,button,async ready(){paint();await r.flush();paint();await r.flush();return paint();},close(){r.cleanup();delete globalThis.__suppliedOrderUI;}};
@@ -92,4 +92,15 @@ test('an older unsupplied order retains its recorded warehouse when opened under
  const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'});f.r.routeId='old';
  f.r.client.entities.SalesOrder={get:async()=>({id:'old',status:'draft',warehouse_id:'main',warehouse_name:'Main Cold Room',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'seller'})};f.r.client.entities.SalesOrderLine={filter:async()=>[]};
  try{const html=await f.ready();assert.equal(f.control('Stock source').value,'warehouse:main');assert.match(html,/Main Cold Room/);assert.equal(f.calls.filter(c=>c.action==='salesOrderStock').at(-1).warehouseId,'main');}finally{f.close();}
+});
+
+
+test('VAT-inclusive listed prices stay unchanged in sale entry and its submitted total',async()=>{
+ const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'},{...stock,products:stock.products.map(p=>({...p,tax_rate:19.25}))});
+ try{await f.ready();f.control('Customer').onChange({target:{value:'customer'}});f.paint();await f.r.flush();f.paint();f.button('Add product').onClick();f.paint();f.control('Product 1').onChange({target:{value:'yola'}});f.paint();f.control('Qty 1').onChange({target:{value:'2'}});let html=f.paint();assert.match(html,/VAT included/);assert.match(html,/already include VAT/);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').expectedTotal,1000);}finally{f.close();}
+});
+
+test('invalid price previews show validation instead of crashing the sale page',async()=>{
+ const {render}=await bundle(),f=setup(render);
+ try{await f.ready();f.button('Add product').onClick();f.paint();f.control('Product 1').onChange({target:{value:'yola'}});f.paint();f.control('Qty 1').onChange({target:{value:'-1'}});assert.doesNotThrow(()=>f.paint());assert.equal(f.button('Record sale & deduct stock').disabled,true);}finally{f.close();}
 });

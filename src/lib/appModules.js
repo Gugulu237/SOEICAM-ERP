@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 export const APP_MODULES = [
+  {key:'outlets',get label(){return ui('Outlet reporting');},path:'/outlet-reports',icon:UserCheck,description:'Assigned outlets, shelf counts and daily reports',color:'bg-teal-50 text-teal-700',ring:'hover:border-teal-300',roles:['hotesse']},
   {key:'sales_reports',get label(){return ui('Sales reports');},path:'/sales-reports',icon:BarChart3,description:'Posted company sales and report exports',color:'bg-cyan-50 text-cyan-700',ring:'hover:border-cyan-300',roles:null,requiresGrant:'sales_reports'},
   {key:'quality',get label(){return ui('Quality control');},path:'/manufacturing?section=quality',icon:FlaskConical,description:'Expiry, batch inspection and traceability',color:'bg-green-50 text-green-700',ring:'hover:border-green-300',roles:QUALITY_ROLES},
   { key: "commercial_workspace", get label(){return ui("Commercial Dashboard");}, path: "/commercial", icon: Users, description: "Field POS, agent stock, sales and performance", color: "bg-green-50 text-green-700", ring: "hover:border-green-300", roles: ["commercial"] },
@@ -119,7 +120,7 @@ export const APP_MODULES = [
 
 export function modulesForRole(role,allowedModules){
  const destination=module=>role==='cashier'&&module.key==='team_workspaces'?'/team-workspaces?section=payroll':role==='hotesse'&&module.key==='sales'?'/outlet-reports':workspacePath(module.path,allowedModules);
- return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial')&&(hasRoleAccess(role,module.roles)||hasWorkspaceGrant(role,destination(module),allowedModules))&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
+ return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial'||role!=='admin'&&allowedModules?.includes('commercial'))&&(hasRoleAccess(role,module.roles)||hasWorkspaceGrant(role,destination(module),allowedModules))&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
 }
 
 export function mergeRoleWorkspaces(role,modules,actions){

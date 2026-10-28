@@ -1,3 +1,5 @@
+import {inclusiveSaleLine} from '../../lib/sale-vat.js';
+import {approvalActionTargets} from '../domain/role-catalogue.js';
 import {salesOrderAction,SALES_ORDER_ACTIONS} from '../domain/sales-orders.js';
 import { CUSTOMER_REGISTRATION_ACTIONS, customerRegistrationAction } from '../domain/customer-registration.js';
 import { fieldInventoryAction } from '../domain/field-stock-inventory.js';
@@ -30,7 +32,7 @@ import { commercialActor } from '../domain/commercial-actor.js';
 import { normalizeSaleReplacements, combinedSupplyQuantities } from '../../lib/sale-replacements.js';
 import { commercialReturnAction, postSaleReplacements } from '../domain/commercial-returns.js';
 import { companySalesAction } from '../domain/company-sales.js';
-import { invoiceAction, INVOICE_ACTIONS } from '../domain/sales-invoices.js';
+import { invoiceAction, INVOICE_ACTIONS, CASHIER_INVOICE_ACTIONS } from '../domain/sales-invoices.js';
 import { customerDeliveryAction,CUSTOMER_DELIVERY_ACTIONS } from '../domain/customer-delivery.js';
 import {
   round2, round3, today, requireStaff, getRuleAccount, getAccountByNumber,
@@ -132,8 +134,8 @@ async function recordSaleAccounting(svc, sale, lines, actor, automatic = false) 
 
 export default async function (req) {
   try {
-    const base44 = await createClientFromRequest(req);
-    const user = await base44.auth.me();
+    let base44 = await createClientFromRequest(req);
+    let user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     // The user-scoped client authenticates the caller; protected writes run with
@@ -146,14 +148,15 @@ export default async function (req) {
     // The function client uses service entities after its existing fine-grained
     // role checks. Apply the GM's module selection before entering that code.
     const inActions = (actions) => actions.includes(action);
+    const selectFeature=async(module,actorRole)=>{if(base44.auth.forFeature){base44=base44.auth.forFeature(module,actorRole,action);user=await base44.auth.me();}};
     // Report-only Supply Chain grants use sales_reports, without opening the
     // agent's operational Commercial module. The report handler checks both.
     if (action === 'commercialPerformance') return Response.json(await commercialAction(base44,user,body));
-    if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)) return Response.json(await customerRegistrationAction(base44, user, body));
+    if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)){await selectFeature('customers');return Response.json(await customerRegistrationAction(base44, user, body));}
     if (action === 'fieldStockInventory') return Response.json(await fieldInventoryAction(base44, user, body));
-    if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)) return Response.json(await commercialReturnAction(base44, user, body));
-    if(INVOICE_ACTIONS.includes(action))return Response.json(await invoiceAction(base44,user,body));
-    const module = action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
+    if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)){const review=['expiredReturnReviewQueue','verifyExpiredReturn','rejectExpiredReturn'].includes(action);await selectFeature(review?'quality':action==='driverReturnsWorkspace'?'distribution':'commercial',review?'admin':action==='driverReturnsWorkspace'?'driver':'commercial');return Response.json(await commercialReturnAction(base44, user, body));}
+    if(INVOICE_ACTIONS.includes(action)){const staff=await base44.auth.staff?.();const candidates=CASHIER_INVOICE_ACTIONS.includes(action)?['sales','accounting','cashier']:['sales'];await selectFeature(candidates.find(m=>staff?.full_access_modules?.includes(m))||candidates[0]);return Response.json(await invoiceAction(base44,user,body));}
+    let module = action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
       : CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'
       : SUPPLIER_ACTIONS.includes(action) || inActions(['purchasesWorkspace','approvePurchasePayment','rejectPurchasePayment']) ? 'purchases'
       : DISTRIBUTION_ACTIONS.includes(action) || inActions(['loadDispatch','returnDispatchStock','dispatchReconciliation','approveDispatch','approveDispatchRequest','dispatchActivity','driverActivity','issueCustody','returnCustody']) ? 'distribution'
@@ -166,7 +169,13 @@ export default async function (req) {
       : inActions(['commercialDepositCash','commercialCashiers','registerCustomer','fieldCustomers','commercialPerformance','verifyFieldCustomer','commercialDailySupplies','updateCustomerGps','commercialReturns','recordExpiredReturn','replaceExpiredReturn','saveSale','proposedJournal','approveSale','returnSale','rejectSale']) ? 'commercial'
       : null;
     if (!module && !['employeeDashboard','companySales'].includes(action)) throw new Error('Unknown function action.');
-    if (module) base44.auth.assertModule?.(module);
+    if(approvalActionTargets[action]&&(await base44.auth.staff?.())?.full_access_modules?.includes('approvals'))module='approvals';
+    if(module){
+      const ownCommercial=['saveSale','commercialDepositCash','commercialCashiers','registerCustomer','updateCustomerGps','commercialDailySupplies','submitHandover'].includes(action);
+      const ownOutlet=['submitOutletVisit','submitDeliveryShelfCheck'].includes(action);
+      await selectFeature(module,ownCommercial?'commercial':ownOutlet?'hotesse':action==='driverActivity'?'driver':'admin');
+      base44.auth.assertModule?.(module);
+    }
     if (YOGURT_ACTIONS.includes(action)) return Response.json(await yogurtAction(base44,user,body));
     if (WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action)) return Response.json(await warehouseAdjustmentAction(base44,user,body));
     if (ASSET_ACTIONS.includes(action)) return Response.json(await fixedAssetAction(base44,user,body));
@@ -184,7 +193,7 @@ export default async function (req) {
     if (action === 'businessOverview') return Response.json(await businessOverview(base44,user,body));
     if (action === 'accountPosition') return Response.json(await accountPosition(base44, user, body));
     if (action === 'cashFlowReport') return Response.json(await cashFlowReport(base44, user, body));
-    if (action === 'companySales') return Response.json(await companySalesAction(base44, user, body));
+    if (action === 'companySales'){const staff=await base44.auth.staff?.();await selectFeature(staff?.full_access_modules?.includes('sales_reports')?'sales_reports':staff?.full_access_modules?.includes('sales')?'sales':'reports');return Response.json(await companySalesAction(base44, user, body));}
 
 
     if (['loadDispatch', 'returnDispatchStock', 'dispatchReconciliation', 'approveDispatch', 'approveDispatchRequest'].includes(action)) {
@@ -271,10 +280,10 @@ export default async function (req) {
         if (unitPrice < listPrice && role !== 'admin') {
           throw new Error(`${product.name} sells at ${listPrice} XAF — selling below the authorized price needs an authorized discount`);
         }
-        const lineTotal = round2(unitPrice * qty);
         const discount = round2(Math.max(0, listPrice - unitPrice) * qty);
         const taxRate = Number(product.tax_rate) || 0;
-        const taxAmount = round2((lineTotal * taxRate) / 100);
+        const amounts=inclusiveSaleLine(qty,unitPrice,taxRate);
+        const lineTotal=amounts.net,taxAmount=amounts.tax;
         subtotal = round2(subtotal + lineTotal);
         discountTotal = round2(discountTotal + discount);
         taxTotal = round2(taxTotal + taxAmount);
@@ -331,6 +340,7 @@ export default async function (req) {
         location_name: location?.name || '',
         transaction_date: transactionDate,
         payment_type: paymentType,
+        price_includes_vat:true,
         subtotal,
         discount_total: discountTotal,
         tax_total: taxTotal,
@@ -366,6 +376,7 @@ export default async function (req) {
         unit: stockUnit(l.product),
         quantity: l.qty,
         unit_price: l.unitPrice,
+        price_includes_vat:true,
         list_price: l.listPrice,
         discount: l.discount,
         tax_rate: l.taxRate,

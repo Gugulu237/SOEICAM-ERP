@@ -6792,5 +6792,21 @@
   "Company stock - available finished goods": "Stock de l’entreprise - produits finis disponibles",
   "Saved stock location": "Emplacement du stock enregistré",
   "Company stock combines available finished goods automatically, so you do not need to choose a warehouse. Goods already issued to a delivery team remain separate. Each sale deducts stock once and records its actual cost.": "Le stock de l’entreprise regroupe automatiquement les produits finis disponibles, sans choisir un entrepôt. Les marchandises déjà confiées à une équipe de livraison restent séparées. Chaque vente déduit le stock une seule fois et comptabilise son coût réel.",
-  "Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.": "Vérifiez que les produits finis sont approuvés et non périmés. Les marchandises bloquées par la qualité ou déjà sorties pour livraison sont exclues."
+  "Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.": "Vérifiez que les produits finis sont approuvés et non périmés. Les marchandises bloquées par la qualité ou déjà sorties pour livraison sont exclues.",
+  "Choose the employee’s default dashboard. Checked features grant full access to their workflows regardless of job title. Company sales reports remains read-only.": "Choisissez le tableau de bord par défaut. Les fonctionnalités cochées donnent accès à leurs opérations, quel que soit le poste. Les rapports de ventes restent en lecture seule.",
+  "Check a feature to enable its actions for employees in this role. Uncheck it to remove access. Only the General Manager can change role permissions and sign-in identities.": "Cochez une fonctionnalité pour autoriser ses opérations, décochez-la pour retirer l’accès. Seul le directeur général peut modifier les permissions et les identifiants de connexion.",
+  "Ready for sale: {0}": "Prêt à vendre : {0}",
+  "Ready for sale — quantity, quality and expiry verified": "Prêt à vendre : quantité, qualité et date de péremption vérifiées",
+  "Existing quantities and costs are preserved when releasing a counted lot. Select Ready for sale after verifying its quality and printed expiry; otherwise the lot stays on hold.": "La libération conserve les quantités et les coûts existants. Cochez Prêt à vendre après avoir vérifié la qualité et la date de péremption imprimée ; sinon le lot reste bloqué.",
+  "Counted stock marked ready for sale": "Stock compté déclaré prêt à vendre",
+  "Counted materials released for production use": "Matières comptées libérées pour utilisation en production",
+  "Ready for production use: {0}": "Prêt pour la production : {0}",
+  "Ready for production use - quality verified": "Prêt pour la production - qualité vérifiée",
+  "Quantity adjustments record stock and carrying value. They do not create sales.": "Les ajustements enregistrent les quantités et la valeur du stock. Ils ne créent pas de ventes.",
+  "Only finished products can be marked Ready for sale after quality and expiry verification.": "Seuls les produits finis peuvent être déclarés prêts à vendre après vérification de la qualité et de la date de péremption.",
+  "Ingredients and packaging are for production use. New material lots stay on quality hold unless you confirm Ready for production use.": "Les ingrédients et emballages sont destinés à la production. Les nouveaux lots restent bloqués pour contrôle qualité sauf si vous confirmez qu’ils sont prêts pour la production.",
+  "VAT included": "TVA incluse",
+  "VAT included: ": "TVA incluse : ",
+  "Unit price (VAT included)": "Prix unitaire TTC",
+  "Selling prices already include VAT. The total will not have VAT added on top.": "Les prix de vente sont déjà TTC. Aucune TVA supplémentaire ne sera ajoutée au total."
 }

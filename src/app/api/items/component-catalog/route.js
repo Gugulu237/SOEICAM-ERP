@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const timing = requestTiming();
   try {
-    const context = await timing.measure('auth', authenticateRequest);
+    const context = await timing.measure('auth', () => authenticateRequest('inventory'));
     assertEntityAccess(context, 'Product', 'create');
     // Account, vendor and unit lookups do not need to wait for the product read.
     const [catalog, options] = await timing.measure('catalogue', async () => {

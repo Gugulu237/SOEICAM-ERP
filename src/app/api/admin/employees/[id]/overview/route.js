@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(_request, { params }) {
   try {
-    const context = await authenticateRequest();
+    const context = await authenticateRequest('employees');
     if (context.role !== 'admin') throw Object.assign(new Error('Only the General Manager can view employee reports.'), { status: 403 });
     const { id } = await params;
     if (!id || typeof id !== 'string' || id.length > 100) throw Object.assign(new Error('Invalid employee ID.'), { status: 400 });

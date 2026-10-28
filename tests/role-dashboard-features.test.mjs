@@ -70,10 +70,10 @@ test('saved operational grants appear beyond legacy template lists and disappear
   assert.deepEqual(modulesForRole(template,[]),[]);
   assert.equal(permitsWorkspace('/customers',[]),false);
  }
- // Module grants alone never expose people administration or payroll authority.
- assert.ok(!modulesForRole('driver',['admin','employees','payroll']).length);
- assert.equal(canOpenFieldPath('driver','/admin',['admin']),false);
- assert.equal(canOpenFieldPath('driver','/team-workspaces',['employees']),false);
+ // Explicitly selected features are usable across job titles; they do not change the underlying employee identity.
+ assert.ok(modulesForRole('driver',['admin','employees','payroll']).length);
+ assert.equal(canOpenFieldPath('driver','/admin',['admin']),true);
+ assert.equal(canOpenFieldPath('driver','/team-workspaces',['employees']),true);
 });
 
 test('an open employee dashboard and sidebar apply grants and removals from refreshed profiles',async()=>{

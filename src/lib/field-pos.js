@@ -1,3 +1,4 @@
+import {inclusiveSaleLine} from './sale-vat.js';
 export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 export const roundQuantity = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
 
@@ -31,9 +32,9 @@ export function saleTotals(lines, stock) {
   let tax = 0;
   for (const line of lines) {
     const product = stock.find((s) => s.product_id === line.product_id);
-    const amount = roundMoney(roundQuantity(line.quantity) * roundMoney(line.unit_price));
-    subtotal = roundMoney(subtotal + amount);
-    tax = roundMoney(tax + roundMoney(amount * (Number(product?.tax_rate ?? line.tax_rate) || 0) / 100));
+    let amounts;try{amounts=inclusiveSaleLine(roundQuantity(line.quantity),roundMoney(line.unit_price),Number(product?.tax_rate ?? line.tax_rate)||0);}catch{continue;}
+    subtotal=roundMoney(subtotal+amounts.net);
+    tax=roundMoney(tax+amounts.tax);
   }
   return { subtotal, tax, total: roundMoney(subtotal + tax) };
 }
@@ -51,6 +52,7 @@ export function validateSale(form, stock, { isAdmin = false, submit = false } = 
     if (!Number.isFinite(Number(line.quantity)) || roundQuantity(line.quantity) <= 0) return `Enter a quantity for ${product.name}.`;
     if (roundQuantity(line.quantity) > product.quantity) return `Only ${product.quantity} available for ${product.name}.`;
     if (!Number.isFinite(Number(line.unit_price)) || roundMoney(line.unit_price) <= 0) return `Enter a valid price for ${product.name}.`;
+    const vatRate=Number(product.tax_rate ?? line.tax_rate ?? 0);if(!Number.isFinite(vatRate)||vatRate<0||vatRate>100)return 'Review the product VAT rate before recording this sale.';
     if (!isAdmin && roundMoney(line.unit_price) < roundMoney(product.selling_price)) return `The price for ${product.name} is below its authorized selling price.`;
   }
   const { total } = saleTotals(form.lines, stock);

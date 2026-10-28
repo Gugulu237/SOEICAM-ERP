@@ -24,12 +24,14 @@ export function normalizeRole(value) {
   const role = String(value || '').trim().toLowerCase();
   return ROLE_KEYS.includes(role) ? role : Object.hasOwn(aliases, role) ? aliases[role] : '';
 }
-export function effectiveRole(user, employee) {
+export const FEATURE_AUTHORITY=Symbol.for('soeicam.verified-feature-authority');
+export function principalRole(user, employee) {
   if (!user) return null;
   if (String(user.role || '').trim().toLowerCase() === 'admin') return 'admin';
   if (employee?.access_template) return normalizeRole(employee.access_template) || 'employee';
   return normalizeRole(employee?.role) || employee?.role || 'employee';
 }
+export function effectiveRole(user,employee){if(!user)return null;return user?.[FEATURE_AUTHORITY]?.role || employee?.[FEATURE_AUTHORITY]?.role || principalRole(user,employee);}
 // Module/role access. Record attribution, valid states and posting checks are
 // enforced separately by the action handlers.
 export function hasRoleAccess(role, allowed) {

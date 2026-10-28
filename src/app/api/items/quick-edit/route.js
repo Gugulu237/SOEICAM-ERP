@@ -9,7 +9,7 @@ export async function POST(request) {
   const timing = requestTiming();
   try {
     checkOrigin(request);
-    const context = await timing.measure('auth', authenticateRequest);
+    const context = await timing.measure('auth', () => authenticateRequest('inventory'));
     const input = await request.json();
     const saved = await timing.measure('save', () => transaction(() => quickEditItem(context, serviceEntities, input)));
     return timing.respond(Response.json(saved, { headers: { 'Cache-Control': 'private, no-store' } }));

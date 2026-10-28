@@ -123,10 +123,10 @@ test('a late supply audit failure rolls back order, invoice, stock, customer bal
 
 test('tax and discounts post the reviewed total without a rounding drift',async()=>{
   const f=await setup();await f.s.Product.update('product-a',{tax_rate:19.25});
-  const result=await f.call({...f.body,expectedTotal:1073.24,lines:[{product_id:'product-a',quantity:3,unit_price:333.33,discount_pct:10}]});
+  const result=await f.call({...f.body,expectedTotal:899.99,lines:[{product_id:'product-a',quantity:3,unit_price:333.33,discount_pct:10}]});
   const invoice=await f.s.Invoice.get(result.invoiceId),line=(await f.s.InvoiceLine.list())[0];
-  assert.equal(line.discount_amount,100);assert.equal(line.tax_amount,173.25);assert.equal(line.total,1073.24);
-  assert.equal(invoice.subtotal,899.99);assert.equal(invoice.total,1073.24);
+  assert.equal(line.discount_amount,100);assert.equal(line.tax_amount,145.28);assert.equal(line.total,899.99);
+  assert.equal(invoice.subtotal,754.71);assert.equal(invoice.total,899.99);
   assert.equal((await f.s.JournalLine.list()).reduce((n,l)=>Math.round((n+l.debit-l.credit)*100)/100,0),0);
 });
 

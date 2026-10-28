@@ -31,7 +31,8 @@ export default function Approvals({ embedded = false, preview = false, onDecisio
   const [typeFilter, setTypeFilter] = useState("all");
   const [rejectTarget, setRejectTarget] = useState(null);
   const navigate = useNavigate();
-  const { user, employee, role } = useCurrentUser();
+  const { user, employee, role, principalRole } = useCurrentUser();
+  const actualGM=(principalRole||role)==='admin';
   const mayDecide=row=>canDecide(row._type,role) && !(row._type==='expense' && role!=='admin' && row.requester_id===employee?.id);
   const { toast } = useToast();
 
@@ -44,7 +45,7 @@ export default function Approvals({ embedded = false, preview = false, onDecisio
     finally { setLoading(false); }
   }
 
-  useEffect(() => { if (role && !preview && (embedded || role !== 'admin')) loadPending(); }, [role, preview, embedded]);
+  useEffect(() => { if (role && !preview && (embedded || !actualGM)) loadPending(); }, [role, actualGM, preview, embedded]);
 
   async function handleApprove(row) {
     if (busyId) return;
@@ -109,7 +110,7 @@ export default function Approvals({ embedded = false, preview = false, onDecisio
     },
   ];
 
-  if (!embedded && role === 'admin') return <Navigate to="/?section=approvals" replace />;
+  if (!embedded && actualGM) return <Navigate to="/?section=approvals" replace />;
   if (preview) return <section className="rounded-2xl border bg-white p-6"><h2 className="text-xl font-semibold">{ui("Approvals")}</h2><p className="mt-2 text-sm text-slate-500">{ui("Open the live General Manager dashboard to review and decide approval requests.")}</p></section>;
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 

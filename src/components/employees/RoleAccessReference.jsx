@@ -15,7 +15,7 @@ import EmployeeRoleDrawer from './EmployeeRoleDrawer';
 import RoleEditorSheet from './RoleEditorSheet';
 const newRole={key:'',label:'',category:'Operations',summary:'',duties:[],template_role:'employee',modules:[...TEMPLATE_MODULES.employee]};
 export default function RoleAccessReference({open,onOpenChange,catalogue,initialRole='',onSaved,embedded=false,employees,onEditEmployee,onInvite,inviting}){
-  useLocaleRender();const {role}=useCurrentUser(),canManage=role==='admin',{toast}=useToast();
+  useLocaleRender();const {principalRole,role}=useCurrentUser(),canManage=(principalRole||role)==='admin',{toast}=useToast();
   const [selectedRole,setSelectedRole]=useState(''),[draft,setDraft]=useState(null),[layout,setLayout]=useState(null),[dirty,setDirty]=useState(false),[saving,setSaving]=useState(false),[savedCatalogue,setSavedCatalogue]=useState(null);
   const current=savedCatalogue&&savedCatalogue.revision>=(catalogue?.revision||0)?savedCatalogue:catalogue;
   const definitions=useMemo(()=>roleDefinitions(current,ROLE_DEFINITIONS),[current]),selected=definitions.find(r=>r.key===selectedRole),currentLayout=normalizeOrganigramLayout(definitions,dirty?layout:current?.layout);

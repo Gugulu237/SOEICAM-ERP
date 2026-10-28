@@ -1,4 +1,4 @@
-import { ROLE_KEYS } from './roles.js';
+import { ROLE_KEYS, FEATURE_AUTHORITY } from './roles.js';
 import { requireStaff } from './field-ops.js';
 import { COMPANY_SALES_ROLES } from '../../lib/operations-access.js';
 import { readRecords } from './commercial-workspace.js';
@@ -12,7 +12,7 @@ export async function companySalesAction(base44, user, body) {
   const modules=role==='admin'?catalogue?.roles?.admin?.modules:employee?.allowed_modules;
   const reports=modules?.includes('sales_reports');
   if(!reports&&!COMPANY_SALES_ROLES.includes(role)&&!(role==='warehouse_manager'&&modules?.includes('sales')))throw new Error('Company sales reports are restricted to roles with the sales reporting permission.');
-  base44.auth?.assertModule?.(reports?'sales_reports':'sales');
+  base44.auth?.assertModule?.(user[FEATURE_AUTHORITY]?.module==='reports'?'reports':reports?'sales_reports':'sales');
   if (role !== 'admin' && employee?.status !== 'active') throw new Error('An active sales staff account is required');
   const { from, to } = periodDates(body.from, body.to);
   if (Date.parse(to) - Date.parse(from) > 366 * 86400000) throw new Error('Choose a sales period of up to one year');

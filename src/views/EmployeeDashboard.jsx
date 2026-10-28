@@ -64,7 +64,7 @@ export default function EmployeeDashboard() {
   if (hub) {
     if (!['admin','cashier'].includes(role)) return <Navigate to="/" replace />;
     const canPayroll=!allowedModules||allowedModules.includes('payroll');
-    const sections=[...(role==='admin'?[['people','Employees'],['roles','Roles & organigram'],['reports','Reports & dashboards']]:[]),...(canPayroll?[['payroll','Payroll']]:[])];
+    const sections=[...(role==='admin'&&(!allowedModules||allowedModules.includes('employees'))?[['people','Employees'],['roles','Roles & organigram'],['reports','Reports & dashboards']]:[]),...(canPayroll?[['payroll','Payroll']]:[])];
     const requested = params.get('role');
     const section = role==='cashier'?'payroll':sections.some(([key])=>key===params.get('section'))?params.get('section'):requested?'workspace':'people';
     const profiles = { ...(catalogue?catalogue.roles:defaultProfiles),admin:{...gm,...(catalogue?.roles?.admin || defaultProfiles.admin)} };

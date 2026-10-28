@@ -60,10 +60,10 @@ test('run availability respects the remaining loaded quantity cap even when vehi
     'a depleted run cannot offer unrelated or adjusted vehicle stock');
 });
 
-test('cash total includes tax; line rounding matches the field-sale endpoint', () => {
-  assert.deepEqual(saleTotals(form().lines, [product]), { subtotal: 2000, tax: 385, total: 2385 });
+test('listed prices include VAT; line rounding matches the field-sale endpoint', () => {
+  assert.deepEqual(saleTotals(form().lines, [product]), { subtotal: 1677.15, tax: 322.85, total: 2000 });
   const lines = [{ product_id: 'p1', quantity: 1.3334, unit_price: 99.995 }, { product_id: 'p2', quantity: 3, unit_price: 0.335 }];
-  assert.deepEqual(saleTotals(lines, [product, { product_id: 'p2', tax_rate: 5 }]), { subtotal: 134.32, tax: 25.71, total: 160.03 });
+  assert.deepEqual(saleTotals(lines, [product, { product_id: 'p2', tax_rate: 5 }]), { subtotal: 112.75, tax: 21.57, total: 134.32 });
 });
 
 test('quantity, zero/negative/invalid prices and duplicate lines cannot be saved', () => {
@@ -82,14 +82,14 @@ test('quantity, zero/negative/invalid prices and duplicate lines cannot be saved
 
 test('partial cash, credit and receipt requirements are checked without changing payment type', () => {
   const valid = form();
-  for (const amount_collected of ['', 0, 1200, 2385]) assert.equal(validateSale({ ...valid, amount_collected }, [product]), '');
-  for (const amount_collected of [-1, 2385.01, 'invalid']) assert.notEqual(validateSale({ ...valid, amount_collected }, [product]), '');
+  for (const amount_collected of ['', 0, 1200, 2000]) assert.equal(validateSale({ ...valid, amount_collected }, [product]), '');
+  for (const amount_collected of [-1, 2000.01, 'invalid']) assert.notEqual(validateSale({ ...valid, amount_collected }, [product]), '');
   assert.notEqual(validateSale(valid, [product], { submit: true }), '');
   assert.notEqual(validateSale({ ...valid, receipt_reference: 'R-TEST' }, [product], { submit: true }), '');
   const ready = { ...valid, receipt_reference: 'R-TEST', receipt_file_uris: ['private/receipt.jpg'] };
   for (const amount_collected of ['', null, undefined, 0]) assert.notEqual(validateSale({ ...ready, amount_collected }, [product], { submit: true }), '',
     'cash submission must explicitly report a positive collected amount');
-  for (const amount_collected of [1200, 2385]) assert.equal(validateSale({ ...ready, amount_collected }, [product], { submit: true }), '');
+  for (const amount_collected of [1200, 2000]) assert.equal(validateSale({ ...ready, amount_collected }, [product], { submit: true }), '');
   for (const payment_type of ['', null, 'other']) assert.notEqual(validateSale({ ...ready, payment_type, amount_collected: 1200 }, [product], { submit: true }), '');
   assert.equal(validateSale({ ...ready, payment_type: 'credit', amount_collected: 0 }, [product], { submit: true }), '');
   assert.notEqual(validateSale({ ...ready, payment_type: 'credit', amount_collected: 1200 }, [product], { submit: true }), '');
@@ -113,4 +113,10 @@ test('all cursor pages are loaded and malformed pagination fails visibly', async
   await assert.rejects(readAll({ filter: async () => ({ items: [], has_more: true }) }));
   await assert.rejects(readAll({ filter: async () => ({ items: [], has_more: true, next_cursor: 'same' }) }));
   await assert.rejects(readAll({ filter: async () => ({ unexpected: [] }) }));
+});
+
+
+test('invalid editable quantities and VAT rates do not crash the preview or permit a sale',()=>{
+ const invalid={...form(),lines:[{product_id:'p1',quantity:-1,unit_price:1000}]};assert.doesNotThrow(()=>saleTotals(invalid.lines,[product]));assert.notEqual(validateSale(invalid,[product]),'');
+ assert.notEqual(validateSale(form(),[{...product,tax_rate:-1}]),'');
 });

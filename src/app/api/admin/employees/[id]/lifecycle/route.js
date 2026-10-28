@@ -6,7 +6,7 @@ export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export async function POST(request,{params}) {
   try{
-    checkOrigin(request);const context=await authenticateRequest();
+    checkOrigin(request);const context=await authenticateRequest('employees');
     if(context.role!=='admin')throw Object.assign(Error('Only the General Manager can remove or restore employees.'),{status:403});
     const text=await request.text();if(text.length>4000)throw Object.assign(Error('Employee request is too large.'),{status:413});
     const body=JSON.parse(text),{id}=await params;
