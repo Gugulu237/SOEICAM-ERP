@@ -142,3 +142,12 @@ test('the quick edit HTTP route checks origin/authentication and uses the checke
     assert.deepEqual(globalThis.__quickRoute.calls, ['origin', 'auth', 'transaction']); assert.equal(writes.length, 1); assert.deepEqual(writes[0].changes, { selling_price: 625 });
   } finally { delete globalThis.__quickRoute; }
 });
+
+
+test('material repricing refreshes registered dependent assemblies recursively while stock layers and custom costs stay unchanged',async()=>{
+ const milk={...legacy},base={...assembly,id:'base',components:[{product_id:milk.id,quantity:0.5,unit:'kg',unit_cost:1000,cost_source:'registered'}]},parent={...assembly,id:'parent',components:[{product_id:'base',quantity:2,unit:'ea',unit_cost:100,cost_source:'registered'},{product_id:milk.id,quantity:0.1,unit:'kg',unit_cost:900,cost_source:'manual'}]};
+ const {stores,balances}=fixture([milk,base,parent]);const update=stores.Product.update;stores.Product.update=async(id,changes)=>{const saved=await update(id,changes);Object.assign([milk,base,parent].find(p=>p.id===id),changes);return saved;};balances.push({id:'stock-milk',product_id:milk.id,quantity:10,total_value:10000,unit_cost:1000},{id:'stock-base',product_id:base.id,quantity:5,total_value:500,unit_cost:100});
+ const before=structuredClone(balances);
+ const updated=await quickEditItem(admin,stores,{id:milk.id,changes:{purchase_price:30000}});
+ assert.equal(updated.current_cost,1000);assert.equal(updated.standard_cost,1200);assert.equal(base.standard_cost,600);assert.equal(base.current_cost,100);assert.equal(parent.standard_cost,1290);assert.equal(parent.components[1].unit_cost,900);assert.deepEqual(balances,before);
+});

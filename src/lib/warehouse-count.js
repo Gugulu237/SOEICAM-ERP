@@ -11,7 +11,7 @@ export function warehouseCountState(row) {
 
 // Known legacy value is never discarded silently. Explicit physical counts and
 // verified costs establish the new value; the entire difference reaches GL.
-export function warehouseCountVariance(row,counted,{verifiedCost,confirmed=false}={}) {
+export function warehouseCountVariance(row,counted,{verifiedCost,confirmed=false,useCurrentCost=false}={}) {
   const quantity=countedQuantity(counted),state=warehouseCountState(row);
   if(state.count_issue)throw Error(state.count_issue);
   if(state.requires_reconciliation && !confirmed)throw Error('Confirm the accounting correction for this lot before saving.');
@@ -20,9 +20,14 @@ export function warehouseCountVariance(row,counted,{verifiedCost,confirmed=false
     if(!['string','number'].includes(typeof verifiedCost) || String(verifiedCost).trim()==='' || !Number.isFinite(Number(verifiedCost)) || Number(verifiedCost)<=0)throw Error('Enter a verified positive unit cost for the physical stock.');
     cost=Number(verifiedCost);
   }
+  if(useCurrentCost){
+    if(!Number.isFinite(Number(row.configured_unit_cost)) || Number(row.configured_unit_cost)<0)throw Error('Reload the current item cost before adjusting stock.');
+    cost=Number(row.configured_unit_cost);
+    if(quantity>0 && cost<=0)throw Error('Set a positive item cost before valuing counted stock.');
+  }
   const difference=roundQuantity(quantity-Number(row.book_quantity));
   if(!state.requires_reconciliation && difference!==0 && !(cost>0))throw Error('Establish the item carrying cost before changing this lot quantity.');
-  const after=!state.requires_reconciliation && difference===0?Number(row.book_value):quantity===0?0:roundMoney(quantity*cost);
+  const after=!state.requires_reconciliation && !useCurrentCost && difference===0?Number(row.book_value):quantity===0?0:roundMoney(quantity*cost);
   if(!Number.isSafeInteger(Math.round(after*100)))throw Error('The count value exceeds supported accounting precision');
-  return {counted_quantity:quantity,difference,value_after:after,value_difference:roundMoney(after-Number(row.book_value)),verified_unit_cost:state.requires_reconciliation?cost:undefined};
+  return {counted_quantity:quantity,difference,value_after:after,value_difference:roundMoney(after-Number(row.book_value)),applied_unit_cost:cost,verified_unit_cost:state.requires_reconciliation?cost:undefined};
 }

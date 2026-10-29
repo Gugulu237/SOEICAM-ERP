@@ -6833,5 +6833,14 @@
   "Outside company stock": "Hors stock disponible de l’entreprise",
   "On quality hold": "Bloqué pour contrôle qualité",
 "Available for sale: {0}": "Disponible à la vente : {0}",
-"Available for production use: {0}": "Disponible pour la production : {0}"
+"Available for production use: {0}": "Disponible pour la production : {0}",
+"Current item cost": "Coût actuel de l’article",
+"Use current item cost for {0}": "Utiliser le coût actuel pour {0}",
+"Value this count at the current item cost": "Valoriser ce comptage au coût actuel de l’article",
+"Value after count": "Valeur après comptage",
+"When current item cost is selected, the counted value is quantity multiplied by that cost. Any revaluation is included in the posted adjustment.": "Lorsque le coût actuel est sélectionné, la valeur comptée est la quantité multipliée par ce coût. Toute réévaluation est incluse dans l’écriture d’ajustement.",
+"Stock changed during this count. Reload quantities before saving.": "Le stock a changé pendant ce comptage. Rechargez les quantités avant d’enregistrer.",
+"The item unit changed. Reload quantities before saving.": "L’unité de l’article a changé. Rechargez les quantités avant d’enregistrer.",
+"Accounting or the General Manager must approve changing the stock valuation basis.": "La comptabilité ou le Directeur général doit autoriser le changement de base de valorisation du stock.",
+"Applied unit cost": "Coût unitaire appliqué"
 }

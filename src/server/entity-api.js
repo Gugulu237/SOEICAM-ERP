@@ -1,3 +1,4 @@
+import {refreshAssemblyPrices} from './domain/assembly-price-sync.js';
 import {entityFeatureContext} from './feature-access.js';
 import {preparePostingRule} from './domain/posting-rule-definition.js';
 import {prepareTreasuryAccount} from './domain/treasury-definition.js';
@@ -100,7 +101,7 @@ export async function entityOperation(context,name,operation,args = []) {
         const record=await store.update(row.id, authenticatedRecordChanges(context,name,definition,row));
         if(name==='TreasuryAccount')await audit({entities:serviceEntities},{action:'update_treasury_account',module:'accounting',entityType:name,entityId:record.id,userId:context.user.id,description:'Updated treasury settings for '+record.name});
         if(name==='PostingRule')await audit({entities:serviceEntities},{action:'update_posting_rule',module:'accounting',entityType:name,entityId:record.id,userId:context.user.id,description:'Changed '+record.rule_key+' from '+row.account_number+' to '+record.account_number});
-        if(name==='Product')await recordItemMetadataChange(serviceEntities,context,row,record);
+        if(name==='Product'){await recordItemMetadataChange(serviceEntities,context,row,record);if(['purchase_price','components','unit_of_measure','inventory_type','standard_cost','current_cost'].some(k=>Object.hasOwn(definition,k)))await refreshAssemblyPrices(serviceEntities,record.id);}
         records.push(record);
       }
       return operation === 'update' ? records[0] : { updated: records.length, modifiedCount: records.length, modified_count: records.length, records };

@@ -1,6 +1,6 @@
 import { validateAssemblyYieldChanges } from '../../lib/assembly-yield.js';
 import { readRecords } from './commercial-workspace.js';
-import { itemUnits, stockUnit } from '../../lib/item-units.js';
+import { itemUnits, stockUnit, itemUnitCost } from '../../lib/item-units.js';
 import { ITEM_ACCOUNT_FIELDS, availableItemAccount } from '../../lib/item-accounts.js';
 import { isAssemblyInventoryType } from '../../lib/item-types.js';
 import { itemPurchasePrice } from '../../lib/item-quick-edit.js';
@@ -88,20 +88,22 @@ export async function validateItemDefinition(stores, input, existing = null, { p
   }
   const changedUnit = existing && Object.hasOwn(input, 'unit_of_measure') && input.unit_of_measure !== stockUnit(existing);
   if (changedUnit && !isAssemblyInventoryType(type) && !Object.hasOwn(result, 'purchase_price')) {
+    if(allowUnitCorrection){
+      if(!Number.isFinite(Number(existing.purchase_to_storage_factor??1))||Number(existing.purchase_to_storage_factor??1)<=0)throw new Error('Review the existing unit conversions before correcting this item');
+      result.purchase_price=itemUnitCost(existing);
+    }
     const inferredPrice = itemPurchasePrice(existing);
     if (inferredPrice == null) throw new Error('Review this item\'s purchase cost and conversion before changing its Unit of Measure');
-    if (existing.purchase_price == null) result.purchase_price = inferredPrice;
+    if (!Object.hasOwn(result,'purchase_price') && existing.purchase_price == null) result.purchase_price = inferredPrice;
   }
   if (!isAssemblyInventoryType(type) && (!existing || changedUnit || (Object.hasOwn(result, 'purchase_price') && Number(result.purchase_price) !== Number(existing.purchase_price)))) {
     const balances = existing && type !== 'service' ? await readRecords(stores.StockBalance, { product_id: existing.id }) : [];
-    if (!balances.some(balance => Number(balance.quantity) !== 0)) {
-      const factor = existing && (!input.unit_of_measure || input.unit_of_measure === stockUnit(existing)) ? Number(existing.purchase_to_storage_factor || 1) : 1;
-      if (!Number.isFinite(factor) || factor <= 0) throw new Error('Review this item’s purchase conversion before changing its cost');
-      const purchaseCost = Number(result.purchase_price ?? existing?.purchase_price ?? result.current_cost ?? existing?.current_cost ?? 0);
-      if (!Number.isFinite(purchaseCost) || purchaseCost < 0) throw new Error('Review this item\'s purchase cost before changing its Unit of Measure');
-      result.current_cost = Math.round(purchaseCost / factor * 1e6) / 1e6;
-      result.standard_cost = result.current_cost;
-    }
+    const factor = existing && (!input.unit_of_measure || input.unit_of_measure === stockUnit(existing)) ? Number(existing.purchase_to_storage_factor || 1) : 1;
+    if (!Number.isFinite(factor) || factor <= 0) throw new Error('Review this item’s purchase conversion before changing its cost');
+    const purchaseCost = Number(result.purchase_price ?? existing?.purchase_price ?? result.current_cost ?? existing?.current_cost ?? 0);
+    if (!Number.isFinite(purchaseCost) || purchaseCost < 0) throw new Error('Review this item\'s purchase cost before changing its Unit of Measure');
+    result.standard_cost = Math.round(purchaseCost / factor * 1e6) / 1e6;
+    if(!balances.some(balance => Number(balance.quantity) !== 0))result.current_cost = result.standard_cost;
   }
   return result;
 }

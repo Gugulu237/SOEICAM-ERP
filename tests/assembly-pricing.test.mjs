@@ -35,3 +35,20 @@ test('catalogue watching refreshes on focus and visible intervals, pauses hidden
   tick();await Promise.resolve();assert.equal(calls,3);
   stop();target.dispatchEvent(new Event('focus'));await Promise.resolve();assert.equal(calls,3);assert.ok(cleared);
 });
+
+
+test('milk purchase-price changes override old carrying costs in nested assembly estimates and preserve manual overrides',()=>{
+ const milk={id:'milk',name:'Milk',inventory_type:'raw_material',unit_of_measure:'kg',purchase_unit:'bag',purchase_to_storage_factor:25,purchase_price:30000,current_cost:1000};
+ const base={id:'base',name:'Yogurt base',inventory_type:'assembly',unit_of_measure:'ea',standard_cost:500,current_cost:450,components:[{product_id:'milk',quantity:0.5,unit:'kg',unit_cost:1000,cost_source:'registered'}]};
+ const parent=[{product_id:'base',quantity:2,unit:'ea',unit_cost:500,cost_source:'registered'},{product_id:'milk',quantity:0.1,unit:'kg',unit_cost:900,cost_source:'manual'}];
+ assert.equal(assemblyEstimate(base.components,[milk,base]),600);assert.equal(assemblyEstimate(parent,[milk,base]),1290);assert.equal(base.current_cost,450);assert.equal(milk.current_cost,1000);
+ assert.equal(assemblyEstimate([{product_id:'milk',quantity:500,unit:'g',unit_cost:1}],[milk]),600);
+});
+
+test('catalogue mutations notify same-tab and cross-tab watchers without requiring focus',async()=>{
+ const target=new EventTarget(),document=new EventTarget();document.visibilityState='visible';let count=0;
+ const stop=watchItemCatalogue(()=>count++,{target,document,interval:0});
+ target.dispatchEvent(new Event('soeicam:item-catalogue-changed'));await Promise.resolve();assert.equal(count,1);
+ const event=new Event('storage');Object.assign(event,{key:'soeicam:item-catalogue-revision'});target.dispatchEvent(event);await Promise.resolve();assert.equal(count,2);
+ stop();target.dispatchEvent(new Event('soeicam:item-catalogue-changed'));await Promise.resolve();assert.equal(count,2);
+});

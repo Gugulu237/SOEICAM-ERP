@@ -1,3 +1,5 @@
+import {pricedAssemblyProducts} from '../../lib/assembly-pricing.js';
+import {priceComponent} from '../../lib/assembly-components.js';
 import { readRecords } from './commercial-workspace.js';
 import { productComponentType, validateComponentNumbers, componentLineCost, assemblyCost } from '../../lib/assembly-components.js';
 import { isAssemblyInventoryType } from '../../lib/item-types.js';
@@ -7,7 +9,7 @@ import { itemAttributes } from '../../lib/item-attributes.js';
 export async function componentCatalog(stores) {
   const [products, assets] = await Promise.all([readRecords(stores.Product), readRecords(stores.FixedAsset)]);
   const pick = (row, fields) => Object.fromEntries(fields.map(key => [key, row[key]]));
-  return { products: products.filter(row=>!row.item_removed_at).map(row => ({ ...pick(row, ['id', 'sku', 'name', 'inventory_type', 'is_active', 'unit_of_measure', 'storage_unit', 'purchase_unit', 'production_unit', 'sales_unit', 'purchase_price', 'purchase_to_storage_factor', 'storage_to_production_factor', 'storage_to_sales_factor', 'selling_price', 'updated_date', 'current_cost', 'standard_cost', 'components', 'image_url', 'size', 'flavor', 'material_group', 'category', 'product_family', 'configuration_status']), attributes:itemAttributes(row) })),
+  return { products: pricedAssemblyProducts(products).filter(row=>!row.item_removed_at).map(row => ({ ...pick(row, ['id', 'sku', 'name', 'inventory_type', 'is_active', 'unit_of_measure', 'storage_unit', 'purchase_unit', 'production_unit', 'sales_unit', 'purchase_price', 'purchase_to_storage_factor', 'storage_to_production_factor', 'storage_to_sales_factor', 'selling_price', 'updated_date', 'current_cost', 'standard_cost', 'components', 'image_url', 'size', 'flavor', 'material_group', 'category', 'product_family', 'configuration_status']), attributes:itemAttributes(row) })),
     assets: assets.map(row => pick(row, ['id', 'asset_number', 'name', 'category', 'location', 'status'])) };
 }
 
@@ -113,7 +115,10 @@ export async function validateProductComponents(stores, input, existing = null) 
     completed.add(id);
   };
   for (const row of checked) if (row.product_id) visit(row.product_id, new Set());
-  const total = assemblyCost(checked);
+  const liveProducts=new Map(pricedAssemblyProducts([...productCache.values()].filter(Boolean)).map(p=>[p.id,p]));
+  const liveComponents=checked.map(row=>priceComponent(row,liveProducts.get(row.product_id)));
+  const total = assemblyCost(liveComponents);
   if (!Number.isSafeInteger(Math.round(total * 100))) throw new Error('The assembly cost is too large');
-  return { ...input, components: checked, standard_cost: total, current_cost: total };
+  const stocked=existing?.id && stores.StockBalance ? (await readRecords(stores.StockBalance,{product_id:existing.id})).some(b=>Number(b.quantity)!==0) : false;
+  return { ...input, components: liveComponents, standard_cost: total, current_cost: stocked?existing.current_cost:total };
 }

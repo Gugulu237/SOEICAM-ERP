@@ -1,3 +1,4 @@
+import {itemUnitCost} from '../../lib/item-units.js';
 import {verifiedOpeningDocument} from './opening-payments.js';
 import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, audit } from './field-ops.js';
@@ -35,7 +36,7 @@ export async function purchaseWorkspace(client, user, body) {
     const supplier = suppliers.find(v => v.id === (order?.supplier_id || body.supplierId));
     return { ...base, order, supplier: supplier && pick(supplier, 'id name email is_active supplier_items payment_terms_days'),
       suppliers: suppliers.filter(v => v.is_active !== false || v.id === order?.supplier_id).map(v => pick(v, 'id name is_active supplier_items')),
-      products: products.map(p => ({ ...pick(p, 'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days'), unit: stockUnit(p), cost: Number(p.current_cost || (p.purchase_unit && p.purchase_unit !== stockUnit(p) ? p.standard_cost : p.purchase_price) || p.standard_cost || 0) })),
+      products: products.map(p => ({ ...pick(p, 'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days'), unit: stockUnit(p), cost: itemUnitCost(p) })),
       warehouses: warehouses.filter(w => !['vehicle', 'commercial_custody', 'quarantine'].includes(w.warehouse_type)).map(w => pick(w, 'id name warehouse_type')),
       orderLines: lines, requires_supplier_split: !!order && lines.some(l => l.supplier_id && l.supplier_id !== order.supplier_id),
     };

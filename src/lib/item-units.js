@@ -25,11 +25,15 @@ export function unitFactor(from, to) {
   return a[1] / b[1];
 }
 export const compatibleUnits = (units, base) => units.filter(unit => { try { unitFactor(unit.code, base); return true; } catch { return false; } });
+// Configured cost is used for new purchases, counts and estimates. StockBalance
+// remains the authority for the carrying value of goods already on hand.
 export function itemUnitCost(item) {
-  if (Number(item.current_cost) > 0) return Number(item.current_cost);
-  if (item.purchase_price == null) return Number(item.standard_cost ?? 0);
+  if (['assembly','finished_product'].includes(item.inventory_type)) return Number(item.components?.length ? item.standard_cost ?? item.current_cost ?? 0 : item.current_cost ?? item.standard_cost ?? 0);
+  if (item.purchase_price == null) return Number(item.current_cost ?? item.standard_cost ?? 0);
   const factor = Number(item.purchase_to_storage_factor ?? 1);
   if (!Number.isFinite(factor) || factor <= 0) throw new Error('Review this item\'s purchase conversion before using its component cost');
-  return Number(item.purchase_price) / factor;
+  const price = Number(item.purchase_price);
+  if (!Number.isFinite(price) || price < 0) throw new Error('Review this item\'s configured purchase cost');
+  return Math.round(price / factor * 1e6) / 1e6;
 }
 export const componentCostInUnit = (item, unit) => Math.round(itemUnitCost(item) * unitFactor(unit, stockUnit(item)) * 1e6) / 1e6;

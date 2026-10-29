@@ -141,3 +141,22 @@ test('existing stock correction keeps rejected lots unselected and requires expl
  const draw=()=>{r.beforeRender();return render('correction',{});};
  try{draw();await r.flush();draw();assert.equal(element(r,'input','Correct existing lot OLD-1').checked,false);element(r,'input','Correct existing lot OLD-1').onChange({target:{checked:true}});draw();assert.equal(button(r,'Correct selected existing stock').disabled,true);element(r,'input','Confirm rejected existing stock is usable').onChange({target:{checked:true}});draw();assert.equal(button(r,'Correct selected existing stock').disabled,false);await button(r,'Correct selected existing stock').onClick();const body=calls.find(c=>c.action==='correctExistingStock');assert.equal(body.confirm_rejected_stock,true);assert.deepEqual(body.rows,[{id:'old-stock',fingerprint:'checked'}]);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
+
+
+test('admin count previews quantity times the current configured cost and submits the reviewed valuation basis',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
+ const priced={...workspace,can_reconcile_value:true,rows:[{...workspace.rows[0],configured_unit_cost:12}]};
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?priced:postedReceipt(body,'JV-PRICE')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try{draw();await r.flush();draw();assert.equal(element(r,'input','Use current item cost for Milk powder').checked,true);element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'NEW-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Counted stock at updated milk cost'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});const preview=draw();assert.match(preview,/-4/);assert.match(preview,/Value after count/);assert.match(preview,/96/);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.find(c=>c.action==='postWarehouseAdjustment').rows[0].use_current_cost,true);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+
+test('a live material price refresh preserves the typed count and updates its value and save fingerprint',async()=>{
+ const render=await renderer(),r=runtime(),calls=[],beforeWindow=globalThis.window,beforeDocument=globalThis.document;
+ const target=new EventTarget();target.setInterval=()=>1;target.clearInterval=()=>{};const document=new EventTarget();document.visibilityState='visible';globalThis.window=target;globalThis.document=document;globalThis.__adjustmentUI=r;
+ let price=10;
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,can_reconcile_value:true,rows:[{...workspace.rows[0],configured_unit_cost:price,fingerprint:'price-'+price}]}:postedReceipt(body,'JV-LIVE')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try{draw();await r.flush();draw();await r.flush();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'LIVE-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Physical count with latest material price'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});draw();price=12;target.dispatchEvent(new Event('soeicam:item-catalogue-changed'));await r.flush();draw();assert.equal(element(r,'input','Physical quantity for Milk powder').value,'8');await button(r,'Save quantity adjustment').onClick();const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(saved.rows[0].fingerprint,'price-12');assert.equal(saved.rows[0].counted_quantity,8);assert.equal(saved.rows[0].use_current_cost,true);}finally{r.cleanup();globalThis.window=beforeWindow;globalThis.document=beforeDocument;delete globalThis.__adjustmentUI;}
+});

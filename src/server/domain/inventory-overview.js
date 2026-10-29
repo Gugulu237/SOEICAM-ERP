@@ -1,3 +1,4 @@
+import {pricedAssemblyProducts} from '../../lib/assembly-pricing.js';
 import { assertEntityAccess, recordScope, visibleRecord } from '../access.js';
 import { assertModule } from './role-catalogue.js';
 import { readRecords } from './commercial-workspace.js';
@@ -16,5 +17,5 @@ export async function inventoryOverview(context, stores) {
   const records = await Promise.all(names.map(async (name, index) => (await readRecords(stores[name], scopes[index])).map(row => visibleRecord(context, name, row))));
   let canManageItems=false;
   try{assertModule(context,'inventory');assertEntityAccess(context,'Product','update');canManageItems=true;}catch(error){if(error.status!==403)throw error;}
-  return { products:records[0].filter(p=>!p.item_removed_at), removedProducts:canManageItems?records[0].filter(p=>p.item_removed_at):[], balances:records[1], warehouses:records[2], vehicles:records[3]||[] };
+  return { products:pricedAssemblyProducts(records[0]).filter(p=>!p.item_removed_at), removedProducts:canManageItems?records[0].filter(p=>p.item_removed_at):[], balances:records[1], warehouses:records[2], vehicles:records[3]||[] };
 }

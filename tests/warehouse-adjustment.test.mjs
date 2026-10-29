@@ -291,3 +291,27 @@ test('opening and adjusted stock quality and expiry cannot be changed through th
  const context={user:{id:'gm',role:'admin'},role:'admin',employee:null};
  for(const marker of [{opening_batch_id:'OPEN-1'},{stock_origin:'adjustment'}])for(const change of [{qc_status:'rejected'},{expiry_date:'2026-10-29'},{stock_origin:'manufacturing'}])assert.throws(()=>guardMutation(context,'StockBalance','update',change,{...marker,id:'existing'}),/checked/);
 });
+
+
+test('reviewed current-price count sets quantity and value together and posts the entire value difference',async()=>{
+ const f=await setup(),s=f.entities;await s.Employee.update('cashier',{role:'admin'});await s.Product.update(f.product.id,{purchase_price:12,purchase_to_storage_factor:1});
+ const body=await f.body([8,5]);body.rows=[{...body.rows[0],use_current_cost:true}];const saved=await f.call(body),b=await s.StockBalance.get(f.lots[0].id);
+ assert.equal(b.quantity,8);assert.equal(b.total_value,96);assert.equal(b.unit_cost,12);assert.equal(saved.value_difference,-4);assert.equal((await s.Account.get(f.inventory.id)).balance,146);assert.equal((await s.Account.get('expense')).balance,4);assert.equal(saved.rows[0].applied_unit_cost,12);
+ const lines=await s.JournalLine.list();assert.equal(lines.reduce((n,l)=>n+l.debit-l.credit,0),0);assert.equal((await f.call(body)).reused,true);
+});
+
+test('same-quantity revaluation posts a zero-quantity movement and a balanced value adjustment',async()=>{
+ const f=await setup(),s=f.entities;await s.Employee.update('cashier',{role:'admin'});await s.Product.update(f.product.id,{purchase_price:12});const body=await f.body([10,5]);body.rows=[{...body.rows[0],use_current_cost:true}];
+ const saved=await f.call(body);assert.equal(saved.value_difference,20);assert.equal((await s.StockBalance.get(f.lots[0].id)).total_value,120);const movement=(await s.StockMovement.list()).at(-1);assert.equal(movement.quantity,0);assert.equal(movement.total_value,20);assert.equal(movement.unit_cost,12);
+});
+
+test('changed material prices invalidate adjustment snapshots and warehouse-only roles cannot revalue stock',async()=>{
+ const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{purchase_price:12});const body=await f.body([10,5]);body.rows=[{...body.rows[0],use_current_cost:true}];await assert.rejects(f.call(body),/approve changing/);
+ await s.Employee.update('cashier',{role:'admin'});await s.Product.update(f.product.id,{purchase_price:14});await assert.rejects(f.call(body),/changed since/);assert.equal((await s.JournalEntry.list()).length,0);
+ const workspace=await f.workspace();assert.equal(workspace.items.find(p=>p.id===f.product.id).unit_cost,14);assert.equal(workspace.rows[0].configured_unit_cost,14);
+});
+
+
+test('an empty existing lot takes its configured purchase cost instead of a stale zero carrying-cost cache',async()=>{
+ const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{purchase_price:12,current_cost:0});await s.StockBalance.update(f.lots[0].id,{quantity:0,total_value:0,unit_cost:0});const body=await f.body([2,5]);body.rows=body.rows.slice(0,1);await f.call(body);const b=await s.StockBalance.get(f.lots[0].id);assert.equal(b.quantity,2);assert.equal(b.unit_cost,12);assert.equal(b.total_value,24);
+});

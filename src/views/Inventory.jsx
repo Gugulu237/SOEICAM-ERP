@@ -1,3 +1,4 @@
+import {watchItemCatalogue} from '@/lib/item-catalogue-sync';
 import {businessDate} from '@/lib/business-date';
 import {companySalesWarehouse} from '@/lib/sales-stock';
 
@@ -128,6 +129,8 @@ export default function Inventory() {
     window.addEventListener('focus', refreshVisible); document.addEventListener('visibilitychange', refreshVisible);
     return () => { loadSequence.current++; pendingLoad.current?.abort(); window.clearInterval(timer); window.removeEventListener('focus', refreshVisible); document.removeEventListener('visibilitychange', refreshVisible); };
   }, [loadData]);
+
+  useEffect(()=>watchItemCatalogue(()=>loadData(),{interval:0}),[loadData]);
 
   function loadUnits() {
     if (unitRequest.current) return unitRequest.current;

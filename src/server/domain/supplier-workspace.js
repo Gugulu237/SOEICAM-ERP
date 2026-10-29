@@ -1,3 +1,4 @@
+import {itemUnitCost} from '../../lib/item-units.js';
 import {canUseTreasury,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
 import { requireStaff, round2, round3, nextSequence, postJournal, getRuleAccount, stockReceive, audit } from './field-ops.js';
@@ -86,7 +87,7 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
       return {...pick(supplier,supplierFields),ledger_balance:round2(ledger[supplier.id] || 0),recorded_balance:Number(supplier.balance || 0),balance_difference:round2(Number(supplier.balance || 0)-Number(ledger[supplier.id] || 0)),unpaid_bills:round2(open.reduce((sum,b)=>sum+Number(b.balance),0)),overdue:round2(open.filter(b=>b.due_date && b.due_date<businessDate()).reduce((sum,b)=>sum+Number(b.balance),0)),open_bill_count:open.length};
     });
     const permissions={manage:supplyChain || ['admin','procurement'].includes(role),purchase:supplyChain || ['admin','procurement'].includes(role),receive:supplyChain || ['admin','procurement'].includes(role),pay:['admin','cashier'].includes(role),approve:role==='admin'};
-    const products=await readRecords(s.Product),catalogueProducts=products.filter(supplierMaterial).map(p=>({...pick(p,'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days material_group category attributes flavor size product_family'),unit:stockUnit(p),cost:Number(p.current_cost || (p.purchase_unit && p.purchase_unit!==stockUnit(p)?p.standard_cost:p.purchase_price) || p.standard_cost || 0)}));
+    const products=await readRecords(s.Product),catalogueProducts=products.filter(supplierMaterial).map(p=>({...pick(p,'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days material_group category attributes flavor size product_family'),unit:stockUnit(p),cost:itemUnitCost(p)}));
     const materialIds=new Set(catalogueProducts.map(item=>item.id)),visibleSuppliers=summaries.map(supplier=>({...supplier,supplier_items:supplierItems(supplier).filter(row=>materialIds.has(row.product_id))}));
     if(!body.supplierId)return {suppliers:visibleSuppliers,products:catalogueProducts,permissions,date:businessDate()};
     const supplier=visibleSuppliers.find(v=>v.id===body.supplierId);if(!supplier)throw Error('Supplier not found');

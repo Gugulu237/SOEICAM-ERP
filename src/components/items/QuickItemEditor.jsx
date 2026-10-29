@@ -137,7 +137,7 @@ export default function QuickItemEditor({ item, units = [], unitsLoading = false
           </div>
           <button type="button" onClick={() => changeOpen(false)} disabled={saving} aria-label={ui("Close quick edit")}
             className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-wait disabled:opacity-40"><X size={18} /></button>
-          <QuickItemPanel item={baseItem} draft={draft} choices={choices} unitsLoading={unitsLoading} saving={saving}
+          <QuickItemPanel item={{...baseItem,components:item.components,standard_cost:item.standard_cost,current_cost:item.current_cost,purchase_price:item.purchase_price,selling_price:item.selling_price}} draft={draft} choices={choices} unitsLoading={unitsLoading} saving={saving}
             error={uiMessage(error)} stock={stock} attributeOptions={attributeOptions} formId={formId} dirty={dirty} onChange={change}
             onRefresh={() => setStockVersion(value => value + 1)} onSubmit={save} onCancel={() => changeOpen(false)} />
           {onEditDetails && <div className="border-t px-5 py-3"><Button type="button" variant="outline" disabled={saving} onClick={()=>{changeOpen(false);onEditDetails(item);}}>{ui('Edit all item details')}</Button></div>}

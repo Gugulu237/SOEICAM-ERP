@@ -1,3 +1,4 @@
+import {itemUnitCost} from '../../lib/item-units.js';
 import { fermentationTimes } from '../../lib/fermentation.js';
 import { requireStaff, nextSequence, stockReceive, stockIssue, postJournal, getAccountByNumber, getRuleAccount, audit, round2, round3 } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
@@ -188,8 +189,8 @@ export async function productionAction(client, user, body) {
       const material = await stores.Product.get(row.material_id);
       const unit = material && stockUnit(material);
       const amount = material && round3(Number(row.quantity) * quantity / Number(recipe.batch_output) * unitFactor(row.unit || unit, unit));
-      if (!material || material.is_active === false || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(Number(material.current_cost ?? material.purchase_price ?? material.standard_cost ?? 0))) throw Error('Each recipe component needs an active item, quantity and valid cost');
-      const cost = Number(material.current_cost ?? material.purchase_price ?? material.standard_cost ?? 0);
+      if (!material || material.is_active === false || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(itemUnitCost(material))) throw Error('Each recipe component needs an active item, quantity and valid cost');
+      const cost = itemUnitCost(material);
       if (cost < 0) throw Error('Recipe component costs cannot be negative');
       materials.push({ material_id: material.id, material_name: material.name, standard_quantity: amount, unit, unit_cost: cost, total_cost: round2(amount * cost) });
     }

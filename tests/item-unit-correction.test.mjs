@@ -28,7 +28,7 @@ test('confirmed correction updates stock-facing definitions and outstanding work
   const stock=await s.StockBalance.list(),movements=await s.StockMovement.list(),journal=await s.JournalEntry.list(),lines=await s.JournalLine.list();
   const saved=await quickEditItem(context,s,body);
   for(const key of ['unit_of_measure','storage_unit','purchase_unit','production_unit','sales_unit'])assert.equal(saved[key],'g');
-  assert.equal(saved.current_cost,1000);assert.equal(saved.standard_cost,1000);
+  assert.equal(saved.current_cost,1000);assert.equal(saved.standard_cost,1000);assert.equal(saved.purchase_price,1000,'correcting the label normalizes the old bag price to the unchanged stock-unit basis');
   assert.deepEqual(await s.StockBalance.list(),stock);assert.deepEqual(await s.StockMovement.list(),movements);assert.deepEqual(await s.JournalEntry.list(),journal);assert.deepEqual(await s.JournalLine.list(),lines);
   assert.equal((await s.Product.get('yogurt')).components[0].quantity,0.1);assert.equal((await s.Product.get('yogurt')).components[0].unit_cost,1000);assert.equal((await s.Product.get('yogurt')).components[0].line_cost,100);
   assert.equal((await s.RecipeLine.get('ingredient')).unit,'g');assert.equal((await s.RecipeLine.get('ingredient')).quantity,0.125);assert.equal((await s.RecipeLine.get('old-ingredient')).quantity,125);

@@ -1,3 +1,4 @@
+import {refreshAssemblyPrices} from './assembly-price-sync.js';
 import { YOGURT_YIELD_FIELDS } from '../../lib/assembly-yield.js';
 import { recordScope, guardMutation } from '../access.js';
 import { validateQuickItemChanges } from '../../lib/item-quick-edit.js';
@@ -35,6 +36,7 @@ export async function saveItem(context, stores, input, { quick = false } = {}) {
   const previousStatus={is_active:existing.is_active!==false,configuration_status:existing.configuration_status || ''};
   const saved = await stores.Product.update(existing.id,definition);
   await recordItemMetadataChange(stores,context,existing,saved);
+  if(['purchase_price','components','unit_of_measure','inventory_type','standard_cost','current_cost'].some(k=>Object.hasOwn(definition,k)))await refreshAssemblyPrices(stores,saved.id);
   const nextStatus={is_active:saved.is_active!==false,configuration_status:saved.configuration_status || ''};
   if(JSON.stringify(previousStatus)!==JSON.stringify(nextStatus))await stores.AuditLog.create({action:'change_item_availability',module:'inventory',entity_type:'Product',entity_id:saved.id,user_id:context.user.id,user_name:context.employee?.full_name || context.user.full_name || context.user.id,description:`Updated availability for ${saved.name}`,item_status_before:previousStatus,item_status_after:nextStatus});
   if (correction) await stores.AuditLog.create({id:correction.id,action:'correct_item_unit',module:'inventory',entity_type:'Product',entity_id:existing.id,user_id:context.user.id,description:`Corrected ${existing.name}: ${input.unitChange.fromUnit} to ${input.unitChange.toUnit}`,unit_correction_payload:correction.payload,unit_correction:{mode:'correct_label',from:input.unitChange.fromUnit,to:input.unitChange.toUnit,previous_updated_date:existing.updated_date,previous_units:Object.fromEntries(['purchase_unit','storage_unit','production_unit','sales_unit','purchase_to_storage_factor','storage_to_production_factor','storage_to_sales_factor'].map(k=>[k,existing[k] ?? null])),references}});

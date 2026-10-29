@@ -1,3 +1,4 @@
+import {itemUnitCost} from '@/lib/item-units';
 
 /* localized-interface */
 import { ui, uiMessage } from '@/lib/i18n';
@@ -144,7 +145,7 @@ function LegacyProductionOrderForm({initialOrder=null}) {
       const prod = products[index], unit = prod ? stockUnit(prod) : rl.unit;
       return { material_id: rl.material_id, material_name: prod?.name || rl.material_name,
         standard_quantity: Math.round(rl.quantity * scaleFactor * unitFactor(rl.unit || unit, unit) * 1000) / 1000,
-        unit, unit_cost: Number(prod?.current_cost ?? prod?.purchase_price ?? prod?.standard_cost ?? 0) };
+        unit, unit_cost: prod?itemUnitCost(prod):0 };
     });
     setMaterials(calc);
   }
