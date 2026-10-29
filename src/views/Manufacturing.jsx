@@ -60,7 +60,7 @@ function ManufacturingProduction({section}) {
       readAll(erp.entities.Recipe,{}),
       readAll(erp.entities.Product, { inventory_type: { $in: ['finished_product', 'assembly'] } }),
     ]);
-    setOrders(o); setRecipes(r.filter(recipe=>!recipe.recipe_deleted_at)); setProducts(p);
+    setOrders(o); setRecipes(r.filter(recipe=>!recipe.recipe_deleted_at&&recipe.recipe_kind!=='assembly_build_snapshot')); setProducts(p);
     }catch(error){setLoadError(error.message);}finally{setLoading(false);}
   }
 

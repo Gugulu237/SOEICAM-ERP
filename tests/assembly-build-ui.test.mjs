@@ -8,8 +8,9 @@ let compiled;
 async function renderer(){
   if(compiled)return compiled;
   const mocks={
+    '@/components/shared/ProductThumb':'import React from "react";export const ProductPhoto=({product})=>React.createElement("img",{src:product.image_url||"/product.png",alt:product.name});',
     '@/lib/field-ops':'export const invokeFieldOps=body=>globalThis.__assemblyUI.invoke(body);',
-    '@/lib/item-catalogue-sync':'export const watchItemCatalogue=()=>()=>{};',
+    '@/lib/item-catalogue-sync':'export const watchItemCatalogue=refresh=>{globalThis.__assemblyUI.refreshCatalogue=refresh;return ()=>{};};',
     '@/lib/localization':'export const useLocaleRender=()=>{};',
     '@/lib/router':'import React from "react";export const Link=({to,children,...props})=>React.createElement("a",{href:to,...props},children);',
     '@/components/ui/input':'import React from "react";export const Input=props=>{globalThis.__assemblyUI.capture("input",props,[]);return React.createElement("input",props);};',
@@ -25,29 +26,62 @@ async function renderer(){
   }}]});
   const m={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,m,m.exports);compiled=m.exports.render;return compiled;
 }
-const workspace={can_build:true,products:[{id:'nature',name:'Nature 500g',unit:'ea',shelf_life_days:14}],warehouses:[{id:'cold',name:'Cold Room'}],overhead_accounts:[]};
-const preview={fingerprint:'checked-stock',can_build:true,reasons:[],overhead:0,total_cost:52000,materials:[{product_id:'milk',product_name:'Milk',required:50,available:60,missing:0,unit:'kg'},{product_id:'cups',product_name:'Cups',required:100,available:120,missing:0,unit:'ea'}],outputs:[{product_id:'nature',product_name:'Nature 500g',quantity:100,unit:'ea',expiry_date:'2099-12-31'}]};
+const workspace={inventory_revision:'stock-revision-1',can_build:true,products:[{id:'nature',name:'Nature 500g',unit:'ea',shelf_life_days:14,image_url:'/nature.png'},{id:'strawberry',name:'Strawberry 500g',unit:'ea',shelf_life_days:14,image_url:'/strawberry.png'}],warehouses:[{id:'cold',name:'Cold Room'}],overhead_accounts:[]};
+const preview={inventory_revision:'stock-revision-1',fingerprint:'checked-stock',can_build:true,reasons:[],overhead:0,total_cost:52000,materials:[{product_id:'milk',product_name:'Milk',required:50,available:60,missing:0,unit:'kg'},{product_id:'cups',product_name:'Cups',required:100,available:120,missing:0,unit:'ea'}],outputs:[{product_id:'nature',product_name:'Nature 500g',quantity:100,unit:'ea',expiry_date:'2099-12-31'}]};
 const result={orders:[{id:'built',product_name:'Nature 500g',quantity:100,unit:'ea',batch_number:'B-001',expiry_date:'2099-12-31',total_cost:52000}],journal_number:'JV-BUILD'};
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.elements=[];const capture=r.capture.bind(r);r.capture=(tag,props,children)=>{r.elements.push({tag,props,children});capture(tag,props,children);};r.beforeRender=()=>{before();r.elements=[];};return r;}
 const field=(r,label)=>r.elements.find(e=>e.props?.['aria-label']===label)?.props;
 const button=(r,label)=>r.buttons.find(b=>b.label===label);
 async function selected(r,render){
-  const draw=()=>{r.beforeRender();return render();};draw();await r.flush();draw();await r.flush();
-  field(r,'Assembly product 1').onChange({target:{value:'nature'}});field(r,'Build quantity 1').onChange({target:{value:'100'}});draw();await r.flush();await new Promise(resolve=>setTimeout(resolve,280));return {draw,html:draw()};
+  const draw=()=>{r.beforeRender();return render();};draw();await r.flush();draw();
+  field(r,'Select Nature 500g').onClick();draw();field(r,'Quantity for Nature 500g').onChange({target:{value:'100'}});draw();return {draw,html:draw()};
 }
 
-test('selecting 100 Nature 500g units automatically checks components and receives a ready-for-sale build receipt',async()=>{
+test('image selection waits for the complete plan before checking components, then receives finished inventory',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;r.invoke=async body=>{calls.push(body);return {data:body.action==='assemblyBuildWorkspace'?workspace:body.action==='previewAssemblyBuild'?preview:result};};
-  try{const {draw,html}=await selected(r,render);assert.match(html,/50 kg/);assert.match(html,/100 ea/);assert.equal(button(r,'Build and release for sale').disabled,false);await button(r,'Build and release for sale').onClick();assert.match(draw(),/ready for sale/);assert.match(draw(),/JV-BUILD/);assert.equal(calls.filter(c=>c.action==='postAssemblyBuild').length,1);assert.deepEqual(calls.find(c=>c.action==='postAssemblyBuild').rows,[{product_id:'nature',quantity:'100',expiry_date:''}]);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+  try{const {draw,html}=await selected(r,render);assert.match(html,/nature.png/);assert.match(html,/strawberry.png/);assert.equal(calls.some(c=>c.action==='previewAssemblyBuild'),false);assert.doesNotMatch(html,/Total components required/);await button(r,'Review total components').onClick();const reviewed=draw();assert.match(reviewed,/50 kg/);assert.match(reviewed,/100 ea/);assert.equal(button(r,'Build and release for sale').disabled,false);await button(r,'Build and release for sale').onClick();const receipt=draw();assert.match(receipt,/ready for sale/);assert.match(receipt,/filter=finished/);assert.match(receipt,/JV-BUILD/);assert.equal(calls.filter(c=>c.action==='postAssemblyBuild').length,1);assert.deepEqual(calls.find(c=>c.action==='postAssemblyBuild').rows,[{product_id:'nature',quantity:'100',expiry_date:''}]);}finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
-test('insufficient components block the build and expose their required, available and short quantities',async()=>{
+test('insufficient components block the build and expose required, available and short quantities',async()=>{
   const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;r.invoke=async body=>({data:body.action==='assemblyBuildWorkspace'?workspace:{...preview,can_build:false,reasons:['Some components are short.'],materials:[{...preview.materials[0],available:40,missing:10}]}});
-  try{const {html}=await selected(r,render);assert.match(html,/components are short/);assert.match(html,/40 kg/);assert.match(html,/10 kg/);assert.equal(button(r,'Build and release for sale').disabled,true);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();const html=draw();assert.match(html,/components are short/);assert.match(html,/40 kg/);assert.match(html,/10 kg/);assert.equal(button(r,'Build and release for sale').disabled,true);}finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
-test('rapid clicks send one write and a lost response retries the identical build instead of creating another',async()=>{
+test('all selected image cards remain in the combined review even when search hides earlier products',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;r.invoke=async body=>{calls.push(body);return {data:body.action==='assemblyBuildWorkspace'?workspace:preview};};
+ try{const {draw}=await selected(r,render);field(r,'Search assembly products').onChange({target:{value:'Strawberry'}});draw();field(r,'Select Strawberry 500g').onClick();draw();field(r,'Quantity for Strawberry 500g').onChange({target:{value:'50'}});draw();assert.equal(calls.filter(c=>c.action==='previewAssemblyBuild').length,0);await button(r,'Review total components').onClick();draw();const check=calls.find(c=>c.action==='previewAssemblyBuild');assert.equal(check.rows.length,2);assert.deepEqual(check.rows.map(r=>[r.product_id,r.quantity]),[['nature','100'],['strawberry','50']]);button(r,'Edit selection').onClick();draw();field(r,'Search assembly products').onChange({target:{value:''}});const html=draw();assert.equal(field(r,'Quantity for Nature 500g').value,'100');assert.equal(field(r,'Quantity for Strawberry 500g').value,'50');assert.doesNotMatch(html,/Total components required/);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('rapid clicks send one write and a lost response retries the identical database build',async()=>{
   const render=await renderer(),r=runtime(),writes=[];let reject,fail=true;globalThis.__assemblyUI=r;
   r.invoke=async body=>{if(body.action==='assemblyBuildWorkspace')return {data:workspace};if(body.action==='previewAssemblyBuild')return {data:preview};writes.push(structuredClone(body));if(fail)return new Promise((_,no)=>{reject=no;});return {data:{...result,reused:true}};};
-  try{const {draw}=await selected(r,render),first=button(r,'Build and release for sale').onClick();await button(r,'Build and release for sale').onClick();assert.equal(writes.length,1);reject(Error('Connection interrupted'));await first;await r.flush();draw();assert.ok(button(r,'Retry build'));fail=false;await button(r,'Retry build').onClick();assert.deepEqual(writes[1],writes[0]);assert.match(draw(),/ready for sale/);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();const first=button(r,'Build and release for sale').onClick();await button(r,'Build and release for sale').onClick();assert.equal(writes.length,1);reject(Error('Connection interrupted'));await first;draw();assert.ok(button(r,'Retry build'));fail=false;await button(r,'Retry build').onClick();assert.deepEqual(writes[1],writes[0]);assert.match(draw(),/ready for sale/);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+
+test('unchanged inventory on tab focus and periodic refresh keeps the reviewed build available',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;r.invoke=async body=>{calls.push(body);return {data:body.action==='assemblyBuildWorkspace'?structuredClone(workspace):body.action==='previewAssemblyBuild'?preview:result};};
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();
+  for(const type of ['focus','timer','visibilitychange']){await r.refreshCatalogue({type});await r.flush();const html=draw();assert.doesNotMatch(html,/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,false);}
+  await button(r,'Build and release for sale').onClick();assert.match(draw(),/Assembly build completed/);assert.equal(calls.filter(c=>c.action==='postAssemblyBuild').length,1);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('a real inventory revision blocks the old review until fresh components are checked',async()=>{
+ const render=await renderer(),r=runtime();let revision='stock-revision-1';globalThis.__assemblyUI=r;r.invoke=async body=>({data:body.action==='assemblyBuildWorkspace'?{...workspace,inventory_revision:revision}:{...preview,inventory_revision:revision}});
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();revision='stock-revision-2';await r.refreshCatalogue();await r.flush();assert.match(draw(),/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,true);await button(r,'Refresh component check').onClick();assert.doesNotMatch(draw(),/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,false);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('an older background response cannot invalidate a newer component review',async()=>{
+ const render=await renderer(),r=runtime();let complete,delay=false,revision='stock-revision-1';globalThis.__assemblyUI=r;
+ r.invoke=async body=>body.action==='assemblyBuildWorkspace'?(delay?new Promise(resolve=>{complete=()=>resolve({data:workspace});}):{data:workspace}):{data:{...preview,inventory_revision:revision}};
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();delay=true;const background=r.refreshCatalogue();revision='stock-revision-2';await button(r,'Refresh component check').onClick();draw();complete();await background;assert.doesNotMatch(draw(),/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,false);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('posting failures are shown beside the build action',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;r.invoke=async body=>{if(body.action==='postAssemblyBuild')throw Object.assign(Error('Accounting period was closed. Refresh the component check.'),{status:400});return {data:body.action==='assemblyBuildWorkspace'?workspace:preview};};
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();await button(r,'Build and release for sale').onClick();const html=draw();assert.ok(html.indexOf('Accounting period was closed')>html.indexOf('Build and release for sale'));assert.equal(button(r,'Build and release for sale').disabled,true);assert.equal(button(r,'Refresh component check').disabled,false);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });

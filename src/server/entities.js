@@ -70,6 +70,38 @@ export function entityStore(name) {
     }
     return prepared.map(row => saved.get(row.id));
   });
+  // Service workflows can update uniform patches in one round trip. This is
+  // deliberately not an operation exposed by the generic entity HTTP API.
+  const bulkUpdate = rows => transaction(async () => {
+    if (!Array.isArray(rows) || rows.length > 1000) throw new Error('Invalid record batch');
+    if (!rows.length) return [];
+    const ids = new Set(), now = new Date().toISOString();
+    const prepared = rows.map(input => {
+      if (!input || typeof input.id !== 'string' || !input.id || ids.has(input.id)) throw new Error('Enter unique record IDs for a batch update.');
+      ids.add(input.id);
+      const {id,...changes} = input, {record,extra} = splitRecord(changes,schema);
+      delete record.created_date; delete record.created_by; record.updated_date = now;
+      return {id,...record,extra_data:extra};
+    });
+    const fields = Object.keys(prepared[0]).filter(key => !['id','extra_data'].includes(key)).sort();
+    if (prepared.some(row => Object.keys(row).filter(key => !['id','extra_data'].includes(key)).sort().join(',') !== fields.join(','))) throw new Error('Batch updates must change the same fields.');
+    const keys = ['id',...fields,'extra_data'], batchSize = Math.max(1,Math.min(200,Math.floor(60000/keys.length))), saved = new Map();
+    for (let start = 0; start < prepared.length; start += batchSize) {
+      const params = [], batch = prepared.slice(start,start+batchSize);
+      const values = batch.map(row => '('+keys.map(key => {
+        const type = key === 'extra_data' ? 'object' : schema.fields[key]?.type;
+        const json = ['array','object'].includes(type), cast = json ? '::text::jsonb' : ['number','integer'].includes(type) ? '::numeric' : type === 'boolean' ? '::boolean' : '::text';
+        params.push(json && row[key] != null ? JSON.stringify(row[key]) : row[key]);
+        return '$'+params.length+cast;
+      }).join(',')+')');
+      const assignments = fields.map(key => identifier(key)+' = patch.'+identifier(key));
+      assignments.push('extra_data = target.extra_data || patch.extra_data');
+      const result = await database().unsafe(`UPDATE ${table} AS target SET ${assignments.join(',')} FROM (VALUES ${values.join(',')}) AS patch (${keys.map(identifier).join(',')}) WHERE target.id = patch.id RETURNING target.*`,params);
+      if (result.length !== batch.length) throw new Error('Batch update references missing records.');
+      for (const row of result) saved.set(row.id,flattenRecord(row));
+    }
+    return prepared.map(row => saved.get(row.id));
+  });
   const updateMany = async (query, changes) => {
     const { record, extra } = splitRecord(changes.$set || (changes.$inc ? {} : changes),schema);
     delete record.created_date; delete record.created_by;
@@ -112,7 +144,7 @@ export function entityStore(name) {
     filter, list:(...args) => filter({},...args), get, create,
     update:async (id,value) => (await updateMany({ id:String(id) },value)).records[0] || null,
     updateMany, delete:id => remove({ id:String(id) }), deleteMany:remove,
-    bulkCreate,
+    bulkCreate, bulkUpdate,
     count:async query => (await aggregate({ query })).count,
     aggregate,
     upsert:(rows,{ key = ['id'], updateExisting = true } = {}) => transaction(async () => {

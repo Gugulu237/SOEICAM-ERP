@@ -1,3 +1,5 @@
+import catalog from '../src/server/generated/schema.json' with {type:'json'};
+import {splitRecord} from '../src/server/query.js';
 import {batchTraceAction} from '../src/server/domain/batch-trace.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,14 +24,19 @@ async function setup(db){
   const fg=await s.Account.create({name:'Finished inventory',account_number:'1320',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true,balance:0});
   const raw=await s.Warehouse.create({name:'Company materials',warehouse_type:'raw_material',is_active:true});
   const cold=await s.Warehouse.create({name:'Cold Room',warehouse_type:'cold_room',is_active:true});
-  const milk=await s.Product.create({name:'Milk',inventory_type:'raw_material',configuration_status:'ready',unit_of_measure:'kg',purchase_price:1200,current_cost:1000,inventory_account_id:'inventory',is_active:true});
-  const cup=await s.Product.create({name:'500g cups',inventory_type:'packaging',configuration_status:'ready',unit_of_measure:'ea',purchase_price:25,current_cost:20,inventory_account_id:'inventory',is_active:true});
-  const product=await s.Product.create({name:'Nature 500g',inventory_type:'assembly',configuration_status:'ready',unit_of_measure:'ea',selling_price:1000,shelf_life_days:14,inventory_account_id:fg.id,is_active:true,components:[
+  const milk=await s.Product.create({sku:'MILK-BUILD',name:'Milk',inventory_type:'raw_material',configuration_status:'ready',unit_of_measure:'kg',purchase_price:1200,current_cost:1000,inventory_account_id:'inventory',is_active:true});
+  const cup=await s.Product.create({sku:'CUPS-BUILD',name:'500g cups',inventory_type:'packaging',configuration_status:'ready',unit_of_measure:'ea',purchase_price:25,current_cost:20,inventory_account_id:'inventory',is_active:true});
+  const product=await s.Product.create({sku:'NATURE-BUILD',name:'Nature 500g',inventory_type:'assembly',configuration_status:'ready',unit_of_measure:'ea',selling_price:1000,shelf_life_days:14,inventory_account_id:fg.id,is_active:true,components:[
     {component_type:'inventory_part',product_id:milk.id,quantity:500,unit:'g',unit_cost:1,cost_source:'registered'},
     {component_type:'inventory_part',product_id:cup.id,quantity:1,unit:'ea',unit_cost:20,cost_source:'registered'},
   ]});
   const milkLot=await s.StockBalance.create({product_id:milk.id,warehouse_id:raw.id,quantity:60,unit_cost:1000,total_value:60000,lot_number:'MILK-OPEN',qc_status:'approved'});
   const cupLot=await s.StockBalance.create({product_id:cup.id,warehouse_id:raw.id,quantity:120,unit_cost:20,total_value:2400,lot_number:'CUPS-OPEN',qc_status:'approved'});
+  for(const [name,store] of Object.entries(s))if(catalog[name]){
+    const create=store.create;store.create=async value=>{const {record,extra}=splitRecord(value,catalog[name],{creating:true});return create({...record,...extra});};
+    store.bulkCreate=async values=>{const result=[];for(const value of values)result.push(await store.create(value));return result;};
+    store.bulkUpdate=async values=>{const result=[];for(const {id,...value} of values){const {record,extra}=splitRecord(value,catalog[name]);result.push(await store.update(id,{...record,...extra}));}return result;};
+  }
   const body={date,warehouseId:cold.id,rows:[{product_id:product.id,quantity:100}]};
   const call=value=>assemblyBuildAction(f.client,user,value);
   const preview=()=>call({...body,action:'previewAssemblyBuild'});
@@ -44,9 +51,23 @@ test('100 finished units use the saved assembly, convert grams to kg and expose 
   const workspace=await f.call({action:'assemblyBuildWorkspace'});assert.equal(workspace.can_build,true);assert.ok(workspace.products.some(p=>p.id===f.product.id));
 });
 
+test('background reads keep the inventory revision stable while actual build inputs change it',async()=>{
+  const f=await setup(),workspace=()=>f.call({action:'assemblyBuildWorkspace'}),first=await workspace();
+  assert.match(first.inventory_revision,/^[a-f0-9]{64}$/);
+  assert.equal((await workspace()).inventory_revision,first.inventory_revision);
+  assert.equal((await f.preview()).inventory_revision,first.inventory_revision);
+  await f.entities.StockBalance.update(f.milkLot.id,{quantity:59,total_value:59000});
+  const stock=await workspace();assert.notEqual(stock.inventory_revision,first.inventory_revision);
+  assert.equal((await f.preview()).inventory_revision,stock.inventory_revision);
+  await f.entities.Product.update(f.product.id,{components:[{...f.product.components[0],quantity:450},f.product.components[1]]});
+  const assembly=await workspace();assert.notEqual(assembly.inventory_revision,stock.inventory_revision);
+  await f.entities.AccountingPeriod.update('period',{status:'closed'});
+  assert.notEqual((await workspace()).inventory_revision,assembly.inventory_revision);
+});
+
 test('build consumes real carrying costs, posts a balanced asset transfer and receives immediately saleable finished goods exactly once',async()=>{
   const f=await setup(),s=f.entities,body=await f.post(),saved=await f.call(body),order=await s.ProductionOrder.get(saved.orders[0].id);
-  assert.equal(order.status,'released');assert.equal(order.production_method,'assembly_build');assert.equal(order.actual_output,100);assert.equal(order.actual_cost_per_unit,520);
+  assert.equal(order.status,'released');assert.equal(order.production_method,'assembly_build');assert.equal(order.actual_output,100);assert.equal(order.actual_cost_per_unit,520);const snapshot=await s.Recipe.get(order.recipe_id);assert.ok(snapshot);assert.equal(snapshot.recipe_kind,'assembly_build_snapshot');assert.equal(snapshot.status,'archived');assert.equal((await s.RecipeLine.filter({recipe_id:snapshot.id})).length,2);
   const output=(await s.StockBalance.list()).find(b=>b.production_order_id===order.id);assert.equal(output.qc_status,'approved');assert.equal(output.quantity,100);assert.equal(output.total_value,52000);assert.equal(output.unit_cost,520);assert.ok(output.expiry_date>date);
   assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,10);assert.equal((await s.StockBalance.get(f.cupLot.id)).quantity,20);
   assert.equal((await s.Account.get('inventory')).balance,10400);assert.equal((await s.Account.get(f.fg.id)).balance,52000);

@@ -1,90 +1,104 @@
 'use client';
 import React,{useEffect,useRef,useState} from 'react';
+import {Check,CheckCircle2,ChevronLeft,ChevronRight,PackageCheck,Search,ShoppingBasket,Trash2} from 'lucide-react';
 import {invokeFieldOps} from '@/lib/field-ops';
 import {watchItemCatalogue} from '@/lib/item-catalogue-sync';
 import {businessDate} from '@/lib/business-date';
 import {ui,uiMessage} from '@/lib/i18n';
 import {useLocaleRender} from '@/lib/localization';
 import {formatQuantity,formatAccountingXAF,formatDate} from '@/lib/formatters';
+import {ProductPhoto} from '@/components/shared/ProductThumb';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Link} from '@/lib/router';
 
-const blank=()=>({key:crypto.randomUUID(),product_id:'',quantity:'',expiry_date:''});
+const hasShelfLife=p=>Number.isInteger(Number(p?.shelf_life_days))&&Number(p?.shelf_life_days)>0&&Number(p?.shelf_life_days)<=36500;
 export default function AssemblyBuildPanel(){
   useLocaleRender();
-  const [data,setData]=useState(null),[rows,setRows]=useState(()=>[blank()]),[date,setDate]=useState(businessDate());
+  const [data,setData]=useState(null),[rows,setRows]=useState([]),[date,setDate]=useState(businessDate());
   const [warehouse,setWarehouse]=useState(''),[overhead,setOverhead]=useState(''),[notes,setNotes]=useState('');
+  const [phase,setPhase]=useState('select'),[search,setSearch]=useState(''),[family,setFamily]=useState('');
   const [review,setReview]=useState(null),[checking,setChecking]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const [retry,setRetry]=useState(null),[saved,setSaved]=useState(null),[revision,setRevision]=useState(0),[reload,setReload]=useState(0);
-  const posting=useRef(false),requestKey=useRef(crypto.randomUUID());
-  const selected=rows.filter(r=>r.product_id||String(r.quantity).trim()),ready=selected.length>0&&selected.every(r=>r.product_id&&Number(r.quantity)>0)&&warehouse&&date;
-  const selection=JSON.stringify(selected.map(({product_id,quantity,expiry_date})=>({product_id,quantity,expiry_date})));
+  const [retry,setRetry]=useState(null),[saved,setSaved]=useState(null),[reload,setReload]=useState(0);
+  const posting=useRef(false),checkSequence=useRef(0),requestKey=useRef(crypto.randomUUID());
+  const byId=new Map((data?.products||[]).map(p=>[p.id,p]));
+  const ready=rows.length>0&&rows.length<=20&&rows.every(r=>byId.has(r.product_id)&&Number(r.quantity)>0&&(r.expiry_date?r.expiry_date>date&&r.expiry_date>businessDate():hasShelfLife(byId.get(r.product_id))))&&!!warehouse&&!!date;
+  const locked=busy||checking||!!retry;
+  const families=[...new Set((data?.products||[]).map(p=>p.product_family).filter(Boolean))];
+  const visible=(data?.products||[]).filter(p=>(!family||p.product_family===family)&&[p.name,p.sku,p.flavor,p.size,p.product_family].join(' ').toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   useEffect(()=>{
-    let active=true;setError('');
-    invokeFieldOps({action:'assemblyBuildWorkspace'}).then(({data:next})=>{
-      if(!active)return;if(next.error)throw Error(next.error);setData(next);
-      setWarehouse(old=>old||next.warehouses[0]?.id||'');setOverhead(old=>old||next.default_overhead_account_id||'');
-    }).catch(e=>{if(active)setError(e.message);});
-    const stop=watchItemCatalogue(()=>{if(active&&!posting.current)setRevision(v=>v+1);});
-    return()=>{active=false;stop();};
+    let active=true;
+    const load=async()=>{
+      const reviewSequence=checkSequence.current;
+      try{const {data:next}=await invokeFieldOps({action:'assemblyBuildWorkspace'});if(!active)return;if(next.error)throw Error(next.error);setData(next);
+        if(reviewSequence===checkSequence.current)setReview(old=>old&&old.inventory_revision!==next.inventory_revision?{...old,stale:true}:old);
+        setWarehouse(old=>next.warehouses.some(w=>w.id===old)?old:next.warehouses[0]?.id||'');setOverhead(old=>old||next.default_overhead_account_id||'');
+      }catch(e){if(active)setError(e.message);}
+    };
+    load();
+    const stop=watchItemCatalogue(()=>{if(active&&!posting.current)return load();});
+    return()=>{active=false;checkSequence.current++;stop();};
   },[reload]);
-  useEffect(()=>{
-    setReview(null);if(!ready||saved||retry){setChecking(false);return;}
-    let active=true;setChecking(true);setError('');
-    const timer=setTimeout(()=>invokeFieldOps({action:'previewAssemblyBuild',date,warehouseId:warehouse,overheadAccountId:overhead,rows:JSON.parse(selection)})
-      .then(({data:next})=>{if(!active)return;if(next.error)throw Error(next.error);setReview(next);})
-      .catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setChecking(false);}),250);
-    return()=>{active=false;clearTimeout(timer);};
-  },[ready,selection,date,warehouse,overhead,revision,saved,retry]);
-  const change=(key,field,value)=>{setReview(null);setRows(old=>old.map(r=>r.key===key?{...r,[field]:value,...(field==='product_id'?{expiry_date:''}:{})}:r));};
-  async function build(){
-    if(posting.current||!retry&&(checking||!review?.can_build))return;
-    posting.current=true;setBusy(true);setError('');
-    const input=retry||{action:'postAssemblyBuild',requestKey:requestKey.current,fingerprint:review.fingerprint,date,warehouseId:warehouse,overheadAccountId:overhead,rows:JSON.parse(selection),notes};
+  const edit=()=>{checkSequence.current++;setReview(null);setError('');setPhase('select');};
+  const toggle=product=>{
+    if(locked)return;edit();setRows(old=>old.some(r=>r.product_id===product.id)?old.filter(r=>r.product_id!==product.id):old.length<20?[...old,{product_id:product.id,quantity:'',expiry_date:''}]:old);
+  };
+  const change=(id,field,value)=>{edit();setRows(old=>old.map(r=>r.product_id===id?{...r,[field]:value}:r));};
+  async function checkComponents(){
+    if(!ready||locked)return;
+    const sequence=++checkSequence.current;setChecking(true);setError('');
     try{
-      const {data:result}=await invokeFieldOps(input);
-      if(result.error)throw Error(result.error);setSaved(result);setReview(null);setRetry(null);
-    }catch(e){setError(e.message);if(e.status>=400&&e.status<500){setRetry(null);setRevision(v=>v+1);}else setRetry(input);}finally{posting.current=false;setBusy(false);}
+      const {data:next}=await invokeFieldOps({action:'previewAssemblyBuild',date,warehouseId:warehouse,overheadAccountId:overhead,rows});
+      if(sequence!==checkSequence.current)return;if(next.error)throw Error(next.error);setReview(next);setPhase('review');
+    }catch(e){if(sequence===checkSequence.current){setError(e.message);setReview(null);}}
+    finally{if(sequence===checkSequence.current)setChecking(false);}
   }
-  if(saved)return <section className="space-y-4 rounded-xl border bg-white p-4 sm:p-6">
-    <h2 className="text-lg font-semibold">{ui('Assembly build completed')}</h2><p role="status" className="text-green-800">{ui('The components were deducted and the finished products are ready for sale.')}</p>
-    {saved.orders.map(o=><div key={o.id} className="rounded-lg border p-3"><strong>{o.product_name}</strong><p>{formatQuantity(o.quantity)} {o.unit} · {o.batch_number}</p><p className="text-sm text-slate-600">{ui('Expiry')}: {formatDate(o.expiry_date)} · {ui('Carrying value')}: {formatAccountingXAF(o.total_cost)}</p><Link to={'/manufacturing/'+o.id} className="text-sm underline">{ui('View build record')}</Link></div>)}
-    <p className="text-sm">{ui('Accounting entry')}: {saved.journal_number}</p>
-    <div className="flex flex-wrap gap-3"><Button onClick={()=>{requestKey.current=crypto.randomUUID();setSaved(null);setRows([blank()]);setNotes('');setRevision(v=>v+1);}}>{ui('Start another build')}</Button><Button asChild variant="outline"><Link to="/inventory">{ui('Open inventory')}</Link></Button></div>
+  async function build(){
+    if(posting.current||!retry&&(checking||!review?.can_build||review.stale))return;
+    posting.current=true;setBusy(true);setError('');
+    const input=retry||{action:'postAssemblyBuild',requestKey:requestKey.current,fingerprint:review.fingerprint,date,warehouseId:warehouse,overheadAccountId:overhead,rows,notes};
+    try{
+      const {data:result}=await invokeFieldOps(input);if(result.error)throw Error(result.error);setSaved(result);setReview(null);setRetry(null);
+    }catch(e){setError(e.message);if(e.status>=400&&e.status<500){setRetry(null);setReview(old=>old?{...old,stale:true}:old);}else setRetry(input);}
+    finally{posting.current=false;setBusy(false);}
+  }
+  if(saved)return <section className="space-y-5 rounded-2xl border border-emerald-200 bg-white p-5 sm:p-7">
+    <div className="flex items-start gap-3"><span className="rounded-full bg-emerald-100 p-3 text-emerald-700"><CheckCircle2 size={26}/></span><div><h2 className="text-xl font-semibold text-slate-900">{ui('Assembly build completed')}</h2><p role="status" className="mt-1 text-sm text-emerald-800">{ui('The components were deducted and the finished products are ready for sale.')}</p></div></div>
+    <div className="grid gap-3 sm:grid-cols-2">{saved.orders.map(o=><div key={o.id} className="rounded-xl border bg-slate-50 p-4"><strong className="text-slate-900">{o.product_name}</strong><p className="mt-1 text-lg font-semibold">{formatQuantity(o.quantity)} {o.unit}</p><p className="mt-1 text-xs text-slate-600">{o.batch_number} / {ui('Expiry')}: {formatDate(o.expiry_date)}</p><p className="mt-1 text-sm">{ui('Carrying value')}: {formatAccountingXAF(o.total_cost)}</p><Link to={'/manufacturing/'+o.id} className="mt-3 inline-block text-sm font-medium underline">{ui('View build record')}</Link></div>)}</div>
+    <p className="text-sm text-slate-600">{ui('Accounting entry')}: {saved.journal_number}</p>
+    <div className="flex flex-wrap gap-3"><Button asChild><Link to="/inventory?filter=finished&section=stock">{ui('Finished products inventory')}<ChevronRight size={16} className="ml-2"/></Link></Button><Button variant="outline" onClick={()=>{requestKey.current=crypto.randomUUID();setSaved(null);setRows([]);setNotes('');setPhase('select');setSearch('');}}>{ui('Start another build')}</Button></div>
   </section>;
-  return <section className="space-y-4 rounded-xl border bg-white p-4 sm:p-6">
-    <div><h2 className="text-lg font-semibold">{ui('Build from saved assemblies')}</h2><p className="mt-1 text-sm text-slate-600">{ui('Select products and quantities. Their saved assembly components are calculated and checked automatically. Record the build after the goods have actually been manufactured.')}</p></div>
-    {error&&<p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{uiMessage(error)}</p>}
-    {!data?<Button variant="outline" onClick={()=>setReload(v=>v+1)}>{ui('Load assembly products')}</Button>:<>
-      {!data.can_build&&<p className="text-sm text-slate-600">{ui('Production management can record builds. Warehouse staff can review component availability.')}</p>}
-      {!data.products.length&&<p>{ui('No active products with saved assembly components are available. Complete the product assemblies in Inventory first.')}</p>}
-      <fieldset disabled={busy||!!retry} className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">{ui('Build date')}<Input aria-label={ui('Build date')} type="date" max={businessDate()} value={date} onChange={e=>{setReview(null);setDate(e.target.value);}}/></label>
-          {data.warehouses.length===1?<div className="text-sm"><p>{ui('Finished stock location')}</p><p className="mt-2 font-medium">{data.warehouses[0].name}</p></div>:<label className="text-sm">{ui('Finished stock location')}<select aria-label={ui('Finished stock location')} className="mt-1 h-11 w-full rounded-md border bg-white px-3" value={warehouse} onChange={e=>{setReview(null);setWarehouse(e.target.value);}}><option value="">{ui('Choose...')}</option>{data.warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}
-        </div>
-        {!data.warehouses.length&&<p role="alert" className="text-sm text-red-700">{ui('Configure an active Cold Room for finished production before building.')}</p>}
-        <div className="space-y-3">{rows.map((row,index)=>{const product=data.products.find(p=>p.id===row.product_id),hasShelf=Number(product?.shelf_life_days)>0;
-          return <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,2fr)_1fr_auto]" key={row.key}>
-            <label className="min-w-0 text-sm">{ui('Product')}<select aria-label={ui('Assembly product {0}',index+1)} className="mt-1 h-11 w-full min-w-0 rounded-md border bg-white px-2" value={row.product_id} onChange={e=>change(row.key,'product_id',e.target.value)}><option value="">{ui('Choose a finished product')}</option>{data.products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-            <label className="text-sm">{ui('Quantity to build')} {product&&'('+product.unit+')'}<Input aria-label={ui('Build quantity {0}',index+1)} type="number" min="0.001" max="1000000000" step={['ea','each','unit','units','cup'].includes(product?.unit?.toLowerCase())?'1':'0.001'} value={row.quantity} onChange={e=>change(row.key,'quantity',e.target.value)}/></label>
-            <Button type="button" variant="ghost" className="self-end" disabled={rows.length===1} aria-label={ui('Remove build product {0}',index+1)} onClick={()=>{setReview(null);setRows(old=>old.filter(r=>r.key!==row.key));}}>{ui('Remove')}</Button>
-            {product&&<div className="text-sm sm:col-span-3">{hasShelf&&<p className="text-xs text-slate-500">{ui('Expiry is calculated from the build date and the configured shelf life of {0} days.',product.shelf_life_days)}</p>}<label className="mt-1 block text-xs">{ui(hasShelf?'Expiry override (optional)':'Expiry date')}<Input aria-label={ui('Build expiry {0}',index+1)} type="date" min={businessDate()} value={row.expiry_date} onChange={e=>change(row.key,'expiry_date',e.target.value)}/></label></div>}
-          </div>;
+  return <section className="min-w-0 space-y-5">
+    <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border bg-white p-5 sm:p-6"><div className="flex gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><PackageCheck size={25}/></span><div><h2 className="text-xl font-semibold tracking-tight text-slate-900">{ui('Build finished products')}</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{ui('Choose your products, set all quantities, then review the combined components before manufacturing.')}</p></div></div><span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">{ui('{0} products selected',rows.length)}</span></header>
+    <ol aria-label={ui('Assembly build steps')} className="grid grid-cols-2 gap-3"><li className={'flex items-center gap-3 rounded-xl border px-4 py-3 '+(phase==='select'?'border-emerald-300 bg-emerald-50 text-emerald-900':'border-slate-200 bg-white text-slate-600')} aria-current={phase==='select'?'step':undefined}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-semibold shadow-sm">1</span><span className="text-sm font-medium">{ui('Select products and quantities')}</span></li><li className={'flex items-center gap-3 rounded-xl border px-4 py-3 '+(phase==='review'?'border-emerald-300 bg-emerald-50 text-emerald-900':'border-slate-200 bg-white text-slate-400')} aria-current={phase==='review'?'step':undefined}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-semibold shadow-sm">2</span><span className="text-sm font-medium">{ui('Review components and build')}</span></li></ol>
+    {error&&phase==='select'&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{uiMessage(error)}</p>}
+    {!data?<div className="rounded-2xl border bg-white p-6"><p role="status" className="mb-3 text-sm text-slate-500">{ui('Loading assembly products...')}</p><Button variant="outline" onClick={()=>setReload(v=>v+1)}>{ui('Retry')}</Button></div>:<>
+      {!data.can_build&&<p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">{ui('Production management can record builds. Warehouse staff can review component availability.')}</p>}
+      {phase==='select'?<>
+        <div className="flex flex-wrap items-center gap-3"><label className="relative min-w-0 flex-1"><Search size={17} className="pointer-events-none absolute left-3 top-3.5 text-slate-400"/><Input aria-label={ui('Search assembly products')} placeholder={ui('Search by product, flavour or size')} className="h-11 rounded-xl bg-white pl-10" value={search} onChange={e=>setSearch(e.target.value)}/></label>{families.length>1&&<select aria-label={ui('Product family')} className="h-11 max-w-full rounded-xl border bg-white px-3 text-sm" value={family} onChange={e=>setFamily(e.target.value)}><option value="">{ui('All products')}</option>{families.map(f=><option key={f} value={f}>{f}</option>)}</select>}</div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:gap-4">{visible.map(product=>{const row=rows.find(r=>r.product_id===product.id),selected=!!row,hasShelf=hasShelfLife(product);
+          return <article key={product.id} className={'min-w-0 overflow-hidden rounded-2xl border bg-white transition-shadow '+(selected?'border-emerald-500 shadow-sm ring-1 ring-emerald-500':'border-slate-200 hover:border-slate-300 hover:shadow-sm')}>
+            <button type="button" aria-label={ui('Select {0}',product.name)} aria-pressed={selected} disabled={locked||!selected&&rows.length>=20} onClick={()=>toggle(product)} className="relative block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600 disabled:opacity-60"><ProductPhoto product={product} className={'aspect-[4/3] w-full '+(selected?'bg-emerald-50/50':'bg-slate-50')} imageClassName="p-3 sm:p-4" sizes="(max-width: 639px) 45vw, (max-width: 1023px) 30vw, 220px"/><span className={'absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm '+(selected?'border-emerald-600 bg-emerald-600 text-white':'border-slate-200 bg-white text-transparent')}><Check size={15}/></span><div className="px-3 pb-3 pt-2 sm:px-4"><p className="min-h-10 text-sm font-semibold leading-5 text-slate-900">{product.name}</p><p className="mt-1 truncate text-xs text-slate-400">{[product.size,product.flavor].filter(Boolean).join(' / ')||product.sku||product.unit}</p></div></button>
+            {selected?<div className="space-y-2 border-t border-emerald-100 bg-emerald-50/40 p-3 sm:p-4"><label className="block text-xs font-medium text-emerald-900">{ui('Quantity to manufacture')}<Input autoFocus aria-label={ui('Quantity for {0}',product.name)} type="number" min="0.001" max="1000000000" step={['ea','each','unit','units','cup'].includes(product.unit?.toLowerCase())?'1':'0.001'} disabled={locked} className="mt-1 h-11 border-emerald-200 bg-white text-base font-semibold" placeholder="0" value={row.quantity} onChange={e=>change(product.id,'quantity',e.target.value)}/></label><p className="text-xs text-slate-500">{ui('Stock unit')}: {product.unit}</p>{!hasShelf?<label className="block text-xs font-medium">{ui('Expiry date')}<Input aria-label={ui('Expiry for {0}',product.name)} type="date" min={businessDate()} value={row.expiry_date} disabled={locked} onChange={e=>change(product.id,'expiry_date',e.target.value)}/></label>:<details className="text-xs text-slate-500"><summary className="cursor-pointer">{ui('Shelf life: {0} days',product.shelf_life_days)}</summary><label className="mt-2 block">{ui('Expiry override (optional)')}<Input aria-label={ui('Expiry for {0}',product.name)} type="date" min={businessDate()} value={row.expiry_date} disabled={locked} onChange={e=>change(product.id,'expiry_date',e.target.value)}/></label></details>}</div>:<p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-400 sm:px-4">{ui('Click the image to select')}</p>}
+          </article>;
         })}</div>
-        <Button type="button" variant="outline" disabled={rows.length>=20} onClick={()=>{setReview(null);setRows(old=>[...old,blank()]);}}>{ui('Add another product')}</Button>
-        {review?.overhead>0&&<label className="block text-sm">{ui('Labour and overhead allocation account')}<select aria-label={ui('Labour and overhead allocation account')} className="mt-1 h-11 w-full rounded-md border bg-white px-3" value={overhead} onChange={e=>{setReview(null);setOverhead(e.target.value);}}><option value="">{ui('Choose...')}</option>{data.overhead_accounts.map(a=><option key={a.id} value={a.id}>{a.account_number} · {a.name}</option>)}</select><span className="mt-1 block text-xs text-slate-500">{ui('Allocate costs already incurred to the finished goods. This build does not create a cash payment.')}</span></label>}
-        <label className="block text-sm">{ui('Notes (optional)')}<Input aria-label={ui('Build notes')} maxLength={2000} value={notes} onChange={e=>setNotes(e.target.value)}/></label>
-      </fieldset>
-      {retry&&<p className="text-sm text-amber-800">{ui('Retry this build to check whether it was saved before starting another.')}</p>}
-      {checking&&<p role="status" className="text-sm text-slate-600">{ui('Checking assembly components...')}</p>}
-      {review&&<div className="space-y-3">
-        {review.reasons.map(reason=><p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900" key={reason}>{uiMessage(reason)}</p>)}
-        <div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-slate-50"><tr>{['Component','Required','Available','Shortage'].map(h=><th className="p-3" key={h}>{ui(h)}</th>)}</tr></thead><tbody>{review.materials.map(m=><tr key={m.product_id} className="border-t"><th className="p-3 font-medium">{m.product_name}</th><td className="p-3">{formatQuantity(m.required)} {m.unit}</td><td className="p-3">{formatQuantity(m.available)} {m.unit}</td><td className={'p-3 '+(m.missing>0?'font-semibold text-red-700':'text-green-800')}>{formatQuantity(m.missing)} {m.unit}</td></tr>)}</tbody></table></div>
-        {review.outputs.map(o=><p className="text-sm text-slate-600" key={o.product_id}>{o.product_name} · {formatQuantity(o.quantity)} {o.unit} · {ui('Expiry')}: {formatDate(o.expiry_date)}</p>)}
-        {review.can_build&&<p className="text-sm font-medium">{ui('Finished goods carrying value')}: {formatAccountingXAF(review.total_cost)}<span className="mt-1 block text-xs font-normal text-slate-500">{ui('Finished goods use the carrying cost of the components consumed, plus any allocated labour and overhead.')}</span></p>}
+        {!visible.length&&<div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-slate-500">{ui(data.products.length?'No products match your search.':'No active products with saved assembly components are available. Complete the product assemblies in Inventory first.')}</div>}
+        <div className="rounded-2xl border bg-white p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><ShoppingBasket className="text-emerald-700" size={22}/><div><p className="font-semibold text-slate-900">{ui('{0} products selected',rows.length)}</p><p className="mt-0.5 text-xs text-slate-500">{ui('Finish configuring every selected product before checking components.')}</p></div></div><Button disabled={!ready||locked} onClick={checkComponents}>{ui(checking?'Checking components...':'Review total components')}<ChevronRight size={17} className="ml-2"/></Button></div>
+          {rows.length>0&&<div className="mt-4 flex flex-wrap gap-2 border-t pt-3">{rows.map(row=><span className="inline-flex max-w-full items-center gap-2 rounded-full bg-slate-100 py-1 pl-3 pr-1 text-xs text-slate-700" key={row.product_id}>{byId.get(row.product_id)?.name||row.product_id} / {row.quantity||'0'} {byId.get(row.product_id)?.unit}<button type="button" className="rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" disabled={locked} aria-label={ui('Remove {0}',byId.get(row.product_id)?.name||row.product_id)} onClick={()=>toggle(byId.get(row.product_id)||{id:row.product_id})}><Trash2 size={13}/></button></span>)}</div>}
+        </div>
+        <details className="rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium text-slate-600">{ui('Build details')}</summary><fieldset disabled={locked} className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-medium text-slate-500">{ui('Build date')}<Input aria-label={ui('Build date')} className="mt-1" type="date" max={businessDate()} value={date} onChange={e=>{edit();setDate(e.target.value);}}/></label><label className="text-xs font-medium text-slate-500">{ui('Receive into finished products inventory')}<select aria-label={ui('Finished stock location')} className="mt-1 h-11 w-full rounded-md border bg-white px-2 text-sm text-slate-800" value={warehouse} onChange={e=>{edit();setWarehouse(e.target.value);}}><option value="">{ui('Choose...')}</option>{data.warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label className="text-xs font-medium text-slate-500 sm:col-span-2">{ui('Notes (optional)')}<Input className="mt-1" aria-label={ui('Build notes')} value={notes} maxLength={2000} onChange={e=>setNotes(e.target.value)}/></label></fieldset></details>
+        {!data.warehouses.length&&<p role="alert" className="text-sm text-red-700">{ui('Configure an active Cold Room for finished production before building.')}</p>}
+      </>:<div className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-semibold">{ui('Your complete manufacturing plan')}</h3><p className="mt-1 text-sm text-slate-500">{ui('These totals include every selected product and use the current inventory database.')}</p></div><Button variant="outline" disabled={locked} onClick={edit}><ChevronLeft size={16} className="mr-1"/>{ui('Edit selection')}</Button></div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{rows.map(row=>{const product=byId.get(row.product_id)||{},output=review?.outputs.find(o=>o.product_id===row.product_id);return <div key={row.product_id} className="flex items-center gap-3 rounded-xl border bg-white p-3"><ProductPhoto product={product} className="h-16 w-16 rounded-lg" imageClassName="p-1.5" sizes="64px"/><div className="min-w-0"><p className="text-sm font-medium text-slate-800">{product.name}</p><p className="mt-1 text-lg font-semibold text-emerald-800">{formatQuantity(row.quantity)} <span className="text-xs font-normal">{product.unit}</span></p>{output&&<p className="mt-1 text-xs text-slate-500">{ui('Expiry')}: {formatDate(output.expiry_date)}</p>}</div></div>;})}</div>
+        {review?.stale&&<p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{ui('Your plan or inventory changed. Refresh the component check before building.')}</p>}
+        {review?.reasons.map(reason=><p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900" key={reason}>{uiMessage(reason)}</p>)}
+        {review&&<div className="overflow-hidden rounded-2xl border bg-white"><div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-5"><h3 className="font-semibold text-slate-800">{ui('Total components required')}</h3><span className={'rounded-full px-3 py-1 text-xs font-medium '+(review.can_build&&!review.stale?'bg-emerald-50 text-emerald-800':'bg-amber-50 text-amber-800')}>{ui(review.can_build&&!review.stale?'Components available':'Review required')}</span></div><div className="overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr>{['Component','Required','Available','Shortage'].map(label=><th className="px-4 py-3 sm:px-5" key={label}>{ui(label)}</th>)}</tr></thead><tbody>{review.materials.map(m=><tr key={m.product_id} className="border-t border-slate-100"><th className="px-4 py-4 font-medium text-slate-800 sm:px-5">{m.product_name}</th><td className="whitespace-nowrap px-4 py-4 font-semibold">{formatQuantity(m.required)} {m.unit}</td><td className="whitespace-nowrap px-4 py-4 text-slate-600">{formatQuantity(m.available)} {m.unit}</td><td className={'whitespace-nowrap px-4 py-4 '+(m.missing>0?'font-semibold text-red-700':'text-emerald-700')}>{m.missing>0?formatQuantity(m.missing)+' '+m.unit:<span className="inline-flex items-center gap-1.5"><Check size={14}/>{ui('Enough stock')}</span>}</td></tr>)}</tbody></table></div><p className="border-t bg-slate-50/50 px-4 py-3 text-xs leading-5 text-slate-500 sm:px-5">{ui('Available components exclude held or expired stock and goods already issued for delivery.')}</p></div>}
+        {review?.overhead>0&&<label className="block rounded-xl border bg-white p-4 text-sm">{ui('Labour and overhead allocation account')}<select aria-label={ui('Labour and overhead allocation account')} className="mt-2 h-11 w-full rounded-md border bg-white px-3" value={overhead} disabled={locked} onChange={e=>{setOverhead(e.target.value);setReview(old=>({...old,stale:true}));}}><option value="">{ui('Choose...')}</option>{data.overhead_accounts.map(a=><option key={a.id} value={a.id}>{a.account_number} / {a.name}</option>)}</select><span className="mt-2 block text-xs text-slate-500">{ui('Allocate costs already incurred to the finished goods. This build does not create a cash payment.')}</span></label>}
+        <div className="flex flex-wrap items-end justify-between gap-5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5"><div><p className="text-xs font-medium text-emerald-700">{ui('Receive into finished products inventory')}</p><p className="mt-1 font-semibold text-slate-900">{review?.warehouse_name||data.warehouses.find(w=>w.id===warehouse)?.name}</p>{review?.can_build&&<p className="mt-2 text-sm text-slate-600">{ui('Carrying value')}: <strong>{formatAccountingXAF(review.total_cost)}</strong></p>}<p className="mt-2 max-w-xl text-xs leading-5 text-slate-500">{ui('Completing this build deducts the components and adds the finished products together. The finished products are then ready for sale.')}</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={!ready||locked} onClick={checkComponents}>{ui(checking?'Checking components...':'Refresh component check')}</Button><Button disabled={busy||checking||!data.can_build||!retry&&(!review?.can_build||Boolean(review?.stale))} onClick={build}><PackageCheck size={17} className="mr-2"/>{ui(busy?'Building...':retry?'Retry build':'Build and release for sale')}</Button></div></div>
+        {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{uiMessage(error)}</p>}
+        {retry&&<p className="text-sm text-amber-800">{ui('Retry this build to check whether it was saved before starting another.')}</p>}
       </div>}
-      <div className="flex flex-wrap justify-end gap-3"><Button variant="outline" disabled={!ready||busy||checking||!!retry} onClick={()=>setRevision(v=>v+1)}>{ui('Refresh component check')}</Button><Button disabled={busy||checking&&!retry||!data.can_build||!retry&&!review?.can_build} onClick={build}>{ui(busy?'Building...':retry?'Retry build':'Build and release for sale')}</Button></div>
     </>}
   </section>;
 }

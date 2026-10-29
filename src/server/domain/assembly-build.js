@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {requireStaff,nextSequence,postJournal} from './field-ops.js';
+import {requireStaff,postJournal} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
 import {validateProductComponents} from './assembly-components.js';
 import {productionExpiry} from './production-batches.js';
@@ -15,6 +15,9 @@ const round=n=>Math.round(n*1000)/1000;
 const ceil=n=>Math.ceil((n-1e-9)*1000)/1000;
 const hash=value=>createHash('sha256').update(JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v)).digest('hex');
 const ordered=rows=>[...rows].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+// A catalogue refresh is not a stock change. Give the screen a stable revision
+// of the records that can affect a build so focus/polling keeps valid reviews.
+const inventoryRevision=data=>hash({products:ordered(data.products),warehouses:ordered(data.warehouses),balances:ordered(data.balances),accounts:ordered(data.accounts),rules:ordered(data.rules),periods:ordered(data.periods),cashIds:[...data.cashIds].sort()});
 const configured=p=>p&&p.is_active!==false&&!p.item_removed_at&&p.configuration_status!=='draft';
 const validDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value;
 const quantity=value=>{
@@ -31,6 +34,26 @@ function accountFor(data,product){
 }
 const postingAccount=(data,a)=>a&&a.is_active!==false&&a.is_posting!==false&&!a.is_treasury&&a.account_number!=='1050'&&!data.cashIds.has(a.id)&&(!a.currency||a.currency==='XAF');
 const overheadAccounts=data=>data.accounts.filter(a=>postingAccount(data,a)&&['expense','other_expense','cogs'].includes(a.account_type)&&a.normal_balance==='debit');
+async function createRows(store,rows){
+  const result=[];
+  for(let offset=0;offset<rows.length;offset+=1000)result.push(...await store.bulkCreate(rows.slice(offset,offset+1000)));
+  return result;
+}
+async function updateRows(store,rows){
+  const result=[];
+  for(let offset=0;offset<rows.length;offset+=1000)result.push(...await store.bulkUpdate(rows.slice(offset,offset+1000)));
+  return result;
+}
+async function buildNumbers(stores,count){
+  const settings=(await stores.CompanySettings.list('-created_date',1))[0];
+  if(!settings)throw Error('Company settings are not configured');
+  const first=Number(settings.next_production_number??1);
+  if(!Number.isSafeInteger(first)||first<1||!Number.isSafeInteger(first+count))throw Error('Reconcile the document sequence before posting.');
+  // The outer serializable transaction reserves every number together. A retry
+  // or a failure rolls this reservation back with the build and its journal.
+  await stores.CompanySettings.update(settings.id,{next_production_number:first+count});
+  return Array.from({length:count},(_,index)=>'AB-'+String(first+index).padStart(5,'0'));
+}
 async function load(stores){
   const [products,warehouses,balances,accounts,rules,treasury,periods]=await Promise.all([
     readRecords(stores.Product),readRecords(stores.Warehouse),readRecords(stores.StockBalance),readRecords(stores.Account),
@@ -45,13 +68,17 @@ async function plan(stores,data,body){
   const destination=productionColdRoom(data.warehouses,body.warehouseId),sourceIds=data.warehouses.filter(companySalesWarehouse).map(w=>w.id);
   if(!companySalesWarehouse(destination))throw Error('Choose an active company Cold Room for finished goods.');
   const byId=new Map(data.products.map(p=>[p.id,p])),selected=new Set(),outputs=[];
+  // These records were already read in this transaction's consistent snapshot.
+  // Reuse them for BOM validation, including nested assemblies and stock checks.
+  const componentStores={Product:{filter:async query=>query.id.$in.map(id=>byId.get(id)).filter(Boolean)},
+    StockBalance:{filter:async(query,_sort,limit,skip=0)=>data.balances.filter(b=>b.product_id===query.product_id).slice(skip,skip+limit)},FixedAsset:stores.FixedAsset};
   for(const input of body.rows){
     const product=byId.get(input?.product_id);
     if(!configured(product)||!isAssemblyInventoryType(product.inventory_type)||!product.components?.length)throw Error('Choose an active finished product with saved assembly components.');
     if(selected.has(product.id))throw Error('Enter each finished product once.');selected.add(product.id);
     const q=quantity(input.quantity),unit=stockUnit(product);
     if(['ea','each','unit','units','cup'].includes(unit.toLowerCase())&&!Number.isInteger(q))throw Error('Enter whole units for '+product.name+'.');
-    const checked=await validateProductComponents(stores,{inventory_type:product.inventory_type,components:product.components},product);
+    const checked=await validateProductComponents(componentStores,{inventory_type:product.inventory_type,components:product.components},product);
     const expiry=productionExpiry(body.date,product.shelf_life_days,input.expiry_date||'');
     if(!expiry||expiry<=businessDate())throw Error('Set the shelf life or enter a future expiry date for '+product.name+'.');
     outputs.push({product,quantity:q,unit,expiry_date:expiry,components:checked.components,materials:[],overhead:0,total_cost:0,account:accountFor(data,product)});
@@ -124,14 +151,14 @@ export async function assemblyBuildAction(client,user,body){
     const old=await stores.AuditLog.get(eventId);
     if(old){if(old.assembly_build_payload!==payload)throw Error('This build reference was used for different details.');return {...old.assembly_build_result,reused:true};}
   }
-  const data=await load(stores);
-  if(body.action==='assemblyBuildWorkspace')return {can_build:canBuild,date:businessDate(),
-    products:data.products.filter(p=>configured(p)&&isAssemblyInventoryType(p.inventory_type)&&p.components?.length).map(p=>({id:p.id,name:p.name,unit:stockUnit(p),shelf_life_days:p.shelf_life_days||0,image_url:p.image_url||''})),
+  const data=await load(stores),inventory_revision=body.action==='postAssemblyBuild'?undefined:inventoryRevision(data);
+  if(body.action==='assemblyBuildWorkspace')return {inventory_revision,can_build:canBuild,date:businessDate(),
+    products:data.products.filter(p=>configured(p)&&isAssemblyInventoryType(p.inventory_type)&&p.components?.length).map(p=>({id:p.id,name:p.name,unit:stockUnit(p),shelf_life_days:p.shelf_life_days||0,image_url:p.image_url||'',sku:p.sku||'',size:p.size||'',flavor:p.flavor||'',product_family:p.product_family||'',category:p.category||''})),
     warehouses:data.warehouses.filter(w=>companySalesWarehouse(w)&&w.warehouse_type==='cold_room').map(w=>({id:w.id,name:w.name})),
     overhead_accounts:overheadAccounts(data).map(a=>({id:a.id,name:a.name,account_number:a.account_number})),default_overhead_account_id:data.rules.find(r=>r.rule_key==='manufacturing_overhead')?.account_id||''};
   if(!['previewAssemblyBuild','postAssemblyBuild'].includes(body.action))throw Error('Unknown assembly build action.');
   const p=await plan(stores,data,body);
-  if(body.action==='previewAssemblyBuild')return {...preview(p),can_build:canBuild&&p.reasons.length===0};
+  if(body.action==='previewAssemblyBuild')return {...preview(p),inventory_revision,can_build:canBuild&&p.reasons.length===0};
   if(p.reasons.length)throw Error(p.reasons.join(' '));
   if(body.fingerprint!==p.fingerprint)throw Error('Components, prices or stock changed. Refresh the component check before building.');
   if(typeof body.notes!=='undefined'&&(typeof body.notes!=='string'||body.notes.length>2000))throw Error('Keep build notes within 2000 characters.');
@@ -141,35 +168,52 @@ export async function assemblyBuildAction(client,user,body){
   if(p.overhead)add(p.allocation,'credit',p.overhead);
   const {journal,reused}=await postJournal({entities:stores},{entryDate:body.date,description:'Assembly build '+eventId,sourceModule:'manufacturing',sourceDocumentType:'AssemblyBuild',sourceDocumentId:eventId,userId:user.id,lines:[...lines.values()]});
   if(reused)throw Error('Reconcile this existing build journal before receiving stock again.');
+  const issues=[],balanceChanges=[];
   for(const component of p.requirements.values())for(const layer of component.layers){
     const b=layer.balance;
-    await stores.StockBalance.update(b.id,{quantity:layer.quantity_after,total_value:layer.value_after,unit_cost:layer.quantity_after>0?layer.value_after/layer.quantity_after:Number(b.total_value)/Number(b.quantity)});
-    await stores.StockMovement.create({product_id:component.product.id,product_name:component.product.name,quantity:layer.quantity,unit_cost:layer.cost/layer.quantity,total_value:layer.cost,
+    balanceChanges.push({id:b.id,quantity:layer.quantity_after,total_value:layer.value_after,unit_cost:layer.quantity_after>0?layer.value_after/layer.quantity_after:Number(b.total_value)/Number(b.quantity)});
+    issues.push({product_id:component.product.id,product_name:component.product.name,quantity:layer.quantity,unit_cost:layer.cost/layer.quantity,total_value:layer.cost,
       movement_type:'production_issue',source_warehouse_id:b.warehouse_id,lot_number:b.lot_number||'',expiry_date:b.expiry_date||undefined,production_order_id:b.production_order_id||'',
       document_type:'AssemblyBuild',document_id:eventId,journal_id:journal.id,movement_date:body.date,status:'approved',created_by:user.id,reason:'Components consumed in '+eventId});
   }
-  const orders=[],now=new Date().toISOString();
-  for(const output of p.outputs){
-    const orderNumber=await nextSequence({entities:stores},'next_production_number','AB',5),batch='B-'+orderNumber+'-'+eventId.slice(-6).toUpperCase();
-    const order=await stores.ProductionOrder.create({order_number:orderNumber,product_id:output.product.id,product_name:output.product.name,planned_output:output.quantity,actual_output:output.quantity,
+  const changedBalances=await updateRows(stores.StockBalance,balanceChanges);
+  const numbers=await buildNumbers(stores,p.outputs.length),now=new Date().toISOString();
+  const builds=p.outputs.map((output,index)=>({output,orderNumber:numbers[index],batch:'B-'+numbers[index]+'-'+eventId.slice(-6).toUpperCase()}));
+  const recipes=await createRows(stores.Recipe,builds.map(({output,orderNumber})=>({product_id:output.product.id,product_name:output.product.name,recipe_name:'Assembly build '+orderNumber+' - '+output.product.name,
+    batch_output:1,output_unit:output.unit,version:1,status:'archived',recipe_kind:'assembly_build_snapshot',assembly_build_id:eventId,assembly_build_components:output.components,created_by:user.id})));
+  await createRows(stores.RecipeLine,builds.flatMap(({output},index)=>output.materials.map(m=>({recipe_id:recipes[index].id,material_id:m.product_id,material_name:m.product_name,quantity:m.required/output.quantity,unit:m.unit,assembly_build_id:eventId}))));
+  const createdOrders=await createRows(stores.ProductionOrder,builds.map(({output,orderNumber,batch},index)=>({order_number:orderNumber,recipe_id:recipes[index].id,product_id:output.product.id,product_name:output.product.name,planned_output:output.quantity,actual_output:output.quantity,
       production_date:body.date,expiry_date:output.expiry_date,batch_number:batch,status:'released',production_method:'assembly_build',assembly_build_id:eventId,
       assembly_build_components:output.components,assembly_build_overhead:output.overhead,total_material_cost:output.total_cost,actual_cost_per_unit:output.total_cost/output.quantity,
       warehouse_id:p.destination.id,output_warehouse_id:p.destination.id,output_warehouse_name:p.destination.name,output_journal_id:journal.id,approved_by:user.id,approved_at:now,
-      completed_by:user.id,completed_at:now,qc_released_by_user_id:user.id,qc_released_at:now,created_by:user.id,notes:body.notes||''});
-    for(const m of output.materials)await stores.ProductionMaterial.create({production_order_id:order.id,material_id:m.product_id,material_name:m.product_name,standard_quantity:m.required,issued_quantity:m.required,consumed_quantity:m.required,unit:m.unit,unit_cost:m.cost/m.required,total_cost:m.cost,assembly_build_id:eventId,assembly_build_source_lots:p.requirements.get(m.product_id).layers.map(l=>({lot_number:l.balance.lot_number||'',warehouse_id:l.balance.warehouse_id,expiry_date:l.balance.expiry_date||'',quantity:l.quantity,total_value:l.cost})),assembly_build_shared_sources:p.outputs.length>1});
-    await stores.StockBalance.create({product_id:output.product.id,product_name:output.product.name,warehouse_id:p.destination.id,warehouse_name:p.destination.name,quantity:output.quantity,total_value:output.total_cost,
+      completed_by:user.id,completed_at:now,qc_released_by_user_id:user.id,qc_released_at:now,created_by:user.id,notes:body.notes||''})));
+  const materials=[],receipts=[],movements=[...issues],orders=[];
+  builds.forEach(({output,orderNumber,batch},index)=>{
+    const order=createdOrders[index];
+    for(const m of output.materials)materials.push({production_order_id:order.id,material_id:m.product_id,material_name:m.product_name,standard_quantity:m.required,issued_quantity:m.required,consumed_quantity:m.required,unit:m.unit,unit_cost:m.cost/m.required,total_cost:m.cost,assembly_build_id:eventId,assembly_build_source_lots:p.requirements.get(m.product_id).layers.map(l=>({lot_number:l.balance.lot_number||'',warehouse_id:l.balance.warehouse_id,expiry_date:l.balance.expiry_date||'',quantity:l.quantity,total_value:l.cost})),assembly_build_shared_sources:p.outputs.length>1});
+    receipts.push({product_id:output.product.id,product_name:output.product.name,warehouse_id:p.destination.id,warehouse_name:p.destination.name,quantity:output.quantity,total_value:output.total_cost,
       unit_cost:output.total_cost/output.quantity,lot_number:batch,batch_number:batch,production_order_id:order.id,expiry_date:output.expiry_date,qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:now,
       qc_notes:'Assembly build completed and released by production management.',assembly_build_id:eventId});
-    await stores.StockMovement.create({product_id:output.product.id,product_name:output.product.name,quantity:output.quantity,total_value:output.total_cost,unit_cost:output.total_cost/output.quantity,
+    movements.push({product_id:output.product.id,product_name:output.product.name,quantity:output.quantity,total_value:output.total_cost,unit_cost:output.total_cost/output.quantity,
       movement_type:'production_output',destination_warehouse_id:p.destination.id,lot_number:batch,batch_number:batch,production_order_id:order.id,expiry_date:output.expiry_date,
       document_type:'AssemblyBuild',document_id:eventId,journal_id:journal.id,movement_date:body.date,status:'approved',created_by:user.id});
     orders.push({id:order.id,order_number:orderNumber,product_id:output.product.id,product_name:output.product.name,quantity:output.quantity,unit:output.unit,batch_number:batch,expiry_date:output.expiry_date,total_cost:output.total_cost});
+  });
+  await createRows(stores.ProductionMaterial,materials);
+  const received=await createRows(stores.StockBalance,receipts);
+  await createRows(stores.StockMovement,movements);
+  const balancesAfter=new Map(data.balances.map(b=>[b.id,b]));
+  for(const b of [...changedBalances,...received])balancesAfter.set(b.id,b);
+  const summaries=new Map([...p.requirements.keys(),...p.outputs.map(o=>o.product.id)].map(id=>[id,{quantity:0,value:0,valid:true}]));
+  // Roll costs up from the transaction snapshot plus the returned stock writes,
+  // rather than re-querying all of a product's lots after each receipt.
+  for(const b of balancesAfter.values()){
+    const summary=summaries.get(b.product_id);if(!summary)continue;
+    const quantity=Number(b.quantity),value=Number(b.total_value);
+    if(!Number.isFinite(quantity)||quantity<0||!Number.isFinite(value)||value<0)summary.valid=false;
+    summary.quantity+=quantity;summary.value+=value;
   }
-  for(const id of new Set([...p.requirements.keys(),...p.outputs.map(o=>o.product.id)])){
-    const balances=await readRecords(stores.StockBalance,{product_id:id});
-    if(balances.some(b=>!Number.isFinite(Number(b.quantity))||Number(b.quantity)<0||!Number.isFinite(Number(b.total_value))||Number(b.total_value)<0))continue;
-    const q=balances.reduce((n,b)=>n+Number(b.quantity),0),value=balances.reduce((n,b)=>n+Number(b.total_value),0);if(q>0)await stores.Product.update(id,{current_cost:value/q});
-  }
+  await updateRows(stores.Product,[...summaries].filter(([,s])=>s.valid&&s.quantity>0).map(([id,s])=>({id,current_cost:s.value/s.quantity})));
   const result={id:eventId,orders,journal_id:journal.id,journal_number:journal.journal_number,total_cost:money(p.outputs.reduce((n,o)=>n+o.total_cost,0)),warehouse_name:p.destination.name};
   await stores.AuditLog.create({id:eventId,action:'build_assemblies',module:'manufacturing',entity_type:'AssemblyBuild',entity_id:eventId,user_id:user.id,user_name:employee?.full_name||user.full_name||user.email,
     description:'Built and released '+orders.map(o=>o.quantity+' '+o.product_name).join(', '),assembly_build_payload:payload,assembly_build_result:result,assembly_build_materials:p.availability});
