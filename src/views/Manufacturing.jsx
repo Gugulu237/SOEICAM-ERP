@@ -23,17 +23,18 @@ import ProductionBoard from "@/components/manufacturing/ProductionBoard";
 import ViewToggle from "@/components/shared/ViewToggle";
 import ProductionApprovalNotice from '@/components/manufacturing/ProductionApprovalNotice';
 
+const AssemblyBuildPanel=dynamic(()=>import('@/components/manufacturing/AssemblyBuildPanel'),{loading:()=> <p role="status">{ui('Loading assembly builds...')}</p>});
 const QualityControl=dynamic(()=>import('@/views/QualityControl'),{loading:()=> <p role="status">{ui('Loading quality and batches...')}</p>});
 export default function Manufacturing(){
   useInterfaceLanguage();
   const {role,allowedModules,loading}=useCurrentUser(),[params,setParams]=useSearchParams();
   const canProduce=['admin','production_manager','warehouse_manager'].includes(role)&&(!allowedModules||allowedModules.includes('manufacturing'));
   const canQuality=qualitySections(role).length>0&&(!allowedModules||allowedModules.includes('quality'));
-  const sections=[...(canProduce?[['orders','Production orders'],['recipes','Recipes']]:[]),...(canQuality?[['quality','Quality & batches']]:[])];
+  const sections=[...(canProduce?[['orders','Production orders'],['build','Build assemblies'],['recipes','Recipes']]:[]),...(canQuality?[['quality','Quality & batches']]:[])];
   const section=sections.some(([key])=>key===params.get('section'))?params.get('section'):sections[0]?.[0];
   if(loading)return <p role="status">{ui('Loading manufacturing...')}</p>;
   if(!section)return <p role="alert">{ui('Your role does not have access to manufacturing.')}</p>;
-  return <div className="space-y-4"><PageHeader title={ui('Manufacturing')}/><nav aria-label={ui('Manufacturing sections')} className="flex flex-wrap gap-2 border-b pb-3">{sections.map(([key,label])=><Button key={key} variant={section===key?'default':'outline'} aria-current={section===key?'page':undefined} onClick={()=>{const next=new URLSearchParams(params);next.set('section',key);setParams(next);}}>{ui(label)}</Button>)}</nav>{section==='quality'?<QualityControl embedded/>:<ManufacturingProduction section={section}/>}</div>;
+  return <div className="space-y-4"><PageHeader title={ui('Manufacturing')}/><nav aria-label={ui('Manufacturing sections')} className="flex flex-wrap gap-2 border-b pb-3">{sections.map(([key,label])=><Button key={key} variant={section===key?'default':'outline'} aria-current={section===key?'page':undefined} onClick={()=>{const next=new URLSearchParams(params);next.set('section',key);setParams(next);}}>{ui(label)}</Button>)}</nav>{section==='build'?<AssemblyBuildPanel/>:section==='quality'?<QualityControl embedded/>:<ManufacturingProduction section={section}/>}</div>;
 }
 function ManufacturingProduction({section}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

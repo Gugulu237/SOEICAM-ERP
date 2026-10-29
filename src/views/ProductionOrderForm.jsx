@@ -1,3 +1,4 @@
+import AssemblyBuildDetails from '@/components/manufacturing/AssemblyBuildDetails';
 import {itemUnitCost} from '@/lib/item-units';
 
 /* localized-interface */
@@ -34,6 +35,7 @@ export default function ProductionOrderForm() {
   useEffect(()=>{let active=true;setLoaded(null);setError('');if(id)erp.entities.ProductionOrder.get(id).then(row=>{if(active){if(!row)throw Error('Production order not found.');setLoaded(row);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[id]);
   if(error)return <p role="alert">{error}</p>;
   if(id&&loaded?.id!==id)return <p role="status">{ui('Loading production order…')}</p>;
+  if(id&&loaded?.production_method==='assembly_build')return <AssemblyBuildDetails order={loaded}/>;
   if(id&&isYogurt(loaded) || !id&&!params.get('product')&&params.get('mode')!=='assembly')return <YogurtProductionForm key={id || 'new'} initialOrder={id?loaded:null}/>;
   return <LegacyProductionOrderForm key={id || params.get('product') || 'new'} initialOrder={id?loaded:null}/>;
 }

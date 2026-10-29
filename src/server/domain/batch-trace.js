@@ -79,6 +79,10 @@ export async function batchTraceAction(client,user,body) {
     const materialProducts=await byIds(stores.Product,layers.map(m=>m.product_id));
     for(const m of layers){const material=materials.find(row=>row.material_id===m.product_id),p=materialProducts.get(m.product_id);ingredients.push({id:m.id,material_id:m.product_id,material_name:p?.name || material?.material_name || m.product_name,lot_number:m.lot_number,consumed_quantity:m.quantity,unit:p?.unit_of_measure || p?.storage_unit || material?.unit,unit_cost:m.unit_cost,total_cost:m.total_value,expiry_date:m.expiry_date,evidence:'Recorded stock issue'});}
     for(const material of materials.filter(row=>!layers.some(m=>m.product_id===row.material_id)))ingredients.push({...view(material,'id material_id material_name lot_number consumed_quantity standard_quantity unit unit_cost total_cost expiry_date'),evidence:'Production record; no stock issue detail'});
+    if(order.production_method==='assembly_build') {
+      ingredients.length=0;
+      for(const material of materials)ingredients.push({...view(material,'id material_id material_name consumed_quantity standard_quantity unit unit_cost total_cost'),lot_number:(material.assembly_build_source_lots||[]).map(l=>l.lot_number).filter(Boolean).join(', '),source_lots:material.assembly_build_source_lots||[],evidence:material.assembly_build_shared_sources?'Assembly build; source lots shared across this build':'Assembly build; recorded stock issue'});
+    }
     if(order.recipe_kind==='yogurt_phased_v1') {
       ingredients.length=0;
       for(const material of materials)for(const [i,layer] of (material.yogurt_consumed_layers || material.yogurt_layers || []).entries()) {
