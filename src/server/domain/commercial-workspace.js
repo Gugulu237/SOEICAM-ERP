@@ -6,6 +6,7 @@ import { commercialActor } from './commercial-actor.js';
 import { prepareDeliveryDefinition } from './customer-delivery.js';
 import { effectiveRole } from './roles.js';
 import { reportAgentCashDeposit } from './agent-cash-deposit.js';
+import { registrationFingerprint } from './commercial-request.js';
 
 // Positional pagination also works with the SDK version used by older functions.
 export async function readRecords(entity, query = {}) {
@@ -60,12 +61,14 @@ export async function commercialAction(base44, user, body) {
 
   if (body.action === 'registerCustomer') {
     const { employee: agent } = await commercialActor(base44, user, body.commercialId, 'registering a field customer');
-    if (!/^[a-f0-9-]{36}$/i.test(body.requestKey || '')) throw new Error('Invalid registration request; reopen the form');
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.requestKey || '')) throw new Error('Invalid registration request; reopen the form');
     const data = registrationData(body.customer || {}, agent, user.id, new Date().toISOString());
+    const fingerprint = registrationFingerprint(data, body.customer || {});
     const customerNumber = `FC-${body.requestKey.toUpperCase()}`;
     const existing = (await readRecords(svc.entities.Customer, { customer_number: customerNumber }))[0];
     if (existing) {
       if (existing.acquired_by_id !== agent.id) throw new Error('This registration reference is already used');
+      if (existing.registration_fingerprint && existing.registration_fingerprint !== fingerprint) throw new Error('This registration reference was already used with different customer details. Open the existing customer before continuing.');
       return { customer: customerView(existing), reused: true };
     }
     const customers = await readRecords(svc.entities.Customer);
@@ -75,7 +78,7 @@ export async function commercialAction(base44, user, body) {
     const possibleDuplicate = customers.some((c) => normalizedPhone(c.phone) === normalizedPhone(data.phone));
     // A retry preserves attribution to the authenticated Commercial.
     const delivery=await prepareDeliveryDefinition(svc.entities,{...data,parent_id:body.customer?.parent_id || '',delivery_zone_id:body.customer?.delivery_zone_id || '',delivery_days:body.customer?.delivery_days || ''},null,{user,role,employee:agent});
-    const result = await svc.entities.Customer.upsert([{ ...delivery, customer_number: customerNumber,
+    const result = await svc.entities.Customer.upsert([{ ...delivery, customer_number: customerNumber, registration_fingerprint: fingerprint,
       acquisition_notes: possibleDuplicate ? 'Shared phone number: check for an existing customer before verifying.' : '',
     }], { key: ['customer_number', 'acquired_by_id'] });
     const customer = result.records[0];

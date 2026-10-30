@@ -51,7 +51,7 @@ export function catalogueFromStored(stored) {
   const roles = { ...Object.fromEntries(Object.entries(defaults).map(([key,value]) => [key,{ ...value,key,label:baseLabels[key] }])), supply_chain_manager:SUPPLY_CHAIN_MANAGER };
   for (const [key,profile] of Object.entries(stored?.roles || {})) {
     if (['constructor','prototype','__proto__'].includes(key) || !keyPattern.test(key) || !profile || typeof profile !== 'object') continue;
-    const template = key === 'admin' ? 'admin' : profile.template_role || defaults[key]?.template_role || (key === 'supply_chain_manager' ? 'warehouse_manager' : '');
+    const template = ['admin','driver','commercial'].includes(key) ? key : profile.template_role || defaults[key]?.template_role || (key === 'supply_chain_manager' ? 'warehouse_manager' : '');
     if (!template || (template === 'admin' && key !== 'admin') || !Object.hasOwn(TEMPLATE_MODULES,template)) continue;
     const max = MODULES.map(m=>m.key);
     const managementDefaults=['admin','production_manager','supply_chain_manager'].includes(key) && Number(profile.module_permissions_version || 0)<3 ? ['sales','accounting','expenses'] : [];
@@ -75,6 +75,8 @@ export function validateRoleProfile(input, current) {
   const key = String(input.key || '').trim().toLowerCase();
   if (!keyPattern.test(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error('Use a unique role key with lowercase letters, numbers and underscores. The General Manager role is protected.');
   const template = key==='admin'?'admin':String(input.template_role || defaults[key]?.template_role || '');
+  if(key==='driver'&&template!=='driver')throw new Error('The Driver role must retain the driver access template.');
+  if(key==='commercial'&&template!=='commercial')throw new Error('The Commercial role must retain the commercial access template.');
   if (!template || (template === 'admin' && key !== 'admin') || !Object.hasOwn(TEMPLATE_MODULES,template) || (key === 'admin' && input.template_role !== 'admin')) throw new Error('Choose an available operational access template. Super Admin authority cannot be inherited.');
   const label = String(input.label || '').trim(), summary = String(input.summary || '').trim();
   if (!label || label.length > 80 || summary.length > 500) throw new Error('Enter a role name (up to 80 characters) and a short description (up to 500).');

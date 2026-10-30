@@ -1514,6 +1514,8 @@
       "type": {
         "type": "string",
         "enum": [
+          "stock_received",
+          "delivery_plan",
           "trip_started",
           "trip_returned",
           "delivery_completed",

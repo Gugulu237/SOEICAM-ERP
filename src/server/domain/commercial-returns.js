@@ -160,6 +160,7 @@ export async function commercialReturnAction(base44, user, body) {
   const actor = await requireStaff(base44, user, ['admin', 'commercial', 'driver'], 'expired collections and replacements');
   if (actor.role !== 'admin' && actor.employee?.status !== 'active') throw Error('An active staff account is required');
   base44.auth.assertModule?.(actor.role === 'driver' ? 'distribution' : 'commercial');
+  if (actor.role === 'driver' && (body.action === 'replaceExpiredReturn' || body.action === 'recordExpiredReturn' && body.replaceNow !== false)) throw Error('Drivers report collections only. The commercial agent records fresh replacements');
   if (body.action === 'driverReturnsWorkspace') {
     if (actor.role !== 'driver' || body.driverId && body.driverId !== actor.employee.id || body.commercialId) throw Error('Open your own driver workspace');
     const { records, ...workspace } = await driverReturnWorkspace(svc, actor.employee);

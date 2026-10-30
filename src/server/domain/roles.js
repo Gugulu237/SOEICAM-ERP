@@ -17,7 +17,7 @@ const aliases = {
   'operations manager': 'production_manager', operations_manager: 'production_manager',
   'operations/production manager': 'production_manager', 'operations / production manager': 'production_manager',
   operations_production_manager: 'production_manager',
-  salesperson: 'commercial', 'sales person': 'commercial', hostess: 'hotesse',
+  salesperson: 'commercial', 'sales person': 'commercial', 'sales agent': 'commercial', sales_agent: 'commercial', 'commercial agent': 'commercial', commercial_agent: 'commercial', hostess: 'hotesse',
   chauffeur: 'driver', 'delivery driver': 'driver', worker: 'employee', staff: 'employee',
 };
 export function normalizeRole(value) {

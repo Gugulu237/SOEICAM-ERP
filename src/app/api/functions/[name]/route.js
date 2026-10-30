@@ -29,7 +29,7 @@ export async function POST(request,{ params }) {
       const load = invoke;
       // Multi-page reports and stock comparisons need one consistent snapshot. Other dashboard
       // reads retain their existing transaction-free path.
-      return respond(await timing.measure('handler',() => name === 'fieldOps' && ['assemblyBuildWorkspace','previewAssemblyBuild','yogurtWorkspace', 'warehouseAdjustmentWorkspace', 'existingStockWorkspace', 'cashFlowReport', 'inventoryAuditWorkspace', 'inventoryAuditDetail', 'fieldStockInventory', 'driverReturnsWorkspace', 'checkProductionMaterials', 'productionPurchaseOptions'].includes(body.action) ? transaction(load) : load()));
+      return respond(await timing.measure('handler',() => name === 'fieldOps' && ['assemblyBuildWorkspace','previewAssemblyBuild','yogurtWorkspace', 'warehouseAdjustmentWorkspace', 'existingStockWorkspace', 'cashFlowReport', 'inventoryAuditWorkspace', 'inventoryAuditDetail', 'fieldStockInventory', 'commercialDailySupplies', 'driverReturnsWorkspace', 'checkProductionMaterials', 'productionPurchaseOptions'].includes(body.action) ? transaction(load) : load()));
     }
     try {
       return respond(await timing.measure('transaction',() => transaction(async () => {

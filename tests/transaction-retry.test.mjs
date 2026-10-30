@@ -22,7 +22,7 @@ async function bundle(entry, additional = []) {
   return import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
 }
 let dbModule;
-async function withPool(run, { tables, commitErrors = [] } = {}) {
+async function withPool(run, { tables, commitErrors = [], afterRollback } = {}) {
   const previous = { url: process.env.DATABASE_URL, pool: globalThis.__soeicamDatabase };
   const state = { attempts: 0, commits: 0, rollbacks: 0, statements: [] };
   const pool = { async begin(callback) {
@@ -36,6 +36,7 @@ async function withPool(run, { tables, commitErrors = [] } = {}) {
     } catch (error) {
       if (before) for (const [name, rows] of Object.entries(before)) tables[name].splice(0, tables[name].length, ...rows);
       state.rollbacks++;
+      afterRollback?.(state);
       throw error;
     }
   } };
@@ -168,7 +169,8 @@ test('real supply handler retries after a late ledger conflict, rereads the body
 test('receipt handler preserves database conflicts for retry and validation responses roll back once', async () => {
   let calls = 0;
   const client = { auth: { me: async () => ({ id: 'gm', role: 'admin' }) }, entities: { Employee: { filter: async () => [] } },
-    asServiceRole: { entities: { Payment: { filter: async () => { if (++calls === 1) throw conflict('40P01'); return { items: [{ id: 'existing' }] }; } } } } };
+    asServiceRole: { entities: { Payment: { filter: async () => { if (++calls === 1) throw conflict('40P01'); return { items: [{ id: 'existing', treasury_account_id: 'cash' }] }; } },
+      TreasuryAccount: { get: async () => ({ id: 'cash', account_type: 'cash', is_active: true }) } } } };
   globalThis.__retryClient = client;
   try {
     const post = await functionRoute();
@@ -182,4 +184,24 @@ test('receipt handler preserves database conflicts for retry and validation resp
       assert.equal(response.status, 400); assert.equal(state.attempts, 1); assert.equal(state.rollbacks, 1); assert.equal(state.commits, 0);
     });
   } finally { delete globalThis.__retryClient; }
+});
+
+test('a conflicted sale rechecks stock, credit and return-to-base before retrying', async t => {
+  for (const [name, concurrentChange, expected] of [
+    ['stock sold by another request', tables => { tables.StockBalance[0].quantity = 1; tables.StockBalance[0].total_value = 200; }, /Only 1 available/],
+    ['customer credit exhausted', tables => { tables.Customer[0].credit_limit = 500; }, /credit limit/],
+    ['driver returned to base', tables => { tables.DriverActivity.push({ id: 'concurrent-return', dispatch_id: 'run-a', type: 'trip_returned' }); }, /returned to base/],
+  ]) await t.test(name, async () => {
+    const { client, tables } = fixture(); globalThis.__retryClient = client;
+    try {
+      const post = await functionRoute();
+      await withPool(async (_, state) => {
+        const response = await post(request(validSupply()), { params: Promise.resolve({ name: 'fieldOps' }) });
+        assert.equal(response.status, 400); assert.match((await response.json()).error, expected);
+        assert.equal(state.attempts, 2); assert.equal(state.commits, 0);
+        for (const name of ['FieldSale', 'FieldSaleLine', 'StockMovement', 'JournalEntry', 'JournalLine', 'CashCollection']) assert.equal(tables[name].length, 0, name);
+        assert.equal(tables.CompanySettings[0].next_field_sale_number, 1);
+      }, { tables, commitErrors: [conflict()], afterRollback: state => { if (state.rollbacks === 1) concurrentChange(tables); } });
+    } finally { delete globalThis.__retryClient; }
+  });
 });

@@ -11,7 +11,7 @@ import path from 'node:path';
 const chrome = process.env.SOEICAM_TEST_BROWSER || ['C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(existsSync);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-test('real browser Back/Forward, list state, sidebar resume, reload and scrolling', { skip: !chrome, timeout: 60000 }, async () => {
+test('real browser Back/Forward, list state, sidebar resume, reload and scrolling', { skip: process.env.SOEICAM_SKIP_BROWSER_TESTS === '1' ? 'Explicitly disabled: this runner cannot connect to local browser sockets' : !chrome, timeout: 60000 }, async () => {
   // The routing adapter uses native history and deliberately drops custom state on
   // push/replace, matching Next. The tested provider, hooks, toolbar and table are real.
   const routerFixture = `import {useSyncExternalStore,useMemo} from 'react';

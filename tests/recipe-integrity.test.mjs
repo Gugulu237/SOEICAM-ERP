@@ -107,7 +107,7 @@ async function recipeRenderer(){
     const leaf=names=>"import React from 'react';"+names.map(name=>`export const ${name}=({children})=>React.createElement('div',null,children);`).join('');
     const mocks={
       '@/hooks/useCurrentUser':"export const useCurrentUser=()=>({role:'production_manager'});",
-      '@/api/erpClient':'export const erp={entities:new Proxy({},{get:(_,key)=>globalThis.__recipeUI.client[key]})};',
+      '@/api/erpClient':'export const invalidateERPReads=()=>{};export const erp={entities:new Proxy({},{get:(_,key)=>globalThis.__recipeUI.client[key]})};',
       '@/lib/router':"export const useParams=()=>({id:'approved'}),useNavigate=()=>value=>globalThis.__recipeUI.navigation.push(value),useBack=()=>()=>{},useSearchParams=()=>[new URLSearchParams()];",
       '@/components/ui/use-toast':'export const useToast=()=>({toast:v=>globalThis.__recipeUI.notifications.push(v)});',
       '@/components/ui/button':"import React from 'react';export const buttonVariants=()=> 'fixture-button';export const Button=({children,...props})=>{globalThis.__recipeUI.capture('button',props,children);return React.createElement('button',props,children);};",

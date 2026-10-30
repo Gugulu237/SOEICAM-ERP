@@ -21,11 +21,13 @@ import { purchaseWorkspace, purchasePaymentDecision } from '../domain/purchase-w
 import { distributionControlAction, DISTRIBUTION_ACTIONS } from '../domain/distribution-control.js';
 import { saleItemPostings } from '../../lib/item-posting.js';
 import { outletAction } from '../domain/outlet-workspace.js';
-import { supplyRun, assertRunSupplyStock } from '../domain/commercial-runs.js';
+import { currentSupplyRun, assertRunSupplyStock } from '../domain/commercial-runs.js';
+import { supplyRequestFingerprint } from '../domain/commercial-request.js';
 import { dispatchAction } from '../domain/dispatch-operations.js';
 import { stockUnit } from '../../lib/item-units.js';
 import { fieldSupplyPayment } from '../../lib/commercial-daily.js';
 import { employeeWorkspaceAction } from '../domain/employee-workspace.js';
+import { driverDeliveryAction } from '../domain/driver-deliveries.js';
 import { commercialAction, readRecords } from '../domain/commercial-workspace.js';
 import { finishedProduct, periodDates } from '../domain/commercial-rules.js';
 import { createClientFromRequest } from '../request-client.js';
@@ -160,7 +162,7 @@ export default async function (req) {
     let module = ASSEMBLY_BUILD_ACTIONS.includes(action)?'manufacturing':action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
       : CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'
       : SUPPLIER_ACTIONS.includes(action) || inActions(['purchasesWorkspace','approvePurchasePayment','rejectPurchasePayment']) ? 'purchases'
-      : DISTRIBUTION_ACTIONS.includes(action) || inActions(['loadDispatch','returnDispatchStock','dispatchReconciliation','approveDispatch','approveDispatchRequest','dispatchActivity','driverActivity','issueCustody','returnCustody']) ? 'distribution'
+      : DISTRIBUTION_ACTIONS.includes(action) || inActions(['driverReceiveLoad','driverSaveDeliveryPlan','loadDispatch','returnDispatchStock','dispatchReconciliation','approveDispatch','approveDispatchRequest','dispatchActivity','driverActivity','issueCustody','returnCustody']) ? 'distribution'
       : CASHIER_ACTIONS.includes(action) || action === 'submitHandover' ? 'cashier'
       : inActions(['startFermentation','saveProductionPlan','completeProduction','approveProductionOrder','rejectProductionOrder','issueProductionMaterials','productionPurchaseOptions','requestProductionPurchase','checkProductionMaterials','requestProductionAudit','productionAuditRequests','resolveProductionAudit']) ? 'manufacturing'
       : inActions(['batchCatalogue','batchTrace']) ? 'quality'
@@ -174,7 +176,7 @@ export default async function (req) {
     if(module){
       const ownCommercial=['saveSale','commercialDepositCash','commercialCashiers','registerCustomer','updateCustomerGps','commercialDailySupplies','submitHandover'].includes(action);
       const ownOutlet=['submitOutletVisit','submitDeliveryShelfCheck'].includes(action);
-      await selectFeature(module,ownCommercial?'commercial':ownOutlet?'hotesse':action==='driverActivity'?'driver':'admin');
+      await selectFeature(module,ownCommercial?'commercial':ownOutlet?'hotesse':['driverActivity','driverReceiveLoad','driverSaveDeliveryPlan'].includes(action)?'driver':'admin');
       base44.auth.assertModule?.(module);
     }
     if (ASSEMBLY_BUILD_ACTIONS.includes(action)) return Response.json(await assemblyBuildAction(base44,user,body));
@@ -210,6 +212,8 @@ export default async function (req) {
       return Response.json(await commercialAction(base44, user, body));
     }
 
+    if (['driverReceiveLoad', 'driverSaveDeliveryPlan'].includes(action)) return Response.json(await driverDeliveryAction(base44,user,body));
+
     if (['employeeDashboard', 'driverActivity', 'dispatchActivity'].includes(action)) {
       return Response.json(await employeeWorkspaceAction(base44, user, body));
     }
@@ -232,6 +236,7 @@ export default async function (req) {
       if (body.paymentType != null && body.paymentType !== '' && !['cash', 'credit'].includes(body.paymentType)) throw new Error('Choose cash or credit for this supply');
       const paymentType = ['cash', 'credit'].includes(body.paymentType) ? body.paymentType : null;
       periodDates(transactionDate, transactionDate);
+      if (submit && transactionDate > today()) throw new Error('A supply cannot be recorded in the future');
       if (!body.customerId) throw new Error('Select the customer being supplied');
 
       const customer = await svc.entities.Customer.get(body.customerId);
@@ -248,10 +253,16 @@ export default async function (req) {
       if (sale && sale.commercial_id !== employee.id) throw new Error('This sale belongs to another Commercial');
       if (!sale && body.idempotencyKey) sale = (await readRecords(svc.entities.FieldSale, { commercial_id: employee.id, idempotency_key: body.idempotencyKey }))[0] || null;
       if (sale && (sale.stock_moved_at || !['draft', 'returned'].includes(sale.status))) {
-        if (body.idempotencyKey && sale.idempotency_key === body.idempotencyKey) return Response.json({ sale, reused: true });
+        if (body.idempotencyKey && sale.idempotency_key === body.idempotencyKey) {
+          if (sale.request_fingerprint) {
+            const savedLines = await readRecords(svc.entities.FieldSaleLine, { field_sale_id: sale.id });
+            if (sale.request_fingerprint !== supplyRequestFingerprint(body, sale, savedLines)) throw new Error('This supply reference was already used with different details. Open the recorded sale before continuing.');
+          }
+          return Response.json({ sale, reused: true });
+        }
         throw new Error('A submitted or stock-moved supply is locked. Contact an administrator for corrections.');
       }
-      const run = await supplyRun(svc, employee.id, body.dispatchId, transactionDate, submit);
+      const run = await currentSupplyRun(svc, employee.id, body.dispatchId, transactionDate, submit);
 
       const inputLines = Array.isArray(body.lines) ? body.lines : [];
       if (!inputLines.length || inputLines.length > 50 || inputLines.some(l => !l || typeof l.product_id !== 'string' || typeof l.quantity === 'boolean' || !Number.isFinite(Number(l.quantity)) || round3(l.quantity) <= 0) || new Set(inputLines.map(l => l.product_id)).size !== inputLines.length) throw new Error('Add valid positive quantities for distinct products');
@@ -276,6 +287,7 @@ export default async function (req) {
         if (!finishedProduct(product)) throw new Error('Field sales accept only finished products and assemblies');
         if (product.is_active === false || product.configuration_status === 'draft') throw new Error(`${product.name} is not ready for sale`);
         const qty = round3(l.quantity);
+        if (typeof l.unit_price === 'boolean' || (l.unit_price != null && l.unit_price !== '' && !Number.isFinite(Number(l.unit_price)))) throw new Error('Enter a valid selling price');
         const listPrice = round2(product.selling_price);
         const unitPrice = l.unit_price === '' || l.unit_price == null ? listPrice : round2(l.unit_price);
         if (unitPrice <= 0) throw new Error(`${product.name} has no authorized selling price — set one on the item first`);
@@ -313,6 +325,11 @@ export default async function (req) {
       if (submit && paymentType === 'cash' && cashPortion <= 0) throw new Error('Choose credit when no cash was collected');
       if (cashPortion > total) throw new Error('The amount collected cannot exceed the sale total');
       const amountDue = round2(total - cashPortion);
+      const collectionDate = cashPortion > 0 ? (body.collectionDate || transactionDate) : '';
+      if (collectionDate) {
+        periodDates(collectionDate, collectionDate);
+        if (collectionDate < transactionDate || collectionDate > today()) throw new Error('Cash collection must be dated between the supply date and today');
+      }
       if (paymentType === 'cash' && amountDue > 0) {
         if (customer.credit_status === 'blocked') throw new Error('This customer is blocked for an unpaid supply balance');
         const limit = round2(customer.credit_limit || 0);
@@ -327,6 +344,11 @@ export default async function (req) {
         if (!receiptReference) throw new Error('The receipt reference is required to record the sale');
         receiptUris = await base44.validateReceiptPhotos(receiptUris, employee.id);
         await assertRunSupplyStock(svc, run, combinedLines, transactionDate);
+        const recorded = await readRecords(svc.entities.FieldSale, { commercial_id: employee.id, customer_id: customer.id, transaction_date: transactionDate });
+        if (recorded.some(row => row.id !== sale?.id && (row.stock_moved_at || !['draft','returned','cancelled'].includes(row.status))
+          && String(row.receipt_reference || '').trim().toLocaleLowerCase() === receiptReference.toLocaleLowerCase())) {
+          throw new Error('This customer receipt is already recorded for this day. Open the existing sale instead of submitting it again.');
+        }
       }
 
       const terms = body.paymentTermsDays === '' || body.paymentTermsDays == null ? Number(customer.payment_terms_days) || 0 : Number(body.paymentTermsDays);
@@ -348,7 +370,7 @@ export default async function (req) {
         tax_total: taxTotal,
         total,
         amount_collected: cashPortion,
-        collection_date: cashPortion > 0 ? (body.collectionDate || transactionDate) : '',
+        collection_date: collectionDate,
         amount_due: amountDue,
         payment_terms_days: terms,
         due_date: amountDue > 0 ? addDays(transactionDate, terms) : '',
@@ -361,6 +383,7 @@ export default async function (req) {
         credit_override_by: paymentType === 'credit' && body.creditOverrideReason ? (employee.full_name || user.full_name) : '',
         credit_override_reason: body.creditOverrideReason || '',
       };
+      payload.request_fingerprint = supplyRequestFingerprint(body, payload, lines.map(line => ({ product_id: line.product.id, unit_price: line.unitPrice })));
 
       if (!sale) {
         payload.sale_number = await nextSequence(svc, 'next_field_sale_number', 'FS', 6);
@@ -415,7 +438,7 @@ export default async function (req) {
               const res = await stockIssue(svc, {
                 productId: l.product.id, productName: l.product.name,
                 warehouseId: run.stock_warehouse_id,
-                quantity: l.qty, movementType: 'field_delivery', documentType: 'FieldSale', documentId: sale.id,
+                quantity: l.qty, movementType: 'field_delivery', documentType: 'FieldSale', documentId: sale.id, dispatchId: run.dispatch_id,
                 movementDate: transactionDate, reason: `Delivered to ${customer.business_name}`, saleableOnly: true,
               });
               cost = round2(cost + res.totalValue);

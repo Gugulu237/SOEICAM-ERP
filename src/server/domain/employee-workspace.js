@@ -6,6 +6,7 @@ import { finishedProduct } from './commercial-rules.js';
 import { businessDate } from '../../lib/business-date.js';
 import { reconcileDailyCash } from '../../lib/cash-settlement.js';
 import { commercialRunInventory } from './commercial-runs.js';
+import { driverDeliveryPoints } from './driver-deliveries.js';
 import { canManageDeliveries } from '../../lib/operations-access.js';
 import { catalogueFromStored, decorateEmployee, TEMPLATE_MODULES } from './role-catalogue.js';
 
@@ -159,10 +160,11 @@ export async function employeeWorkspaceAction(base44, user, body) {
     byIds(svc.entities.StockMovement, 'document_id', [...postedSales, ...stops].map(document => document.id)),
   ]);
   const products = (await byIds(svc.entities.Product, 'id', [...manifest, ...orderLines].map((l) => l.product_id))).filter(finishedProduct);
-  return { ...shared,
+  const activeDriverRuns = dispatches.filter(run => ['approved', 'loaded', 'in_transit'].includes(run.status) && !activities.some(row => row.dispatch_id === run.id && row.type === 'trip_returned'));
+  return { ...shared, deliveryCustomers: await driverDeliveryPoints(svc, activeDriverRuns),
     dispatches: dispatches.map((d) => pick(d, ['id', 'dispatch_number', 'dispatch_date', 'status', 'route_name', 'vehicle_name', 'vehicle_warehouse_id', 'warehouse_name', 'salesperson_id', 'salesperson_name', 'driver_name', 'departure_date', 'notes'])),
     manifest: manifest.map((l) => pick(l, ['id', 'dispatch_id', 'product_id', 'product_name', 'unit', 'requested_quantity', 'loaded_quantity', 'returned_quantity'])),
-    stops: stops.map((o) => ({ ...pick(o, ['id', 'dispatch_id', 'order_number', 'customer_name', 'location_name', 'status', 'delivery_date', 'notes']),
+    stops: stops.map((o) => ({ ...pick(o, ['id', 'dispatch_id', 'order_number', 'customer_id', 'customer_name', 'location_id', 'location_name', 'status', 'delivery_date', 'notes']),
       location: pick(locations.find((l) => l.id === o.location_id && l.customer_id === o.customer_id) || customers.find((c) => c.id === o.customer_id), locationFields) })),
     orderLines: orderLines.map((l) => pick(l, ['id', 'order_id', 'product_id', 'product_name', 'unit', 'quantity'])),
     products: products.map((p) => pick(p, productFields.filter((key) => key !== 'selling_price'))),

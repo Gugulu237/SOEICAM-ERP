@@ -1,6 +1,7 @@
 import { readRecords } from './commercial-workspace.js';
 import { finishedProduct } from './commercial-rules.js';
 import { businessDate } from '../../lib/business-date.js';
+import { effectiveRole } from './roles.js';
 
 export const commercialRunStates = ['approved', 'loaded', 'in_transit', 'returned', 'completed'];
 export const supplyRunStates = ['loaded', 'in_transit'];
@@ -8,7 +9,7 @@ const fields = ['id', 'dispatch_number', 'dispatch_date', 'status', 'driver_id',
 const productFields = ['id', 'name', 'inventory_type', 'image_url', 'size', 'unit_of_measure', 'storage_unit', 'sales_unit', 'selling_price', 'tax_rate', 'is_active'];
 const pick = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
 const round3 = value => Math.round(Number(value) * 1000) / 1000;
-const active = employee => employee && employee.status === 'active';
+const active = employee => employee && employee.status === 'active' && !employee.employee_removed_at;
 
 // Dispatch owns the stock while it is on the road. Looking up that source never
 // creates a second commercial-custody warehouse or moves the goods again.
@@ -23,6 +24,7 @@ async function runStockSource(svc, run, verifyingReturn = false) {
   ]);
   if (!vehicle || vehicle.is_active === false || vehicle.warehouse_id !== run.vehicle_warehouse_id
     || !warehouse || warehouse.is_active === false || warehouse.warehouse_type !== 'vehicle'
+    || (warehouse.vehicle_id && warehouse.vehicle_id !== vehicle.id)
     || warehouse.id === run.warehouse_id) throw new Error('The assigned vehicle stock location changed. Ask dispatch management to check this run.');
   if (conflicts.some(other => other.id !== run.id)) throw new Error('More than one active run uses this vehicle stock or paired team. Dispatch management must reconcile the runs before supplies can be recorded.');
   if (!verifyingReturn && (activities.length || run.return_date)) throw new Error('This run has returned to base. Ask dispatch management before recording more supplies.');
@@ -36,8 +38,8 @@ async function assignedRun(svc, commercialId, dispatchId, date) {
     run.driver_id ? svc.entities.Employee.get(run.driver_id) : null,
     svc.entities.Employee.get(commercialId),
   ]);
-  if (!active(driver) || driver.role !== 'driver') throw new Error('This run needs an active assigned driver');
-  if (!active(commercial) || commercial.role !== 'commercial' || commercial.id === driver.id) throw new Error('This run needs an active assigned Commercial sales agent');
+  if (!active(driver) || effectiveRole({role:'user'},driver) !== 'driver') throw new Error('This run needs an active assigned driver');
+  if (!active(commercial) || effectiveRole({role:'user'},commercial) !== 'commercial' || commercial.id === driver.id) throw new Error('This run needs an active assigned Commercial sales agent');
   return { run, driver };
 }
 
@@ -58,6 +60,21 @@ export async function supplyRun(svc, commercialId, dispatchId, date, required, v
   const source = required || supplyRunStates.includes(run.status) ? await runStockSource(svc, run, verifyingReturn) : { stock_warehouse_id: '', stock_warehouse_name: '' };
   return { dispatch_id: run.id, dispatch_number: run.dispatch_number, driver_id: driver.id, driver_name: driver.full_name,
     vehicle_id: run.vehicle_id || '', vehicle_name: run.vehicle_name || '', route_id: run.route_id || '', ...source };
+}
+
+// Sales resolve custody from the authenticated agent's live pairing, never from
+// a client warehouse or a legacy personal stock location. Explicit selections
+// still pass the same assignment, manifest and vehicle checks.
+export async function currentSupplyRun(svc, commercialId, dispatchId, date, required) {
+  if (!dispatchId && required) {
+    const runs = await readRecords(svc.entities.Dispatch, { salesperson_id: commercialId,
+      status: { $in: supplyRunStates }, dispatch_date: { $lte: date } });
+    if (runs.length !== 1) throw new Error(runs.length
+      ? 'More than one active run is assigned to you. Dispatch management must reconcile the pairing before you sell.'
+      : 'No loaded driver run is assigned to you. Ask dispatch management to load and pair your vehicle.');
+    dispatchId = runs[0].id;
+  }
+  return supplyRun(svc, commercialId, dispatchId, date, required);
 }
 
 export async function runManifest(svc, dispatchId, warehouseId) {

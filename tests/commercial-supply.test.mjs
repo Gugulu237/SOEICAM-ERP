@@ -52,7 +52,7 @@ test('exact positive distinct product quantities and an authorized private recei
 test('field supplies are confined to their active assigned crew, loaded manifest and actual vehicle stock', async t => {
   const handler = await fieldHandler();
   const cases = [
-    ['missing run', () => {}, { dispatchId: '' }],
+    ['no assigned run', tables => { tables.Dispatch.length = 0; }, { dispatchId: '' }],
     ['run belongs to another agent', tables => { tables.Dispatch[0].salesperson_id = 'agent-b'; }],
     ['future run cannot be supplied early', tables => { tables.Dispatch[0].dispatch_date = '2999-01-01'; }],
     ['approved but not loaded', tables => { tables.Dispatch[0].status = 'approved'; }],

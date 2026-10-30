@@ -7,6 +7,9 @@ import {featureAllowsEntity,FEATURE_KEYS} from './domain/role-catalogue.js';
 // HTTP headers and stored employee metadata cannot manufacture the Symbol tag.
 export function featureContext(context,module,actorRole='admin',action){
  if(!module||principalRole(context.user,context.employee)==='admin')return context;
+ // Field roles keep their duties even when an old catalogue grants full modules.
+ const nativeRole=principalRole(context.user,context.employee);
+ if(['driver','commercial'].includes(nativeRole)&&actorRole!==nativeRole&&module!=='sales_reports')return context;
  const employee=context.employee;
  if(!context.user||!employee||employee.status!=='active'||employee.employee_removed_at)return context;
  const profile=activeStaffRole(employee,context.roleCatalogue,businessDate());

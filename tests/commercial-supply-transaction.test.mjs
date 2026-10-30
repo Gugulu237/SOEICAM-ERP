@@ -132,27 +132,27 @@ test('a failed expired exchange rolls back quarantine, fresh stock, proof and jo
   } finally { delete globalThis.__dailySupplyClient; delete globalThis.__supplyTransaction; await db.close(); }
 });
 
-test('a driver replacement rolls back its collection, location, quarantine, fresh stock and audit on late ledger failure', async () => {
+test('a commercial replacement rolls back its collection, location, quarantine, fresh stock and audit on late ledger failure', async () => {
   const db = new PGlite();
   try {
     const { entities, client } = await databaseFixture(db), route = await functionRoute();
-    client.auth.me = async () => ({ id: 'driver-login', role: 'user' });
-    client.entities.Employee.filter = async () => [await entities.Employee.get('driver-a')];
+    client.auth.me = async () => user;
+    client.entities.Employee.filter = async () => [await entities.Employee.get('agent-a')];
     await entities.Customer.update('customer-a', { salesperson_id: 'agent-a' });
     globalThis.__dailySupplyClient = client;
     globalThis.__supplyTransaction = async callback => { await db.exec('BEGIN'); try { const result = await callback(); await db.exec('COMMIT'); return result; } catch (error) { await db.exec('ROLLBACK'); throw error; } };
     const original = entities.Account.update; let fail = true;
-    entities.Account.update = async (id, value) => { if (id === 'inventory' && fail) throw Error('Late driver replacement failure'); return original(id, value); };
-    const args = { action: 'recordExpiredReturn', driverId: 'driver-a', dispatchId: 'run-a', customerId: 'customer-a', productId: 'product-a', quantity: 2, expiryDate: '2000-01-01', replaceNow: true, receiptReference: 'DR-1', receiptFileUris: ['private/fixture.jpg'], requestKey: crypto.randomUUID() };
+    entities.Account.update = async (id, value) => { if (id === 'inventory' && fail) throw Error('Late commercial replacement failure'); return original(id, value); };
+    const args = { action: 'recordExpiredReturn', commercialId: 'agent-a', dispatchId: 'run-a', customerId: 'customer-a', productId: 'product-a', quantity: 2, expiryDate: '2000-01-01', replaceNow: true, receiptReference: 'DR-1', receiptFileUris: ['private/fixture.jpg'], requestKey: crypto.randomUUID() };
     const submitted = await route(request(args), { params: Promise.resolve({ name: 'fieldOps' }) }), pending = await submitted.json();
     assert.equal(submitted.status, 200, pending.error); assert.equal(pending.record.status, 'pending_verification');
     client.auth.me = async () => ({ id: 'gm-reviewer', role: 'admin' }); client.entities.Employee.filter = async () => [];
     const review = { action: 'verifyExpiredReturn', requestId: pending.record.id };
     const before = (await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows;
-    const failed = await route(request(review), { params: Promise.resolve({ name: 'fieldOps' }) }); assert.equal(failed.status, 400); assert.match((await failed.json()).error, /Late driver replacement/);
+    const failed = await route(request(review), { params: Promise.resolve({ name: 'fieldOps' }) }); assert.equal(failed.status, 400); assert.match((await failed.json()).error, /Late commercial replacement/);
     assert.deepEqual((await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows, before);
     fail = false; const response = await route(request(review), { params: Promise.resolve({ name: 'fieldOps' }) }); assert.equal(response.status, 200, await response.text());
-    assert.equal((await entities.StockBalance.get('stock')).quantity, 8); assert.equal((await entities.SpoilageRecord.list())[0].recorded_by, 'driver-login'); assert.equal((await entities.JournalEntry.list()).length, 1);
+    assert.equal((await entities.StockBalance.get('stock')).quantity, 8); assert.equal((await entities.SpoilageRecord.list())[0].recorded_by, user.id); assert.equal((await entities.JournalEntry.list()).length, 1);
   } finally { delete globalThis.__dailySupplyClient; delete globalThis.__supplyTransaction; await db.close(); }
 });
 

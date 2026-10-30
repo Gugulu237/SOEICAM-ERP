@@ -70,7 +70,8 @@ test('field registration accepts a valid zone and current GPS, refuses coarse ca
   const f=fieldFixture();f.tables.CompanySettings[0].delivery_zones=[zone];
   const body={action:'registerCustomer',requestKey:crypto.randomUUID(),customer:{business_name:'New outlet',phone:'699123456',delivery_zone_id:zoneId,...fix(),acquired_by_id:'forged'}};
   const result=await commercialAction(f.client,agentUser,body);assert.equal(result.customer.delivery_zone_id,zoneId);assert.equal(result.customer.gps_capture_source,'device');assert.equal(result.customer.acquired_by_id,'agent-a');
-  const retry=await commercialAction(f.client,agentUser,{...body,customer:{...body.customer,gps_captured_at:'2020-01-01T00:00:00Z'}});assert.equal(retry.reused,true);assert.equal(retry.customer.id,result.customer.id);
+  await assert.rejects(commercialAction(f.client,agentUser,{...body,customer:{...body.customer,gps_captured_at:'2020-01-01T00:00:00Z'}}),/different customer details/);
+  const retry=await commercialAction(f.client,agentUser,body);assert.equal(retry.reused,true);assert.equal(retry.customer.id,result.customer.id);
   await assert.rejects(commercialAction(f.client,agentUser,{...body,requestKey:crypto.randomUUID(),customer:{...body.customer,business_name:'Other outlet',phone:'688123456',gps_accuracy_m:120}}),/GPS accuracy/);
 });
 

@@ -3,6 +3,7 @@ import { availableCustody, roundMoney } from './field-pos.js';
 import { isFinishedProduct } from './product-images.js';
 
 export const DRIVER_ACTIVITY_LABELS = {
+  get stock_received(){return ui('Load receipt confirmed');}, get delivery_plan(){return ui('Delivery plan saved');},
   get trip_started(){return ui("Departed");}, get trip_returned(){return ui("Back at base");}, get delivery_completed(){return ui("Delivery reported complete");},
   get delivery_partial(){return ui("Partial delivery reported");}, get delivery_failed(){return ui("Delivery unsuccessful");}, get incident(){return ui("Incident reported");},
 };

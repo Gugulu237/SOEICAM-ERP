@@ -139,13 +139,14 @@ test('financial position includes contra assets, equity and earnings without dou
   assert.equal(financialPosition(accounts,{...balances,cash:{debit:1100,credit:0}}).difference,100,'a true imbalance is shown, never plugged');
 });
 
-test('account position only includes posted, dated header-linked lines and permits accounting and authorized management readers',async()=>{
+test('account position includes only posted dated lines, permits management and rejects cashier and commercial access',async()=>{
   const {client,entities:s}=await fixture();
   const posted=await s.JournalEntry.create({status:'posted',entry_date:date}),draft=await s.JournalEntry.create({status:'draft',entry_date:date}),future=await s.JournalEntry.create({status:'posted',entry_date:'2099-01-01'});
   await s.JournalLine.create({journal_id:posted.id,account_id:'till-gl',debit:100,credit:0});
   await s.JournalLine.create({journal_id:draft.id,account_id:'till-gl',debit:900,credit:0,status:'posted'});
   await s.JournalLine.create({journal_id:future.id,account_id:'till-gl',debit:900,credit:0,status:'posted'});
   await s.JournalLine.create({journal_id:'missing',account_id:'till-gl',debit:900,credit:0,status:'posted'});
+  await assert.rejects(accountPosition(client,user),/restricted to authorized management/);await s.Employee.update('cashier',{role:'production_manager'});
   const result=await accountPosition(client,user);assert.equal(result.balances['till-gl'].debit,100);assert.equal(result.balances['till-gl'].entries,1);
   await s.Employee.update('cashier',{role:'production_manager'});assert.equal((await accountPosition(client,user)).balances['till-gl'].debit,100);
   await s.Employee.update('cashier',{role:'commercial'});await assert.rejects(accountPosition(client,user),/Not permitted/);

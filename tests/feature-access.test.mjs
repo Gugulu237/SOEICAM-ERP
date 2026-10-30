@@ -10,15 +10,15 @@ import {assertEntityAccess,guardMutation} from '../src/server/access.js';
 import {fixture,user,date} from './helpers/cashier.mjs';
 import {salesOrderAction} from '../src/server/domain/sales-orders.js';
 
-function context(modules=['inventory','sales']){
- const profile=validateRoleProfile({key:'delivery_worker',label:'Delivery worker',category:'Operations',template_role:'driver',modules});
+function context(modules=['inventory','sales'],template='employee'){
+ const profile=validateRoleProfile({key:'delivery_worker',label:'Delivery worker',category:'Operations',template_role:template,modules});
  const roleCatalogue=catalogueFromStored({revision:1,roles:{delivery_worker:profile}}),account={...user,role:'user'};
  const employee=decorateEmployee(account,{id:'cashier',user_id:account.id,full_name:'Actual worker',role:'delivery_worker',status:'active'},roleCatalogue);
  return {user:account,employee,roleCatalogue,role:effectiveRole(account,employee)};
 }
 test('checked features authorize their workflows without changing job role, identity or other features',()=>{
  const original=context(),inventory=featureContext(original,'inventory');
- assert.equal(original.role,'driver');assert.equal(inventory.user.id,original.user.id);assert.equal(inventory.user.role,'user');assert.equal(principalRole(inventory.user,inventory.employee),'driver');assert.equal(effectiveRole(inventory.user,inventory.employee),'admin');
+ assert.equal(original.role,'employee');assert.equal(inventory.user.id,original.user.id);assert.equal(inventory.user.role,'user');assert.equal(principalRole(inventory.user,inventory.employee),'employee');assert.equal(effectiveRole(inventory.user,inventory.employee),'admin');
  assert.equal(inventory.user[FEATURE_AUTHORITY].module,'inventory');assert.equal(assertEntityAccess(inventory,'StockBalance','filter'),'admin');assert.equal(assertEntityAccess(inventory,'Product','update'),'admin');
  assert.throws(()=>assertModule(inventory,'accounting'),/does not allow/);
  const accounting=featureContext(original,'accounting');assert.equal(accounting,original);assert.throws(()=>assertEntityAccess(accounting,'JournalEntry','filter'));
@@ -28,14 +28,14 @@ test('revoked or forged grants and inactive staff cannot acquire module authorit
  const revoked=context([]);revoked.employee.full_access_modules=['inventory'];
  assert.equal(featureContext(revoked,'inventory'),revoked);assert.throws(()=>assertEntityAccess(revoked,'StockBalance','filter'));
  const inactive=context();inactive.employee.status='inactive';assert.equal(featureContext(inactive,'inventory'),inactive);
- const forged=context([]);forged.user.feature_authority={role:'admin'};forged.employee.access_template='driver';assert.equal(effectiveRole(forged.user,forged.employee),'driver');
+ const forged=context([]);forged.user.feature_authority={role:'admin'};forged.employee.access_template='employee';assert.equal(effectiveRole(forged.user,forged.employee),'employee');
 });
 test('generic financial invariants and protection of GM identities survive full feature access',()=>{
  const ctx=context(['employees','accounting']),hr=featureContext(ctx,'employees'),accounting=featureContext(ctx,'accounting');
- assert.throws(()=>guardMutation(hr,'Employee','update',{role:'admin'},{id:'other',role:'driver'}),/General Manager/);
+ assert.throws(()=>guardMutation(hr,'Employee','update',{role:'admin'},{id:'other',role:'employee'}),/General Manager/);
  assert.throws(()=>guardMutation(hr,'User','update',{role:'admin'},{id:'other'}),/General Manager/);
  assert.throws(()=>guardMutation(accounting,'Account','update',{balance:100},{id:'cash',balance:0}),/checked/);
- assert.equal(entityFeatureContext(context(['inventory']),'Employee','update').role,'driver');
+ assert.equal(entityFeatureContext(context(['inventory']),'Employee','update').role,'employee');
  assert.throws(()=>assertEntityAccess(featureContext(context(['inventory']),'inventory'),'Employee','update'),/another feature/);
 });
 let compiled;
@@ -57,7 +57,7 @@ async function requestClient(){
  }}]}).then(out=>import('data:text/javascript;base64,'+Buffer.from(out.outputFiles[0].text).toString('base64')));
  return (await compiled).createClientFromRequest(new Request('http://localhost/api/functions/fieldOps'));
 }
-test('actual request client lets a driver use checked Inventory and Sales features and records the real seller once',async()=>{
+test('actual request client lets general staff use checked Inventory and Sales features and records the real seller once',async()=>{
  const f=await fixture(),ctx=context();globalThis.__featureTest={context:ctx,stores:f.entities};
  const create=f.entities.AuditLog.create;f.entities.AuditLog.create=async value=>{if(!value.id)return create(value);if(f.rows.AuditLog.some(r=>r.id===value.id))throw Error('Duplicate request');f.rows.AuditLog.push(structuredClone(value));return structuredClone(value);};
  try{
@@ -73,7 +73,7 @@ test('actual request client lets a driver use checked Inventory and Sales featur
   assert.equal((await salesOrderAction(sales,actor,body)).reused,true);
   const reply=await (await compiled).invoke(new Request('http://localhost/api/functions/fieldOps',{method:'POST',body:JSON.stringify(body)}));assert.equal(reply.status,200);assert.equal((await reply.json()).reused,true);
   const stockReply=await (await compiled).invoke(new Request('http://localhost/api/functions/fieldOps',{method:'POST',body:JSON.stringify({action:'salesOrderStock',sourceType:'company',date})}));assert.equal(stockReply.status,200);assert.equal((await stockReply.json()).products[0].available,3);
-  globalThis.__featureTest.context=context([]);const revoked=await requestClient();await assert.rejects(revoked.entities.Product.get('product-a'));await assert.rejects(salesOrderAction(revoked,await revoked.auth.me(),{action:'salesOrderWorkspace'}),/Not permitted/);
+  globalThis.__featureTest.context=context([]);const revoked=await requestClient();await assert.rejects(revoked.entities.Product.get('product-a'));await assert.rejects(salesOrderAction(revoked,await revoked.auth.me(),{action:'salesOrderWorkspace'}),/Your role does not allow Sales/);
  }finally{delete globalThis.__featureTest;}
 });
 
@@ -92,14 +92,19 @@ test('the real user hook exposes enabled actions only inside the selected featur
  }}]});
  const {useCurrentUser}=await import('data:text/javascript;base64,'+Buffer.from(out.outputFiles[0].text).toString('base64'));
  const ctx=context(['inventory','quality']);globalThis.__featureHook={path:'/inventory',query:'',auth:{user:ctx.user,employee:ctx.employee,isLoadingAuth:false}};
- try{assert.equal(useCurrentUser().role,'admin');assert.equal(useCurrentUser().principalRole,'driver');globalThis.__featureHook.path='/';assert.equal(useCurrentUser().role,'driver');globalThis.__featureHook.path='/manufacturing';globalThis.__featureHook.query='section=quality';assert.equal(useCurrentUser().role,'admin');globalThis.__featureHook.path='/accounting';assert.equal(useCurrentUser().role,'driver');}finally{delete globalThis.__featureHook;}
+ try{assert.equal(useCurrentUser().role,'admin');assert.equal(useCurrentUser().principalRole,'employee');globalThis.__featureHook.path='/';assert.equal(useCurrentUser().role,'employee');globalThis.__featureHook.path='/manufacturing';globalThis.__featureHook.query='section=quality';assert.equal(useCurrentUser().role,'admin');globalThis.__featureHook.path='/accounting';assert.equal(useCurrentUser().role,'employee');
+ for(const template of ['driver','commercial'])for(const route of ['/inventory','/sales','/accounting','/customers','/distribution']){
+  const restricted=context(['inventory','sales','accounting','customers','distribution'],template);
+  globalThis.__featureHook={path:route,query:'',auth:{user:restricted.user,employee:restricted.employee,isLoadingAuth:false}};
+  const profile=useCurrentUser();assert.equal(profile.role,template);assert.equal(profile.principalRole,template);assert.equal(profile.canIssueCustody,false);assert.equal(profile.canApproveFieldSale,false);assert.equal(profile.canDisburse,false);
+ }}finally{delete globalThis.__featureHook;}
 });
 
 
-test('Accounting checkbox authorizes a balanced manual draft for a Driver without changing their role',async()=>{
+test('Accounting checkbox authorizes a balanced manual draft for general staff without changing their role',async()=>{
  const f=await fixture(),ctx=featureContext(context(['accounting']),'accounting');
  const journal=await saveManualJournal(f.entities,ctx,{requestKey:crypto.randomUUID(),entryDate:date,description:'Checked feature journal draft',status:'draft',lines:[{account_id:'expense',debit:100,credit:0},{account_id:'payable',debit:0,credit:100}]});
- assert.equal(journal.status,'draft');assert.equal(journal.total_debit,journal.total_credit);assert.equal(principalRole(ctx.user,ctx.employee),'driver');
+ assert.equal(journal.status,'draft');assert.equal(journal.total_debit,journal.total_credit);assert.equal(principalRole(ctx.user,ctx.employee),'employee');
 });
 
 test('Cashier and Accounting checkboxes open invoice lookups without requiring the Sales checkbox',async()=>{
@@ -118,4 +123,19 @@ test('approval grants authorize only the specific checked decision target',()=>{
  const ctx=featureContext(context(['approvals']),'approvals','admin','approveSupplierOrder');assert.doesNotThrow(()=>assertModule(ctx,'purchases'));assert.throws(()=>assertModule(ctx,'cashier'));
  const unbound=featureContext(context(['approvals']),'approvals');assert.throws(()=>assertModule(unbound,'purchases'));
  assert.throws(()=>guardMutation(unbound,'ExpenseRequest','update',{amount:1},{status:'pending_approval'}),/review decisions/);
+});
+
+test('actual request client refuses company stock issues and sales for drivers and commercial agents despite saved grants',async()=>{
+ for(const template of ['driver','commercial']){
+  const f=await fixture(),ctx=context(['inventory','sales','accounting','distribution'],template);globalThis.__featureTest={context:ctx,stores:f.entities};
+  try{
+   const before=structuredClone(f.rows),client=await requestClient(),sales=client.auth.forFeature('sales'),actor=await sales.auth.me();
+   assert.equal(effectiveRole(actor,ctx.employee),template);
+   await assert.rejects(client.entities.StockBalance.create({product_id:'product-a',quantity:100}));
+   const body={action:'recordSuppliedOrder',sourceType:'company',requestKey:crypto.randomUUID(),date,customerId:'customer-a',sellerId:'cashier',paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
+   await assert.rejects(salesOrderAction(sales,actor,body),/Not permitted/);
+   const response=await (await compiled).invoke(new Request('http://localhost/api/functions/fieldOps',{method:'POST',body:JSON.stringify(body)}));assert.equal(response.status,400);
+   assert.deepEqual(f.rows,before);
+  }finally{delete globalThis.__featureTest;}
+ }
 });

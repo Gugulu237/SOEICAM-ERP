@@ -58,7 +58,7 @@ test('report-only Cashier dashboard and navigation show the saved feature with t
 
 
 test('saved operational grants appear beyond legacy template lists and disappear on revocation',()=>{
- for(const template of ['driver','hotesse','cashier','commercial','procurement','employee']){
+ for(const template of ['hotesse','cashier','procurement','employee']){
   const catalogue=catalogueFromStored({roles:{sync_worker:validateRoleProfile({key:'sync_worker',label:'Sync worker',category:'Operations',template_role:template,modules:['customers','inventory','purchases']})}});
   const staff=decorateEmployee({role:'user'},{id:'staff',role:'sync_worker',status:'active'},catalogue);
   const cards=modulesForRole(template,staff.allowed_modules);
@@ -71,17 +71,17 @@ test('saved operational grants appear beyond legacy template lists and disappear
   assert.equal(permitsWorkspace('/customers',[]),false);
  }
  // Explicitly selected features are usable across job titles; they do not change the underlying employee identity.
- assert.ok(modulesForRole('driver',['admin','employees','payroll']).length);
- assert.equal(canOpenFieldPath('driver','/admin',['admin']),true);
- assert.equal(canOpenFieldPath('driver','/team-workspaces',['employees']),true);
+ assert.equal(modulesForRole('driver',['admin','employees','payroll']).length,0);
+ assert.equal(canOpenFieldPath('driver','/admin',['admin']),false);
+ assert.equal(canOpenFieldPath('driver','/team-workspaces',['employees']),false);
 });
 
 test('an open employee dashboard and sidebar apply grants and removals from refreshed profiles',async()=>{
  const render=await renderer(),r=hookRuntime();
- r.session={role:'driver',assignedRole:'driver',roleLabel:'Driver',employee:{id:'driver'},user:{id:'login'},allowedModules:['distribution'],loading:false};globalThis.__roleUI=r;
+ r.session={role:'hotesse',assignedRole:'hotesse',roleLabel:'Hotesse',employee:{id:'hotesse'},user:{id:'login'},allowedModules:['outlets'],loading:false};globalThis.__roleUI=r;
  try{
   r.beforeRender();let page=render('dashboard');assert.doesNotMatch(page,/Assigned features/);
-  r.session={...r.session,allowedModules:['distribution','inventory','customers']};
+  r.session={...r.session,allowedModules:['outlets','inventory','customers']};
   r.beforeRender();page=render('dashboard');assert.match(page,/Assigned features/);assert.match(page,/Inventory/);assert.match(page,/Customers/);
   r.beforeRender();let sidebar=render('sidebar');assert.match(sidebar,/href="\/inventory"/);assert.match(sidebar,/href="\/customers"/);
   r.session={...r.session,allowedModules:[]};r.beforeRender();page=render('dashboard');assert.doesNotMatch(page,/Assigned features/);assert.match(page,/workspace is disabled/);

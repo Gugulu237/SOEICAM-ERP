@@ -25,12 +25,12 @@ async function renderer() {
   } }] });
   const module = { exports: {} }; new Function('require', 'module', 'exports', output.outputFiles[0].text)(require, module, module.exports); compiled = module.exports.render; return compiled;
 }
-test('driver dashboard keeps inventory and expired replacements without request controls', async () => {
+test('driver dashboard offers delivery planning, personal inventory and collection reports without issuing controls', async () => {
   const render = await renderer();
   const html = render('Driver', { data: { employee: { id: 'driver', full_name: 'Driver' }, dispatches: [], activities: [], stops: [] }, onRefresh: () => {} });
-  assert.match(html, /Goods in my possession/); assert.match(html, /Expired returns &amp; replacements/); assert.doesNotMatch(html, /Request inventory|Stock requests/);
+  assert.match(html, /Goods in my possession/); assert.match(html, /Plan deliveries &amp; view customers/); assert.match(html, /Report expired collections/); assert.doesNotMatch(html, /Request inventory|Stock requests|Issue goods|Expired returns &amp; replacements/);
 });
-test('driver replacement form uses scoped data and retains its receipt, values and retry key after a failed save', async () => {
+test('driver collection form uses scoped data and retains its receipt, values and retry key after a failed save', async () => {
   const r = hookRuntime(), calls = []; r.elements = []; r.capture = (tag, props, children) => r.elements.push({ tag, props: props || {}, children }); globalThis.__warehouseUI = r;
   const product = { id: 'p', name: 'YOLA', unit_of_measure: 'ea' }, workspace = { customers: [{ id: 'c', business_name: 'Shop' }], products: [product], locations: [{ id: 'l', customer_id: 'c', name: 'Main' }], returns: [], runs: [{ id: 'run', can_supply: true, dispatch_number: 'RUN' }], runBalances: [{ dispatch_id: 'run', product_id: 'p', quantity: 5, usable_quantity: 5, qc_status: 'approved' }] };
   let fail = true, saved = 0;
@@ -45,7 +45,7 @@ test('driver replacement form uses scoped data and retains its receipt, values a
     r.receipt.onReferenceChange('RETURN-1'); r.receipt.onChange(['private/proof']); paint();
     await r.elements.find(e => e.tag === 'form').props.onSubmit({ preventDefault() {} }); assert.match(paint(), /Connection interrupted/); assert.equal(saved, 0);
     fail = false; await r.elements.find(e => e.tag === 'form').props.onSubmit({ preventDefault() {} }); assert.equal(saved, 1);
-    const writes = calls.filter(c => c.action === 'recordExpiredReturn'); assert.equal(writes.length, 2); assert.equal(writes[0].requestKey, writes[1].requestKey); assert.equal(writes[1].driverId, 'driver'); assert.equal(writes[1].commercialId, undefined); assert.equal(writes[1].quantity, 2); assert.equal(writes[1].dispatchId, 'run'); assert.deepEqual(writes[1].receiptFileUris, ['private/proof']);
+    const writes = calls.filter(c => c.action === 'recordExpiredReturn'); assert.equal(writes.length, 2); assert.equal(writes[0].requestKey, writes[1].requestKey); assert.equal(writes[1].driverId, 'driver'); assert.equal(writes[1].commercialId, undefined); assert.equal(writes[1].replaceNow, false); assert.equal(writes[1].quantity, 2); assert.equal(writes[1].dispatchId, 'run'); assert.deepEqual(writes[1].receiptFileUris, ['private/proof']);
   } finally { r.cleanup(); delete globalThis.__warehouseUI; }
 });
 test('inventory cards retain usable/held quantities and planned loads are not displayed as physical stock', async () => {

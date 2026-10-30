@@ -133,20 +133,22 @@ export const ROLE_DEFINITIONS = [
     key: 'commercial',
     get label(){return ui("Commercial (Field Sales)");},
     category: 'Commercial',
-    get summary(){return ui("Sells in the field and holds company stock in custody.");},
+    get summary(){return ui("Sells finished goods from the stock held with their paired driver.");},
     duties: [
-      'Holds issued stock in custody and sells on the road',
+      'Views customers and the current stock on their paired delivery vehicle',
+      'Sales automatically deduct from the current paired vehicle stock',
       'Records deliveries with customer receipt evidence',
       'Collects cash and hands it over to the Cashier',
       'Registers new customers with GPS location',
+      'Cannot issue warehouse stock, change credit limits or confirm their own cash handover',
     ],
   },
   {
     key: 'driver',
     get label(){return ui("Driver (Deliveries)");},
     category: 'Operations',
-    get summary(){return ui("Delivers assigned goods and reports progress from the road.");},
-    duties: ['Views only assigned runs, load manifests and customer stops', 'Opens customer directions and calls delivery contacts', 'Records departure, delivery outcomes, incidents and return to base', 'Leaves stock reconciliation, invoicing and approvals to authorized staff'],
+    get summary(){return ui('Receives delivery stock, plans customer visits and tracks goods in their possession.');},
+    duties: ['Confirms receipt of finished goods issued by warehouse staff', 'Views delivery-team customers and plans the stop order', 'Tracks the finished products on their assigned vehicle', 'Records delivery outcomes, incidents and return to base', 'Reports expired collections; commercial agents handle fresh replacements', 'Cannot issue goods, record sales, invoice customers or approve transactions'],
   },
   {
     key: 'hotesse',
@@ -272,7 +274,9 @@ export function canOpenFieldPath(role, path, allowedModules) {
   if (!role) return false;
   if (role === 'admin') return true;
   if (path === '/profile' || path === '/profile/') return true;
+  if (role === 'driver') return ['/', '/driver', '/driver/', '/distribution', '/distribution/', '/sales-reports'].includes(path);
   if (path === '/sales-reports') return true;
+  if (role === 'commercial') return ['/', '/customers', '/commercial', '/field-sales', '/field-customers', '/commercial-performance', '/cash-handovers'].some(root => root === '/' ? path === '/' : path === root || path.startsWith(root + '/'));
   if (hasWorkspaceGrant(role,pathname+(query?'?'+query:''),allowedModules)) return true;
   const isWithin = root => root === '/' ? path === '/' : path === root || path.startsWith(root + '/');
   if (isWithin('/team-workspaces')) return role === 'admin'||role==='cashier'&&new URLSearchParams(query).get('section')==='payroll';

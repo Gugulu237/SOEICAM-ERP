@@ -119,8 +119,10 @@ export const APP_MODULES = [
 ];
 
 export function modulesForRole(role,allowedModules){
+ if(role==='commercial'&&Array.isArray(allowedModules))allowedModules=allowedModules.filter(module=>['commercial','customers','sales_reports'].includes(module));
+ if(role==='driver'&&Array.isArray(allowedModules))allowedModules=allowedModules.filter(module=>['distribution','sales_reports'].includes(module));
  const destination=module=>role==='cashier'&&module.key==='team_workspaces'?'/team-workspaces?section=payroll':role==='hotesse'&&module.key==='sales'?'/outlet-reports':workspacePath(module.path,allowedModules);
- return APP_MODULES.filter(module=>(module.key!=='commercial_workspace'||role==='commercial'||role!=='admin'&&allowedModules?.includes('commercial'))&&(hasRoleAccess(role,module.roles)||hasWorkspaceGrant(role,destination(module),allowedModules))&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
+ return APP_MODULES.filter(module=>role!=='driver'||['driver','sales_reports'].includes(module.key)).filter(module=>(module.key!=='commercial_workspace'||role==='commercial'||role!=='admin'&&allowedModules?.includes('commercial'))&&(hasRoleAccess(role,module.roles)||hasWorkspaceGrant(role,destination(module),allowedModules))&&(!module.requiresGrant||role==='admin'||allowedModules?.includes(module.requiresGrant))&&(module.key!=='production'||!allowedModules||allowedModules.includes('manufacturing'))&&permitsWorkspace(destination(module),allowedModules)).map(module=>({...module,path:destination(module),...(role==='hotesse'&&module.key==='sales'?{description:'Daily sales and point-of-sale stock'}:{})}));
 }
 
 export function mergeRoleWorkspaces(role,modules,actions){
