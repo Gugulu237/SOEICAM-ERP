@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import CompanySalesRegister from '@/components/sales/CompanySalesRegister';
-import { Plus,RefreshCw,ArrowLeft,ReceiptText,ClipboardList,FileText,Truck,Store } from 'lucide-react';
+import { Plus,RefreshCw,ReceiptText,ClipboardList,FileText,Truck,Store } from 'lucide-react';
 const InvoiceWorkspace=dynamic(()=>import('@/components/sales/InvoiceWorkspace'));
 const FieldSalesPanel=dynamic(()=>import('@/components/sales/FieldSalesPanel'));
 const OutletReports=dynamic(()=>import('@/views/OutletReports'));
@@ -46,8 +46,7 @@ function SalesWorkspace({readOnly=false}) {
   const tab=choices.some(choice=>choice.key===params.get('tab')&&choice.key!=='new')?params.get('tab'):'home';
   const selected=choices.find(choice=>choice.key===tab);
   return <div className="min-w-0 space-y-5">
-    {tab!=='home'&&<Button variant="ghost" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Sales menu')}</Button>}
-    <PageHeader title={selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>
+    <PageHeader back={tab!=='home'?{onClick:backToMenu,label:ui('Sales menu')}:undefined} title={selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>
     {tab==='home'?<nav aria-label={ui('Sales sections')} className={'mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 '+(choices.length>4?'lg:grid-cols-3':'lg:grid-cols-4')}>
       {choices.map(({key,label,Icon})=><button key={key} type="button" aria-label={label} onClick={()=>key==='new'?navigate('/sales/new'):setParams({tab:key})} className="flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span>

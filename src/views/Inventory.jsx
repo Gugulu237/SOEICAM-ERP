@@ -29,7 +29,8 @@ import QuickItemEditor from "@/components/items/QuickItemEditor";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal, Package, Warehouse, History, Bell, Recycle, ArrowLeft, BookOpen, Truck } from "lucide-react";
+import PageBackButton from '@/components/shared/PageBackButton';
+import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal, Package, Warehouse, History, Bell, Recycle, BookOpen, Truck } from "lucide-react";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -176,9 +177,8 @@ export default function Inventory() {
   ];
 
   return <div className="min-w-0 space-y-4">
-    {workspace.section!=='home' && <Button variant="ghost" className="min-h-11" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Inventory menu')}</Button>}
     <header className="flex items-center justify-between gap-2">
-      <h1 className="min-w-0 text-xl font-bold tracking-tight sm:text-2xl">{ui(sectionTitle || 'Inventory')}</h1>
+      <div data-page-heading className="flex min-w-0 items-center gap-2">{workspace.section!=='home' && <PageBackButton onClick={backToMenu} label={ui('Inventory menu')}/>}<h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">{ui(sectionTitle || 'Inventory')}</h1></div>
       <div className="flex shrink-0 items-center gap-2">
         {['items','stock','movements'].includes(workspace.section) && <InventoryAlertsMenu items={lowStock} loading={loading} open={alertsOpen} onOpenChange={setAlertsOpen} onOpenItem={canEdit?item=>{setAlertsOpen(false);editItem(item);}:undefined}/>}
         {canEdit && workspace.section==='items' && <Button className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/>{ui('New item')}</Button>}

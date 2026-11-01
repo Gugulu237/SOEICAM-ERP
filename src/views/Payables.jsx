@@ -18,7 +18,7 @@ import NewBillDialog from "@/components/accounting/NewBillDialog";
 import PayBillDialog from "@/components/accounting/PayBillDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, ArrowLeft, Banknote } from "lucide-react";
+import { Plus, Banknote } from "lucide-react";
 
 export default function Payables() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -62,13 +62,13 @@ export default function Payables() {
   if(error) return <p role="alert">{error}</p>;
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Accounts Payable")}
         subtitle={ui("Supplier bills, payment allocation, aging and statements")}
         actions={
           <div className="flex gap-2">
             <Button onClick={() => setShowNewBill(true)}><Plus size={16} className="mr-1" />{ui(" New Bill from PO")}</Button>
-            <Button variant="outline" onClick={() => navigate("/accounting")}><ArrowLeft size={16} className="mr-1" />{ui(" Accounting")}</Button>
+            
           </div>
         }
       />

@@ -15,7 +15,7 @@ import TransferDialog from "@/components/treasury/TransferDialog";
 import TreasuryAccountDialog from "@/components/treasury/TreasuryAccountDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
-import { Plus, ArrowLeftRight, Receipt, ArrowLeft, Wallet, Landmark, Smartphone, Coins, BarChart3 } from "lucide-react";
+import { Plus, ArrowLeftRight, Receipt, Wallet, Landmark, Smartphone, Coins, BarChart3 } from "lucide-react";
 
 const TYPE_ICON = { cash: Wallet, bank: Landmark, mobile_money: Smartphone, petty_cash: Coins };
 const TYPE_LABEL = { cash: "Cash", bank: "Bank", get mobile_money(){return ui("Mobile Money");}, get petty_cash(){return ui("Petty Cash");} };
@@ -67,7 +67,7 @@ export default function Treasury() {
   if(error) return <p role="alert">{error}</p>;
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Treasury & Petty Cash")}
         subtitle={ui("Total funds: {0}", formatXAF(totalFunds))}
         actions={
@@ -76,7 +76,7 @@ export default function Treasury() {
             <Button variant="outline" onClick={() => navigate("/expenses")}><BarChart3 size={16} className="mr-1" />{ui(" Expense Register")}</Button>
             {canOperate && <Button variant="outline" onClick={() => setDialog("transfer")}><ArrowLeftRight size={16} className="mr-1" />{ui(" Transfer Funds")}</Button>}
             {isAdmin && <Button variant="outline" onClick={() => setDialog("account")}><Plus size={16} className="mr-1" />{ui(" New Account")}</Button>}
-            <Button variant="outline" onClick={() => navigate("/accounting")}><ArrowLeft size={16} className="mr-1" />{ui(" Accounting")}</Button>
+            
           </div>
         }
       />

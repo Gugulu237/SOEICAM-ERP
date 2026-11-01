@@ -49,6 +49,10 @@ Use the existing database to retain the current company records. Deploying this 
 
 ## Verify after deployment
 
+Optional phone notifications require the reviewed private-table migration and server-only VAPID keys. Follow [Device notifications activation](docs/device-notifications.md). They remain disabled until explicitly configured, and no migration runs during build/startup.
+
+For phone installation, use the actual HTTPS ERP origin. Serve `/sw.js`, `/manifest.webmanifest` and `/pwa/` directly without login redirects or a CDN "cache everything" rule. Preserve the worker's `no-cache, no-store, must-revalidate` headers and the API's `private, no-store` headers. Follow the [PWA production checklist](docs/pwa.md), including Android installation, offline handling and updates with open forms.
+
 1. The build log must show `next build --webpack`, not Vite.
 2. `/api/health` should report `SOEICAM ERP` with configuration ready. This is a configuration check, not a database connectivity test.
 3. Open `/login` and confirm its scripts and images load.

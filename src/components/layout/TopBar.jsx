@@ -33,19 +33,19 @@ export default function TopBar() {
         <LanguageSelector />
         <ProductionNotifications />
         <QuickActions />
+        <NavigationHistory />
         <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-green-100 text-slate-600 hover:bg-green-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-700 md:flex"><UserRound size={18}/></Link>
-        <div className={`${usesClerk() ? 'flex' : 'hidden sm:flex'} shrink-0 items-center gap-2 sm:border-l sm:border-green-100 sm:pl-2`}>
+        <div className={`${usesClerk() ? 'hidden min-[360px]:flex' : 'hidden sm:flex'} shrink-0 items-center gap-2 sm:border-l sm:border-green-100 sm:pl-2`}>
           {usesClerk() ? <UserButton /> : <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
             {initials}
           </div>}
-          <div className="hidden md:block leading-tight">
-            <p className="text-xs font-semibold text-slate-800">{user?.full_name || user?.email}</p>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">{ui(roleLabel || ROLE_LABELS[role] || "")}</p>
+          <div className="hidden max-w-36 leading-tight lg:block">
+            <p className="truncate text-xs font-semibold text-slate-800">{user?.full_name || user?.email}</p>
+            <p className="truncate text-[10px] text-slate-400 uppercase tracking-wide">{ui(roleLabel || ROLE_LABELS[role] || "")}</p>
           </div>
         </div>
       </div>
       <StaffRoleSwitcher />
-      <NavigationHistory />
     </header>
   );
 }

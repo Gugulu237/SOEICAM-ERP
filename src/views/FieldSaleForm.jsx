@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { erp } from '@/api/erpClient';
 import { useNavigate, useParams, useSearchParams } from '@/lib/router';
 import { ArrowLeft, ArrowRight, Banknote, Check, CreditCard, Loader2, RefreshCw, ShoppingBag } from 'lucide-react';
+import PageBackButton from '@/components/shared/PageBackButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -239,8 +240,8 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
 
   return <div className="mx-auto w-full min-w-0 max-w-3xl pb-8">
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div><button type="button" onClick={back} disabled={busy} className="mb-3 flex min-h-9 items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900"><ArrowLeft size={14} />{ui("My field sales")}</button>
-        <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight text-slate-900">{sale ? sale.sale_number : ui("Record sale / supply")}</h1><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">{ui("Field POS")}</span>{sale && <StatusPill map={SALE_STATUS} value={sale.status} />}</div>
+      <div className="min-w-0">
+        <div data-page-heading className="flex min-w-0 items-start gap-2"><PageBackButton onClick={back} disabled={busy} label={ui('My field sales')}/><div className="flex min-w-0 flex-wrap items-center gap-2 self-center"><h1 className="break-words text-2xl font-bold tracking-tight text-slate-900">{sale ? sale.sale_number : ui("Record sale / supply")}</h1><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">{ui("Field POS")}</span>{sale && <StatusPill map={SALE_STATUS} value={sale.status} />}</div></div>
         <MobileInfo title={ui("Record sale")} desktopClassName="mt-2 text-sm text-slate-500"><p>{ui("Enter exactly what was delivered, declare cash or credit and photograph the supply receipt.")}</p></MobileInfo>
       </div>
       <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600"><span className="h-2 w-2 rounded-full bg-emerald-500" />{commercialName || sale?.commercial_name || employee?.full_name || ui("Selected Commercial agent")}</div>

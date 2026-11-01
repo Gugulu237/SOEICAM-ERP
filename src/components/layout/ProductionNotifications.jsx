@@ -7,12 +7,26 @@ import { useToast } from '@/components/ui/use-toast';
 export default function ProductionNotifications() {
   const {role,user,allowedModules}=useCurrentUser(),navigate=useNavigate(),{toast}=useToast();
   const [open,setOpen]=useState(false),[rows,setRows]=useState([]),[error,setError]=useState('');
-  const seen=useRef(new Set()),busy=useRef(false),container=useRef(null);
+  const seen=useRef(new Set()),initialized=useRef(false),busy=useRef(false),container=useRef(null);
   const permitted=['admin','production_manager'].includes(role) && (role==='admin' || !allowedModules || allowedModules.includes('manufacturing'));
   useEffect(()=>{
     if(!permitted)return;
-    let active=true;const controller=new AbortController();seen.current=new Set();
-    const load=async()=>{if(busy.current || document.visibilityState!=='visible')return;busy.current=true;try{const response=await fetch('/api/notifications',{cache:'no-store',signal:controller.signal}),data=await response.json();if(!response.ok)throw Error(data.error);if(!active)return;setRows(data.notifications);setError('');let announced=0;for(const row of data.notifications){if(!row.read && !seen.current.has(row.id) && announced++<3)toast({title:ui(row.title),description:[row.product_name,row.order_number].filter(Boolean).join(' · ')});seen.current.add(row.id);}}catch(e){if(active && !controller.signal.aborted)setError(e.message);}finally{busy.current=false;}};
+    let active=true;const controller=new AbortController();seen.current=new Set();initialized.current=false;setRows([]);
+    const load=async()=>{
+      if(busy.current || document.visibilityState!=='visible')return;busy.current=true;
+      try{
+        const response=await fetch('/api/notifications',{cache:'no-store',signal:controller.signal}),data=await response.json();
+        if(!response.ok)throw Error(data.error);if(!active)return;setRows(data.notifications);setError('');let announced=0;
+        for(const row of data.notifications){
+          if(!row.read && !seen.current.has(row.id) && announced++<3){
+            toast({title:ui(row.title),description:[row.product_name,row.order_number].filter(Boolean).join(' · ')});
+            if(initialized.current)window.dispatchEvent(new CustomEvent('soeicam:new-alert',{detail:{id:row.id}}));
+          }
+          seen.current.add(row.id);
+        }
+        initialized.current=true;
+      }catch(e){if(active && !controller.signal.aborted)setError(e.message);}finally{busy.current=false;}
+    };
     void load();const timer=setInterval(load,30000);document.addEventListener('visibilitychange',load);
     return()=>{active=false;controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',load);};
   },[permitted,user?.id,toast]);

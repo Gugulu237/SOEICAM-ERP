@@ -23,7 +23,7 @@ import {supplierInvoke,SupplierOrderForm,SupplierReceiveForm,SupplierPaymentForm
 import {downloadPurchaseOrder,purchaseOrderEmail} from '@/lib/supplier-documents';
 import {approveCashDisbursement,rejectCashDisbursement,releaseCashDisbursement} from '@/lib/purchase-payments';
 import {formatDate,formatXAF} from '@/lib/formatters';
-import {Plus,RefreshCw,ShoppingCart,Users,PackageCheck,Wallet,ShieldCheck,ArrowRight,ArrowLeft,ReceiptText,Download,Mail} from 'lucide-react';
+import {Plus,RefreshCw,ShoppingCart,Users,PackageCheck,Wallet,ShieldCheck,ArrowRight,ReceiptText,Download,Mail} from 'lucide-react';
 
 const Suppliers=dynamic(()=>import('@/components/suppliers/SupplierWorkspace'),{loading:()=> <p role="status" className="py-12 text-center text-slate-500">{ui("Loading suppliers...")}</p>});
 const icons={orders:ShoppingCart,suppliers:Users,receiving:PackageCheck,bills:ReceiptText,payments:Wallet};
@@ -110,7 +110,7 @@ export default function PurchasesWorkspace() {
       </button>;})}
     </nav>
   </div>;
-  return <div className="space-y-5"><Button variant="ghost" className="min-h-11" onClick={section==='receiving'?backToOrders:backToMenu}><ArrowLeft size={16} className="mr-2"/>{section==='receiving'?ui('Purchase orders'):ui('Purchases menu')}</Button><PageHeader title={sections.find(s=>s.key===section)?.label||ui("Purchases")} actions={section!=='suppliers'&&<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={loading} onClick={load}><RefreshCw size={15} className="mr-1"/>{ui("Refresh")}</Button>{section==='orders'&&p.receive&&<Button variant="outline" onClick={()=>navigate({section:'receiving'})}><PackageCheck size={15} className="mr-1"/>{ui('Receive goods')}</Button>}{section==='orders'&&p.purchase&&<Button onClick={()=>navigate({section:'orders',compose:'order'})}><Plus size={15} className="mr-1"/>{ui("New purchase order")}</Button>}</div>}/>
+  return <div className="space-y-5">{section!=='suppliers'&&<PageHeader back={{onClick:section==='receiving'?backToOrders:backToMenu,label:section==='receiving'?ui('Purchase orders'):ui('Purchases menu')}} title={sections.find(s=>s.key===section)?.label||ui("Purchases")} actions={section!=='suppliers'&&<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={loading} onClick={load}><RefreshCw size={15} className="mr-1"/>{ui("Refresh")}</Button>{section==='orders'&&p.receive&&<Button variant="outline" onClick={()=>navigate({section:'receiving'})}><PackageCheck size={15} className="mr-1"/>{ui('Receive goods')}</Button>}{section==='orders'&&p.purchase&&<Button onClick={()=>navigate({section:'orders',compose:'order'})}><Plus size={15} className="mr-1"/>{ui("New purchase order")}</Button>}</div>}/>}
 
     {section==='suppliers'?<Suppliers embedded/>:<>
       {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}<button className="ml-3 underline" onClick={load}>{ui("Try again")}</button></p>}

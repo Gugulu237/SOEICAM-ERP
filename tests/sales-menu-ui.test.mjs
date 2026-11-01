@@ -29,9 +29,9 @@ test('Sales starts with action tiles and mounts only the chosen register',async(
     const html=draw();await r.flush();assert.doesNotMatch(html,/Company register|Invoice workspace/);assert.equal(r.reads,0);
     assert.deepEqual(r.buttons.map(b=>b['aria-label']),['New sale','All sales','Sales orders','Invoices','Field sales','Outlet reports']);
     r.buttons.find(b=>b['aria-label']==='All sales').onClick();assert.match(draw(),/Company register/);assert.equal(r.register.readOnly,false);
-    r.buttons.find(b=>b.label==='Sales menu').onClick();draw();assert.equal(r.query,'');
+    r.buttons.find(b=>b["aria-label"]==='Sales menu').onClick();draw();assert.equal(r.query,'');
     r.buttons.find(b=>b['aria-label']==='Sales orders').onClick();draw();await r.flush();draw();assert.equal(r.reads,1);
-    r.buttons.find(b=>b.label==='Sales menu').onClick();draw();r.buttons.find(b=>b['aria-label']==='New sale').onClick();assert.equal(r.navigation.at(-1),'/sales/new');
+    r.buttons.find(b=>b["aria-label"]==='Sales menu').onClick();draw();r.buttons.find(b=>b['aria-label']==='New sale').onClick();assert.equal(r.navigation.at(-1),'/sales/new');
     r.query='tab=invoices';assert.match(draw(),/Invoice workspace/);assert.doesNotMatch(draw(),/Company register/);
   }finally{r.cleanup();delete globalThis.__salesMenu;}
 });

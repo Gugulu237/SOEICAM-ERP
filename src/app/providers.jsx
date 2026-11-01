@@ -15,6 +15,8 @@ import { shadcn } from '@clerk/ui/themes';
 import { enUS,frFR } from '@clerk/localizations';
 import { LanguageProvider,useLocaleRender } from '@/lib/localization';
 import { isAuthConfigured, usesClerk } from '@/lib/auth-provider';
+import PwaProvider from '@/components/pwa/PwaProvider';
+import DeviceNotificationBridge from '@/components/pwa/DeviceNotificationBridge';
 
 // This app uses Tailwind 3's HSL channel tokens. Clerk's current shadcn theme
 // expects complete CSS colors, so adapt them without changing the ERP palette.
@@ -33,7 +35,7 @@ function LocalizedProviders({ children }) {
 
   const language=useLocaleRender();
   if (!isAuthConfigured()) return <SetupScreen />;
-  const content=<Suspense fallback={<p className="p-8">{ui("Loading SOEICAM...")}</p>}><QueryClientProvider client={queryClientInstance}><AuthProvider>{children}<Toaster /></AuthProvider></QueryClientProvider></Suspense>;
+  const content=<Suspense fallback={<p className="p-8">{ui("Loading SOEICAM...")}</p>}><QueryClientProvider client={queryClientInstance}><AuthProvider><DeviceNotificationBridge/>{children}<Toaster /></AuthProvider></QueryClientProvider></Suspense>;
   return usesClerk() ? <ClerkProvider localization={language==='fr'?frFR:enUS} appearance={clerkAppearance} publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} signInUrl="/login" signUpUrl="/register" signInForceRedirectUrl="/" signUpForceRedirectUrl="/">{content}</ClerkProvider> : content;
 }
 
@@ -43,4 +45,4 @@ const pathname=usePathname();
   // The development workbench only frames the app. Each frame authenticates
   // itself; booting another sign-in SDK here doubles mobile preview startup.
   if(process.env.NODE_ENV==='development' && pathname==='/dev-preview')return <LanguageProvider>{children}</LanguageProvider>;
-  return <LanguageProvider><LocalizedProviders>{children}</LocalizedProviders></LanguageProvider>;}
+  return <LanguageProvider><PwaProvider><LocalizedProviders>{children}</LocalizedProviders></PwaProvider></LanguageProvider>;}

@@ -15,14 +15,13 @@ export function customerGroups(customers,matchingIds) {
   for(const rows of children.values())rows.sort(order);
   return {roots,children};
 }
-export default function CustomerGroupedList({customers,matchingIds,search='',renderDetails,...props}) {
+export default function CustomerGroupedList({customers,matchingIds,search='',...props}) {
   const {roots,children}=customerGroups(customers,matchingIds);
   const firstMatch=search?roots.find(c=>!matchingIds?.includes(c.id)&&children.get(c.id)?.length)?.id:'';
-  return <CustomerQuickList {...props} customers={roots} initialExpandedId={firstMatch} branchCounts={Object.fromEntries([...children].map(([id,rows])=>[id,rows.length]))} renderDetails={customer=><>
-    {renderDetails?.(customer)}
+  return <CustomerQuickList {...props} customers={roots} initialExpandedId={firstMatch} branchCounts={Object.fromEntries([...children].map(([id,rows])=>[id,rows.length]))} renderBranches={customer=><>
     {!!children.get(customer.id)?.length&&<div className="space-y-2 border-l-2 border-emerald-200 pl-3">
       <p className="text-xs font-semibold text-slate-600">{ui('Branches')}</p>
-      <CustomerQuickList {...props} customers={children.get(customer.id)} renderDetails={renderDetails}/>
+      <CustomerQuickList {...props} customers={children.get(customer.id)}/>
     </div>}
   </>}/>;
 }

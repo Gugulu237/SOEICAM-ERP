@@ -15,7 +15,7 @@ import PageHeader from '@/components/shared/PageHeader';
 import DataTable from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import {Button} from '@/components/ui/button';
-import {Plus,Pencil,ArrowLeft,RefreshCw,Boxes,Truck,CarFront,ClipboardList,PackageCheck,Route as RouteIcon,Car,RotateCcw} from 'lucide-react';
+import {Plus,Pencil,RefreshCw,Boxes,Truck,CarFront,ClipboardList,PackageCheck,Route as RouteIcon,Car,RotateCcw} from 'lucide-react';
 import FleetBoard from '@/components/distribution/FleetBoard';
 import VehicleDialog from '@/components/distribution/VehicleDialog';
 import DeliveriesBoard from '@/components/distribution/DeliveriesBoard';
@@ -41,7 +41,7 @@ export default function Distribution(){
   const role=principalRole||featureRole;
   if(loading)return <p role="status">{ui('Loading distribution...')}</p>;
   if(role==='driver'){
-    if(params.get('tab')==='deliveries')return <div className="space-y-4"><Button variant="ghost" className="min-h-11" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Distribution menu')}</Button><DriverWorkspace/></div>;
+    if(params.get('tab')==='deliveries')return <div className="space-y-4"><PageHeader title={ui('My deliveries')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><DriverWorkspace/></div>;
     if(params.has('tab'))return <Navigate to="/distribution" replace/>;
     return <DistributionMenu sections={distributionSections(role)} onOpen={tab=>setParams(new URLSearchParams({tab}))}/>;
   }
@@ -129,8 +129,7 @@ function DistributionManagement(){
   if(selectedTab==='home')return <DistributionMenu sections={sections} onOpen={tab=>setSearchParams(new URLSearchParams({tab}))}/>;
   const register=['deliveries','fleet','dispatches','requests','routes','vehicles'].includes(selectedTab);
   return <div className="min-w-0 space-y-5">
-    <Button variant="ghost" className="min-h-11" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Distribution menu')}</Button>
-    <PageHeader title={sections.find(section=>section.key===selectedTab)?.label} actions={register&&<Button variant="outline" disabled={loading} onClick={loadData}><RefreshCw size={15} className="mr-2"/>{ui('Refresh')}</Button>}/>
+    <PageHeader back={{onClick:backToMenu,label:ui('Distribution menu')}} title={sections.find(section=>section.key===selectedTab)?.label} actions={register&&<Button variant="outline" disabled={loading} onClick={loadData}><RefreshCw size={15} className="mr-2"/>{ui('Refresh')}</Button>}/>
     {selectedTab==='stock'&&<StockControl/>}
     {selectedTab==='exchanges'&&<ExpiredExchangeReview/>}
     {register&&(loadError?<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">{uiMessage(loadError)}<Button className="mt-4 block" variant="outline" onClick={loadData}>{ui('Try again')}</Button></div>:loading||loadedTab!==selectedTab?<p role="status" className="py-12 text-center text-slate-500">{ui('Loading distribution...')}</p>:<>

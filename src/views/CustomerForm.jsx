@@ -15,7 +15,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
-import { Save, ArrowLeft } from "lucide-react";
+import { Save } from "lucide-react";
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import { readAll } from '@/lib/field-pos';
@@ -144,7 +144,7 @@ export default function CustomerForm() {
     <div>
       <PageHeader
         title={isEdit ? `Partner: ${form.business_name}` : ui("Add Partner")}
-        actions={<Button variant="outline" disabled={saving} onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>}
+        back={{onClick:goBack,label:ui(" Back"),disabled:saving}}
       />
       {loading && <p role="status" className="mb-4 text-sm text-slate-500">{ui("Loading customer setup...")}</p>}
       {loadError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={() => setReload(value => value + 1)}>{ui("Retry")}</button></p>}

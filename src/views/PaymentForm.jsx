@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatXAF } from "@/lib/formatters";
-import { Save, ArrowLeft } from "lucide-react";
+import { Save } from "lucide-react";
 
 export default function PaymentForm() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -75,7 +75,7 @@ export default function PaymentForm() {
   return (
     <div>
       <PageHeader title={ui("Confirm Customer Payment Received")} subtitle={ui("Cashier confirms collection; GM approves before ledger posting")}
-        actions={<Button variant="outline" onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>} />
+        back={{onClick:goBack,label:ui(" Back")}} />
       <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>

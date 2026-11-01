@@ -15,11 +15,9 @@ import PageHeader from "@/components/shared/PageHeader";
 import IncomeStatement from "@/components/accounting/IncomeStatement";
 import BalanceSheet from "@/components/accounting/BalanceSheet";
 import CashFlowStatement from "@/components/accounting/CashFlowStatement";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft } from "lucide-react";
 
 export default function FinancialStatements() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -61,14 +59,9 @@ export default function FinancialStatements() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Financial Statements")}
         subtitle={tab === 'cashflow' ? ui("Cash receipts, payments and movement history") : `${formatDate(fromDate)} - ${formatDate(toDate)}`}
-        actions={
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate("/accounting")}><ArrowLeft size={16} className="mr-1" />{ui(" Accounting")}</Button>
-          </div>
-        }
       />
 
       {tab !== 'cashflow' && <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap gap-4 items-end print:hidden">

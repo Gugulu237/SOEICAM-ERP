@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, ArrowLeft, Plus, Trash2, CheckCircle } from "lucide-react";
+import { Save, Plus, Trash2, CheckCircle } from "lucide-react";
 import { assemblyRecipeDraft } from '@/lib/assembly-recipe';
 import { readAll } from '@/lib/field-pos';
 import { isAssemblyInventoryType } from "@/lib/item-types";
@@ -162,13 +162,13 @@ function LegacyRecipeForm() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:goBack,label:ui(" Back")}}
         title={isEdit ? `Recipe: ${recipe?.recipe_name || ""}` : ui("New Recipe / BOM")}
         actions={
           <div className="flex gap-2">
             {isEdit && <Button variant="outline" onClick={() => navigate("/manufacturing/recipes/new")}><Plus size={16} className="mr-1" />{ui(" New Recipe")}</Button>}
             {isEdit && recipe?.status === "draft" && <Button variant="outline" onClick={handleApprove}><CheckCircle size={16} className="mr-1" />{ui(" Approve")}</Button>}
-            <Button variant="outline" onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>
+            
           </div>
         }
       />

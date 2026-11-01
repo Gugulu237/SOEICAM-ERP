@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatXAF, formatNumber } from "@/lib/formatters";
-import { Save, ArrowLeft, CheckCircle, Play, PackageCheck, Send, ClipboardCheck, ShoppingCart } from "lucide-react";
+import { Save, CheckCircle, Play, PackageCheck, Send, ClipboardCheck, ShoppingCart } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ProductionPurchaseRequest from '@/components/manufacturing/ProductionPurchaseRequest';
 import { readAll } from '@/lib/field-pos';
@@ -243,7 +243,7 @@ function LegacyProductionOrderForm({initialOrder=null}) {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:goBack,label:ui(" Back")}}
         title={isEdit ? ui("Production Order {0}", order?.order_number || "") : ui("New Production Order")}
         subtitle={isEdit && order ? <StatusBadge status={order.status} /> : null}
         actions={
@@ -252,7 +252,7 @@ function LegacyProductionOrderForm({initialOrder=null}) {
             {isEdit && order?.status === "approved" && ['admin','warehouse_manager'].includes(role) && canIssueMaterials && <Button variant="outline" disabled={saving || checking} onClick={handleIssueMaterials}><Play size={16} className="mr-1" />{ui(" Issue Materials")}</Button>}
             {isEdit && (order?.status==='materials_issued' || order?.status==='in_production' && !order?.fermentation_started_at) && ['admin','production_manager'].includes(role) && <Button disabled={saving} onClick={handleStartFermentation}><Play size={16} className="mr-1"/>{ui('Start fermentation')}</Button>}
             {isEdit && order?.status==='in_production' && order?.fermentation_started_at && ["admin","production_manager"].includes(role) && <Button disabled={saving || Date.parse(order.fermentation_due_at)>Date.now()} onClick={openCompletion}><PackageCheck size={16} className="mr-1" />{ui(" Complete Production")}</Button>}
-            <Button variant="outline" onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>
+            
           </div>
         }
       />

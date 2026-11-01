@@ -23,7 +23,7 @@ import DisposeAssetDialog from "@/components/assets/DisposeAssetDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, CalendarClock, ArrowLeft, Building2 } from "lucide-react";
+import { Plus, CalendarClock, Building2 } from "lucide-react";
 
 export default function FixedAssets() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -83,7 +83,7 @@ export default function FixedAssets() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Fixed Assets")}
         subtitle={ui("Flat-rate depreciation and replacement-fund tracking")}
         actions={
@@ -91,7 +91,7 @@ export default function FixedAssets() {
             {canManage && <Button onClick={() => setDialog("asset")}><Plus size={16} className="mr-1" />{ui(" Register Asset")}</Button>}
             {canManage && <Button variant="outline" onClick={() => setDialog("depreciation")}><CalendarClock size={16} className="mr-1" />{ui(" Run Depreciation")}</Button>}
             <Button variant="outline" onClick={load}>{ui("Refresh")}</Button>
-            <Button variant="outline" onClick={() => navigate("/accounting")}><ArrowLeft size={16} className="mr-1" />{ui(" Accounting")}</Button>
+            
           </div>
         }
       />

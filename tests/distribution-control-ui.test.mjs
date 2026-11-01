@@ -33,7 +33,7 @@ test('Distribution opens eight icon destinations without data reads or stock iss
   const paint=()=>{r.beforeRender();return render('distribution');};
   try{let html=paint();await r.flush();assert.deepEqual(r.reads,[]);assert.deepEqual(r.buttons.map(b=>b['aria-label']),['Field stock','Deliveries','Fleet','Dispatches','Issue records','Routes','Vehicles','Expired exchanges']);assert.doesNotMatch(html,/New Dispatch|Issue finished goods|Mounted Commercial stock control|tablist/);
     r.buttons.find(b=>b['aria-label']==='Field stock').onClick();html=paint();assert.match(html,/Mounted Commercial stock control/);assert.doesNotMatch(html,/Distribution sections|New Dispatch|tablist/);
-    r.buttons.find(b=>b.label==='Distribution menu').onClick();assert.equal(r.navigation.at(-1),'/distribution');
+    r.buttons.find(b=>b["aria-label"]==='Distribution menu').onClick();assert.equal(r.navigation.at(-1),'/distribution');
     const sidebar=render('sidebar');assert.ok(sidebar.includes('href="/distribution"'));assert.equal(sidebar.includes('href="/custody"'),false);assert.equal(modules.filter(m=>['/distribution','/custody'].includes(m.path)).length,1);
   }finally{r.cleanup();delete globalThis.__distributionUI;}
 });
@@ -59,7 +59,7 @@ test('old issue bookmarks move to Inventory while field-stock and run bookmarks 
 test('selected Distribution screens load only their relevant data and preserve clear menu navigation',async()=>{
   const {render}=await ui(),r=runtime();globalThis.__distributionUI=r;
   const paint=()=>{r.beforeRender();return render('distribution');};
-  try{for(const [tab,entities] of [['vehicles',['Vehicle','Warehouse','Branch']],['dispatches',['Dispatch']],['routes',['Route']],['requests',['DispatchRequest']],['fleet',['Dispatch','Vehicle']],['deliveries',['Dispatch']]]){r.reads=[];r.query='tab='+tab;paint();await r.flush();const html=paint();assert.deepEqual(r.reads,entities);assert.doesNotMatch(html,/New Dispatch|Issue finished goods|Distribution sections|tablist/);assert.ok(r.buttons.some(b=>b.label==='Distribution menu'));}
+  try{for(const [tab,entities] of [['vehicles',['Vehicle','Warehouse','Branch']],['dispatches',['Dispatch']],['routes',['Route']],['requests',['DispatchRequest']],['fleet',['Dispatch','Vehicle']],['deliveries',['Dispatch']]]){r.reads=[];r.query='tab='+tab;paint();await r.flush();const html=paint();assert.deepEqual(r.reads,entities);assert.doesNotMatch(html,/New Dispatch|Issue finished goods|Distribution sections|tablist/);assert.ok(r.buttons.some(b=>b["aria-label"]==='Distribution menu'));}
   }finally{r.cleanup();delete globalThis.__distributionUI;}
 });
 

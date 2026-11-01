@@ -44,6 +44,8 @@ Bundled inventory photos use committed, content-hashed WebP variants. After repl
 
 ## Production and Hostinger
 
+SOEICAM supports phone and desktop installation through **Install app** in the navigation menu. Production HTTPS deployments cache public interface files and optimized product photos; business records remain online-only. Development does not register the worker, keeping local previews fresh. See [PWA installation, caching and verification](docs/pwa.md).
+
 Deploy the current `main` branch as a **Next.js Node.js Web App**. Use Node.js 24, build script `build` (`npm run build`) and output directory `.next`. The Next.js preset manages the server entry and standalone startup. Set the existing database and sign-in settings in Hostinger's Environment Variables, including the actual HTTPS ERP URL.
 
 ```bash

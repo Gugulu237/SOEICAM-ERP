@@ -22,7 +22,7 @@ import { loadDispatch, approveDispatch, closeDispatch, canApproveDispatch } from
 import DriverReports from "@/components/distribution/DriverReports";
 import DispatchLinesEditor from "@/components/distribution/DispatchLinesEditor";
 import DispatchReconciliation from "@/components/distribution/DispatchReconciliation";
-import { Save, ArrowLeft, Send, CheckCircle2, Truck, XCircle } from "lucide-react";
+import { Save, Send, CheckCircle2, Truck, XCircle } from "lucide-react";
 import { businessDate } from "@/lib/business-date";
 
 export default function DispatchForm() {
@@ -231,7 +231,7 @@ export default function DispatchForm() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:goBack,label:ui(" Back")}}
         title={isEdit ? ui("Dispatch {0}", dispatch?.dispatch_number || "") : ui("New Dispatch")}
         subtitle={isEdit && dispatch ? <StatusBadge status={dispatch.status} /> : ui("Load finished goods onto a delivery vehicle")}
         actions={
@@ -244,7 +244,7 @@ export default function DispatchForm() {
             {isEdit && canManage && ["draft", "pending_approval", "approved"].includes(dispatch?.status) && (
               <Button variant="outline" disabled={saving} onClick={() => handleStatus("cancelled", "Dispatch cancelled")}><XCircle size={16} className="mr-1" />{ui(" Cancel")}</Button>
             )}
-            <Button variant="outline" onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>
+            
           </div>
         }
       />

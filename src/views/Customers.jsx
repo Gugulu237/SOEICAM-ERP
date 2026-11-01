@@ -22,7 +22,6 @@ import CustomerGpsDialog from "@/components/customers/CustomerGpsDialog";
 import { canCaptureCustomerGps } from "@/components/customers/CustomerGpsButton";
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import useCustomerPaymentStatus from '@/components/customers/useCustomerPaymentStatus';
-import CustomerPaymentBadge from '@/components/customers/CustomerPaymentBadge';
 import CustomerPaymentSummary from '@/components/customers/CustomerPaymentSummary';
 import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
 import CustomerInfo from '@/components/customers/CustomerInfo';
@@ -30,7 +29,7 @@ import PartnerDetail from "@/components/customers/PartnerDetail";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, ArrowLeft, Users, MapPin, Map as MapIcon, UserPlus } from "lucide-react";
+import { Plus, Users, MapPin, Map as MapIcon, UserPlus } from "lucide-react";
 const CustomerTasks=dynamic(()=>import('@/components/customers/CustomerTasks'));
 
 const CustomerDeliveryZones=dynamic(()=>import('@/components/customers/CustomerDeliveryZones'));
@@ -62,12 +61,11 @@ export default function Customers() {
     </nav>
   </div>;
   return <div className="min-w-0 space-y-4">
-    <Button variant="ghost" className="min-h-11" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Customers menu')}</Button>
-    {view==='map'?<><PageHeader title={ui('Map')}/><CustomerMapWorkspace onClose={backToMenu} onOpenCustomer={role==='commercial'?undefined:openCustomer}/></>:role==='commercial'?<CustomerTasks directory/>:view==='list'?<CustomerDirectory selectedId={params.get('customer')}/>:<><PageHeader title={ui('Delivery zones')} subtitle={<CustomerInfo title={ui('Delivery zones')}>{ui('Delivery zones, outlet locations and GPS coverage')}</CustomerInfo>}/><CustomerDeliveryZones onOpenCustomer={openCustomer}/></>}
+    {view==='map'?<><PageHeader title={ui('Map')} back={{onClick:backToMenu,label:ui('Customers menu')}}/><CustomerMapWorkspace onClose={backToMenu} onOpenCustomer={role==='commercial'?undefined:openCustomer}/></>:role==='commercial'?<CustomerTasks directory back={{onClick:backToMenu,label:ui('Customers menu')}}/>:view==='list'?<CustomerDirectory selectedId={params.get('customer')} back={{onClick:backToMenu,label:ui('Customers menu')}}/>:<><PageHeader back={{onClick:backToMenu,label:ui('Customers menu')}} title={ui('Delivery zones')} subtitle={<CustomerInfo title={ui('Delivery zones')}>{ui('Delivery zones, outlet locations and GPS coverage')}</CustomerInfo>}/><CustomerDeliveryZones onOpenCustomer={openCustomer}/></>}
   </div>;
 }
 
-export function CustomerDirectory({selectedId}) {
+export function CustomerDirectory({selectedId,back}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [params,setParams]=useSearchParams();
@@ -127,13 +125,14 @@ export function CustomerDirectory({selectedId}) {
   const query=search.trim().toLocaleLowerCase();
   const filtered=customers.filter(customer=>[customer.business_name,customer.customer_number,customer.phone,customer.contact_person,customer.town,customer.neighbourhood,customerById.get(customer.parent_id)?.business_name,...(locationsByCustomer[customer.id]||[]).flatMap(location=>[location.name,location.town])].join(' ').toLocaleLowerCase().includes(query)).sort((a,b)=>(a.business_name||'').localeCompare(b.business_name||''));
 
-  if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <div><PageHeader title={ui('Customers')} back={selectedId?{onClick:backToList,label:ui('Back to customers')}:back}/><div role="status" aria-label={ui('Loading customers...')} className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div></div>;
 
   return (
     <div>
       <PageHeader
-        title={ui("Customers")}
-        subtitle={ui('{0} customers',customers.length)}
+        back={selectedId?{onClick:backToList,label:ui('Back to customers')}:back}
+        title={selected?.business_name || ui("Customers")}
+        subtitle={!selectedId ? ui('{0} customers',customers.length) : undefined}
         actions={
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button onClick={() => navigate("/customers/new")}><Plus size={16} className="mr-1" />{ui("Add customer")}</Button>
@@ -146,15 +145,10 @@ export function CustomerDirectory({selectedId}) {
       {gpsTarget&&<CustomerGpsDialog key={gpsTarget.location?.id||gpsTarget.customer.id} {...gpsTarget} onClose={()=>setGpsTarget(null)} onSaved={savedGps}/>}
       {!selected?<div className="mx-auto max-w-4xl space-y-3">
         <Input aria-label={ui('Find a customer')} placeholder={ui('Name, phone or neighbourhood')} value={search} onChange={event=>setSearch(event.target.value)} className="bg-white"/>
-        <p className="text-xs text-slate-500">{ui('Tap a customer for a quick review. Tap again to open their profile.')}</p>
-        <CustomerGroupedList key={search} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={selectCustomer} onEditGps={canEditGps?editGps:undefined} locationsByCustomer={locationsByCustomer} renderDetails={customer=><>
-          {customer.parent_id&&<p className="text-xs text-slate-500">{ui('Main customer')}: {customers.find(parent=>parent.id===customer.parent_id)?.business_name}</p>}
-          {isAdmin&&<CustomerPaymentBadge summary={paymentStatus.data?.[customer.id]} error={paymentStatus.isError}/>}
-        </>}/>
+        <CustomerGroupedList key={search} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={selectCustomer}/>
       </div>:<div className="min-w-0">
             {selected ? (
               <>
-                <Button variant="ghost" className="mb-3 min-h-11" onClick={backToList}><ArrowLeft size={16} />{ui("Back to customers")}</Button>
               {isAdmin && selected.acquired_by_name && <section className="mb-4 rounded-xl border bg-white p-4 text-sm"><p>{ui("Acquired by ")}<strong>{selected.acquired_by_name}</strong> / {selected.acquisition_date}</p>{selected.registered_by_name && <p className="mt-1 text-xs text-slate-500">{ui("Registered by ")}{selected.registered_by_name}</p>}<p className="mt-1 text-xs text-slate-500">{ui("Acquisition: ")}{(selected.acquisition_verified || 'pending').replaceAll('_', ' ')}</p></section>}
 
               <PartnerDetail

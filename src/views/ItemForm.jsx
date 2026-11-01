@@ -26,7 +26,7 @@ import InventoryFields from "@/components/items/InventoryFields";
 import ServiceFields from "@/components/items/ServiceFields";
 import AssemblyFields from "@/components/items/AssemblyFields";
 import UnitOfMeasureSelect from "@/components/items/UnitOfMeasureSelect";
-import { Save, ArrowLeft, ChevronDown } from "lucide-react";
+import { Save, ChevronDown } from "lucide-react";
 import { componentType, validateComponentNumbers, priceComponent } from "@/lib/assembly-components";
 import { itemFormType, isAssemblyInventoryType } from "@/lib/item-types";
 import { PRODUCT_FAMILIES, MATERIAL_GROUPS, inventoryGroup, inventoryGroups } from "@/lib/inventory-groups";
@@ -210,7 +210,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const cancel = () => { if (!savingRef.current && !unitBusy) { if (embedded) onCancel?.(); else goBack(); } };
 
   return <div>
-    {!embedded && <PageHeader title={isEdit ? ui("Edit Item") : ui("New Item")} subtitle={ui("Set up the item, its accounts and its stock settings.")} actions={<Button variant="outline" disabled={saving || unitBusy} onClick={cancel}><ArrowLeft size={16} className="mr-1" />{ui("Back")}</Button>} />}
+    {!embedded && <PageHeader title={isEdit ? ui("Edit Item") : ui("New Item")} subtitle={ui("Set up the item, its accounts and its stock settings.")} back={{onClick:cancel,label:ui("Back"),disabled:saving || unitBusy}} />}
     <fieldset disabled={saving || Boolean(savedItem?.item_removed_at)} className={embedded ? "space-y-5" : "max-w-5xl space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"}>
       {savedItem&&(savedItem.configuration_status==='draft'||savedItem.is_active===false)&&<div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900"><strong>{ui(itemAvailabilityLabel(savedItem))}</strong><p className="mt-1">{ui('Complete the required details and turn on Active item before saving.')}</p>{finishedItemSetupIssues({...form,components}).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues({...form,components}).map(label=>ui(label)).join(', ')}</p>}</div>}
       <div className="flex flex-wrap items-center justify-between gap-3"><ItemTypeChooser value={itemType} onChange={changeType} /><label className="flex items-center gap-2 text-sm"><Switch aria-label={ui("Active item")} checked={form.is_active} onCheckedChange={value => set("is_active", value)} />{ui("Active item")}</label></div>

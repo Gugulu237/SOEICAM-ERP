@@ -8,6 +8,7 @@ import { usesClerk } from '@/lib/auth-provider';
 import { setItemLookupIdentity } from '@/lib/item-lookup-cache';
 import { activateAccountLanguage } from '@/lib/localization';
 import { configureLanguage, getLanguage, setLanguage, setLocalLanguage, defaultLanguage, languageIdentity } from '@/lib/i18n';
+import {disconnectDevice} from '@/lib/device-notifications-client';
 const AuthContext=createContext(null);
 function useERPProfile() {
   const [user,setUser]=useState(null), [isLoadingAuth,setLoading]=useState(true), [authError,setError]=useState(null);
@@ -108,7 +109,7 @@ function ClerkAuthProvider({ children }) {
     checkUserAuth({background:true});
     return invalidate;
   },[isLoaded,isSignedIn,userId,sessionId,checkUserAuth,invalidate]);
-  const logout=useCallback(() => { invalidateERPReads(); return clerk.signOut({ redirectUrl:'/login' }); },[clerk]);
+  const logout=useCallback(async () => { await disconnectDevice().catch(()=>{});invalidateERPReads(); return clerk.signOut({ redirectUrl:'/login' }); },[clerk]);
   return <AuthContext.Provider value={{ ...value, logout, isLoadingAuth:value.isLoadingAuth }}>{children}</AuthContext.Provider>;
 }
 export function AuthProvider({ children }) { return usesClerk() ? <ClerkAuthProvider>{children}</ClerkAuthProvider> : <SupabaseAuthProvider>{children}</SupabaseAuthProvider>; }

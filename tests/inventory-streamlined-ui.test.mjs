@@ -53,6 +53,6 @@ test('stock landing removes adjustment shortcuts for every role and keeps second
   r.session={role:'admin',principalRole:'warehouse_manager'};paint();assert.equal(r.lazy.some(v=>v.props.warehouseId==='cold'),false);
   r.query='';html=paint();assert.match(html,/Storage locations/);assert.match(html,/Production count requests/);
   r.buttons.find(b=>b['aria-label']==='Storage locations').onClick();assert.equal(new URLSearchParams(r.query).get('section'),'locations');assert.equal(new URLSearchParams(r.query).has('area'),false);
-  paint();r.buttons.find(b=>b.label==='Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
+  paint();r.buttons.find(b=>b["aria-label"]==='Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
  }finally{r.cleanup();delete globalThis.__inventoryFlow;}
 });

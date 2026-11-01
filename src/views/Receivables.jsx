@@ -16,7 +16,7 @@ import PartyStatement from "@/components/accounting/PartyStatement";
 import DataTable from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, ArrowLeft } from "lucide-react";
+import { Plus } from "lucide-react";
 
 export default function Receivables() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -52,13 +52,13 @@ export default function Receivables() {
   if(error) return <p role="alert">{error}</p>;
   return (
     <div>
-      <PageHeader
+      <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Accounts Receivable")}
         subtitle={ui("Customer invoices, payment allocation, aging and statements")}
         actions={
           <div className="flex gap-2">
             <Button onClick={() => navigate("/accounting/payments/new")}><Plus size={16} className="mr-1" />{ui(" Receive Payment")}</Button>
-            <Button variant="outline" onClick={() => navigate("/accounting")}><ArrowLeft size={16} className="mr-1" />{ui(" Accounting")}</Button>
+            
           </div>
         }
       />

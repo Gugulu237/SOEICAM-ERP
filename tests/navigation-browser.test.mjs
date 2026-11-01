@@ -64,10 +64,19 @@ test('real browser Back/Forward, list state, sidebar resume, reload and scrollin
     const evaluate = async expression => { const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId); if (result.exceptionDetails) throw Error(result.exceptionDetails.text); return result.result.value; };
     const until = async expression => { for (let tries = 0; tries < 70; tries++) { if (await evaluate('Boolean(' + expression + ')')) return; if (errors.length) throw Error(errors.join('\n')); await delay(70); } throw Error('Not satisfied: ' + expression + '\n' + await evaluate("JSON.stringify({url:location.href,y:scrollY,height:document.documentElement.scrollHeight,text:document.body.innerText.slice(0,500),saved:JSON.parse(sessionStorage.getItem('soeicam-navigation-v1:browser-test'))})")); };
     await send('Runtime.enable', {}, sessionId);
+    const assertHistoryDisabled = async (label, disabled) => {
+      await evaluate(`document.querySelector('[aria-label="Page history"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`);
+      const selector = `[role="menuitem"][aria-label="${label}"]`;
+      await until(`document.querySelector(${JSON.stringify(selector)})`);
+      assert.equal(await evaluate(`document.querySelector(${JSON.stringify(selector)}).getAttribute('aria-disabled')==='true'`), disabled);
+      await evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+      await until(`!document.querySelector('[role="menu"]')`);
+    };
     await send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/inventory` }, sessionId);
     await until("document.querySelector('[aria-label=\"Next records\"]') && sessionStorage.length > 0");
     await evaluate("document.getElementById('choose-items').click()");
-    await until("location.search==='?section=items' && !document.querySelector('[aria-label=\"Previous page\"]').disabled");
+    await until("location.search==='?section=items'");
+    await assertHistoryDisabled('Previous page', false);
     await evaluate(`const input=document.querySelector('[aria-label="Search records"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Product');input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[aria-label="Next records"]').click();`);
     await until("document.body.textContent.includes('Page 2 of 4')");
     await evaluate("dispatchEvent(new WheelEvent('wheel'));window.scrollTo(0,700)"); await until("scrollY>=690");
@@ -76,11 +85,13 @@ test('real browser Back/Forward, list state, sidebar resume, reload and scrollin
     await evaluate("document.getElementById('detail-back').click()");
     await until("location.pathname==='/inventory' && document.body.textContent.includes('Page 2 of 4') && window.scrollY>=690");
     assert.equal(await evaluate("document.querySelector('[aria-label=\"Search records\"]').value"), 'Product');
-    assert.equal(await evaluate("document.querySelector('[aria-label=\"Next page\"]').disabled"), false);
+    await assertHistoryDisabled('Next page', false);
     await evaluate("history.forward()"); await until("location.pathname.startsWith('/items/')");
-    await evaluate("history.back()"); await until("location.pathname==='/inventory' && document.querySelector('[aria-label=\"Next page\"]').disabled===false");
+    await evaluate("history.back()"); await until("location.pathname==='/inventory'");
+    await assertHistoryDisabled('Next page', false);
     await evaluate("document.getElementById('commercial-link').click()");
-    await until("location.pathname==='/commercial' && document.querySelector('[aria-label=\"Next page\"]').disabled");
+    await until("location.pathname==='/commercial'");
+    await assertHistoryDisabled('Next page', true);
     await evaluate("document.getElementById('warehouse-link').click()");
     await until("location.pathname==='/inventory' && location.search==='?section=items' && document.body.textContent.includes('Page 2 of 4')");
     await evaluate("location.reload()");

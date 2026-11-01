@@ -56,11 +56,11 @@ test('purchase landing opens four separate destinations without fetching registe
     assert.deepEqual(r.buttons.map(b=>b['aria-label']),['Purchase orders','Suppliers','Bills','Payments']);
     assert.doesNotMatch(html,/<table|Search purchase orders|Refresh/);
     r.buttons.find(b=>b['aria-label']==='Purchase orders').onClick();draw();await r.flush();html=draw();assert.match(html,/PO-TEST-01/);assert.equal(calls.at(-1).section,'orders');
-    r.buttons.find(b=>b.label==='Purchases menu').onClick();draw();await r.flush();draw();
+    r.buttons.find(b=>b["aria-label"]==='Purchases menu').onClick();draw();await r.flush();draw();
     r.buttons.find(b=>b['aria-label']==='Bills').onClick();draw();await r.flush();html=draw();assert.match(html,/BILL-ONLY/);assert.doesNotMatch(html,/PAYMENT-ONLY|Payment authorization|New purchase order|Purchases sections|Search purchase payments/);assert.match(html,/Search supplier bills|Unpaid supplier bills/);
-    r.buttons.find(b=>b.label==='Purchases menu').onClick();draw();await r.flush();draw();
+    r.buttons.find(b=>b["aria-label"]==='Purchases menu').onClick();draw();await r.flush();draw();
     r.buttons.find(b=>b['aria-label']==='Payments').onClick();draw();await r.flush();html=draw();assert.match(html,/PAYMENT-ONLY/);assert.doesNotMatch(html,/BILL-ONLY|Unpaid supplier bills|Overdue bills|New purchase order|Purchases sections/);assert.match(html,/Search purchase payments|Posted payments|Approved for release/);assert.equal(calls.at(-1).section,'payments');
-    r.buttons.find(b=>b.label==='Purchases menu').onClick();draw();await r.flush();draw();
+    r.buttons.find(b=>b["aria-label"]==='Purchases menu').onClick();draw();await r.flush();draw();
     r.buttons.find(b=>b['aria-label']==='Suppliers').onClick();draw();assert.equal(r.suppliersMounted,true);
   }finally{r.cleanup();delete globalThis.__purchaseUI;}
 });
@@ -82,7 +82,7 @@ test('goods receiving remains reachable from purchase orders and shows only orde
   const draw=()=>{r.beforeRender();return render();};
   try{draw();await r.flush();draw();r.buttons.find(b=>b.label==='Receive goods').onClick();draw();await r.flush();const html=draw();
     assert.equal(new URLSearchParams(r.query).get('section'),'receiving');assert.match(html,/PO-AWAITING/);assert.doesNotMatch(html,/PO-TEST-01|PO-COMPLETE|Awaiting authorization|New purchase order|Purchases sections/);
-    r.buttons.find(b=>b.label==='Purchase orders').onClick();assert.equal(r.query,'section=orders');
+    r.buttons.find(b=>b['aria-label']==='Purchase orders').onClick();assert.equal(r.query,'section=orders');
   }finally{r.cleanup();delete globalThis.__purchaseUI;}
 });
 
@@ -94,7 +94,8 @@ test('supplier profiles have a list return and a compact report selector without
   try{
     draw();await r.flush();let html=draw();assert.match(html,/Milk vendor/);assert.doesNotMatch(html,/Supplier details/);
     r.buttons.find(b=>b['aria-label']==='Milk vendor').onClick();draw();await r.flush();html=draw();assert.equal(new URLSearchParams(r.query).get('supplier'),'vendor');assert.match(html,/<aside class="hidden lg:block/);assert.doesNotMatch(html,/<nav/);
+    assert.equal((html.match(/data-page-back=/g)||[]).length,1);assert.equal(r.buttons.filter(b=>b['data-page-back']!==undefined)[0]['aria-label'],'Back to suppliers');
     const selector=r.controls.find(c=>c['aria-label']==='Supplier details');assert.equal(selector.value,'overview');selector.onChange({target:{value:'items'}});draw();assert.equal(new URLSearchParams(r.query).get('supplier_tab'),'items');assert.equal(calls.filter(c=>c.action!=='supplierWorkspace').length,0);
-    r.buttons.find(b=>b.label==='Back to suppliers').onClick();assert.equal(r.query,'section=suppliers');draw();await r.flush();html=draw();assert.doesNotMatch(html,/Supplier details/);
+    r.buttons.find(b=>b["aria-label"]==='Back to suppliers').onClick();assert.equal(r.query,'section=suppliers');draw();await r.flush();html=draw();assert.doesNotMatch(html,/Supplier details/);
   }finally{r.cleanup();delete globalThis.__purchaseUI;}
 });

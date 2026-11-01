@@ -20,7 +20,7 @@ import ReceiptGallery from "@/components/field/ReceiptGallery";
 import { invokeFieldOps, errorMessage, SALE_STATUS, PAYMENT_LABEL } from "@/lib/field-ops";
 import { formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { readAll } from '@/lib/field-pos';
 
 const FILTERS = [
@@ -99,10 +99,8 @@ export default function FieldSaleReview() {
   if (selected) {
     return (
       <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-        <Button variant="ghost" size="sm" className="mb-3" onClick={() => setSelected(null)}>
-          <ArrowLeft className="w-4 h-4 mr-1" />{ui(" Back to the queue")}</Button>
-
         <PageHeader
+          back={{onClick:()=>setSelected(null),label:ui(' Back to the queue')}}
           title={`${selected.sale_number} — ${selected.customer_name}`}
           subtitle={`${selected.commercial_name} · ${formatDate(selected.transaction_date)} · ${PAYMENT_LABEL[selected.payment_type]}`}
           actions={<StatusPill map={SALE_STATUS} value={selected.status} />}

@@ -2,7 +2,9 @@
 
 ## Navigation
 
-The customer list groups visible branches beneath their main customer. The first tap opens the quick review and branch dropdown; a second tap or Open customer profile opens the selected record. Searching for a branch retains its visible parent for context. A parent outside the signed-in user's customer scope is never fetched to fill a group.
+The customer list groups visible branches beneath their main customer. Tapping any customer name opens its profile directly, including the main customer of a group. Only customers with visible branches have a separate arrow that expands or collapses the branch list. Branch names open their own profile in one tap. Contact previews and inline GPS buttons no longer appear in the directory or delivery-zone lists. GPS actions remain inside the customer profile. Searching for a branch retains its visible parent for context. A parent outside the signed-in user's customer scope is never fetched to fill a group.
+
+In delivery zones, customer names also open their profile directly. Filters and zone assignment includes an explicit selection mode; checkboxes select delivery points independently of opening profiles. Selecting one point exposes its delivery-details editor. Zone assignments continue to use the exact selected point IDs and revisions.
 
 Add customer remains a normal button. Profiles offer Register sales, Receive payments, Report spoilage and Edit customer as labelled icon tiles, alongside GPS, balances, stock, sales and historical information. A sale opened from a profile retains that exact customer or branch and defaults the seller using the existing authenticated sale workflow.
 

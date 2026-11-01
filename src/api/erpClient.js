@@ -4,6 +4,7 @@ import { entityArguments } from '@/lib/record-input';
 import { createReadBatcher } from '@/lib/read-batcher';
 import { invalidateItemLookups } from '@/lib/item-lookup-cache';
 import { isReadOnlyFunction, createInFlightReads } from '@/lib/function-actions';
+import {disconnectDevice} from '@/lib/device-notifications-client';
 async function request(path, body, { timeoutMs=0 } = {}) {
   const controller=timeoutMs ? new AbortController() : null;
   const timer=controller ? setTimeout(()=>controller.abort(),timeoutMs) : null;
@@ -31,7 +32,7 @@ const auth = {
   resetPassword:({ newPassword }) => authResult('updateUser',{ password:newPassword }),
   loginWithProvider:provider => authResult('signInWithOAuth',{ provider,options:{ redirectTo:origin()+'/auth/callback' } }),
   setToken:() => {},
-  logout:async () => { invalidateERPReads(); await (await supabaseBrowser()).auth.signOut(); window.location.assign('/login'); },
+  logout:async () => { await disconnectDevice().catch(()=>{});invalidateERPReads(); await (await supabaseBrowser()).auth.signOut(); window.location.assign('/login'); },
   redirectToLogin:() => window.location.assign('/login'),
 };
 const entities=new Proxy({}, { get:(_,entity)=>new Proxy({}, { get:(_,operation)=> {

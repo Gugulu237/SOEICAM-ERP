@@ -27,4 +27,4 @@ export async function proxy(request, event) {
   response.headers.set('Cache-Control', 'private, no-store');
   return response;
 }
-export const config = { matcher: ['/((?!_next/static|_next/image|products/|favicon.ico|api/health).*)'] };
+export const config = { matcher: ['/((?!_next/static|_next/image|products/|brand/|pwa/|sw\\.js$|manifest\\.webmanifest$|favicon.ico|api/health).*)'] };

@@ -30,7 +30,7 @@ import { useQuery } from '@tanstack/react-query';
 import { customerDeliveryRequest } from '@/lib/customer-delivery-client';
 import { deliveryGpsStatus,GPS_LABELS } from '@/lib/customer-delivery';
 
-export default function CustomerTasks({ embedded = false, directory = false, onRecordSale } = {}) {
+export default function CustomerTasks({ embedded = false, directory = false, back, onRecordSale } = {}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
@@ -72,8 +72,8 @@ export default function CustomerTasks({ embedded = false, directory = false, onR
   const openProfile=c=>{const next=new URLSearchParams(params);c?next.set('customer',c.id):next.delete('customer');setParams(next);};
   const filtered = customers.filter((c) => (!zone || (zone==='unassigned'?!c.delivery_zone_id:c.delivery_zone_id===zone)) && [c.business_name, c.phone, c.town, c.neighbourhood, c.acquired_by_name].join(' ').toLowerCase().includes(search.toLowerCase()));
   return <div className={embedded ? "rounded-2xl border bg-white p-4 sm:p-5" : "mx-auto max-w-6xl p-4 sm:p-6"}>
-    <PageHeader title={isAdmin ? ui("Customers") : ui("Customers")} subtitle={<CustomerInfo title={ui("Customers")}>{ui("Customer contacts, delivery pins and acquisition history.")}</CustomerInfo>}
-      actions={<div className="flex gap-2">{commercialId && <Button variant="outline" onClick={() => navigate('/commercial?employee=' + encodeURIComponent(commercialId))}>{ui("Back to agent dashboard")}</Button>}{canRegister && <Button className="h-11" disabled={!canRegister} onClick={() => {setBranchParent(null);setOpen(true);}}><UserPlus size={16} className="mr-2" />{ui("New customer")}</Button>}</div>} />
+    <PageHeader back={profile?{onClick:()=>directory?backToList():openProfile(null),label:ui('Back to customers')}:commercialId?{onClick:()=>navigate('/commercial?employee='+encodeURIComponent(commercialId)),label:ui('Back to agent dashboard')}:back} title={profile?.business_name || ui("Customers")} subtitle={<CustomerInfo title={ui("Customers")}>{ui("Customer contacts, delivery pins and acquisition history.")}</CustomerInfo>}
+      actions={<div className="flex gap-2">{canRegister && <Button className="h-11" disabled={!canRegister} onClick={() => {setBranchParent(null);setOpen(true);}}><UserPlus size={16} className="mr-2" />{ui("New customer")}</Button>}</div>} />
     {commercialId && <CustomerInfo title={ui("Customers")}>{ui("Customers registered by or assigned to this agent. Field registrations and sales must be recorded by the employee from their own account.")}</CustomerInfo>}
     {!employee && !commercialId && <p className="mb-4 text-sm text-slate-800">{ui("Link your login to a staff record to register customers.")}</p>}
     <div className="mb-5 flex flex-wrap gap-3"><Input aria-label={ui("Find a customer")} value={search} onChange={event => setSearch(event.target.value)} placeholder={ui("Search name, phone, town or agent")} className="h-11 flex-1 bg-white" /><Button variant="outline" className="h-11" onClick={()=>navigate('/customers?view=map')}><MapPin size={16} className="mr-2"/>{ui('Map')}</Button></div>
@@ -84,7 +84,7 @@ export default function CustomerTasks({ embedded = false, directory = false, onR
     {gpsCustomer && <CustomerGpsDialog key={gpsCustomer.id} customer={gpsCustomer} onClose={() => setGpsCustomer(null)} onSaved={({record}) => { setCustomers(rows => rows.map(row => row.id === record.id ? {...row,...record} : row)); setGpsCustomer(null); setGpsNotice(ui('GPS location saved.')); }} />}
     {gpsNotice&&<p role="status" className="mb-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{gpsNotice}</p>}
     {loading ? <p role="status" className="py-10 text-center text-slate-500">{ui("Loading customers…")}</p> : error ? <p role="alert" className="text-red-700">{uiMessage(error)} <button className="underline" onClick={() => setReload((n) => n + 1)}>{ui("Retry")}</button></p>
-      : !profile?<CustomerGroupedList key={search+'|'+zone} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={openProfile} onEditGps={canEditGps?c=>{setGpsNotice('');setGpsCustomer(c);}:undefined} renderDetails={c=><p className="text-xs text-slate-500">{zoneOptions.data?.zones.find(z=>z.id===c.delivery_zone_id)?.name||ui('Unassigned')}</p>}/>:<div className="space-y-3"><Button variant="ghost" onClick={()=>directory?backToList():openProfile(null)}>{ui('Back to customers')}</Button>{[profile].map((c) => <article key={c.id} className="space-y-3 rounded-2xl border bg-white p-5">
+      : !profile?<CustomerGroupedList key={search+'|'+zone} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={openProfile}/>:<div className="space-y-3">{[profile].map((c) => <article key={c.id} className="space-y-3 rounded-2xl border bg-white p-5">
         <div><h2 className="font-semibold text-slate-900">{c.business_name}</h2><p className="text-sm text-slate-500">{[c.neighbourhood, c.town].filter(Boolean).join(', ') || ui("Address not specified")}</p></div>
         <CustomerActionGrid onSale={canRegister?()=>onRecordSale?onRecordSale(c.id):navigate('/commercial?section=pos&new=1&customer='+encodeURIComponent(c.id)):undefined} onReceive={canEditGps?()=>setPaymentCustomer(c):undefined} onSpoilage={canEditGps?()=>setSpoilCustomer(c):undefined} disabled={c.is_active===false}/>
         <p className="text-sm">{c.contact_person}{c.phone && <a href={'tel:' + c.phone} className="ml-2 text-blue-700">{c.phone}</a>}</p>

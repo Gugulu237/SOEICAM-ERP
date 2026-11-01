@@ -23,7 +23,7 @@ import {
   approveDispatchRequest, rejectDispatchRequest,
 } from "@/lib/dispatch-requests";
 import RequestItemsEditor from "@/components/distribution/RequestItemsEditor";
-import { Save, Send, CheckCircle2, XCircle, ArrowLeft, Truck } from "lucide-react";
+import { Save, Send, CheckCircle2, XCircle, Truck } from "lucide-react";
 import { businessDate } from "@/lib/business-date";
 import { readAll } from "@/lib/field-pos";
 import { stockUnit } from "@/lib/item-units";
@@ -194,7 +194,7 @@ export default function DispatchRequestForm() {
       <PageHeader
         title={isEdit ? ui("Stock Request {0}", request?.request_number || "") : ui("Request Stock for Delivery")}
         subtitle={isEdit && request ? <StatusBadge status={request.status} /> : ui("Pair a driver and Commercial agent, then request finished goods for their delivery run")}
-        actions={<Button variant="outline" onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>}
+        back={{onClick:goBack,label:ui(" Back")}}
       />
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 space-y-4">

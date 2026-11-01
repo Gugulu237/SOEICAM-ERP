@@ -8,7 +8,8 @@ import { uiMessage } from '@/lib/i18n';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useRef, useState } from 'react';
-import { Banknote, ArrowUpRight, ArrowLeft, RefreshCw, Wallet, Receipt, FileText, PenLine } from 'lucide-react';
+import PageHeader from '@/components/shared/PageHeader';
+import { Banknote, ArrowUpRight, RefreshCw, Wallet, Receipt, FileText, PenLine } from 'lucide-react';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import { erp } from '@/api/erpClient';
 import { businessDate } from '@/lib/business-date';
@@ -105,7 +106,7 @@ export default function CashierWorkspace({ data, preview = false }) {
         <span className="break-words text-sm font-semibold text-slate-900">{ui(title)}</span>
       </button>)}
     </nav>:<div className="space-y-3">
-      <Button variant="ghost" onClick={()=>preview?setLocalTab('home'):backToMenu()}><ArrowLeft size={16} className="mr-2"/>{ui('Cashier menu')}</Button>
+      <PageHeader title={ui(tabs.find(([key])=>key===tab)?.[1]||'Cashier')} back={{onClick:()=>preview?setLocalTab('home'):backToMenu(),label:ui('Cashier menu')}}/>
       <section aria-label={ui(tabs.find(([key])=>key===tab)?.[1]||'Cashier')}>
       {tab==='handovers'&&<div className="space-y-4"><WorkspacePanel help title={ui('Receive payments')} subtitle={ui('Choose who is depositing the cash. Recorded collections and customer invoices supply the amounts automatically.')}>
         <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm"><strong>{pendingDeposits.length}</strong> {ui('deposits or customer payments to receive')}</p><Button variant="outline" disabled={preview} onClick={()=>setTab('invoices')}>{ui('Customer invoices')}</Button></div>

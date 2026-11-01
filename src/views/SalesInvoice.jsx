@@ -19,7 +19,7 @@ import { invoiceHtml,printInvoice,downloadInvoice,invoiceEmail,shareInvoice } fr
 import { postedInvoiceStatuses } from '@/lib/company-sales';
 import { errorMessage } from '@/lib/field-ops';
 import { formatXAF } from '@/lib/formatters';
-import { ArrowLeft,Printer,Download,Mail,Share2,Save,Pencil } from 'lucide-react';
+import { Printer,Download,Mail,Share2,Save,Pencil } from 'lucide-react';
 
 export default function SalesInvoice() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -33,7 +33,7 @@ export default function SalesInvoice() {
   async function save(){if(busy)return;setBusy(true);setError('');setNotice('');try{const next=await invoiceRequest({action:'customizeSalesInvoice',invoiceId:id,options,dueDate:due,saveCustomerDefaults:defaults,revision:data.revision});setData(next);setOptions(next.options);setDue(next.invoice.due_date);setEdit(false);setDefaults(false);setNotice(sourceMessage("Invoice details saved."));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function share(){setError('');try{const result=await shareInvoice(data);setNotice(result==='copied'?sourceMessage("Invoice text copied. Paste it into your preferred messaging app."):sourceMessage("Invoice shared."));}catch(e){if(e.name!=='AbortError')setError(sourceMessage("Sharing is unavailable here. Download the invoice or use Print / PDF to save a copy."));}}
   return <div className="space-y-4">
-    <PageHeader title={data?.invoice.invoice_number || ui("Customer invoice")} subtitle={data?ui("{0} · {1} · Customer owes {2}", data.invoice.customer_name, formatXAF(data.invoice.total), formatXAF(data.invoice.customer_balance)):ui("Company letterhead and client terms")} actions={<Button variant="outline" onClick={()=>navigate(invoiceList)}><ArrowLeft size={15} className="mr-2"/>{ui("Invoices")}</Button>}/>
+    <PageHeader title={data?.invoice.invoice_number || ui("Customer invoice")} subtitle={data?ui("{0} · {1} · Customer owes {2}", data.invoice.customer_name, formatXAF(data.invoice.total), formatXAF(data.invoice.customer_balance)):ui("Company letterhead and client terms")} back={{onClick:()=>navigate(invoiceList),label:ui("Invoices")}}/>
     {error&&<div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700"><span>{uiMessage(error)}</span><Button size="sm" variant="outline" disabled={busy} onClick={()=>setReload(n=>n+1)}>{ui("Reload saved invoice")}</Button></div>}
     {notice&&<p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{uiMessage(notice)}</p>}
     {!data&&!error&&<p role="status" className="py-12 text-sm text-slate-500">{ui("Loading invoice…")}</p>}

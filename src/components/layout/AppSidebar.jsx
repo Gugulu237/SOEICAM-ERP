@@ -18,6 +18,7 @@ import { INVENTORY_PATH, INVENTORY_ROLES, isInventoryPath } from "@/lib/inventor
 import { QUALITY_ROLES, isQualityPath } from '@/lib/quality-workspace';
 import { PURCHASE_ROLES } from '@/lib/purchase-workspace';
 import { permitsWorkspace,workspacePath,hasWorkspaceGrant } from '@/lib/workspace-navigation';
+import {InstallAppButton} from '@/components/pwa/PwaProvider';
 
 const navItems = [
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
@@ -116,6 +117,7 @@ export default function AppSidebar() {
         ))}
       </nav>
       <div className="border-t border-sidebar-border p-3">
+        <InstallAppButton compact={compact}/>
         <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} aria-current={isActive('/profile') ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={`mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${compact ? 'justify-center' : ''}`}><Settings size={18}/>{!compact && <span>{ui('My profile')}</span>}</Link>
         <button
           onClick={() => logout()}
