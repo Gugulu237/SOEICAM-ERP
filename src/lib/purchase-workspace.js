@@ -5,7 +5,8 @@ export const PURCHASE_SECTIONS = [
   { key: 'orders', get label(){return ui("Purchase orders");} },
   { key: 'suppliers', get label(){return ui("Suppliers");} },
   { key: 'receiving', get label(){return ui("Receiving");} },
-  { key: 'bills', get label(){return ui("Bills & payments");} },
+  { key: 'bills', get label(){return ui("Bills");} },
+  { key: 'payments', get label(){return ui("Payments");} },
 ];
 
 export function purchasePermissions(role, assignedRole) {
@@ -23,12 +24,12 @@ export function purchasePermissions(role, assignedRole) {
 export function purchaseSections(role, assignedRole) {
   if (!PURCHASE_ROLES.includes(role)) return [];
   const p = purchasePermissions(role, assignedRole);
-  return PURCHASE_SECTIONS.filter(s => s.key === 'orders' || s.key === 'suppliers' && p.suppliers || s.key === 'receiving' && p.receive || s.key === 'bills' && p.finance);
+  return PURCHASE_SECTIONS.filter(s => s.key === 'orders' || s.key === 'suppliers' && p.suppliers || s.key === 'receiving' && p.receive || ['bills','payments'].includes(s.key) && p.finance);
 }
 
 export function purchasePath({ section = 'orders', supplier, supplierTab, order, compose } = {}) {
   const params = new URLSearchParams();
-  if (section !== 'orders') params.set('section', section);
+  if (section !== 'home') params.set('section', section);
   if (supplier) params.set('supplier', supplier);
   if (supplierTab) params.set('supplier_tab', supplierTab);
   if (order) params.set('order', order);

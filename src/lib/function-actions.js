@@ -2,7 +2,7 @@
 // actions are treated as writes; session data is never cached here.
 const fieldReads = new Set([
   'assemblyBuildWorkspace','previewAssemblyBuild',
-  'customerAcquisitionOptions', 'warehouseAdjustmentWorkspace', 'existingStockWorkspace',
+  'customerCollectionWorkspace','customerSpoilageWorkspace','customerAcquisitionOptions', 'warehouseAdjustmentWorkspace', 'warehouseAdjustmentHistory', 'existingStockWorkspace',
   'fieldStockInventory', 'driverReturnsWorkspace',
   'inventoryAuditWorkspace', 'inventoryAuditDetail', 'inventoryAuditMovements',
   'assetWorkspace', 'assetDepreciationPreview', 'commercialCashiers', 'cashierHandoverHistory', 'cashierWorkspace', 'purchasesWorkspace',

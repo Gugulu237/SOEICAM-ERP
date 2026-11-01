@@ -68,7 +68,7 @@ test('actual request client lets general staff use checked Inventory and Sales f
   await assert.rejects(client.entities.JournalEntry.filter({}),/does not allow|permit/);
   const sales=client.auth.forFeature('sales'),actor=await sales.auth.me();
   const options=await salesOrderAction(sales,actor,{action:'salesOrderWorkspace'});assert.equal(options.defaultSource,'company');
-  const body={action:'recordSuppliedOrder',sourceType:'company',requestKey:crypto.randomUUID(),date,customerId:'customer-a',sellerId:'cashier',paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
+  const body={action:'recordSuppliedOrder',receiptReference:'RCPT-100',sourceType:'company',requestKey:crypto.randomUUID(),date,customerId:'customer-a',sellerId:'cashier',paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
   const result=await salesOrderAction(sales,actor,body);assert.equal(result.order.sales_supply_recorded_by,user.id);assert.equal(result.order.salesperson_id,'cashier');assert.equal((await f.entities.JournalEntry.list()).length,1);assert.equal((await f.entities.InvoiceLine.list())[0].cogs_total,600);
   assert.equal((await salesOrderAction(sales,actor,body)).reused,true);
   const reply=await (await compiled).invoke(new Request('http://localhost/api/functions/fieldOps',{method:'POST',body:JSON.stringify(body)}));assert.equal(reply.status,200);assert.equal((await reply.json()).reused,true);
@@ -132,7 +132,7 @@ test('actual request client refuses company stock issues and sales for drivers a
    const before=structuredClone(f.rows),client=await requestClient(),sales=client.auth.forFeature('sales'),actor=await sales.auth.me();
    assert.equal(effectiveRole(actor,ctx.employee),template);
    await assert.rejects(client.entities.StockBalance.create({product_id:'product-a',quantity:100}));
-   const body={action:'recordSuppliedOrder',sourceType:'company',requestKey:crypto.randomUUID(),date,customerId:'customer-a',sellerId:'cashier',paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
+   const body={action:'recordSuppliedOrder',receiptReference:'RCPT-100',sourceType:'company',requestKey:crypto.randomUUID(),date,customerId:'customer-a',sellerId:'cashier',paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
    await assert.rejects(salesOrderAction(sales,actor,body),/Not permitted/);
    const response=await (await compiled).invoke(new Request('http://localhost/api/functions/fieldOps',{method:'POST',body:JSON.stringify(body)}));assert.equal(response.status,400);
    assert.deepEqual(f.rows,before);

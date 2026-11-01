@@ -98,7 +98,7 @@ export default function AppSidebar() {
           <Link
             key={item.path}
             to={targetPath(item.path)}
-            resume={item.path !== '/' && !item.path.includes('?')}
+            resume={!['/', '/purchases', '/sales', '/cashier', '/customers', '/distribution', '/inventory'].includes(item.path) && !item.path.includes('?')}
             replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick}
             aria-current={isActive(item.path) ? 'page' : undefined}
             className={`mx-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${

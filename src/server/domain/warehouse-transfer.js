@@ -14,7 +14,7 @@ export async function warehouseTransfer(context,stores,input) {
   if (![productId,fromWarehouseId,toWarehouseId].every(value => typeof value === 'string' && value.length > 0 && value.length <= 200) || fromWarehouseId === toWarehouseId) throw Error('Select an item and two different warehouses.');
   if (!/^[a-f0-9-]{36}$/i.test(requestKey || '')) throw Error('Invalid transfer reference.');
   const quantity = Number(input.quantity), date = String(input.movementDate || businessDate()), reason = String(input.reason || '').trim();
-  if (!Number.isFinite(quantity) || quantity <= 0 || quantity !== round(quantity) || quantity > 1e9) throw Error('Enter a positive quantity with up to three decimal places.');
+  if (!['string','number'].includes(typeof input.quantity) || !Number.isFinite(quantity) || quantity <= 0 || quantity !== round(quantity) || quantity > 1e9) throw Error('Enter a positive quantity with up to three decimal places.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date || date > businessDate() || reason.length > 2000) throw Error('Enter a valid movement date and a note of up to 2,000 characters.');
   const payload = JSON.stringify([context.user.id,productId,fromWarehouseId,toWarehouseId,quantity,date,reason]);
   const previous = await readRecords(stores.StockMovement,{document_type:'WarehouseTransfer',document_id:requestKey});
@@ -23,7 +23,7 @@ export async function warehouseTransfer(context,stores,input) {
     return {reused:true,quantity,totalValue:round(previous.reduce((sum,row) => sum+Number(row.total_value),0),2),movements:previous};
   }
   const [product,from,to] = await Promise.all([stores.Product.get(productId),stores.Warehouse.get(fromWarehouseId),stores.Warehouse.get(toWarehouseId)]);
-  if (!product || product.is_active === false || product.configuration_status === 'draft' || product.inventory_type === 'service') throw Error('Choose an active, configured inventory item.');
+  if (!product || product.is_active === false || product.item_removed_at || product.configuration_status === 'draft' || product.inventory_type === 'service' || product.item_type==='service') throw Error('Choose an active, configured inventory item.');
   if (!from || !to || from.is_active === false || to.is_active === false) throw Error('Choose two active warehouses.');
   if ([from,to].some(w => MANAGED_WAREHOUSE_TYPES.includes(w.warehouse_type))) throw Error('Vehicle loads, agent issues and returns must use Distribution so the delivery inventory stays balanced.');
   requireFinishedStorage(product,to,{isolation:true});
@@ -39,19 +39,21 @@ export async function warehouseTransfer(context,stores,input) {
   for (const lot of lots) {
     if (remaining <= 0) break;
     if (Number(lot.quantity) !== round(lot.quantity)) throw Error('Reconcile the lot quantity precision before transferring it.');
-    const take = Math.min(Number(lot.quantity),remaining), cost = Number(lot.unit_cost || 0);
-    if (!Number.isFinite(cost) || cost < 0) throw Error('Reconcile the stock lot cost before transferring it.');
-    const value = take === Number(lot.quantity) ? Number(lot.total_value || 0) : round(take*cost,2);
-    if (!Number.isFinite(value) || value < 0 || Number(lot.total_value || 0) < value) throw Error('The lot value needs reconciliation before transfer.');
+    const bookValue=Number(lot.total_value),take = Math.min(Number(lot.quantity),remaining), cost = bookValue/Number(lot.quantity);
+    if (!Number.isFinite(cost) || cost <= 0 || bookValue!==round(bookValue,2) || !Number.isSafeInteger(Math.round(bookValue*100))) throw Error('Reconcile the stock lot cost before transferring it.');
+    const value = take === Number(lot.quantity) ? bookValue : round(take*cost,2);
+    if (!Number.isFinite(value) || value < 0 || bookValue < value) throw Error('The lot value needs reconciliation before transfer.');
     const qc = isolation && (lot.qc_status || 'approved') === 'approved' ? 'quarantine' : lot.qc_status || 'approved';
     const targetLots = await readRecords(stores.StockBalance,{product_id:productId,warehouse_id:toWarehouseId,lot_number:lot.lot_number || '',qc_status:qc});
-    const target = targetLots.find(row => (row.expiry_date || '') === (lot.expiry_date || '') && (row.production_order_id || '') === (lot.production_order_id || ''));
-    if (target && (!Number.isFinite(Number(target.quantity)) || Number(target.quantity) < 0 || !Number.isFinite(Number(target.total_value)) || Number(target.total_value) < 0)) throw Error('Reconcile the destination stock balance before transferring more goods.');
-    await stores.StockBalance.update(lot.id,{quantity:round(Number(lot.quantity)-take),total_value:round(Number(lot.total_value || 0)-value,2)});
+    const provenanceKeys=['production_order_id','batch_number','opening_batch_id','stock_origin','inventory_recovery_id'];
+    const target = targetLots.find(row => (row.expiry_date || '') === (lot.expiry_date || '') && provenanceKeys.every(key=>(row[key]||'')===(lot[key]||'')));
+    if (target && (!Number.isFinite(Number(target.quantity)) || Number(target.quantity) < 0 || Number(target.quantity)!==round(target.quantity) || !Number.isFinite(Number(target.total_value)) || Number(target.total_value) < 0 || Number(target.total_value)!==round(target.total_value,2) || Number(target.quantity)===0 && Number(target.total_value)!==0)) throw Error('Reconcile the destination stock balance before transferring more goods.');
+    const remainingQuantity=round(Number(lot.quantity)-take),remainingValue=round(bookValue-value,2);
+    await stores.StockBalance.update(lot.id,{quantity:remainingQuantity,total_value:remainingValue,unit_cost:remainingQuantity>0?remainingValue/remainingQuantity:cost});
     const targetQuantity = round(Number(target?.quantity || 0)+take), targetValue = round(Number(target?.total_value || 0)+value,2);
     const stock = {quantity:targetQuantity,total_value:targetValue,unit_cost:targetValue/targetQuantity};
     if (target) await stores.StockBalance.update(target.id,stock);
-    else await stores.StockBalance.create({...stock,product_id:productId,product_name:product.name,warehouse_id:toWarehouseId,warehouse_name:to.name,lot_number:lot.lot_number || '',expiry_date:lot.expiry_date || '',qc_status:qc,...(lot.production_order_id ? {production_order_id:lot.production_order_id} : {}),...(lot.batch_number ? {batch_number:lot.batch_number} : {})});
+    else await stores.StockBalance.create({...stock,product_id:productId,product_name:product.name,warehouse_id:toWarehouseId,warehouse_name:to.name,lot_number:lot.lot_number || '',expiry_date:lot.expiry_date || '',qc_status:qc,...Object.fromEntries(provenanceKeys.filter(key=>lot[key]).map(key=>[key,lot[key]]))});
     movements.push(await stores.StockMovement.create({product_id:productId,product_name:product.name,quantity:take,source_warehouse_id:fromWarehouseId,destination_warehouse_id:toWarehouseId,movement_type:to.warehouse_type === 'quarantine' ? 'quality_quarantine' : 'warehouse_transfer',lot_number:lot.lot_number || '',expiry_date:lot.expiry_date || undefined,unit_cost:cost,total_value:value,status:'approved',movement_date:date,document_type:'WarehouseTransfer',document_id:requestKey,warehouse_transfer_payload:payload,reason,created_by:context.user.email,...(lot.production_order_id ? {production_order_id:lot.production_order_id} : {}),...(lot.batch_number ? {batch_number:lot.batch_number} : {})}));
     remaining=round(remaining-take);
   }

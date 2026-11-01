@@ -5,10 +5,86 @@ import { PGlite } from '@electric-sql/pglite';
 import { fixture, functionRoute, request, user, date } from './helpers/cashier.mjs';
 import { warehouseAdjustmentAction } from '../src/server/domain/warehouse-adjustment.js';
 import { guardMutation } from '../src/server/access.js';
+import {FEATURE_AUTHORITY} from '../src/server/domain/roles.js';
+
+test('direct count posting is denied to non-admin principals even with elevated feature access',async()=>{
+ const f=await setup(),s=f.entities,body=await f.body();
+ const before=JSON.stringify(await s.StockBalance.list());
+ for(const role of ['warehouse_manager','cashier','driver','production_manager']){
+  await s.Employee.update('cashier',{role,allowed_modules:['inventory','inventory_adjustments','accounting']});
+  const elevated={...user,[FEATURE_AUTHORITY]:{role:'admin'}};
+  await assert.rejects(warehouseAdjustmentAction(f.client,elevated,body),/top administrators/);
+ }
+ assert.equal(JSON.stringify(await s.StockBalance.list()),before);assert.equal((await s.StockMovement.list()).length,0);assert.equal((await s.JournalEntry.list()).length,0);
+});
+test('count history returns posted references, actor, values and exact immutable receipts with no writes',async()=>{
+ const f=await setup(),s=f.entities,result=await f.call(await f.body());
+ const before=JSON.stringify(await s.AuditLog.list());
+ const page=await f.call({action:'warehouseAdjustmentHistory'});assert.equal(page.total,1);assert.equal(page.adjustments[0].id,result.id);assert.equal(page.adjustments[0].reference,'COUNT-001');assert.equal(page.adjustments[0].recorded_by,'Cashier');assert.equal(page.adjustments[0].journal_number,result.journal_number);
+ const detail=await f.call({action:'warehouseAdjustmentHistory',adjustmentId:result.id});assert.deepEqual(detail.adjustment,result);assert.match(detail.reason,/physical count/);
+ assert.equal(JSON.stringify(await s.AuditLog.list()),before);await assert.rejects(f.call({action:'warehouseAdjustmentHistory',page:-1}),/page/);await assert.rejects(f.call({action:'warehouseAdjustmentHistory',adjustmentId:'arbitrary-audit'}),/valid adjustment/);
+ await s.Employee.update('cashier',{role:'driver',allowed_modules:['inventory','inventory_adjustments']});await assert.rejects(f.call({action:'warehouseAdjustmentHistory'}));
+});
+
+test('physical counts cannot be backdated against current balances or saved with missing monetary values',async()=>{
+ const f=await setup(),s=f.entities,body=await f.body();
+ await assert.rejects(f.call({...body,date:date.slice(0,4)+'-01-01'}),/today/);
+ await s.StockBalance.update(f.lots[0].id,{total_value:undefined});const workspace=await f.workspace();assert.match(workspace.rows[0].count_issue,/missing or invalid/);
+ await assert.rejects(f.call({...body,rows:[{balance_id:workspace.rows[0].balance_id,fingerprint:workspace.rows[0].fingerprint,counted_quantity:0}]}),/missing or invalid/);
+ assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('removed items and changed fallback inventory accounts cannot accept an earlier count',async()=>{
+ const f=await setup(),s=f.entities;
+ await s.Product.update(f.product.id,{inventory_account_id:''});
+ const rule=await s.PostingRule.create({rule_key:'raw_material_inventory',account_id:f.inventory.id,is_active:true}),body=await f.body();
+ await s.PostingRule.update(rule.id,{account_id:'another-account'});await assert.rejects(f.call(body),/changed since/);
+ await s.PostingRule.update(rule.id,{account_id:f.inventory.id});await s.Product.update(f.product.id,{item_removed_at:new Date().toISOString()});await assert.rejects(f.call(body),/active, configured/);
+ assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('a zero-count financial correction cannot silently round away unsupported residual money',async()=>{
+ const f=await setup(),s=f.entities;await s.Employee.update('cashier',{role:'admin'});
+ await s.StockBalance.update(f.lots[0].id,{quantity:0,total_value:0.004});
+ const workspace=await f.workspace();assert.match(workspace.rows[0].count_issue,/precision/);
+ const row=workspace.rows[0];await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reason:'Verified empty counted lot',reference:'ROUNDING',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:0,confirm_reconciliation:true}]}),/precision/);
+ assert.equal((await s.StockBalance.get(row.balance_id)).total_value,0.004);assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('new expired or undated finished lots cannot be made saleable through a count flag',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ for(const expiry_date of ['', '2020-01-01','2026-02-31']){
+  await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'NEW-LOT',reason:'Physical found stock checked',rows:[{product_id:f.product.id,lot_number:'FOUND',unit_cost:10,counted_quantity:3,expiry_date,ready_for_sale:true}]}),/expiry/);
+ }
+ assert.equal((await s.StockMovement.list()).length,0);assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('import metadata exceptions require GM and explicit evidence confirmation',async()=>{
+ const f=await existingStockFixture(),s=f.entities;
+ const row=(await f.call({action:'existingStockWorkspace'})).lots[0];
+ const body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'IMPORT-CHECK',reason:'Verified source import mistake',rows:[{id:row.id,fingerprint:row.fingerprint}]};
+ await assert.rejects(f.call(body),/Confirm/);
+ await s.Employee.update('cashier',{role:'warehouse_manager'});await assert.rejects(f.call({...body,confirm_import_metadata:true}),/General Manager/);
+ assert.equal((await s.StockBalance.get(row.id)).qc_status,'quarantine');assert.equal((await s.StockBalance.get(row.id)).expiry_date,'2020-01-01');
+});
+
+test('generic movement creation cannot forge counts, returns or orphan approved inventory history',()=>{
+ const context={user:{id:'gm',role:'admin'},role:'admin',employee:null};
+ for(const type of ['stock_count_variance','stock_adjustment','customer_return','purchase_receipt']){
+  for(const operation of ['create','bulkCreate'])assert.throws(()=>guardMutation(context,'StockMovement',operation,{movement_type:type,quantity:1,status:'approved'}),/checked stock workflow/);
+ }
+ assert.throws(()=>guardMutation(context,'StockMovement','update',{status:'approved'},{id:'pending',status:'pending'}),/checked stock workflow/);
+});
 
 async function setup(db) {
   const f=await fixture(db),s=f.entities;
-  await s.Employee.update('cashier',{role:'warehouse_manager'});
+  const filterAudit=s.AuditLog.filter;
+  s.AuditLog.filter=async(query,sort,...args)=>{
+    if(!sort||typeof sort!=='object')return filterAudit(query,sort,...args);
+    const rows=await filterAudit(query),skip=sort.skip||0;
+    return {items:rows.slice(skip,skip+sort.limit),total:rows.length,has_more:skip+sort.limit<rows.length};
+  };
+  await s.Employee.update('cashier',{role:'admin'});
   const original=s.AuditLog.create;
   s.AuditLog.create=async value=>{
     if(!value.id)return original(value);
@@ -67,19 +143,19 @@ test('concurrent stock, QC and valuation changes invalidate the count snapshot; 
   assert.equal((await s.StockMovement.list()).length,0);
 });
 
-test('new counted lots use established cost and are immediately available; existing lots and forged costs cannot be duplicated',async()=>{
+test('new counted lots retain printed expiry and stay held until verified; existing lots and forged costs cannot be duplicated',async()=>{
   const f=await setup(),s=f.entities,body={...(await f.body()),rows:[{product_id:f.product.id,lot_number:'FOUND-LOT',expiry_date:'2027-02-01',unit_cost:10,counted_quantity:2}]};
   await assert.rejects(f.call({...body,rows:[{...body.rows[0],unit_cost:0.01}]}),/carrying cost changed/);
-  const result=await f.call(body),balance=await s.StockBalance.get(result.rows[0].balance_id);assert.equal(balance.quantity,2);assert.equal(balance.total_value,20);assert.equal(balance.qc_status,'approved');assert.equal(balance.expiry_date,'');
+  const result=await f.call(body),balance=await s.StockBalance.get(result.rows[0].balance_id);assert.equal(balance.quantity,2);assert.equal(balance.total_value,20);assert.equal(balance.qc_status,'quarantine');assert.equal(balance.expiry_date,'2027-02-01');
   await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/already exists/);
   assert.equal((await s.Account.get('expense')).balance,-20);
 });
 
 test('managed vehicle and agent locations, inactive staff, disabled modules and unauthorized roles cannot use warehouse corrections',async()=>{
   const f=await setup(),s=f.entities;
-  for(const role of ['production_manager','procurement','cashier','employee','commercial','driver']){await s.Employee.update('cashier',{role});await assert.rejects(f.workspace());}
+  for(const role of ['warehouse_manager','production_manager','procurement','cashier','employee','commercial','driver']){await s.Employee.update('cashier',{role});await assert.rejects(f.workspace());}
   await s.Employee.update('cashier',{role:'warehouse_manager',assigned_role:'production_manager'});await assert.rejects(f.workspace(),/warehouse management/);
-  await s.Employee.update('cashier',{assigned_role:'warehouse_manager',status:'inactive'});await assert.rejects(f.workspace(),/active warehouse/);
+  await s.Employee.update('cashier',{role:'admin',assigned_role:'admin',status:'inactive'});await assert.rejects(f.workspace(),/active warehouse/);
   await s.Employee.update('cashier',{status:'active'});f.client.auth.assertModule=()=>{throw Error('Inventory module disabled');};await assert.rejects(f.workspace(),/disabled/);delete f.client.auth.assertModule;
   await s.Warehouse.update(f.warehouse.id,{warehouse_type:'vehicle'});await assert.rejects(f.workspace(),/Distribution/);
   const context={user,role:'admin',employee:{role:'admin',status:'active'}};
@@ -107,7 +183,7 @@ test('finished-product counts use the existing company location while retaining 
 
 test('one legacy zero-quantity residual does not block the warehouse or adjustments to valid lots',async()=>{
  const f=await setup(),s=f.entities;await s.StockBalance.update(f.lots[0].id,{quantity:0,total_value:25});
- const workspace=await f.workspace();assert.equal(workspace.rows[0].requires_reconciliation,true);assert.equal(workspace.can_reconcile_value,false);assert.equal(workspace.rows.length,2);
+ const workspace=await f.workspace();assert.equal(workspace.rows[0].requires_reconciliation,true);assert.equal(workspace.can_reconcile_value,true);assert.equal(workspace.rows.length,2);
  const body=await f.body([0,6]);body.rows=body.rows.slice(1);await f.call(body);assert.equal((await s.StockBalance.get(f.lots[1].id)).quantity,6);assert.equal((await s.StockBalance.get(f.lots[0].id)).total_value,25);
 });
 test('verified zero count clears a residual value through balanced accounting without silently discarding it',async()=>{
@@ -120,8 +196,8 @@ test('verified zero count clears a residual value through balanced accounting wi
 });
 test('negative legacy balances can be corrected from a verified count and cost, while warehouse staff cannot change valuation',async()=>{
  const f=await setup(),s=f.entities;await s.StockBalance.update(f.lots[0].id,{quantity:-2,total_value:-20,unit_cost:10});await s.Account.update(f.inventory.id,{balance:30});
- let body=await f.body([1,5]);body.rows=[{...body.rows[0],verified_unit_cost:10,confirm_reconciliation:true}];await assert.rejects(f.call(body),/Accounting or the General Manager/);
- await s.Employee.update('cashier',{role:'cashier',allowed_modules:['accounting','inventory_adjustments']});await assert.rejects(f.call({...body,rows:[{...body.rows[0],verified_unit_cost:''}]}),/verified positive unit cost/);
+ let body=await f.body([1,5]);body.rows=[{...body.rows[0],verified_unit_cost:10,confirm_reconciliation:true}];await s.Employee.update('cashier',{role:'warehouse_manager'});await assert.rejects(f.call(body),/top administrators/);
+ await s.Employee.update('cashier',{role:'admin',allowed_modules:['accounting','inventory_adjustments']});await assert.rejects(f.call({...body,rows:[{...body.rows[0],verified_unit_cost:''}]}),/verified positive unit cost/);
  await f.call(body);assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,1);assert.equal((await s.StockBalance.get(f.lots[0].id)).total_value,10);assert.equal((await s.Account.get(f.inventory.id)).balance,60);assert.equal((await s.Account.get('expense')).balance,-30);
 });
 test('missing or non-finite lot data is reported per row, and role permission cannot be bypassed by opening or posting directly',async()=>{
@@ -169,7 +245,7 @@ test('counted finished goods can be marked ready for sale without a manufacturin
 test('already counted stock on hold can be released with its same quantity and value, without another journal or stock movement',async()=>{
  const f=await finishedFixture(),s=f.entities;
  const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-HOLD',reason:'Opening finished goods counted',rows:[{product_id:f.product.id,lot_number:'OPEN-HOLD',expiry_date:'2099-12-31',unit_cost:10,counted_quantity:8}]});
- const id=first.rows[0].balance_id;await s.StockBalance.update(id,{qc_status:'quarantine',expiry_date:'2020-01-01'});const held=await s.StockBalance.get(id);assert.equal(held.qc_status,'quarantine');
+ const id=first.rows[0].balance_id;await s.StockBalance.update(id,{qc_status:'quarantine',expiry_date:'2099-01-01'});const held=await s.StockBalance.get(id);assert.equal(held.qc_status,'quarantine');
  const beforeJ=(await s.JournalEntry.list()).length,beforeM=(await s.StockMovement.list()).length;
  const row=(await f.workspace()).rows.find(r=>r.balance_id===id);
  const release={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'QUALITY-CHECK',reason:'Physical condition and printed expiry verified',rows:[{balance_id:id,fingerprint:row.fingerprint,counted_quantity:8,ready_for_sale:true}]};
@@ -210,32 +286,33 @@ test('request flags cannot mark an ingredient or packaging item ready for sale',
 test('existing counted materials release without changing quantity, inventory value or posting a second journal',async()=>{
  const f=await setup(),s=f.entities;
  const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'MATERIAL-HOLD',reason:'Materials counted for production',rows:[{product_id:f.product.id,lot_number:'MATERIAL-HOLD',unit_cost:10,counted_quantity:3}]});
- await s.StockBalance.update(first.rows[0].balance_id,{qc_status:'quarantine',expiry_date:'2020-01-01'});
+ await s.StockBalance.update(first.rows[0].balance_id,{qc_status:'quarantine',expiry_date:'2099-01-01'});
  const row=(await f.workspace()).rows.find(r=>r.balance_id===first.rows[0].balance_id),before=await s.StockBalance.get(row.balance_id),journals=(await s.JournalEntry.list()).length;
  const saved=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'USE-VERIFIED',reason:'Material quality physically verified',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:3,ready_for_use:true}]});
  const after=await s.StockBalance.get(row.balance_id);assert.equal(after.qc_status,'approved');assert.equal(after.quantity,before.quantity);assert.equal(after.total_value,before.total_value);assert.equal((await s.JournalEntry.list()).length,journals);assert.equal(saved.journal_id,'');
 });
 
 
-test('adjusted finished goods need no expiry or release flag and are immediately saleable',async()=>{
+test('counting finished goods without a printed expiry does not make them saleable',async()=>{
  const f=await finishedFixture(),s=f.entities;
  const saved=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'FOUND-STOCK',reason:'Existing inventory counted',rows:[{product_id:f.product.id,lot_number:'NO-EXPIRY',unit_cost:10,counted_quantity:9}]});
- const lot=await s.StockBalance.get(saved.rows[0].balance_id);assert.equal(lot.expiry_date,'');assert.equal(lot.qc_status,'approved');
+ const lot=await s.StockBalance.get(saved.rows[0].balance_id);assert.equal(lot.expiry_date,'');assert.equal(lot.qc_status,'quarantine');
  const admin={id:'gm',role:'admin'};f.client.auth.me=async()=>admin;
- const stock=await salesOrderAction(f.client,admin,{action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products.find(p=>p.id===f.product.id).available,14);
+ const stock=await salesOrderAction(f.client,admin,{action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products.find(p=>p.id===f.product.id).available,5);
 });
 
-test('existing adjusted expiry is cleared even when approved; original values remain audited and retry is safe',async()=>{
+test('counting opening stock preserves expiry and holds and rejects an expired release',async()=>{
  const f=await finishedFixture(),s=f.entities;
- await s.StockBalance.update(f.lots[1].id,{production_order_id:'',opening_batch_id:'opening-1',expiry_date:'2020-01-01'});
+ await s.StockBalance.update(f.lots[1].id,{production_order_id:'',opening_batch_id:'opening-1',qc_status:'quarantine',expiry_date:'2020-01-01'});
  const row=(await f.workspace()).rows.find(r=>r.balance_id===f.lots[1].id);assert.equal(row.adjusted_stock,true);
- const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'CLEAR-EXPIRY',reason:'Remove expiry from adjusted opening stock',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:5,ready_for_sale:true}]};
- const saved=await f.call(body),lot=await s.StockBalance.get(row.balance_id);assert.equal(lot.expiry_date,'');assert.equal(lot.quantity,5);assert.equal(lot.total_value,50);assert.equal(saved.journal_id,'');assert.equal(saved.rows[0].previous_expiry_date,'2020-01-01');assert.equal((await s.StockMovement.list()).length,0);assert.equal((await f.call(body)).reused,true);
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'COUNT-EXPIRED',reason:'Count expired stock pending disposal',accountId:'expense',rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:4}]};
+ await assert.rejects(f.call({...body,rows:[{...body.rows[0],ready_for_sale:true}]}),/expiry/);
+ const saved=await f.call(body),lot=await s.StockBalance.get(row.balance_id);assert.equal(lot.expiry_date,'2020-01-01');assert.equal(lot.qc_status,'quarantine');assert.equal(lot.quantity,4);assert.equal(lot.total_value,40);assert.ok(saved.journal_id);assert.equal(saved.rows[0].previous_expiry_date,'2020-01-01');assert.equal((await f.call(body)).reused,true);
 });
 
 
 async function existingStockFixture(db){
- const f=await finishedFixture(db),s=f.entities;
+ const f=await finishedFixture(db),s=f.entities;await s.Employee.update('cashier',{role:'admin'});
  const b=await s.StockBalance.create({product_id:f.product.id,product_name:f.product.name,warehouse_id:f.warehouse.id,lot_number:'EXISTING',quantity:7,total_value:70,unit_cost:10,opening_batch_id:'OPEN-1',qc_status:'quarantine',expiry_date:'2020-01-01'});
  return {...f,existing:b};
 }
@@ -244,7 +321,7 @@ test('existing stock correction releases imported stock across locations without
  const f=await existingStockFixture(),s=f.entities;
  const workspace=await f.call({action:'existingStockWorkspace'});assert.equal(workspace.lots.length,1);
  const beforeJ=await s.JournalEntry.list(),beforeM=await s.StockMovement.list(),beforeP=await s.ProductionOrder.list();
- const body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'MIGRATION-FIX',reason:'Existing business stock is usable',rows:workspace.lots.map(({id,fingerprint})=>({id,fingerprint}))};
+ const body={action:'correctExistingStock',confirm_import_metadata:true,requestKey:crypto.randomUUID(),reference:'MIGRATION-FIX',reason:'Existing business stock is usable',rows:workspace.lots.map(({id,fingerprint})=>({id,fingerprint}))};
  const saved=await f.call(body),b=await s.StockBalance.get(f.existing.id);assert.equal(saved.corrected,1);assert.equal(b.qc_status,'approved');assert.equal(b.expiry_date,'');assert.equal(b.quantity,7);assert.equal(b.total_value,70);assert.equal(b.unit_cost,10);assert.equal(saved.rows[0].previous_qc_status,'quarantine');assert.equal(saved.rows[0].previous_expiry_date,'2020-01-01');
  assert.deepEqual(await s.JournalEntry.list(),beforeJ);assert.deepEqual(await s.StockMovement.list(),beforeM);assert.deepEqual(await s.ProductionOrder.list(),beforeP);assert.equal((await f.call(body)).reused,true);
  await assert.rejects(f.call({...body,reason:'Changed reason'}),/different details/);
@@ -253,8 +330,8 @@ test('existing stock correction releases imported stock across locations without
 
 test('rejected imported stock requires real GM and explicit physical-usability confirmation',async()=>{
  const f=await existingStockFixture(),s=f.entities;await s.StockBalance.update(f.existing.id,{qc_status:'rejected'});
- const workspace=await f.call({action:'existingStockWorkspace'}),body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'MIGRATION-FIX',reason:'Accidental rejection of existing stock',rows:workspace.lots.map(({id,fingerprint})=>({id,fingerprint}))};
- assert.equal(workspace.can_correct_rejected,false);await assert.rejects(f.call({...body,confirm_rejected_stock:true}),/General Manager/);
+ const workspace=await f.call({action:'existingStockWorkspace'}),body={action:'correctExistingStock',confirm_import_metadata:true,requestKey:crypto.randomUUID(),reference:'MIGRATION-FIX',reason:'Accidental rejection of existing stock',rows:workspace.lots.map(({id,fingerprint})=>({id,fingerprint}))};
+ assert.equal(workspace.can_correct_rejected,true);await s.Employee.update('cashier',{role:'warehouse_manager'});await assert.rejects(f.call({action:'existingStockWorkspace'}),/top administrators/);await assert.rejects(f.call({...body,confirm_rejected_stock:true}),/General Manager/);
  await s.Employee.update('cashier',{role:'admin'});await assert.rejects(f.call(body),/General Manager/);await f.call({...body,confirm_rejected_stock:true});assert.equal((await s.StockBalance.get(f.existing.id)).qc_status,'approved');
 });
 
@@ -266,10 +343,10 @@ test('existing stock correction cannot release production, legacy production, re
   if(mode==='recovery')await s.StockBalance.update(f.existing.id,{inventory_recovery_id:'REC-1'});
   if(mode==='vehicle')await s.Warehouse.update(f.warehouse.id,{warehouse_type:'vehicle'});
   assert.equal((await f.call({action:'existingStockWorkspace'})).lots.length,0);
-  await assert.rejects(f.call({action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'TEST-FIX',reason:'Do not release manufactured stock',rows:[{id:f.existing.id,fingerprint:'forged'}]}),/cannot be corrected/);
+  await assert.rejects(f.call({action:'correctExistingStock',confirm_import_metadata:true,requestKey:crypto.randomUUID(),reference:'TEST-FIX',reason:'Do not release manufactured stock',rows:[{id:f.existing.id,fingerprint:'forged'}]}),/cannot be corrected/);
  }
  const f=await existingStockFixture(),row=(await f.call({action:'existingStockWorkspace'})).lots[0];await f.entities.StockBalance.update(row.id,{quantity:6});
- await assert.rejects(f.call({action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'STALE-FIX',reason:'Check stale count protection',rows:[{id:row.id,fingerprint:row.fingerprint}]}),/Stock changed/);
+ await assert.rejects(f.call({action:'correctExistingStock',confirm_import_metadata:true,requestKey:crypto.randomUUID(),reference:'STALE-FIX',reason:'Check stale count protection',rows:[{id:row.id,fingerprint:row.fingerprint}]}),/Stock changed/);
 });
 
 
@@ -278,7 +355,7 @@ test('existing-stock correction rolls back quality metadata on audit failure and
   const f=await existingStockFixture(db),s=f.entities,route=await functionRoute();globalThis.__cashierClient=f.client;
   globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
   const rows=(await f.call({action:'existingStockWorkspace'})).lots.map(({id,fingerprint})=>({id,fingerprint}));
-  const body={action:'correctExistingStock',requestKey:crypto.randomUUID(),reference:'ATOMIC-FIX',reason:'Remove mistaken manufacturing controls',rows};
+  const body={action:'correctExistingStock',confirm_import_metadata:true,requestKey:crypto.randomUUID(),reference:'ATOMIC-FIX',reason:'Remove mistaken manufacturing controls',rows};
   const original=s.AuditLog.create;s.AuditLog.create=async()=>{throw Error('Audit unavailable');};
   const post=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});
   assert.equal((await post()).status,400);assert.equal((await s.StockBalance.get(f.existing.id)).qc_status,'quarantine');assert.equal((await s.StockBalance.get(f.existing.id)).expiry_date,'2020-01-01');
@@ -306,7 +383,7 @@ test('same-quantity revaluation posts a zero-quantity movement and a balanced va
 });
 
 test('changed material prices invalidate adjustment snapshots and warehouse-only roles cannot revalue stock',async()=>{
- const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{purchase_price:12});const body=await f.body([10,5]);body.rows=[{...body.rows[0],use_current_cost:true}];await assert.rejects(f.call(body),/approve changing/);
+ const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{purchase_price:12});const body=await f.body([10,5]);body.rows=[{...body.rows[0],use_current_cost:true}];await s.Employee.update('cashier',{role:'warehouse_manager'});await assert.rejects(f.call(body),/top administrators/);
  await s.Employee.update('cashier',{role:'admin'});await s.Product.update(f.product.id,{purchase_price:14});await assert.rejects(f.call(body),/changed since/);assert.equal((await s.JournalEntry.list()).length,0);
  const workspace=await f.workspace();assert.equal(workspace.items.find(p=>p.id===f.product.id).unit_cost,14);assert.equal(workspace.rows[0].configured_unit_cost,14);
 });

@@ -31,7 +31,7 @@ async function drawer(){
 }
 test('phone navigation waits for a delayed route commit and replaces only the drawer entry',async()=>{
   const f=await drawer();try{
-    assert.equal(f.state.sheet.open,true);
+    assert.equal(f.state.sheet.open,true);for(const root of ['/sales','/cashier','/purchases','/customers','/distribution','/inventory'])assert.equal(f.link(root).resume,false);
     const target=f.link('/manufacturing');assert.equal(target.replaceOverlay,true);
     target.onClick(f.click('/manufacturing'));f.paint();await f.state.flush();
     const html=f.paint();assert.equal(f.state.sheet.open,true,'closing before the route commit would rewind and cancel Next navigation');assert.match(html,/Opening section/);

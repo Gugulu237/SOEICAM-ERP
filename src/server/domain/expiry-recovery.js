@@ -23,7 +23,7 @@ export async function expiryRecoveryAction(client,user,body) {
   const treasuryIds=new Set(treasury.map(t=>t.gl_account_id));
   const account=(id,asset=false)=>{const a=accounts.find(a=>a.id===id);if(!a || a.is_active===false || a.is_posting===false || a.is_treasury || treasuryIds.has(id) || a.account_number==='1050' || a.normal_balance!=='debit' || !(asset?a.account_type==='asset':['expense','other_expense','cogs'].includes(a.account_type)))throw Error('Configure active inventory asset and loss expense accounts.');return a;};
   if(body.action==='workspace') {
-    const access=await adjustmentAccess(client,role,employee,{requirePermission:false});
+    const access=await adjustmentAccess(client,role,employee,{user,requirePermission:false});
     return {can_post:role==='cashier' || ['admin','warehouse_manager'].includes(role) && access.can_adjust,can_receive:role==='admin' || role==='warehouse_manager' && employee?.assigned_role!=='production_manager',can_release:(role==='admin' || role==='production_manager') && (role==='admin' || !employee?.allowed_modules || employee.allowed_modules.includes('quality')),
       lots:balances.filter(b=>eligible(b,pmap.get(b.product_id),wmap.get(b.warehouse_id))).map(b=>({...b,unit:stockUnit(pmap.get(b.product_id)),fingerprint:snapshot(b)})),
       packaging:products.filter(p=>p.inventory_type==='packaging' && p.is_active!==false && p.configuration_status!=='draft').map(p=>({id:p.id,name:p.name,unit:stockUnit(p)})),
@@ -61,7 +61,7 @@ export async function expiryRecoveryAction(client,user,body) {
   }
   if(body.action!=='post')throw Error('Unknown expiry recovery action.');
   if(!['admin','cashier','warehouse_manager'].includes(role) || role!=='admin' && employee?.assigned_role==='production_manager')throw Error('Accounting or authorized warehouse management must record expired-stock disposal.');
-  if(role==='cashier')client.auth.assertModule?.('accounting');else await adjustmentAccess(client,role,employee);
+  if(role==='cashier')client.auth.assertModule?.('accounting');else await adjustmentAccess(client,role,employee,{user});
   if(!/^[a-f0-9-]{36}$/i.test(body.requestKey || ''))throw Error('Reopen the disposal form for a valid save reference.');
   const id='ERD-'+hash([user.id,body.requestKey]).slice(0,40),payload=hash(body),previous=await s.AuditLog.get(id);
   if(previous){if(previous.inventory_recovery_payload!==payload)throw Error('This save reference was used for different disposal details.');return {...previous.inventory_recovery_result,reused:true};}

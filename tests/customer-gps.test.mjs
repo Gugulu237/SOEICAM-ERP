@@ -4,6 +4,18 @@ import { startCustomerGps } from '../src/lib/live-customer-gps.js';
 import { customerRouteUrl } from '../src/lib/customer-location.js';
 import { loadGoogleMaps } from '../src/lib/google-maps.js';
 
+test('quick GPS keeps the best fresh fix, stops at the accuracy target and ignores late or stale readings',()=>{
+  let success,timeout,cleared=0,stopped=0;const positions=[],errors=[];
+  const geolocation={watchPosition:ok=>{success=ok;return 8;},clearWatch:()=>cleared++};
+  const timers={setTimeout:fn=>{timeout=fn;return 9;},clearTimeout:()=>{}};
+  const begin=()=>startCustomerGps({geolocation,timers,targetAccuracy:20,duration:30000,onPosition:p=>positions.push(p),onError:e=>errors.push(e),onStop:()=>stopped++});
+  const emit=(accuracy,timestamp=Date.now())=>success({coords:{latitude:3.86,longitude:11.51,accuracy},timestamp});
+  begin();emit(5,Date.now()-121000);emit(5,Date.now()+60000);assert.equal(positions.length,0);
+  emit(80);emit(100);emit(25);assert.deepEqual(positions.map(p=>p.gps_accuracy_m),[80,25]);assert.equal(stopped,0);
+  emit(12);emit(4);assert.equal(positions.length,3);assert.equal(cleared,1);assert.equal(stopped,1);
+  begin();timeout();assert.equal(errors.at(-1).code,3);assert.equal(cleared,2);assert.equal(stopped,2);
+});
+
 test('live GPS reports valid fixes and stops watches, timers and late callbacks on stop or automatic timeout', () => {
   let success, failure, timeout, stopped = 0, cleared = 0;
   const positions = [], geolocation = { watchPosition: (ok, fail, options) => { success = ok; failure = fail; assert.equal(options.enableHighAccuracy, true); assert.equal(options.maximumAge, 0); return 7; }, clearWatch: id => { assert.equal(id, 7); cleared++; } };

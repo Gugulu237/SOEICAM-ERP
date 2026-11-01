@@ -122,8 +122,8 @@ test('Supply Chain receives sales-report access on legacy profiles and an explic
   assert.deepEqual(catalogueFromStored({roles:{supply_chain_manager:revoked}}).roles.supply_chain_manager.modules,['inventory']);
 });
 
-test('inventory adjustment is a separate role permission; upgrades preserve warehouse access and later revocations remain revoked',()=>{
+test('inventory adjustment defaults are reserved for top admins and revocations remain revoked',()=>{
  const old=catalogueFromStored({roles:{warehouse_manager:{template_role:'warehouse_manager',modules:['inventory'],module_permissions_version:3},cashier:{template_role:'cashier',modules:['accounting'],module_permissions_version:3}}});
- assert.ok(old.roles.warehouse_manager.modules.includes('inventory_adjustments'));assert.ok(!old.roles.cashier.modules.includes('inventory_adjustments'));
+ assert.ok(old.roles.admin.modules.includes('inventory_adjustments'));assert.ok(!old.roles.warehouse_manager.modules.includes('inventory_adjustments'));assert.ok(!old.roles.cashier.modules.includes('inventory_adjustments'));
  const narrowed=validateRoleProfile({...old.roles.warehouse_manager,label:'Warehouse',category:'Operations',modules:['inventory']});assert.equal(narrowed.module_permissions_version,5);assert.ok(!catalogueFromStored({roles:{warehouse_manager:narrowed}}).roles.warehouse_manager.modules.includes('inventory_adjustments'));
 });

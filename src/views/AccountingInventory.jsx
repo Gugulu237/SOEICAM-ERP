@@ -11,7 +11,7 @@ import { uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { getLocale, ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { erp } from '@/api/erpClient';
 import { Link, useSearchParams } from '@/lib/router';
 import { businessDate } from '@/lib/business-date';
@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RefreshCw, ClipboardCheck, Download } from 'lucide-react';
 
+const AdjustmentHistory=lazy(()=>import('@/components/inventory/AdjustmentHistory'));
 const selectStyle = 'h-10 rounded-md border bg-white px-3 text-sm';
 const qty = n => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 3 });
 const money = n => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 }) + ' XAF';
@@ -40,17 +41,17 @@ function Status({ value }) {
 export default function AccountingInventory() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const {role,employee,allowedModules}=useCurrentUser();
-  const canAdjust=canAdjustInventory(role,employee,allowedModules);
-  const [showAdjust,setShowAdjust]=useState(false);
-  const [params, setParams] = useSearchParams(), auditId = params.get('audit') || '';
+  const {role,principalRole,employee,allowedModules}=useCurrentUser();
+  const canAdjust=canAdjustInventory(principalRole||role,employee,allowedModules);
+  const [showAdjust,setShowAdjust]=useState(false),[adjustmentVersion,setAdjustmentVersion]=useState(0);
+  const [params, setParams] = useSearchParams(), auditId = params.get('audit') || '',adjustmentsView=params.get('view')==='adjustments';
   const [workspace, setWorkspace] = useState(null), [detail, setDetail] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true);
   const [warehouse, setWarehouse] = useState(''), [search, setSearch] = useState(''), [selected, setSelected] = useState([]), [stockPage, setStockPage] = useState(1), [historyPage, setHistoryPage] = useState(1);
   const [title, setTitle] = useState('Inventory count ' + businessDate()), [movement, setMovement] = useState(null);
   const inFlight = useRef(false), retry = useRef(null);
   const refresh = useCallback(async page => { const result = await call('inventoryAuditWorkspace', { page }); setWorkspace(result); }, []);
   const loadDetail = useCallback(async id => { const result = await call('inventoryAuditDetail', { auditId: id }); setDetail(result); }, []);
-  useEffect(() => { let active = true; setLoading(true); setError(''); call('inventoryAuditWorkspace', { page: historyPage }).then(data => { if (active) setWorkspace(data); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [historyPage]);
+  useEffect(() => { if(adjustmentsView)return; let active = true; setLoading(true); setError(''); call('inventoryAuditWorkspace', { page: historyPage }).then(data => { if (active) setWorkspace(data); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [historyPage,adjustmentsView]);
   useEffect(() => { let active = true; setDetail(null); setError(''); if (auditId) call('inventoryAuditDetail', { auditId }).then(data => { if (active) setDetail(data); }).catch(e => { if (active) setError(e.message); }); return () => { active = false; }; }, [auditId]);
   const perform = async (action, payload) => {
     if (inFlight.current) return;
@@ -68,11 +69,11 @@ export default function AccountingInventory() {
   const filtered = useMemo(() => (workspace?.rows || []).filter(r => (!warehouse || r.warehouse_id === warehouse) && (!search.trim() || `${r.product_name} ${r.sku} ${r.lot_number} ${r.batch_number}`.toLowerCase().includes(search.trim().toLowerCase()))), [workspace, warehouse, search]);
   const pageRows = filtered.slice((stockPage - 1) * 50, stockPage * 50);
   return <div className="space-y-5">
-    {showAdjust && <StockAdjustmentDialog open warehouseId={warehouse} onOpenChange={setShowAdjust} onSaved={()=>refresh(historyPage).catch(e=>setError(e.message))}/>}
-    <PageHeader title={ui("Inventory Audit & Adjustments")} subtitle={ui("Accounting controls for physical stock, variances and inventory value.")} actions={<>{canAdjust && <Button onClick={()=>setShowAdjust(true)}>{ui("Adjust quantity")}</Button>}<Button variant="outline" asChild><Link to="/accounting">{ui("Accounting")}</Link></Button></>} />
+    {canAdjust && showAdjust && <StockAdjustmentDialog open warehouseId={warehouse} onOpenChange={setShowAdjust} onSaved={()=>{setAdjustmentVersion(n=>n+1);if(!adjustmentsView)refresh(historyPage).catch(e=>setError(e.message));}}/>}
+    <PageHeader title={ui("Inventory Audit & Adjustments")} subtitle={ui("Accounting controls for physical stock, variances and inventory value.")} actions={<>{canAdjust && <><Button onClick={()=>setShowAdjust(true)}>{ui("Adjust quantity")}</Button><Button variant="outline" onClick={()=>setParams(adjustmentsView?{}:{view:'adjustments'})}>{ui(adjustmentsView?'Inventory count review':'Adjustment history')}</Button></>}<Button variant="outline" asChild><Link to="/accounting">{ui("Accounting")}</Link></Button></>} />
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uiMessage(error)}<Button variant="outline" size="sm" className="ml-3" disabled={busy} onClick={() => { setError(''); Promise.all([refresh(historyPage), ...(auditId ? [loadDetail(auditId)] : [])]).catch(e => setError(e.message)); }}>{ui("Reload saved data")}</Button></div>}
-    {auditId ? detail && workspace ? <CountDetail key={`${detail.audit.id}:${detail.audit.revision}`} detail={detail} workspace={workspace} busy={busy} perform={perform} back={() => setParams({})} reload={() => loadDetail(auditId).catch(e => setError(e.message))} /> : <p role="status">{error ? ui("The count could not be loaded.") : ui("Loading count...")}</p> : <>
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">{ui("Accountants record counts and post approved adjustments. A General Manager who did not prepare or edit the count must approve variances. Stock and accounting entries post together. Counting does not freeze warehouse operations; changed lots must be recounted.")}</div>
+    {adjustmentsView ? canAdjust ? <Suspense fallback={<p role="status">{ui('Loading adjustments...')}</p>}><AdjustmentHistory refreshKey={adjustmentVersion}/></Suspense> : <p role="alert">{ui('Stock adjustments are managed in Accounting by top administrators.')}</p> : auditId ? detail && workspace ? <CountDetail key={`${detail.audit.id}:${detail.audit.revision}`} detail={detail} workspace={workspace} busy={busy} perform={perform} back={() => setParams({})} reload={() => loadDetail(auditId).catch(e => setError(e.message))} /> : <p role="status">{error ? ui("The count could not be loaded.") : ui("Loading count...")}</p> : <>
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">{ui("Accountants prepare physical counts. An independent General Manager approves variances, and only top administrators can post stock adjustments. Stock and accounting entries post together; changed lots must be recounted.")}</div>
       <div className="grid gap-3 sm:grid-cols-3">{[[ui("Book value in view"), money(filtered.reduce((n, r) => n + Number(r.book_value || 0), 0))], [ui("Stock lots in view"), filtered.length], [ui("Held / expired lots"), filtered.filter(r => r.qc_status !== 'approved' || r.expiry_date && r.expiry_date < businessDate()).length]].map(([label, value]) => <div key={label} className="rounded-lg border bg-white p-4"><p className="text-sm text-slate-500">{label}</p><p className="text-xl font-semibold">{value}</p></div>)}</div>
       <section className="rounded-lg border bg-white p-4">
         <div className="mb-4 flex flex-wrap gap-3"><select aria-label={ui("Warehouse for inventory audit")} className={selectStyle} value={warehouse} onChange={e => { setWarehouse(e.target.value); setSelected([]); setStockPage(1); }}><option value="">{ui("All warehouses — choose one to count")}</option>{workspace?.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}{w.is_active === false ? ui(" (inactive)") : ''}</option>)}</select><Input aria-label={ui("Search inventory lots")} placeholder={ui("Search item, code or lot...")} value={search} className="max-w-xs" onChange={e => { setSearch(e.target.value); setStockPage(1); }} /><Button variant="outline" disabled={busy || loading} onClick={() => refresh(historyPage).catch(e => setError(e.message))}><RefreshCw size={15} className="mr-2" />{ui("Refresh stock")}</Button></div>
@@ -118,7 +119,7 @@ export function CountDetail({ detail, workspace, busy, perform, back, reload }) 
     <p className="text-xs text-slate-500">{ui("Counts use the stored stock unit and carrying cost; prices and QC status cannot be changed here. Zero must be entered explicitly. A matched count closes without posting. Variances need reasons and independent GM review. Approved changes post in today’s open accounting period.")}</p>
     <div className="flex flex-wrap gap-2 print:hidden">{draft && <><Button disabled={busy} onClick={() => perform('inventoryAuditSave', { auditId: a.id, revision: a.revision, ...form })}>{busy ? ui("Saving...") : ui("Save counts")}</Button><Button variant="outline" disabled={busy || dirty || stale} onClick={() => action('inventoryAuditSubmit')}>{a.managed_location ? ui("Record findings") : ui("Submit count")}</Button></>}{editable && workspace.can_post_adjustments && a.status === 'approved' && <Button disabled={busy || stale || dirty} onClick={() => action('inventoryAuditPost')}>{ui("Post approved stock & journal adjustment")}</Button>}{a.journal_id && <Button variant="outline" asChild><Link to={`/accounting/journals/${a.journal_id}`}>{ui("View journal ")}{a.journal_number}</Link></Button>}</div>
     {(canReview || editable && ['draft', 'submitted', 'approved'].includes(a.status)) && <div className="rounded-lg border bg-white p-4 print:hidden"><Label htmlFor="audit-review-note">{ui("Review / recount / cancellation note")}</Label><Input id="audit-review-note" disabled={busy} placeholder={ui("Explain your decision (at least 5 characters)")} value={note} onChange={e => setNote(e.target.value)} /><div className="mt-3 flex flex-wrap gap-2">{canReview && <><Button disabled={busy || stale || note.trim().length < 5} onClick={() => action('inventoryAuditApprove')}>{ui("Approve variance")}</Button><Button variant="outline" disabled={busy || note.trim().length < 5} onClick={() => action('inventoryAuditReturn')}>{ui("Return to accountant")}</Button></>}{editable && <><Button variant="outline" disabled={busy || dirty || note.trim().length < 5} onClick={() => action('inventoryAuditRecount')}>{ui("Start fresh recount (clears quantities)")}</Button><Button variant="outline" disabled={busy || dirty || note.trim().length < 5} onClick={() => action('inventoryAuditCancel')}>{ui("Cancel count")}</Button></>}</div></div>}
-    {a.status === 'approved' && !workspace.can_post_adjustments && <p className="text-sm text-slate-800">{ui('Posting stock changes requires Inventory quantity adjustments access. Ask the General Manager to enable it for your role.')}</p>}
+    {a.status === 'approved' && !workspace.can_post_adjustments && <p className="text-sm text-slate-800">{ui('Only top administrators with inventory adjustment access can post stock changes. Ask the General Manager to review this count.')}</p>}
     {a.status === 'approved' && <p className="text-sm text-green-800">{ui("Approved by ")}{a.approved_by_name}{ui(" on ")}{dateTime(a.approved_at)}{ui(". Stock remains unchanged until posted.")}</p>}
     {a.status === 'posted' && <p className="rounded-lg bg-green-50 p-3 text-sm text-green-900">{ui("Stock adjustment posted ")}{dateTime(a.posted_at)}{ui(". This count is read-only. Correct any later discrepancy with a new count.")}</p>}
     {a.status === 'referred' && <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-900">{ui("Findings are recorded for follow-up with Distribution. No stock or accounting adjustment was posted. Share this count reference with the responsible manager.")}</p>}

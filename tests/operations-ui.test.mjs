@@ -12,7 +12,7 @@ test('Operations dashboard and sidebar expose the requested features, and sales 
     const mocks = {
       '@/hooks/useCurrentUser': "export const useCurrentUser=()=>({role:'production_manager',isAdmin:false,loading:false});",
       '@/lib/AuthContext': "export const useAuth=()=>({logout:()=>{}});",
-      '@/lib/router': `import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);export const useNavigate=()=>()=>{};export const useLocation=()=>({pathname:'/'});export const useSearchParams=()=>[new URLSearchParams(),()=>{}];`,
+      '@/lib/router': `import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);export const useNavigate=()=>()=>{};export const useLocation=()=>({pathname:'/'});export const useSearchParams=()=>[new URLSearchParams(globalThis.__operationsUI?.query||''),()=>{}];`,
       '@/components/shared/DataTable': `import React from 'react';export default props=>{globalThis.__operationsUI.table=props;return React.createElement('div',null,'Posted company sales register');};`,
       '@/api/erpClient': "export const erp={entities:new Proxy({},{get:()=>{throw Error('Sales view attempted a raw table read');}})};",
     };
@@ -36,7 +36,7 @@ test('Operations dashboard and sidebar expose the requested features, and sales 
     assert.equal(modules.filter(m=>['/quality','/expiry','/traceability'].includes(m.path)).length,0);
     assert.equal(sidebar.includes('href="/expiry"'),false);assert.equal(sidebar.includes('href="/traceability"'),false);
     assert.equal(sidebar.includes('href="/team-workspaces"'),false);assert.equal(sidebar.includes('href="/payroll"'),false);
-    const sales=render('sales');assert.match(sales,/Posted company sales register/);assert.equal(sales.includes('New Sale'),false);
+    const menu=render('sales');assert.match(menu,/Sales sections/);assert.doesNotMatch(menu,/Posted company sales register|New sale/);globalThis.__operationsUI.query='tab=all';const sales=render('sales');assert.match(sales,/Posted company sales register/);assert.equal(sales.includes('New Sale'),false);
     assert.equal(globalThis.__operationsUI.table.onRowClick,undefined,'read-only rows cannot open sale editing or GM approval pages');
   } finally {delete globalThis.__operationsUI;}
 });

@@ -1,0 +1,9 @@
+# Items & Pricing
+
+The catalogue shows only the image, item title, size when recorded, and quantity with its stock unit. Tapping an item opens its details; tapping it again closes them. Only one item is expanded at a time. The selected tile keeps its image, dimensions and grid position. A separate strip slides open beneath its responsive row with Quick edit and Edit item details side by side. Closing animates the strip away; collapsed controls cannot receive focus. Prices and other editable details remain in the editors. Reduced-motion preferences disable the transition. Read-only users can inspect availability without receiving editing permissions. Search and filters retain their existing grouping, flavours, sizes and attributes. Filters are collapsed on phones and tablets until requested, and pagination still mounts at most 25 cards.
+
+Receive inventory and Issue goods share a two-column action row whenever both are permitted. Each continues into its existing checked workflow. The catalogue no longer offers Adjust quantity, Correct existing stock or an adjustment action in its overflow menu. Item editors also have no quantity-adjustment shortcut.
+
+Manual quantity and valuation adjustments are located in Accounting > Inventory Audit & Adjustments. Only native top administrators with the required module permission can open or post them. The Accounting workspace also provides Adjustment history, retaining the immutable receipts, reasons, staff identity, movement records and journal entries. Old Inventory adjustment-history links redirect to that Accounting view. Existing-stock correction links and the migration correction popup have been removed from the user interface; historical records remain intact.
+
+No stock balances, prices or live records are changed by this interface update. Existing checked server permissions, count snapshots, independent approval and transaction rollback protections remain in place.

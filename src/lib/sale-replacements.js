@@ -9,7 +9,7 @@ export function normalizeSaleReplacements(input, date) {
   const keys = new Set();
   return input.map(row => {
     if (!row || typeof row.product_id !== 'string' || !row.product_id.trim()) throw Error('Choose the product being replaced.');
-    if (!['number', 'string'].includes(typeof row.quantity) || !String(row.quantity).trim() || !Number.isFinite(Number(row.quantity)) || round(row.quantity) <= 0 || Number(row.quantity) > 1e9) throw Error('Enter the exact positive quantity being replaced.');
+    if (!['number', 'string'].includes(typeof row.quantity) || !String(row.quantity).trim() || !Number.isFinite(Number(row.quantity)) || round(row.quantity) <= 0 || round(row.quantity)!==Number(row.quantity) || Number(row.quantity) > 1e9) throw Error('Enter the exact positive quantity being replaced.');
     if (!['expired', 'damaged'].includes(row.reason)) throw Error('Choose expired or damaged for each replacement.');
     const expiry = row.expiry_date || '';
     if ((expiry && !validDate(expiry)) || row.reason === 'expired' && (!validDate(expiry) || expiry >= date)) throw Error('For expired goods, enter the printed expiry date before the delivery date.');
@@ -19,6 +19,13 @@ export function normalizeSaleReplacements(input, date) {
     keys.add(key);
     return { product_id: row.product_id, quantity: round(row.quantity), reason: row.reason, expiry_date: expiry, lot_number: lot };
   });
+}
+
+export function validateReplacementDeclaration(answer,rows,required=true){
+  if(required&&typeof answer!=='boolean')return 'Please answer whether spoiled goods were replaced during this supply.';
+  if(answer===true&&!rows.length)return 'Add the products and quantities replaced.';
+  if(answer===false&&rows.length)return 'Choose Yes for the replacement products, or remove them.';
+  return '';
 }
 
 export function combinedSupplyQuantities(lines, replacements) {

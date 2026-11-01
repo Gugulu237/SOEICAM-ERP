@@ -1,3 +1,4 @@
+import {principalRole} from './domain/roles.js';
 import { COMPANY_PROFILE_FIELDS } from '../lib/company-profile.js';
 import { effectiveRole, FEATURE_AUTHORITY } from './domain/roles.js';
 import { assertEntityModule, assertModule } from './domain/role-catalogue.js';
@@ -47,6 +48,12 @@ export function assertEntityAccess(context, entity, operation) {
   if (!Object.hasOwn(readRoles,entity)) throw forbidden('Unknown table permission.');
   if (['DriverActivity','OutletVisit'].includes(entity)) throw forbidden('Use the assigned staff reporting workflow.');
   if (!reading && ['FieldSale','FieldSaleLine','CashCollection','CashHandover','CashHandoverAllocation'].includes(entity)) throw forbidden('Use the checked Commercial transaction workflow.');
+  if(reading&&['Dispatch','DispatchLine','DispatchRequest','Route','Vehicle'].includes(entity)){
+    const native=principalRole(context.user,context.employee);
+    // Specific warehouse operations can inspect their selected document. Bulk
+    // reports are never granted by a module override or a client-supplied filter.
+    if(native!=='admin'&&!(operation==='get'&&['warehouse_manager','production_manager'].includes(native)))throw forbidden('Only top administrators can view distribution registers. Use your assigned operations workspace.');
+  }
   assertEntityModule(context,entity,operation);
   if (role === 'admin') return role;
   if (reading && ['Account','JournalEntry','JournalLine'].includes(entity) && canReadManagementAccounting(role,context.employee)) return role;
@@ -158,6 +165,7 @@ export function guardMutation(context, entity, operation, payload, existing) {
   if(entity==='CompanySettings' && Object.hasOwn(value,'staff_role_catalogue'))throw forbidden('Manage staff roles through the checked General Manager role editor.');
   if(Object.keys(value).some(key=>key.startsWith('sales_supply_')) || Object.keys(existing||{}).some(key=>key.startsWith('sales_supply_')) || value.module==='sales_supply' || /^SSO-[a-f0-9]{40}$/.test(value.id||''))throw forbidden('Recorded customer supplies must use the checked Sales workflow.');
   if (['Invoice','InvoiceLine'].includes(entity)) throw forbidden('Use the checked Sales invoice workspace to issue or customize invoices. Payments use the customer receipt workflow.');
+  if (entity==='SalesOrder' && ['stock_replacements','stock_replacements_declared'].some(key=>key in value)) throw forbidden('Record supply replacements through the checked Sales workflow.');
   if (entity==='SalesOrder' && (existing?.status==='invoiced' || value.status==='invoiced')) throw forbidden('An invoiced sales order is read-only. Open its invoice in Sales.');
   if(entity==='StockMovement'&&('legacy_return_payload' in value||value.document_type==='CustodyReturn'))throw forbidden('Recover individual custody stock through checked Distribution control.');
   if(entity==='DispatchRequest'&&('distribution_request_key' in value||'distribution_request_payload' in value||existing?.status==='processed'))throw forbidden('Issued stock request references and processed run records are read-only. Use Distribution stock control.');
@@ -177,9 +185,12 @@ export function guardMutation(context, entity, operation, payload, existing) {
   if (entity === 'StockMovement' && existing && existing.status !== 'pending') throw forbidden('Recorded stock movements are immutable. Record a correction movement instead.');
   if (entity === 'StockMovement' && value.movement_type === 'production_output') throw forbidden('Complete production through the checked batch workflow.');
   if (entity === 'StockMovement' && value.movement_type === 'production_issue') throw forbidden('Issue all production materials through the checked manufacturing workflow.');
+  if (entity === 'StockMovement') throw forbidden('Stock movements must be recorded through a checked stock workflow together with the stock balance and any required accounting entry.');
   if (entity === 'StockBalance' && existing?.production_order_id && ['lot_number','expiry_date','production_order_id','product_id'].some(key => key in value && value[key] !== existing[key])) throw forbidden('Preserve the recorded production batch, product and printed expiry on this stock lot.');
+  if(entity==='CustomerLocation'&&(['assigned_hotesse_ids','customer_reporting_point','hotesse_assignment_by','hotesse_assignment_at'].some(key=>key in value)||(existing?.customer_reporting_point&&(['delete','deleteMany'].includes(operation)||'customer_id' in value))))throw forbidden('Use the checked Hotesse assignment workflow to change reporting assignments.');
   if (['id','created_date','created_by','auth_user_id','extra_data','__proto__','constructor'].some(key=>Object.hasOwn(value,key))) throw forbidden('System fields cannot be supplied in a record change.');
   if (entity === 'AuditLog' && operation !== 'create' && operation !== 'bulkCreate') throw forbidden('Audit records are append-only.');
+  if (entity === 'SpoilageRecord' && (value.record_type==='customer_spoilage_report'||existing?.record_type==='customer_spoilage_report')) throw forbidden('Use the checked customer spoilage reporting and review workflow.');
   if (entity === 'SpoilageRecord' && (['field_expired_return', 'field_expired_request'].includes(value.record_type) || ['field_expired_return', 'field_expired_request'].includes(existing?.record_type))) throw forbidden('Use the checked expired collection and replacement workflow.');
   if (entity === 'Employee') {
     for (const [key, max] of [['commission_rate_percent', 100], ['new_customer_bonus', 1e9]]) {

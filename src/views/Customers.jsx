@@ -5,17 +5,21 @@ import { sourceMessage, uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { usePageState } from '@/lib/navigation-context';
 import { erp } from "@/api/erpClient";
 import { useNavigate,useSearchParams } from "@/lib/router";
+import { useMenuBack } from '@/hooks/useMenuBack';
 import dynamic from 'next/dynamic';
 import { readAll } from '@/lib/field-pos';
-import { formatXAF } from "@/lib/formatters";
+
 import PageHeader from "@/components/shared/PageHeader";
-import DataTable from "@/components/shared/DataTable";
-import StatusBadge from "@/components/shared/StatusBadge";
-import PartnerTree from "@/components/customers/PartnerTree";
+
+
+import CustomerGroupedList from "@/components/customers/CustomerGroupedList";
+import CustomerCollectionDialog from "@/components/customers/CustomerCollectionDialog";
+import CustomerGpsDialog from "@/components/customers/CustomerGpsDialog";
+import { canCaptureCustomerGps } from "@/components/customers/CustomerGpsButton";
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import useCustomerPaymentStatus from '@/components/customers/useCustomerPaymentStatus';
 import CustomerPaymentBadge from '@/components/customers/CustomerPaymentBadge';
@@ -23,47 +27,72 @@ import CustomerPaymentSummary from '@/components/customers/CustomerPaymentSummar
 import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
 import CustomerInfo from '@/components/customers/CustomerInfo';
 import PartnerDetail from "@/components/customers/PartnerDetail";
-import GroupReport from "@/components/customers/GroupReport";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Building2, Network, Table2, BarChart3, ShoppingBag,MapPin,UserCheck,Trash2,ArrowLeft } from "lucide-react";
+import { Plus, ArrowLeft, Users, MapPin, Map as MapIcon, UserPlus } from "lucide-react";
 const CustomerTasks=dynamic(()=>import('@/components/customers/CustomerTasks'));
-const CustomerAcquisitions=dynamic(()=>import('@/components/customers/CustomerAcquisitionReview'));
+
 const CustomerDeliveryZones=dynamic(()=>import('@/components/customers/CustomerDeliveryZones'));
 const CustomerMapWorkspace=dynamic(()=>import('@/components/customers/CustomerMapWorkspace'));
-const viewOptions=[{value:'map',get label(){return ui('Map');},icon:MapPin},{value:'zones',get label(){return ui("Delivery zones");},icon:MapPin},{value:'visual',get label(){return ui("Explorer");},icon:Network},{value:'table',get label(){return ui("Table");},icon:Table2},{value:'report',get label(){return ui("Group report");},icon:BarChart3},{value:'acquisitions',get label(){return ui('Acquisition review');},icon:UserCheck}];
-const CustomerViewSelect=({value,onChange,options})=><select aria-label={ui('Customer view')} className="h-10 max-w-full rounded-md border bg-white px-3 text-sm" value={value} onChange={event=>onChange(event.target.value)}>{options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>;
+const viewOptions=[{value:'list',icon:Users,get label(){return ui('View customers');}},{value:'zones',icon:MapPin,get label(){return ui('Delivery zones');}},{value:'map',icon:MapIcon,get label(){return ui('Map');}}];
 
 export default function Customers() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [params,setParams]=useSearchParams(),navigate=useNavigate();
-  const {role,isAdmin,loading}=useCurrentUser();
-  const options=[...viewOptions.filter(option=>option.value!=='acquisitions'||isAdmin),...(isAdmin?[{value:'removed',label:ui('Deleted customers'),icon:Trash2}]:[])];
-  const view=options.some(o=>o.value===params.get('view'))?params.get('view'):'zones';
-  const setView=value=>{const next=new URLSearchParams(params);next.set('view',value);setParams(next);};
+  const {role,employee,loading}=useCurrentUser();
+  const backToMenu=useMenuBack('/customers');
+  const options=role==='commercial'?viewOptions.filter(option=>option.value!=='zones'):viewOptions;
+  const requested=params.get('view');
+  const hasDetail=params.has('customer')||params.has('new')||params.has('parent');
+  const view=options.some(o=>o.value===requested)?requested:hasDetail||['table','visual','removed','acquisitions','report'].includes(requested)?'list':'home';
+  const setView=value=>setParams(new URLSearchParams({view:value}));
+  const openCustomer=id=>{const next=new URLSearchParams(params);next.set('view','list');next.set('customer',id);setParams(next);};
+  const canRegister=role!=='commercial'||Boolean(employee?.id&&(!employee.status||employee.status==='active'));
+  const addCustomer=()=>role==='commercial'?setParams(new URLSearchParams({view:'list',new:'1'})):navigate('/customers/new');
   if(loading)return <p role="status">{ui('Loading customers...')}</p>;
-  if(role==='commercial'&&view!=='map')return <div><div className="mb-3 flex justify-end"><CustomerViewSelect value="zones" onChange={setView} options={[{value:'zones',label:ui('Customers')},{value:'map',label:ui('Map')}]}/></div><CustomerTasks/></div>;
-  if(view==='map')return <div><PageHeader title={ui('Customers')} actions={<CustomerViewSelect value={view} onChange={setView} options={role==='commercial'?[{value:'zones',label:ui('Customers')},{value:'map',label:ui('Map')}]:options}/>}/><CustomerMapWorkspace onOpenCustomer={role==='commercial'?undefined:id=>{const next=new URLSearchParams(params);next.set('view','visual');next.set('customer',id);setParams(next);}}/></div>;
-  if(view==='acquisitions')return <div><PageHeader title={ui('Customers')} actions={<CustomerViewSelect value={view} onChange={setView} options={options}/>}/><CustomerAcquisitions/></div>;
-  if(view!=='zones')return <CustomerDirectory view={view} setView={setView} options={options} selectedId={params.get('customer')}/>;
-  return <div><PageHeader title={ui("Customers")} subtitle={<CustomerInfo title={ui("Customers")}>{ui("Delivery zones, outlet locations and GPS coverage")}</CustomerInfo>} actions={<div className="flex flex-wrap items-center gap-2"><CustomerViewSelect value={view} onChange={setView} options={options}/><Button onClick={()=>navigate('/customers/new')}><Plus size={16} className="mr-1"/>{ui("Add customer")}</Button></div>}/><CustomerDeliveryZones onOpenCustomer={id=>{const next=new URLSearchParams(params);next.set('view','visual');next.set('customer',id);setParams(next);}}/></div>;
+  if(view==='home')return <div className="min-w-0 space-y-5">
+    <PageHeader title={ui('Customers')}/>
+    <nav aria-label={ui('Customer sections')} className="mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+      {[...options,...(canRegister?[{value:'new',icon:UserPlus,label:ui('Add customer')}]:[])].map(option=>{const Icon=option.icon;return <button type="button" key={option.value} aria-label={option.label} onClick={()=>option.value==='new'?addCustomer():setView(option.value)} className="group flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span>
+        <span className="break-words text-sm font-semibold text-slate-900 sm:text-base">{option.label}</span>
+      </button>;})}
+    </nav>
+  </div>;
+  return <div className="min-w-0 space-y-4">
+    <Button variant="ghost" className="min-h-11" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Customers menu')}</Button>
+    {view==='map'?<><PageHeader title={ui('Map')}/><CustomerMapWorkspace onClose={backToMenu} onOpenCustomer={role==='commercial'?undefined:openCustomer}/></>:role==='commercial'?<CustomerTasks directory/>:view==='list'?<CustomerDirectory selectedId={params.get('customer')}/>:<><PageHeader title={ui('Delivery zones')} subtitle={<CustomerInfo title={ui('Delivery zones')}>{ui('Delivery zones, outlet locations and GPS coverage')}</CustomerInfo>}/><CustomerDeliveryZones onOpenCustomer={openCustomer}/></>}
+  </div>;
 }
 
-function CustomerDirectory({view,setView,selectedId,options}) {
+export function CustomerDirectory({selectedId}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [params,setParams]=useSearchParams();
+  const backToList=useMenuBack('/customers?view=list');
   const [records, setCustomers] = useState([]);
-  const customers = records.filter(row => view === 'removed' ? !!row.customer_removed_at : !row.customer_removed_at);
+  const customers = useMemo(()=>records.filter(row=>!row.customer_removed_at),[records]);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,setError]=useState('');
   const [selected, setSelected] = useState(null);
-  const selectCustomer=customer=>{setSelected(customer);const next=new URLSearchParams(params);customer?next.set('customer',customer.id):next.delete('customer');setParams(next);};
+  const selectCustomer=customer=>{setSelected(customer);const next=new URLSearchParams(params);next.set('view','list');customer?next.set('customer',customer.id):next.delete('customer');setParams(next);};
   const [search, setSearch] = usePageState("customer-directory:search", "");
   const navigate = useNavigate();
-  const { isAdmin, isCommercial } = useCurrentUser();
+  const session = useCurrentUser();
+  const { isAdmin, isCommercial, role } = session;
+  const canCollect=['admin','employee','commercial','cashier'].includes(role)&&!session.loading;
+  const canReport=['admin','employee','commercial'].includes(role)&&!session.loading;
+  const canEditGps = canCaptureCustomerGps(session);
+  const [gpsTarget, setGpsTarget] = useState(null), [notice, setNotice] = useState('');
+  const editGps = (customer, location) => { setNotice(''); setGpsTarget({ customer, location }); };
+  const savedGps = ({kind, record}) => {
+    if(kind==='location') setLocations(rows=>rows.map(row=>row.id===record.id?{...row,...record}:row));
+    else {setCustomers(rows=>rows.map(row=>row.id===record.id?{...row,...record}:row));setSelected(row=>row?.id===record.id?{...row,...record}:row);}
+    setGpsTarget(null);setNotice(ui('GPS location saved.'));
+  };
   const [receiptCustomer, setReceiptCustomer] = useState(null);
   const paymentStatus = useCustomerPaymentStatus(customers, isAdmin);
 
@@ -94,24 +123,9 @@ function CustomerDirectory({view,setView,selectedId,options}) {
     (acc[c.parent_id] = acc[c.parent_id] || []).push(c);
     return acc;
   }, {});
-  const mainCount = customers.filter(c => !c.parent_id).length;
-
-  const cols = [
-    { key: "customer_number", label: "#" },
-    { key: "business_name", label: ui("Business Name") },
-    { key: "id", label: ui("Locations"), render: (v) => (locationsByCustomer[v] || []).length },
-    ...(isAdmin ? [{ key: "acquired_by_name", label: ui("Acquired by"), render: value => value || ui("Unassigned") }] : []),
-    { key: "contact_person", label: ui("Contact") },
-    { key: "phone", label: ui("Phone") },
-    { key: "category", label: ui("Category"), render: v => <StatusBadge status={v} /> },
-    { key: "balance", label: ui("Balance"), render: v => formatXAF(v), className: "text-right" },
-    { key: "credit_status", label: ui("Status"), render: v => <StatusBadge status={v} /> },
-    ...(isAdmin ? [
-      { key: 'payment_status', label: ui("Payment Status"), sortable: false, render: (_, row) => <CustomerPaymentBadge summary={paymentStatus.data?.[row.id]} error={paymentStatus.isError} /> },
-      { key: 'invoice_outstanding', label: ui("Invoice Outstanding"), sortable: false, render: (_, row) => paymentStatus.data?.[row.id] ? formatXAF(paymentStatus.data[row.id].outstanding) : '—', className: 'text-right' },
-      { key: 'receive_payment', label: ui("Payment"), sortable: false, render: (_, row) => <Button size="sm" variant="outline" onClick={event => { event.stopPropagation(); setReceiptCustomer(row); }}>{ui("Receive Payment")}</Button> },
-    ] : []),
-  ];
+  const customerById=new Map(customers.map(customer=>[customer.id,customer]));
+  const query=search.trim().toLocaleLowerCase();
+  const filtered=customers.filter(customer=>[customer.business_name,customer.customer_number,customer.phone,customer.contact_person,customer.town,customer.neighbourhood,customerById.get(customer.parent_id)?.business_name,...(locationsByCustomer[customer.id]||[]).flatMap(location=>[location.name,location.town])].join(' ').toLocaleLowerCase().includes(query)).sort((a,b)=>(a.business_name||'').localeCompare(b.business_name||''));
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
@@ -119,55 +133,38 @@ function CustomerDirectory({view,setView,selectedId,options}) {
     <div>
       <PageHeader
         title={ui("Customers")}
-        subtitle={ui("{0} main partners · {1} partner records · {2} total receivables", mainCount, customers.length, formatXAF(customers.reduce((s, c) => s + (c.balance || 0), 0)))}
+        subtitle={ui('{0} customers',customers.length)}
         actions={
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <CustomerViewSelect
-              value={view}
-              onChange={setView}
-              options={options}
-            />
-            <Button onClick={() => navigate("/customers/new")}><Plus size={16} className="mr-1" />{ui(" Add Partner")}</Button>
+            <Button onClick={() => navigate("/customers/new")}><Plus size={16} className="mr-1" />{ui("Add customer")}</Button>
           </div>
         }
       />
 
       {error&&<p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)} <button className="underline" onClick={load}>{ui("Retry")}</button></p>}
-      {view === "table" || view === "removed" ? (
-        <DataTable columns={cols} data={customers} searchFields={["business_name", "contact_person", "phone", "customer_number"]} onRowClick={row => { if(view === "removed")navigate("/customers/"+encodeURIComponent(row.id));else {selectCustomer(row); setView("visual");} }} />
-      ) : view === "report" ? (
-        <GroupReport partners={customers} childrenByParent={childrenByParent} />
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5">
-          <div className={(selected ? "hidden lg:block " : "") + "min-w-0 bg-white border border-slate-200 rounded-xl p-3 h-fit lg:sticky lg:top-4"}>
-            <Input
-              placeholder={ui("Search partners or branches…")}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="mb-3"
-            />
-            <div className="max-h-[70vh] overflow-y-auto">
-              <PartnerTree
-                partners={customers}
-                childrenByParent={childrenByParent}
-                locationsByCustomer={locationsByCustomer}
-                selectedId={selected?.id}
-                onSelect={selectCustomer}
-                search={search}
-                paymentSummaries={isAdmin ? paymentStatus.data || {} : null}
-                paymentError={paymentStatus.isError}
-              />
-            </div>
-          </div>
-          <div className={selected ? "min-w-0" : "hidden min-w-0 lg:block"}>
+      {notice&&<p role="status" className="mb-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
+      {gpsTarget&&<CustomerGpsDialog key={gpsTarget.location?.id||gpsTarget.customer.id} {...gpsTarget} onClose={()=>setGpsTarget(null)} onSaved={savedGps}/>}
+      {!selected?<div className="mx-auto max-w-4xl space-y-3">
+        <Input aria-label={ui('Find a customer')} placeholder={ui('Name, phone or neighbourhood')} value={search} onChange={event=>setSearch(event.target.value)} className="bg-white"/>
+        <p className="text-xs text-slate-500">{ui('Tap a customer for a quick review. Tap again to open their profile.')}</p>
+        <CustomerGroupedList key={search} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={selectCustomer} onEditGps={canEditGps?editGps:undefined} locationsByCustomer={locationsByCustomer} renderDetails={customer=><>
+          {customer.parent_id&&<p className="text-xs text-slate-500">{ui('Main customer')}: {customers.find(parent=>parent.id===customer.parent_id)?.business_name}</p>}
+          {isAdmin&&<CustomerPaymentBadge summary={paymentStatus.data?.[customer.id]} error={paymentStatus.isError}/>}
+        </>}/>
+      </div>:<div className="min-w-0">
             {selected ? (
               <>
-                <Button variant="ghost" className="mb-3 lg:hidden" onClick={() => selectCustomer(null)}><ArrowLeft size={16} />{ui("Customers")}</Button>
-        {(isAdmin || isCommercial) && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4"><div><p className="text-sm font-semibold text-slate-900">{ui("Make a delivery to ")}{selected.business_name}</p><CustomerInfo title={ui("Record sale")}>{ui("Pick products by photo in the field POS.")}</CustomerInfo></div><Button disabled={selected.is_active === false} onClick={() => navigate(`/commercial?section=pos&new=1&customer=${encodeURIComponent(selected.id)}`)}><ShoppingBag size={16} className="mr-2" />{ui("Record sale")}</Button></div>}
+                <Button variant="ghost" className="mb-3 min-h-11" onClick={backToList}><ArrowLeft size={16} />{ui("Back to customers")}</Button>
               {isAdmin && selected.acquired_by_name && <section className="mb-4 rounded-xl border bg-white p-4 text-sm"><p>{ui("Acquired by ")}<strong>{selected.acquired_by_name}</strong> / {selected.acquisition_date}</p>{selected.registered_by_name && <p className="mt-1 text-xs text-slate-500">{ui("Registered by ")}{selected.registered_by_name}</p>}<p className="mt-1 text-xs text-slate-500">{ui("Acquisition: ")}{(selected.acquisition_verified || 'pending').replaceAll('_', ' ')}</p></section>}
-              {isAdmin && <CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onReceive={setReceiptCustomer} onRetry={() => paymentStatus.refetch()} />}
+
               <PartnerDetail
+                key={selected.id}
                 partner={selected}
+                onSale={(isAdmin||isCommercial)?()=>navigate((isCommercial?'/commercial?section=pos&new=1&customer=':'/sales/new?customer=')+encodeURIComponent(selected.id)):undefined}
+                onReceive={canCollect?()=>setReceiptCustomer(selected):undefined}
+                canReportSpoilage={canReport}
+                paymentSummary={isAdmin?<CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onRetry={()=>paymentStatus.refetch()}/>:null}
+                onEditGps={canEditGps?editGps:undefined}
                 onChanged={load}
                 subPartners={childrenByParent[selected.id] || []}
                 parentPartner={customers.find(c => c.id === selected.parent_id) || null}
@@ -175,17 +172,9 @@ function CustomerDirectory({view,setView,selectedId,options}) {
                 onSelect={selectCustomer}
               />
               </>
-            ) : (
-              <div className="flex flex-col items-center justify-center text-center py-24 text-slate-400 bg-slate-50 rounded-xl">
-                <Building2 size={36} className="mb-3" />
-                <p className="font-medium text-slate-500">{ui("Select a business partner")}</p>
-                <CustomerInfo title={ui("Customers")}>{ui("See its locations, deliveries and spoilage at a glance.")}</CustomerInfo>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      {isAdmin && receiptCustomer && <CustomerReceivePayment key={receiptCustomer.id} customer={receiptCustomer} onClose={() => setReceiptCustomer(null)} onDone={() => { setReceiptCustomer(null); paymentStatus.refetch(); load(); }} />}
+            ) : null}
+        </div>}
+      {canCollect&&receiptCustomer&&(role==='cashier'?<CustomerReceivePayment key={receiptCustomer.id} customer={receiptCustomer} onClose={()=>setReceiptCustomer(null)} onDone={()=>{setReceiptCustomer(null);paymentStatus.refetch();load();}}/>:<CustomerCollectionDialog key={receiptCustomer.id} customer={receiptCustomer} onClose={()=>setReceiptCustomer(null)} onDone={()=>{setReceiptCustomer(null);setNotice(ui('Cash collection recorded. Hand this cash to the cashier.'));paymentStatus.refetch();load();}}/>)}
     </div>
   );
 }

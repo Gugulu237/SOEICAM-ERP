@@ -27,7 +27,7 @@ export const APPROVAL_TYPE_LABELS = {
 export const APPROVAL_ROLES = {
   po: ["admin"],
   production: ["admin"],
-  dispatch: ["admin", "warehouse_manager", "production_manager"],
+  dispatch: ["admin", "warehouse_manager"],
   expense: ["admin", "production_manager"],
   cash: ["admin"],
   customer_receipt: ['admin'],
@@ -39,7 +39,7 @@ export const APPROVAL_ROLES = {
 export const APPROVAL_OWNER = {
   po: "the General Manager",
   production: "the General Manager",
-  dispatch: "Operations or Warehouse Management",
+  dispatch: "Warehouse Management",
   expense: "the General Manager",
   cash: "the General Manager",
   customer_receipt: 'the General Manager',

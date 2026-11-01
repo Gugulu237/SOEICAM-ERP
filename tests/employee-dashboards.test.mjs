@@ -49,8 +49,8 @@ test('Supply Chain Manager has a scoped dashboard without GM or finance reads', 
   const result = await employeeWorkspaceAction(client,{ id:'login',role:'user' },{ action:'employeeDashboard',mode:'admin' });
   assert.equal(result.mode,'supply_chain_manager');
   assert.equal(result.purchaseOrders[0].po_number,'PO-1');
-  assert.equal(result.dispatches[0].dispatch_number,'RUN-1');
-  assert.deepEqual(reads,['PurchaseOrder','StockBalance','Dispatch']);
+  assert.deepEqual(result.dispatches,[]);
+  assert.deepEqual(reads,['PurchaseOrder','StockBalance']);
   assert.equal(result.payments,undefined);
   employee.allowed_modules = ['inventory']; reads.length = 0;
   const narrowed = await employeeWorkspaceAction(client,{ id:'login',role:'user' },{ action:'employeeDashboard' });
@@ -124,7 +124,7 @@ test('driver reports never mutate stock, invoices or sales orders, and retries r
   assert.equal(first.activity.driver_id, driver.id); assert.equal(first.activity.recorded_by, 'user-a');
   const retry = await employeeWorkspaceAction(client, { id: 'user-a', role: 'user' }, args);
   assert.equal(retry.reused, true); assert.equal(activities.length, 1); assert.deepEqual(mutations, []);
-  await assert.rejects(employeeWorkspaceAction(client, { id: 'user-a', role: 'user' }, { action: 'dispatchActivity', dispatchId: dispatch.id }), /management/);
+  await assert.rejects(employeeWorkspaceAction(client, { id: 'user-a', role: 'user' }, { action: 'dispatchActivity', dispatchId: dispatch.id }), /Only top administrators/);
 });
 
 test('scoped dashboard rejects another employee before reading any service records', async () => {

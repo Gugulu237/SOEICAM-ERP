@@ -41,9 +41,10 @@ async function customerLocation(stores, customer, locationId) {
 }
 
 async function replace(stores, record, context, date, actorId) {
-  await assertRunSupplyStock({ entities: stores }, context, [{ product_id: record.product_id, quantity: record.quantity }], date);
+  if(context.dispatch_id)await assertRunSupplyStock({ entities: stores }, context, [{ product_id: record.product_id, quantity: record.quantity }], date);
+  else if(!['company','warehouse'].includes(context.source_type))throw Error('Choose a verified replacement stock source.');
   const issue = await stockIssue({ entities: stores }, { productId: record.product_id, productName: record.product_name,
-    warehouseId: context.stock_warehouse_id, quantity: record.quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
+    warehouseId: context.stock_warehouse_id, warehouseIds: context.stock_warehouse_ids, quantity: record.quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
     documentId: record.id, dispatchId: context.dispatch_id, movementDate: date, saleableOnly: true,
     reason: `No-charge customer-product replacement for ${record.customer_name} (${record.record_number})` });
   let journal = null;
@@ -64,29 +65,38 @@ async function replace(stores, record, context, date, actorId) {
 
 // Called only from saveSale's authenticated, atomic submission. It deliberately
 // does not approve a standalone request or claim independent verification.
-export async function postSaleReplacements(svc, user, sale, replacements) {
+export async function postSaleReplacements(svc, user, sale, replacements, suppliedContext) {
   if (!replacements.length) return;
   const stores = svc.entities;
-  const [customer, vehicle] = await Promise.all([stores.Customer.get(sale.customer_id), stores.Vehicle.get(sale.vehicle_id)]);
-  if (!customer || customer.is_active === false || !vehicle || vehicle.is_active === false) throw Error('The exchange customer or delivery vehicle is no longer active');
-  const location = await customerLocation(stores, customer, sale.location_id);
-  const bin = await returnBin(stores, vehicle);
+  const context=suppliedContext||sale;
+  const [customer, vehicle] = await Promise.all([stores.Customer.get(sale.customer_id), sale.vehicle_id?stores.Vehicle.get(sale.vehicle_id):null]);
+  if (!customer || customer.is_active === false || context.dispatch_id&&(!vehicle||vehicle.is_active===false)) throw Error('The exchange customer or delivery vehicle is no longer active');
+  let location;
+  if(sale.source_order_id){const branch=sale.location_id?await stores.Customer.get(sale.location_id):null;location=branch?.parent_id===customer.id&&branch.is_active!==false?{id:branch.id,name:branch.business_name}:sale.location_id?await customerLocation(stores,customer,sale.location_id):{id:'',name:customer.business_name};}
+  else location=await customerLocation(stores,customer,sale.location_id);
+  let bin;
+  if(vehicle)bin=await returnBin(stores,vehicle);
+  else {
+    const code='ER-SUPPLY-'+(context.stock_warehouse_id||'COMPANY'),bins=await readRecords(stores.Warehouse,{code});
+    if(bins.length>1||bins[0]&&(bins[0].warehouse_type!=='quarantine'||bins[0].is_active===false||!bins[0].customer_supply_return_bin))throw Error('The customer return quarantine location needs management review.');
+    bin=bins[0]||await stores.Warehouse.create({code,name:(context.stock_warehouse_name||'Company')+' - customer returns',warehouse_type:'quarantine',is_active:true,customer_supply_return_bin:true,source_warehouse_id:context.stock_warehouse_id||''});
+  }
   for (const row of replacements) {
     const product = await stores.Product.get(row.product_id);
     if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw Error('Choose an active finished product for each replacement');
     const record = await stores.SpoilageRecord.create({ record_type: kind, record_number: 'ER-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
-      source_sale_id: sale.id, source_sale_number: sale.sale_number, posting_basis: 'sale_exchange', request_type: 'collection', replace_now: true,
+      source_sale_id: sale.source_order_id?'':sale.id, source_order_id:sale.source_order_id||'', source_sale_number: sale.sale_number, posting_basis: sale.source_order_id?'sales_order_exchange':'sale_exchange', request_type: 'collection', replace_now: true,
       customer_id: customer.id, customer_name: customer.business_name, location_id: location.id, location_name: location.name,
       product_id: product.id, product_name: product.name, quantity: row.quantity, unit: stockUnit(product), reported_date: sale.transaction_date,
       ...pick(sale, ['dispatch_id', 'driver_id', 'driver_name', 'vehicle_id', 'vehicle_name', 'commercial_id', 'commercial_name', 'recorded_by']),
       returned_expiry_date: row.expiry_date, returned_lot_number: row.lot_number, reason: row.reason === 'damaged' ? 'damaged_at_store' : 'expired', status: 'reported',
       collection_warehouse_id: bin.id, unit_cost: 0, total_value: 0, receipt_reference: sale.receipt_reference,
-      receipt_file_uris: sale.receipt_file_uris, notes: 'Stock exchange recorded with sale ' + sale.sale_number });
+      receipt_file_uris: sale.receipt_file_uris||[], ...(!vehicle?{return_received_at:new Date().toISOString(),return_received_by:user.id,return_received_warehouse_id:bin.id}:{}), notes: 'Stock exchange recorded with sale ' + sale.sale_number });
     await stockReceive(svc, { productId: product.id, productName: product.name, warehouseId: bin.id, warehouseName: bin.name,
       quantity: row.quantity, unitCost: 0, qcStatus: 'quarantine', lotNumber: 'ER-' + record.id, expiryDate: row.expiry_date || undefined,
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,
       reason: row.reason + ' customer goods collected during ' + sale.sale_number + '; not available for sale' });
-    await replace(stores, record, sale, sale.transaction_date, user.id);
+    await replace(stores, record, context, sale.transaction_date, user.id);
     await audit(svc, { action: 'sale_stock_exchange', module: 'field_returns', entityType: 'SpoilageRecord', entityId: record.id, userId: user.id,
       description: row.quantity + ' ' + stockUnit(product) + ' ' + row.reason + ' goods exchanged during ' + sale.sale_number + '; fresh stock issued without customer charge' });
   }

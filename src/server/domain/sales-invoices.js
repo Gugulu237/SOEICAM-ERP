@@ -129,7 +129,7 @@ export async function invoiceAction(client,user,body) {
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);if(!company.company_name)throw Error('Set up the company letterhead before issuing invoices.');
   const billTo=await billing(s,source,customer,options),number=await uniqueNumber(svc);
   let invoice,lines;
-  const base={price_includes_vat:source.price_includes_vat===true,invoice_number:number,customer_id:customer.id,customer_name:customer.business_name,location_id:source.location_id || '',location_name:source.location_name || '',billing_mode:billTo.billing_mode,bill_to_location_id:billTo.bill_to_location_id,bill_to_location_name:billTo.bill_to_location_name,invoice_date:invoiceDate,due_date:due,invoice_document:{company,options},document_revision:1,document_created_by:user.id,source_number:source.order_number || source.sale_number};
+  const base={receipt_reference:source.receipt_reference||'',price_includes_vat:source.price_includes_vat===true,invoice_number:number,customer_id:customer.id,customer_name:customer.business_name,location_id:source.location_id || '',location_name:source.location_name || '',billing_mode:billTo.billing_mode,bill_to_location_id:billTo.bill_to_location_id,bill_to_location_name:billTo.bill_to_location_name,invoice_date:invoiceDate,due_date:due,invoice_document:{company,options},document_revision:1,document_created_by:user.id,source_number:source.order_number || source.sale_number};
   if(body.sourceType==='field') {
     if(source.status!=='approved_posted')throw Error('Generate a supply invoice only after the sale is posted.');
     await sourceJournal(s,source,'FieldSale');

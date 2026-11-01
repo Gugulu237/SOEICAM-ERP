@@ -20,7 +20,7 @@ export async function requestDailyCash(svc, user, employee, body, date, { origin
   ]);
   if (reconcileDailyCash(dailyCollections, [], dailySales).some(day => day.cash_sales_reconciliation_required)) throw Error('Recorded cash sales do not match the collection records for this agent and date. Reconcile them before confirming a handover; expenses cannot be deducted from sales cash');
   const collections = await readRecords(svc.entities.CashCollection, { commercial_id: commercialId, collection_date: date, method: 'cash', status: { $in: ['held_by_commercial', 'partially_received'] } });
-  const available = collections.filter(c => !c.handover_id && Number(c.outstanding_amount) > 0);
+  const available = collections.filter(c => c.collection_origin !== 'customer_receipt' && !c.handover_id && Number(c.outstanding_amount) > 0);
   const selectedIds = Array.isArray(body.collectionIds) ? body.collectionIds : [];
   if (!available.length || selectedIds.length !== available.length || new Set(selectedIds).size !== selectedIds.length || available.some(c => !selectedIds.includes(c.id))) throw Error('Daily collections changed. Refresh the cash desk before requesting receipt');
   for (const collection of available) {

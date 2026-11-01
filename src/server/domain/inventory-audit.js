@@ -32,9 +32,9 @@ function snapshot(balance, c) {
   const row = { balance_id: balance.id, product_id: product.id, product_name: product.name, sku: product.sku || '', unit: stockUnit(product),
     warehouse_id: warehouse.id, warehouse_name: warehouse.name, warehouse_type: warehouse.warehouse_type || '',
     lot_number: balance.lot_number || '', batch_number: balance.batch_number || '', expiry_date: balance.expiry_date || '', qc_status: balance.qc_status || 'approved', production_order_id: balance.production_order_id || '',
-    book_quantity: Number(balance.quantity || 0), book_value: Number(balance.total_value || 0), unit_cost: Number(balance.unit_cost || 0), inventory_account_id: inventoryAccount(product, c),
+    book_quantity: Number(balance.quantity), book_value: Number(balance.total_value), unit_cost: Number(balance.unit_cost ?? 0), inventory_account_id: inventoryAccount(product, c),
     counted_quantity: null, reason: '', difference: null, value_difference: null };
-  row.fingerprint = hash([balance, product.inventory_account_id || '', stockUnit(product), row.inventory_account_id, warehouse.warehouse_type, warehouse.is_active, product.inventory_type, product.is_active]);
+  row.fingerprint = hash([balance, product.inventory_account_id || '', stockUnit(product), row.inventory_account_id, warehouse.warehouse_type, warehouse.is_active, product.inventory_type, product.is_active,product.item_removed_at,product.configuration_status]);
   return row;
 }
 function validAccount(c, id, types, normal, name) {
@@ -104,7 +104,7 @@ export async function inventoryAuditAction(client, user, body) {
   const { role, employee } = await requireStaff(client, user, ['admin', 'cashier'], 'accounting inventory audits');
   if (employee?.status && employee.status !== 'active' || role !== 'admin' && employee?.status !== 'active') throw Error('An active accounting staff account is required');
   client.auth.assertModule?.('accounting');
-  const permissions=await adjustmentAccess(client,role,employee,{requirePermission:body.action==='inventoryAuditPost'});
+  const permissions=await adjustmentAccess(client,role,employee,{user,requirePermission:body.action==='inventoryAuditPost'});
   const s = client.asServiceRole.entities;
   if (body.action === 'inventoryAuditWorkspace') {
     const page = Number(body.page || 1);

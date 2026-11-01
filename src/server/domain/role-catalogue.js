@@ -19,7 +19,7 @@ export const MODULES = [
 export const TEMPLATE_MODULES = {
   admin: MODULES.map(m => m.key),
   procurement:['purchases','inventory','expenses','approvals'],
-  warehouse_manager:['purchases','inventory','inventory_adjustments','manufacturing','quality','distribution','expenses','approvals'],
+  warehouse_manager:['purchases','inventory','manufacturing','quality','distribution','expenses','approvals'],
   production_manager:['accounting','purchases','inventory','manufacturing','quality','distribution','sales','commercial','cashier','expenses','approvals'],
   cashier:['purchases','cashier','payroll','accounting','expenses'],
   employee:['purchases','inventory','distribution','sales','customers','expenses'],
@@ -55,7 +55,7 @@ export function catalogueFromStored(stored) {
     if (!template || (template === 'admin' && key !== 'admin') || !Object.hasOwn(TEMPLATE_MODULES,template)) continue;
     const max = MODULES.map(m=>m.key);
     const managementDefaults=['admin','production_manager','supply_chain_manager'].includes(key) && Number(profile.module_permissions_version || 0)<3 ? ['sales','accounting','expenses'] : [];
-    const adjustmentDefaults=['admin','warehouse_manager','supply_chain_manager'].includes(key) && Number(profile.module_permissions_version || 0)<4 && (!Array.isArray(profile.modules) || profile.modules.includes('inventory'))?['inventory_adjustments']:[];
+    const adjustmentDefaults=key==='admin' && Number(profile.module_permissions_version || 0)<4 && (!Array.isArray(profile.modules) || profile.modules.includes('inventory'))?['inventory_adjustments']:[];
     const payrollDefaults=template==='cashier' && Number(profile.module_permissions_version || 0)<5 && (!Array.isArray(profile.modules) || profile.modules.includes('cashier'))?['payroll']:[];
     roles[key] = {
       ...profile, key, template_role:template,

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
+import {canManageDeliveries} from '@/lib/operations-access';
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { loadDispatch, approveDispatch, closeDispatch, canApproveDispatch } from "@/lib/dispatch";
 import DriverReports from "@/components/distribution/DriverReports";
@@ -101,7 +102,8 @@ export default function DispatchForm() {
     setLines(savedLines);
   }
 
-  const editable = !isEdit || dispatch?.status === "draft";
+  const editable = canApproveDispatch(role) && (!isEdit || dispatch?.status === "draft");
+  const canManage = canManageDeliveries(role);
   const canApprove = canApproveDispatch(role);
   const sourceWarehouses = warehouses.filter(w => ["finished_goods", "cold_room", "general"].includes(w.warehouse_type));
   const selectedVehicle = vehicles.find(vehicle => vehicle.id === form.vehicle_id);
@@ -235,11 +237,11 @@ export default function DispatchForm() {
         actions={
           <div className="flex flex-wrap gap-2">
             {editable && <Button variant="outline" onClick={() => handleSave()} disabled={saving}><Save size={16} className="mr-1" />{ui(" Save")}</Button>}
-            {isEdit && dispatch?.status === "draft" && <Button onClick={() => handleSave("pending_approval")} disabled={saving}><Send size={16} className="mr-1" />{ui(" Submit for Approval")}</Button>}
+            {isEdit && editable && dispatch?.status === "draft" && <Button onClick={() => handleSave("pending_approval")} disabled={saving}><Send size={16} className="mr-1" />{ui(" Submit for Approval")}</Button>}
             {isEdit && dispatch?.status === "pending_approval" && canApprove && <Button onClick={handleApprove} disabled={saving}><CheckCircle2 size={16} className="mr-1" />{ui(" Approve")}</Button>}
             {isEdit && dispatch?.status === "approved" && canApprove && <Button onClick={handleLoad} disabled={saving}><Truck size={16} className="mr-1" />{ui(" Confirm & Issue Stock")}</Button>}
-            {isEdit && dispatch?.status === "returned" && canApprove && <Button disabled={saving} onClick={() => handleStatus("completed", "Dispatch closed")}><CheckCircle2 size={16} className="mr-1" />{ui(" Close Dispatch")}</Button>}
-            {isEdit && canApprove && ["draft", "pending_approval", "approved"].includes(dispatch?.status) && (
+            {isEdit && dispatch?.status === "returned" && canManage && <Button disabled={saving} onClick={() => handleStatus("completed", "Dispatch closed")}><CheckCircle2 size={16} className="mr-1" />{ui(" Close Dispatch")}</Button>}
+            {isEdit && canManage && ["draft", "pending_approval", "approved"].includes(dispatch?.status) && (
               <Button variant="outline" disabled={saving} onClick={() => handleStatus("cancelled", "Dispatch cancelled")}><XCircle size={16} className="mr-1" />{ui(" Cancel")}</Button>
             )}
             <Button variant="outline" onClick={goBack}><ArrowLeft size={16} className="mr-1" />{ui(" Back")}</Button>
@@ -250,8 +252,8 @@ export default function DispatchForm() {
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">{ui("Details & Load List")}</TabsTrigger>
-          {isEdit && canApprove && <TabsTrigger value="driver-reports">{ui("Driver reports")}</TabsTrigger>}
-          {isEdit && canApprove && <TabsTrigger value="reconciliation">{ui("Reconciliation")}</TabsTrigger>}
+          {isEdit && canManage && <TabsTrigger value="driver-reports">{ui("Driver reports")}</TabsTrigger>}
+          {isEdit && canManage && <TabsTrigger value="reconciliation">{ui("Reconciliation")}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
@@ -270,7 +272,7 @@ export default function DispatchForm() {
                 </Select>
                 {selectedVehicle && <div className="mt-2 text-xs leading-5 text-slate-500">
                   <p>{vehicleLocationReady ? ui("Delivery stock: {0}", vehicleStockLocation.name) : selectedVehicle.warehouse_id ? ui("Check the dedicated vehicle stock location in vehicle setup before loading.") : ui("An empty dedicated vehicle stock location will be prepared before loading.")}</p>
-                  {canApprove && <button type="button" className="mt-1 font-medium text-blue-700 underline" onClick={() => navigate('/distribution?tab=vehicles')}>{ui("Manage vehicle setup")}</button>}
+                  {canManage && <button type="button" className="mt-1 font-medium text-blue-700 underline" onClick={() => navigate('/distribution?tab=vehicles')}>{ui("Manage vehicle setup")}</button>}
                 </div>}
               </div>
               <div>
@@ -318,10 +320,10 @@ export default function DispatchForm() {
           </div>
         </TabsContent>
 
-        {isEdit && canApprove && <TabsContent value="driver-reports" className="mt-4"><DriverReports dispatchId={id} /></TabsContent>}
-        {isEdit && dispatch && canApprove && (
+        {isEdit && canManage && <TabsContent value="driver-reports" className="mt-4"><DriverReports dispatchId={id} /></TabsContent>}
+        {isEdit && dispatch && canManage && (
           <TabsContent value="reconciliation" className="mt-4">
-            <DispatchReconciliation dispatch={dispatch} userName={user?.full_name || user?.email} onChanged={loadRecord} canManage={canApprove} />
+            <DispatchReconciliation dispatch={dispatch} userName={user?.full_name || user?.email} onChanged={loadRecord} canManage={canManage} />
           </TabsContent>
         )}
       </Tabs>

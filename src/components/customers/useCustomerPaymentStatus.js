@@ -14,7 +14,7 @@ export default function useCustomerPaymentStatus(customers, enabled) {
       const [invoices, overdue, pending] = await Promise.all([
         erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, status: { $in: ['posted', 'partially_paid', 'overdue', 'paid'] } }, groupBy: 'customer_id', sum: ['balance', 'amount_paid'], limit: 1000 }),
         erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, status: { $in: ['posted', 'partially_paid', 'overdue'] }, balance: { $gt: 0 }, due_date: { $lt: new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Douala' }) } }, groupBy: 'customer_id', sum: 'balance', limit: 1000 }),
-        erp.entities.Payment.aggregate({ query: { party_id: { $in: ids }, payment_type: 'customer_payment', status: { $in: ['pending_approval', 'approved'] } }, groupBy: 'party_id', sum: 'amount', limit: 1000 }),
+        erp.entities.Payment.aggregate({ query: { party_id: { $in: ids }, payment_type: 'customer_payment', status: { $in: ['awaiting_cashier', 'pending_approval', 'approved'] } }, groupBy: 'party_id', sum: 'amount', limit: 1000 }),
       ]);
       if ([invoices, overdue, pending].some(result => result.truncated)) throw new Error(ui("Payment summaries exceed the available limit."));
       const summaries = Object.fromEntries(ids.map(id => [id, { status: 'no_invoices', outstanding: 0, paid: 0, overdue: 0, pending: 0 }]));

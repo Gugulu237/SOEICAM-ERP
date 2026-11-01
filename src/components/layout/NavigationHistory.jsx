@@ -24,8 +24,8 @@ export default function NavigationHistory() {
   });
   return <nav aria-label={ui("Page history")} className="flex min-w-0 items-center gap-2 border-t border-green-50 px-3 py-1 sm:px-5 xl:px-8">
     <div className="flex shrink-0 items-center gap-1">
-      <Button variant="ghost" size="icon" className="h-10 w-10 sm:h-8 sm:w-8" disabled={!history.canBack} onClick={() => navigate(-1)} aria-label={ui("Previous page")} title={ui("Back to previous page")}><ArrowLeft size={17} /></Button>
-      <Button variant="ghost" size="icon" className="h-10 w-10 sm:h-8 sm:w-8" disabled={!history.canForward} onClick={() => navigate(1)} aria-label={ui("Next page")} title={ui("Forward to next page")}><ArrowRight size={17} /></Button>
+      <Button variant="ghost" size="sm" className="h-11 gap-1 px-2 text-xs" disabled={!history.canBack} onClick={() => navigate(-1)} aria-label={ui("Previous page")} title={ui("Back to previous page")}><ArrowLeft size={17} /><span>{ui('Back')}</span></Button>
+      <Button variant="ghost" size="sm" className="h-11 gap-1 px-2 text-xs" disabled={!history.canForward} onClick={() => navigate(1)} aria-label={ui("Next page")} title={ui("Forward to next page")}><ArrowRight size={17} /><span>{ui('Forward')}</span></Button>
     </div>
     <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-600">{current ? navigationLabel(current) : ui("Workspace")}</span>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" aria-label={ui("Recent pages")} className="h-10 shrink-0 gap-2 text-xs sm:h-8" disabled={!recent.length}><History size={15} /><span className="hidden sm:inline">{ui("Recent pages")}</span><ChevronDown size={13} /></Button></DropdownMenuTrigger>

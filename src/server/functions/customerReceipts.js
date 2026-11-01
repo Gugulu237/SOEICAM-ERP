@@ -1,3 +1,4 @@
+import {confirmCustomerCollection} from '../domain/customer-activity.js';
 import {assertTreasuryAccess} from '../../lib/treasury-access.js';
 import { createClientFromRequest } from '../request-client.js';
 import { isTransactionConflict } from '../transaction-errors.js';
@@ -11,6 +12,7 @@ export default async function(req) {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await req.json();
     base44.auth.assertModule?.('cashier');
+    if(body.action==='confirmCollection')return Response.json(await confirmCustomerCollection(base44,user,body));
     if (!['confirm', 'approve', 'reject'].includes(body.action)) return Response.json({ error: 'Unknown receipt action' }, { status: 400 });
     const svc = base44.asServiceRole;
     if (body.action === 'confirm') {
@@ -44,6 +46,7 @@ export default async function(req) {
     const payment = await svc.entities.Payment.get(body.paymentId);
     if (!payment || payment.payment_type !== 'customer_payment') throw new Error('Customer receipt not found');
     if (body.action === 'approve') return Response.json({ payment: await approveReceipt(svc, payment, user) });
+    if (payment.receipt_channel === 'staff_collection') throw new Error('Cash collected from a customer must be reconciled before cancellation. Keep this receipt pending; rejecting it would release the invoice while the cash is still held.');
     if (payment.status !== 'pending_approval' || payment.journal_id || payment.receipt_posting_snapshot?.invoices) throw new Error('Only unposted pending receipts may be rejected');
     if (!String(body.reason || '').trim()) throw new Error('Enter a rejection reason');
     const token = crypto.randomUUID();

@@ -27,7 +27,7 @@ export async function reportAgentCashDeposit(base44, user, body) {
   const cashier = body.cashierId ? await svc.entities.Employee.get(body.cashierId) : null;
   if (!cashier || cashier.status !== 'active' || effectiveRole({ role: 'user' }, cashier) !== 'cashier' || cashier.id === agent.id) throw Error('Choose an active Cashier receiving the money');
   const [collections, sales] = await Promise.all([
-    readRecords(svc.entities.CashCollection, { commercial_id: agent.id, collection_date: date, method: 'cash' }),
+    readRecords(svc.entities.CashCollection, { commercial_id: agent.id, collection_date: date, method: 'cash', collection_origin: { $ne: 'customer_receipt' } }),
     readRecords(svc.entities.FieldSale, { commercial_id: agent.id, transaction_date: date, status: 'approved_posted', payment_type: 'cash' }),
   ]);
   const day = reconcileDailyCash(collections, handovers, sales)[0];

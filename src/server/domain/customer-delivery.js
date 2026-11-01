@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import {prepareCustomerParent} from './customer-hierarchy.js';
 import { requireStaff,audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
@@ -57,7 +58,7 @@ async function selectedPoint(stores,body,role,employee) {
   if(!['customer','location'].includes(body.kind) || !body.recordId)throw Error('Select a customer delivery point.');
   const entity=body.kind==='customer'?'Customer':'CustomerLocation',record=await stores[entity].get(body.recordId);
   const customer=entity==='Customer'?record:record?await stores.Customer.get(record.customer_id):null;
-  if(!record || !customer || record.is_active===false || customer.is_active===false)throw Error('Select an active customer or delivery location.');
+  if(!record || !customer || customer.customer_removed_at || record.is_active===false || customer.is_active===false)throw Error('Select an active customer or delivery location.');
   if(role==='commercial' && customer.acquired_by_id!==employee?.id && customer.salesperson_id!==employee?.id && record.assigned_commercial_id!==employee?.id)throw Error('You may update only your assigned or registered customer delivery points.');
   return {entity,record};
 }
@@ -68,6 +69,7 @@ export async function customerDeliveryAction(client,user,body) {
   if(body.action==='deliveryZoneOptions')return {zones:zones.filter(z=>z.is_active!==false),policy};
   if(['customerDeliveryWorkspace','customerMapWorkspace'].includes(body.action)) {
     let [customers,locations,routes]=await Promise.all([readRecords(s.Customer,{is_active:{$ne:false}}),readRecords(s.CustomerLocation,{is_active:{$ne:false}}),readRecords(s.Route,{is_active:{$ne:false}})]);
+    customers=customers.filter(customer=>!customer.customer_removed_at);
     if(role==='commercial'){
       const owned=new Set(customers.filter(c=>c.acquired_by_id===employee.id || c.salesperson_id===employee.id).map(c=>c.id));
       locations=locations.filter(l=>owned.has(l.customer_id) || l.assigned_commercial_id===employee.id);
@@ -88,13 +90,19 @@ export async function customerDeliveryAction(client,user,body) {
     if(zones.some(z=>z.id!==id && (z.code?.toUpperCase()===code || z.name.trim().toLocaleLowerCase()===name.toLocaleLowerCase())))throw Error('A zone already has this name or code.');
     if(!Object.hasOwn(ZONE_COLOURS,form.colour))throw Error('Choose an available zone colour.');
     const zone={id,name,code,town:text('town'),neighbourhoods:text('neighbourhoods',1000),notes:text('notes',2000),colour:form.colour,is_active:form.is_active!==false};
+    for(const key of ['division','subdivision'])if(own(form,key)||own(existing||{},key)){
+      const value=own(form,key)?form[key]:existing[key];
+      if(typeof value!=='string'||value.length>150||/[\u0000-\u001f\u007f]/.test(value))throw Error('Enter valid zone '+key+'.');
+      zone[key]=value.trim();
+    }
+    if(Boolean(zone.division)!==Boolean(zone.subdivision))throw Error('Enter both the division and subdivision for this zone.');
     for(const key of ['boundary','municipality','service_status'])if(own(form,key) || own(existing || {},key)){
       const value=own(form,key)?form[key]:existing[key];
       if(key==='boundary')zone.boundary=validateZoneBoundary(value);
       if(key==='municipality'){if(value!==''&&!YAOUNDE_MUNICIPALITIES.some(m=>m.id===value))throw Error('Choose a Yaoundé municipality.');zone.municipality=value;}
       if(key==='service_status'){if(!ZONE_SERVICE_STATUSES.includes(value))throw Error('Choose a valid zone service status.');zone.service_status=value;}
     }
-    if(!body.zoneId && existing && JSON.stringify(existing)===JSON.stringify(zone))return {zone:existing,revision,reused:true};
+    if(!body.zoneId && existing && isDeepStrictEqual(existing,zone))return {zone:existing,revision,reused:true};
     if(Number(body.revision)!==revision)throw Error('Zone settings changed in another window. Refresh before saving.');
     if(!zone.is_active){const [customers,locations]=await Promise.all([readRecords(s.Customer,{delivery_zone_id:id,is_active:{$ne:false}}),readRecords(s.CustomerLocation,{delivery_zone_id:id,is_active:{$ne:false}})]);if(customers.length || locations.length)throw Error('Reassign active customer and outlet records before archiving this zone.');}
     if(!existing && zones.length>=200)throw Error('Keep up to 200 delivery zones; reuse or update an existing zone.');
@@ -128,8 +136,9 @@ export async function customerDeliveryAction(client,user,body) {
   if(body.action==='saveDeliveryPoint') {
     const {entity,record}=await selectedPoint(s,body,role,employee);if(Number(body.revision)!==Number(record.delivery_revision || 0))throw Error('This delivery point changed in another window. Refresh before saving.');
     const fields=['delivery_zone_id','delivery_days','delivery_instructions','route_id',...gpsFields],input={};for(const k of fields)if(own(body.details || {},k))input[k]=body.details[k];
-    const data=await prepareDeliveryDefinition(s,input,record,{user},config);await s[entity].update(record.id,data);
-    await audit(svc,{action:'update_delivery_point',module:'customers',entityType:entity,entityId:record.id,userId:user.id,description:'Updated delivery zone, instructions or entrance pin'});return {success:true};
+    const data=await prepareDeliveryDefinition(s,input,record,{user},config);const saved=await s[entity].update(record.id,data);
+    await audit(svc,{action:'update_delivery_point',module:'customers',entityType:entity,entityId:record.id,userId:user.id,description:'Updated delivery zone, instructions or entrance pin'});
+    return {success:true,point:pick(saved,'id gps_lat gps_lng gps_accuracy_m gps_captured_at gps_capture_source gps_updated_by gps_updated_at delivery_revision')};
   }
   throw Error('Unknown customer delivery action.');
 }

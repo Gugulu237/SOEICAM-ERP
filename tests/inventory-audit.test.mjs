@@ -44,7 +44,7 @@ async function environment() {
   const start = (balanceIds = ['lot1', 'lot2']) => change('Start', null, { title: 'Weekly physical count', balanceIds });
   const save = (a, counts = [8, 6], extra = {}) => change('Save', a, { rows: a.rows.map((r, i) => ({ balance_id: r.balance_id, counted_quantity: counts[i], reason: 'Verified with signed count sheet' })), evidenceReference: 'SHEET-001 witnessed count', lossAccountId: 'loss', gainAccountId: 'gain', ...extra });
   const actAs = (id, role = 'cashier', status = true, allowed = true) => { actor = id; staffRole = role; active = status; moduleAllowed = allowed; };
-  const approve = async a => { actAs('gm', 'admin'); const result = await change('Approve', a, { note: 'Checked count sheet and confirmed variance' }); actAs('accountant'); return result; };
+  const approve = async a => { actAs('gm', 'admin'); const result = await change('Approve', a, { note: 'Checked count sheet and confirmed variance' }); return result; };
   return { db, entities, call, ok, write, change, start, save, actAs, approve, close: async () => { delete globalThis.__inventoryDB; delete globalThis.__inventoryTransaction; delete globalThis.__cashierClient; delete globalThis.__cashierTransaction; await db.close(); } };
 }
 
@@ -62,7 +62,9 @@ test('real route posts independent-approved counts once with balanced GL, preser
     a = await env.change('Submit', a); assert.equal(a.status, 'submitted');
     assert.equal((await e.StockBalance.get('lot1')).quantity, 10);
     a = await env.approve(a); assert.equal((await e.JournalEntry.list()).length, 0);
-    const body = env.write('Post', a), result = await env.ok(body); a = result.audit;
+    const body = env.write('Post', a);
+    env.actAs('accountant');assert.match((await env.call(body)).error,/top administrators/);assert.equal((await e.StockBalance.get('lot1')).quantity,10);
+    env.actAs('gm','admin');const result = await env.ok(body); a = result.audit;
     assert.equal(a.status, 'posted'); assert.equal((await env.ok(body)).reused, true);
     const b = await e.StockBalance.get('lot1');
     assert.equal(b.quantity, 8); assert.equal(b.total_value, 80); assert.equal(b.qc_status, 'quarantine'); assert.equal(b.batch_number, 'batch-lot1'); assert.equal(b.expiry_date, '2027-01-01'); assert.equal(b.production_order_id, 'production-1');
@@ -88,7 +90,7 @@ test('real route posts independent-approved counts once with balanced GL, preser
 
 test('warehouse adjustments work through real stores and their journal lines cannot be edited, removed or extended',async()=>{
   const env=await environment();try{
-    env.actAs('warehouse','warehouse_manager');
+    env.actAs('gm','admin');
     const workspace=await env.ok({action:'warehouseAdjustmentWorkspace',warehouseId:'main'});
     const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),warehouseId:'main',date:businessDate(),accountId:'loss',reference:'COUNT-WH-01',reason:'Warehouse physical count verified',rows:workspace.rows.map((row,i)=>({balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:[8,6][i]}))};
     const result=await env.ok(body),e=env.entities;

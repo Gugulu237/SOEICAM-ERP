@@ -72,13 +72,13 @@ test('Cashier has two main actions and opens a depositor menu without navigating
  const draw=()=>{r.beforeRender();return render({});};
  try{
   draw();await r.flush();const html=draw();assert.match(html,/Receive payments/);assert.doesNotMatch(html,/Daily Commercial cash|Customer ledger balances|HOV-01/);
-  assert.ok(r.buttons.find(b=>b.label==='Receive cash'));assert.ok(r.buttons.find(b=>b.label==='Small expense'));
-  assert.deepEqual(r.buttons.filter(b=>b.role==='tab').map(b=>b.label),['Receive payments','Petty cash','Daily savings','Approved payments']);
+  assert.ok(r.buttons.find(b=>b.label==='Receive cash'));assert.ok(r.buttons.find(b=>b.label==='Petty cash'));
+  assert.deepEqual(r.buttons.filter(b=>b['aria-label']?.startsWith('Open ')).map(b=>b['aria-label']),['Open Receive payments','Open Petty cash','Open Daily savings','Open Approved payments','Open Customer invoices','Open Cheques & signatures']);assert.match(html,/Cash received|Petty cash available/);assert.doesNotMatch(html,/Recent cash receipts|Petty cash budget/);
   r.buttons.find(b=>b.label==='Receive cash').onClick();assert.match(draw(),/Who is depositing the cash/);assert.match(draw(),/INV-01/);
   r.buttons.find(b=>b['aria-label']==='Receive cash from Agent A').onClick();draw();assert.equal(r.inputs.find(i=>i.type==='number').value,1000);
   assert.equal((await entities.TreasuryTransaction.list()).length,0);assert.deepEqual(r.navigation,[]);
   const source=await cashierAction(client,user,{action:'cashierWorkspace',date});
-  r.beforeRender();render({data:{...source,isExample:true},preview:true});assert.equal(r.buttons.find(b=>b.label==='Small expense').disabled,true);
+  r.beforeRender();render({data:{...source,isExample:true},preview:true});assert.equal(r.buttons.find(b=>b.label==='Petty cash').disabled,true);
  }finally{r.cleanup();delete globalThis.__cashierUI;}
 });
 
@@ -140,4 +140,21 @@ test('receiving a handover inside Cashier retains failed input and posts its exa
   r.invoke=async(name,body)=>{requests.push(body);if(fail)throw Error('Cash receipt connection interrupted');return {data:await cashierAction(client,user,body)};};globalThis.__cashierUI=r;
   const props={kind:'handover',document:source.handovers[0],requestKey:'cashier-handover-retained',source,onClose:()=>{},onDone:()=>done++},draw=()=>{r.beforeRender();return render(props,true);};
   try{draw();r.selects[0].onChange({target:{value:'till'}});r.inputs.find(i=>i.type==='number').onChange({target:{value:'600'}});draw();r.inputs.find(i=>i.placeholder==='Required if the cash received is short').onChange({target:{value:'Agent still holds 400 XAF'}});draw();await r.submit({preventDefault(){}});assert.match(draw(),/Cash receipt connection interrupted/);assert.equal(done,0);assert.equal(r.inputs.find(i=>i.type==='number').value,'600');fail=false;await r.submit({preventDefault(){}});assert.equal(done,1);assert.equal(requests[0].requestKey,requests[1].requestKey);assert.equal(requests[1].handoverId,'handover');assert.equal(requests[1].receivedAmount,600);assert.equal((await entities.TreasuryAccount.get('till')).balance,100600);assert.equal((await entities.CashHandover.get('handover')).status,'partially_received');assert.equal((await entities.FieldSale.list()).length,0);assert.equal((await entities.Invoice.list()).length,0);}finally{r.cleanup();delete globalThis.__cashierUI;}
+});
+
+test('Cashier tiles retain quick reports and receipt-history navigation follows the URL in both directions',async()=>{
+ const render=await ui(),r=runtime(),{client}=await fixture(),calls=[];
+ r.invoke=async(name,body)=>{calls.push(body);return {data:await cashierAction(client,user,body)};};globalThis.__cashierUI=r;
+ const draw=()=>{r.beforeRender();return render({});};
+ try{
+  draw();await r.flush();let html=draw();assert.match(html,/Cash received|Petty cash available/);assert.doesNotMatch(html,/Recent cash receipts|Petty cash budget/);
+  r.buttons.find(b=>b['aria-label']==='Open Petty cash').onClick();html=draw();assert.equal(new URLSearchParams(r.query).get('section'),'expenses');assert.match(html,/Petty cash budget/);
+  r.query='';draw();r.buttons.find(b=>b['aria-label']==='Open Receive payments').onClick();draw();
+  const paymentsQuery=r.query;r.buttons.find(b=>b.label==='Receipt history & reconciliation').onClick();const historyQuery=r.query;draw();
+  assert.equal(new URLSearchParams(historyQuery).get('handover_view'),'history');
+  r.query=paymentsQuery;draw();assert.ok(r.buttons.some(b=>b.label==='Receipt history & reconciliation'));
+  r.query=historyQuery;draw();assert.ok(r.buttons.some(b=>b.label==='Hide receipt history'));
+  r.query='';draw();r.buttons.find(b=>b['aria-label']==='Open Cheques & signatures').onClick();assert.equal(r.navigation.at(-1),'/cashier?view=cheques');
+  assert.ok(calls.every(body=>!['cashierPettyExpense','cashierTransfer','cashierReceiveDailyCash','cashierReleasePayment'].includes(body.action)));
+ }finally{r.cleanup();delete globalThis.__cashierUI;}
 });

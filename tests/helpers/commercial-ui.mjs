@@ -17,6 +17,8 @@ export async function commercialUI() {
         export const useMemo = fn => fn();
       `, resolveDir: process.cwd() }));
       const mocks = {
+        '@/hooks/usePhoneLayout': 'export const usePhoneLayout=()=>Boolean(globalThis.__commercialUI.phone);',
+        '@/components/sales/SaleProductPicker': 'export default function Picker(props){if(props.purpose==="replacement")globalThis.__commercialUI.replacementCatalog=props;else globalThis.__commercialUI.catalog={...props,onSelect:product=>props.onQuantityChange(product,1)};return null;}',
         '@/lib/router': `export const useNavigate=()=>path=>globalThis.__commercialUI.navigation.push(path); export const useParams=()=>({}); export const useSearchParams=()=>[new URLSearchParams()];`,
         '@/hooks/useCurrentUser': 'export const useCurrentUser=()=>globalThis.__commercialUI.session;',
         '@/api/erpClient': 'export const erp=new Proxy({}, {get:(_,key)=>globalThis.__commercialUI.client[key]});',

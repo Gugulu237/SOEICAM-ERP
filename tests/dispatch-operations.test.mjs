@@ -102,10 +102,13 @@ test('stock operations and cost reconciliation preserve admin and warehouse mana
   for (const role of ['driver', 'commercial', 'hotesse', 'cashier', 'employee']) for (const action of ['approveDispatchRequest', 'approveDispatch', 'loadDispatch', 'returnDispatchStock', 'dispatchReconciliation']) {
     const f = fixture(role); await assert.rejects(f.action(action), /Not permitted/); assert.equal(f.writes.length, 0);
   }
-  for (const role of ['warehouse_manager', 'production_manager']) {
+  for (const role of ['warehouse_manager']) {
     const f = fixture(role); await f.action('loadDispatch'); assert.equal(f.run.status, 'loaded');
     const blocked = fixture(role); blocked.rows.Employee[0].status = 'inactive'; await assert.rejects(blocked.action('loadDispatch'), /active management/); assert.equal(blocked.writes.length, 0);
   }
+  const production=fixture('production_manager');
+  for(const action of ['approveDispatchRequest','approveDispatch','loadDispatch'])await assert.rejects(production.action(action),/Only warehouse management/);
+  await production.action('dispatchReconciliation');assert.equal(production.writes.length,0);
 });
 
 test('approval validates the authoritative paired team, vehicle and finished manifest without moving stock', async () => {

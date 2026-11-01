@@ -4,7 +4,7 @@ import {previewSettings,previewRoute} from '@/lib/preview-state';
 import {Smartphone,Tablet,Columns2,RotateCw,RefreshCw,ExternalLink} from 'lucide-react';
 
 const screens=[{id:'mobile',label:'Phone',width:390,height:844,Icon:Smartphone},{id:'tablet',label:'Tablet',width:820,height:1180,Icon:Tablet}];
-const sections=[['/inventory?section=items&filter=finished&area=all','Inventory'],['/manufacturing','Manufacturing'],['/team-workspaces?section=people','Employees'],['/commercial','Commercial'],['/','Home'],['/profile','Profile']];
+const sections=[['/sales/new','Record a sale'],['/outlet-reports','Hotesse reports'],['/inventory?section=items&filter=finished&area=all','Inventory'],['/manufacturing','Manufacturing'],['/team-workspaces?section=people','Employees'],['/commercial','Commercial'],['/','Home'],['/profile','Profile']];
 export default function ResponsivePreview({initialSettings=previewSettings()}){
   const [mode,setMode]=useState(initialSettings.mode),[route,setRoute]=useState(initialSettings.route),[phoneWidth,setPhoneWidth]=useState(initialSettings.phoneWidth),[tabletWidth,setTabletWidth]=useState(initialSettings.tabletWidth),[liveRoute,setLiveRoute]=useState(initialSettings.route),[rotated,setRotated]=useState({}),[version,setVersion]=useState(0),[available,setAvailable]=useState(1300),[availableHeight,setAvailableHeight]=useState(1000),[fitted,setFitted]=useState(true);
   const board=useRef(null),frames=useRef({}),latest=useRef(initialSettings.route);

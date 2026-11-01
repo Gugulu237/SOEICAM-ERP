@@ -14,4 +14,11 @@ test('the stock bell counts each active item once using numeric quantities and o
 test('stock issue setup is a read while issuing goods remains a transaction',()=>{
   assert.equal(isReadOnlyFunction('fieldOps','distributionIssueWorkspace'),true);
   assert.equal(isReadOnlyFunction('fieldOps','issueDistributionStock'),false);
+  assert.equal(isReadOnlyFunction('fieldOps','warehouseAdjustmentHistory'),true);
+});
+
+test('expired and quality-held stock cannot hide a replenishment warning',()=>{
+ const products=[{id:'yogurt',reorder_level:5},{id:'removed',item_removed_at:'2026-10-01',reorder_level:5}];
+ const balances=[{product_id:'yogurt',quantity:30,expiry_date:'2020-01-01',qc_status:'approved'},{product_id:'yogurt',quantity:20,qc_status:'quarantine'},{product_id:'yogurt',quantity:4,qc_status:'approved',expiry_date:'2099-01-01'}];
+ assert.deepEqual(inventoryLowStock(products,balances).map(p=>[p.id,p.stock]),[['yogurt',4]]);
 });

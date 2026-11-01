@@ -1,5 +1,4 @@
 import {stockOrigin,isExistingStockOrigin} from '@/lib/stock-origin';
-import {Link} from '@/lib/router';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -67,7 +66,7 @@ export default function BatchReleasePanel({onTrace}) {
 
   return (
     <div className="space-y-3">
-      {existingCount>0&&<p role="status" className="rounded-lg border bg-slate-50 p-3 text-sm">{ui('Opening and adjusted stock belongs in Inventory, not manufacturing quality release.')} <Link className="underline" to="/inventory?correct=existing">{ui('Correct existing stock')}</Link></p>}
+      {existingCount>0&&<p role="status" className="rounded-lg border bg-slate-50 p-3 text-sm">{ui('Opening and adjusted stock requires review by a top administrator in Accounting.')}</p>}
       <div className="flex items-center justify-between"><p className="text-sm text-slate-500">{lots.length}{ui(" stock lots awaiting release")}</p><Button variant="outline" size="sm" disabled={!!busy} onClick={load}>{ui("Refresh held batches")}</Button></div>
       {!lots.length&&<p className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">{ui("No batches are waiting for quality release.")}</p>}
       {lots.map(lot => (

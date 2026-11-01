@@ -7,7 +7,7 @@ import { businessDate } from '../../lib/business-date.js';
 import { reconcileDailyCash } from '../../lib/cash-settlement.js';
 import { commercialRunInventory } from './commercial-runs.js';
 import { driverDeliveryPoints } from './driver-deliveries.js';
-import { canManageDeliveries } from '../../lib/operations-access.js';
+import { principalRole } from './roles.js';
 import { catalogueFromStored, decorateEmployee, TEMPLATE_MODULES } from './role-catalogue.js';
 
 export { businessDate };
@@ -54,7 +54,7 @@ export async function employeeWorkspaceAction(base44, user, body) {
   const svc = base44.asServiceRole;
 
   if (body.action === 'dispatchActivity') {
-    if (!canManageDeliveries(role)) throw new Error('Only dispatch management can review driver reports');
+    if (principalRole(user,employee)!=='admin') throw new Error('Only top administrators can review driver reports across teams');
     if (role !== 'admin' && employee?.status !== 'active') throw new Error('An active management staff record is required');
     const dispatch = await svc.entities.Dispatch.get(body.dispatchId);
     if (!dispatch) throw new Error('Run not found');
@@ -111,9 +111,11 @@ export async function employeeWorkspaceAction(base44, user, body) {
     : role === 'admin' ? id ? decorateEmployee({role:'user'},await svc.entities.Employee.get(id),catalogue) : null : employee;
   if (id && mode !== 'admin' && (!subject || (subject.assigned_role || subject.role) !== mode)) throw new Error('Select a staff member with the matching role');
   const date = businessDate(), monthStart = date.slice(0, 8) + '01';
+  // Receipt timestamps are UTC; Cameroon business dates start one hour earlier.
+  const receivedSince = new Date(monthStart+'T00:00:00+01:00').toISOString();
   const shared = { mode, template, allowedModules, ...reportAccess, roleLabel: profile?.label || employee?.role_label || 'General Manager', choices, date, monthStart, employee: subject ? pick(subject, ['id', 'full_name', 'status', 'bonus_plan', 'monthly_customer_target', 'monthly_supply_target', 'commission_rate_percent', 'new_customer_bonus']) : null };
 
-  if (!needsEmployee) return { ...shared, ...await staffDashboardData(svc, dashboardMode, date, allowedModules, subject, role) };
+  if (!needsEmployee) return { ...shared, ...await staffDashboardData(svc, dashboardMode, date, principalRole(user,employee)==='admin'?allowedModules:(allowedModules||TEMPLATE_MODULES[template]||[]).filter(module=>module!=='distribution'), subject, role) };
   if (template === 'hotesse') return { ...shared, ...await hotesseData(svc, id, date) };
 
   if (template === 'commercial') {
@@ -122,7 +124,7 @@ export async function employeeWorkspaceAction(base44, user, body) {
       readRecords(svc.entities.FieldSale, { commercial_id: id, transaction_date: { $gte: monthStart, $lte: date } }),
       readRecords(svc.entities.FieldSale, { commercial_id: id, status: { $in: ['draft', 'returned', 'submitted', 'under_review', 'posting_failed'] } }),
       readRecords(svc.entities.Customer, { acquired_by_id: id }),
-      readRecords(svc.entities.CashCollection, { commercial_id: id, $or: [{ collection_date: { $gte: monthStart, $lte: date } }, { received_at: { $gte: monthStart } }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
+      readRecords(svc.entities.CashCollection, { commercial_id: id, $or: [{ collection_date: { $gte: monthStart, $lte: date } }, { received_at: { $gte: receivedSince } }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
       readRecords(svc.entities.CashHandover, { commercial_id: id, $or: [{ handover_date: { $gte: monthStart, $lte: date } }, { received_date: { $gte: monthStart } }, { status: { $in: ['submitted', 'partially_received', 'disputed'] } }] }),
     ]);
     // Include already-settled collections from an older outstanding day so the

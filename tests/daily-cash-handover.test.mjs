@@ -70,7 +70,7 @@ test('cash requests reject other roles, stale balances, allocated collections an
   assert.equal((await s.TreasuryTransaction.list()).length, 0);
 });
 
-test('older collection days retain complete daily totals and remain visible after receipt this month', async () => {
+test('older collection days remain complete after a receipt in the first Cameroon hour of the month', async () => {
   const { client, entities: s, agent, collection, body } = await dailyFixture();
   await s.CashCollection.update(collection.id, { collection_date: '2020-01-01' });
   await s.CashCollection.create({ commercial_id: agent.id, commercial_name: agent.full_name, collection_date: '2020-01-01', method: 'cash',
@@ -80,6 +80,7 @@ test('older collection days retain complete daily totals and remain visible afte
   const before = (await dashboard()).cashDays[0]; assert.equal(before.collected, 3000); assert.equal(before.received, 500);
   const { handover } = await cashierAction(client, user, { ...body, date: '2020-01-01' });
   await cashierAction(client, user, { action: 'confirmHandover', handoverId: handover.id, treasuryAccountId: 'till', receivedAmount: 2500, date, requestKey: 'late-cash-receipt' });
+  await s.CashCollection.update(collection.id,{received_at:new Date(date.slice(0,8)+'01T00:30:00+01:00').toISOString()});
   const settled = (await dashboard()).cashDays[0];
   assert.equal(settled.collection_date, '2020-01-01'); assert.equal(settled.collected, 3000); assert.equal(settled.status, 'settled');
   assert.equal((await s.TreasuryTransaction.list())[0].transaction_date, date);

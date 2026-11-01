@@ -2,9 +2,9 @@ import {requireStaff,round2,round3,today,audit,stockTransfer} from './field-ops.
 import {readRecords} from './commercial-workspace.js';
 import {dispatchAction,dispatchReconciliationData} from './dispatch-operations.js';
 import {finishedProduct,periodDates,validateCustodyLines} from './commercial-rules.js';
-import {normalizeRole} from './roles.js';
+import {principalRole,normalizeRole} from './roles.js';
 import {stockUnit} from '../../lib/item-units.js';
-import {DISPATCH_MANAGER_ROLES} from '../../lib/operations-access.js';
+import {DISPATCH_MANAGER_ROLES,canIssueDeliveryStock} from '../../lib/operations-access.js';
 
 export const DISTRIBUTION_ACTIONS=['distributionControl','distributionIssueWorkspace','issueDistributionStock','closeDistributionRun','recoverLegacyCustody'];
 const pick=(row,fields)=>Object.fromEntries(fields.split(' ').map(key=>[key,row?.[key]]));
@@ -59,6 +59,7 @@ async function overview(svc,date){
 export async function distributionControlAction(client,user,body){
   const {role,employee}=await requireStaff(client,user,DISPATCH_MANAGER_ROLES,'Distribution inventory control');
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active Distribution management staff account is required');
+  if(['distributionIssueWorkspace','issueDistributionStock'].includes(body.action)&&!canIssueDeliveryStock(role))throw Error('Only warehouse management or the General Manager can issue delivery goods');
   const svc=client.asServiceRole,s=svc.entities;
   if(body.action==='distributionIssueWorkspace') {
     client.auth.assertModule?.('distribution');
@@ -66,6 +67,7 @@ export async function distributionControlAction(client,user,body){
     const locations=warehouses.filter(w=>storage.includes(w.warehouse_type)),balances=await byIds(s.StockBalance,'warehouse_id',locations.map(w=>w.id));
     return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date'))};
   }
+  if(body.action==='distributionControl'&&principalRole(user,employee)!=='admin')throw Error('Only top administrators can view reports across distribution teams.');
   if(body.action==='distributionControl'){const {from:date}=periodDates(body.date || today(),body.date || today());if(date>today())throw Error('Choose today or an earlier reporting date');return overview(svc,date);}
   if(body.action==='issueDistributionStock'){
     const key=keyOf(user,body),snapshot=JSON.stringify([body.commercialId,body.driverId,body.vehicleId,body.warehouseId,body.lines,String(body.notes || '').slice(0,2000)]);

@@ -1,3 +1,5 @@
+import {assignCustomerHotesse} from './customer-hotesse.js';
+import {principalRole} from './roles.js';
 import { requireStaff } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { periodDates } from './commercial-rules.js';
@@ -6,20 +8,20 @@ import { loadOutletStock } from './outlet-stock.js';
 import { businessDate } from '../../lib/business-date.js';
 
 const pick = (row, fields) => Object.fromEntries(fields.map(key => [key, row?.[key]]));
-const locationFields = ['id', 'customer_id', 'customer_name', 'name', 'contact_person', 'phone', 'address', 'town', 'neighbourhood', 'gps_lat', 'gps_lng', 'delivery_instructions', 'assigned_hotesse_ids', 'is_active'];
+const locationFields = ['id', 'customer_id', 'customer_name', 'name', 'contact_person', 'phone', 'address', 'town', 'neighbourhood', 'gps_lat', 'gps_lng', 'delivery_instructions', 'assigned_hotesse_ids', 'customer_reporting_point', 'is_active'];
 const customerFields = ['id', 'customer_number', 'business_name', 'address', 'town', 'neighbourhood'];
 
 async function activeCustomer(svc, id) {
   if (typeof id !== 'string' || !id) throw new Error('Choose a registered customer');
   const customer = await svc.entities.Customer.get(id);
-  if (!customer || customer.is_active === false) throw new Error('Choose an active registered customer');
+  if (!customer || customer.is_active === false || customer.customer_removed_at) throw new Error('Choose an active registered customer');
   return customer;
 }
 
 async function assignedStaff(svc, ids, required = false) {
   if (!Array.isArray(ids) || (required && !ids.length) || ids.length > 20 || ids.some(id => typeof id !== 'string' || !id || id.length > 256) || new Set(ids).size !== ids.length) throw new Error('Select valid staff assignments');
   const employees = ids.length ? await readRecords(svc.entities.Employee, { id: { $in: ids }, role: 'hotesse', status: 'active' }) : [];
-  if (employees.length !== ids.length) throw new Error('Assignments require active Hotesse staff');
+  if (employees.length !== ids.length || employees.some(e=>e.employee_removed_at)) throw new Error('Assignments require active Hotesse staff');
   return ids;
 }
 
@@ -31,7 +33,7 @@ export async function hotesseData(svc, employeeId, date) {
   const customerIds = [...new Set(locations.map(l => l.customer_id).filter(Boolean))];
   const customers = [];
   for (let offset = 0; offset < customerIds.length; offset += 100) customers.push(...await readRecords(svc.entities.Customer, { id: { $in: customerIds.slice(offset, offset + 100) }, is_active: { $ne: false } }));
-  const customerMap = new Map(customers.map(customer => [customer.id, customer]));
+  const customerMap = new Map(customers.filter(customer=>!customer.customer_removed_at).map(customer => [customer.id, customer]));
   const assigned = locations.filter(l => l.assigned_hotesse_ids?.includes(employeeId) && customerMap.has(l.customer_id)).map(l => ({ ...l, customer_name: customerMap.get(l.customer_id).business_name }));
   const stocks = await Promise.all(assigned.map(location => loadOutletStock(svc, location, date)));
   const outletProducts = Object.fromEntries(assigned.map((location, i) => [location.id, stocks[i].products]));
@@ -44,6 +46,7 @@ export async function outletAction(base44, user, body) {
   const { role, employee } = await requireStaff(base44, user, ['admin', 'hotesse'], 'outlet reporting');
   if (role !== 'admin' && (!employee || (employee.status && employee.status !== 'active'))) throw new Error('An active linked Hotesse account is required');
   const svc = base44.asServiceRole;
+  if(principalRole(user,employee)==='hotesse'&&!['submitOutletVisit','submitDeliveryShelfCheck','outletReports'].includes(body.action))throw Error('Only the General Manager can manage outlet reporting');
   if (['submitOutletVisit', 'submitDeliveryShelfCheck'].includes(body.action)) {
     if (role !== 'hotesse') throw new Error('Only the assigned Hotesse can submit a daily outlet report');
     if (!/^[a-f0-9-]{36}$/i.test(body.requestKey || '')) throw new Error('Invalid report reference');
@@ -95,7 +98,12 @@ export async function outletAction(base44, user, body) {
       readRecords(svc.entities.Employee, { role: 'hotesse' }),
     ]);
     const customerMap = new Map(customers.map(customer => [customer.id, customer]));
-    return { customers: customers.map(customer => pick(customer, customerFields)), locations: locations.filter(l => customerMap.has(l.customer_id)).map(l => pick({ ...l, customer_name: customerMap.get(l.customer_id).business_name }, locationFields)), employees: employees.map(e => pick(e, ['id', 'full_name', 'status'])) };
+    return { customers: customers.filter(customer=>!customer.customer_removed_at).map(customer => pick(customer, customerFields)), locations: locations.filter(l => customerMap.has(l.customer_id)).map(l => pick({ ...l, customer_name: customerMap.get(l.customer_id).business_name }, locationFields)), employees: employees.map(e => pick(e, ['id', 'full_name', 'status', 'employee_removed_at'])) };
+  }
+  if(body.action==='assignCustomerHotesse'){
+    const customer=await activeCustomer(svc,body.customerId),ids=await assignedStaff(svc,body.employeeIds);
+    const result=await assignCustomerHotesse(svc,user,body,customer,ids);
+    return {...result,location:pick(result.location,locationFields)};
   }
   if (body.action === 'createAssignedOutlet') {
     const customer = await activeCustomer(svc, body.customerId);
@@ -129,8 +137,10 @@ export async function outletAction(base44, user, body) {
   if (body.action === 'assignHotesse') {
     const location = await svc.entities.CustomerLocation.get(body.locationId);
     if (!location || location.is_active === false) throw new Error('Choose an active customer outlet');
+    if(location.customer_reporting_point)throw Error('Use customer assignments to update this reporting location.');
     const customer = await activeCustomer(svc, location.customer_id);
     if (body.customerId && body.customerId !== customer.id) throw new Error('This point of sale belongs to another customer');
+    if(body.expectedEmployeeIds && (!Array.isArray(body.expectedEmployeeIds)||JSON.stringify([...body.expectedEmployeeIds].sort())!==JSON.stringify([...(location.assigned_hotesse_ids||[])].sort())))throw Error('Customer assignments changed. Reload before saving.');
     const ids = await assignedStaff(svc, body.employeeIds);
     const saved = await svc.entities.CustomerLocation.update(location.id, { assigned_hotesse_ids: ids, customer_name: customer.business_name, hotesse_assignment_by: user.id, hotesse_assignment_at: new Date().toISOString() });
     return { success: true, location: pick(saved, locationFields) };

@@ -5,7 +5,7 @@ import {ui} from './i18n.js';
 import { isPackagingItem } from './inventory-packaging.js';
 import { isAssemblyInventoryType } from './item-types.js';
 
-export const INVENTORY_SECTIONS = ['items', 'stock', 'movements', 'alerts', 'recovery'];
+export const INVENTORY_SECTIONS = ['home', 'items', 'stock', 'movements', 'alerts', 'recovery', 'adjustments', 'locations', 'counts'];
 export const ITEM_FILTERS = [
   { key: 'finished', get label(){return ui("Finished products");} },
   { key: 'ingredients', get label(){return ui("Ingredients");} },
@@ -19,12 +19,11 @@ export function inventoryWorkspaceState(params) {
   const section = requested === 'warehouses' ? ['activity','report'].includes(params.get('panel')) ? 'movements' : 'stock' : requested;
   const requestedFilter = params.get('filter') || (legacy==='raw'?'ingredients':legacy==='packaging'?'packaging':'finished');
   const filter = ['materials','ingredients'].includes(requestedFilter)&&params.get('type')==='packaging'?'packaging':requestedFilter==='materials'?'ingredients':requestedFilter==='services'?'all':requestedFilter;
-  const stockArea = params.get('area') || legacy;
   return {
-    section: INVENTORY_SECTIONS.includes(section) ? section : 'items',
+    section: INVENTORY_SECTIONS.includes(section) ? section : params.has('filter') || params.has('deleted') || params.has('type') ? 'items' : 'home',
     filter: ITEM_FILTERS.some(value => value.key === filter) ? filter : 'finished',
     subtype: params.get('type') || (legacy === 'raw' ? 'raw_material' : legacy === 'packaging' ? 'packaging' : 'all'),
-    stockArea: ['wip', 'delivery'].includes(stockArea) ? stockArea : 'all',
+    stockArea: 'all',
   };
 }
 export function matchesItemFilter(item, filter, subtype = 'all') {

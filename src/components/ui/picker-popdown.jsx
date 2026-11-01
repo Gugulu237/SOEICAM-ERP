@@ -20,9 +20,9 @@ export default function PickerPopdown({open=true,anchorRef,onOpenChange,label,ch
       onEscapeKeyDown={()=>{restoreFocus.current=true;}}
       onOpenAutoFocus={event=>{event.preventDefault();contentRef.current?.querySelector('[data-account-option],[data-component-option],input')?.focus({preventScroll:true});}}
       onCloseAutoFocus={event=>{event.preventDefault();if(restoreFocus.current)anchorRef?.current?.focus({preventScroll:true});}}
-      className="z-[70] flex min-h-0 flex-col overflow-hidden rounded-md border border-slate-200 bg-white p-2 text-slate-900 shadow-lg outline-none"
-      style={{boxSizing:'border-box',width:'min(22rem, calc(100vw - 1rem))',maxHeight:'min(24rem, var(--radix-popper-available-height))'}}>
-      <div className="flex min-h-0 flex-col gap-2" onKeyDown={event=>event.stopPropagation()}>{children}</div>
+      className="z-[70] flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-lg outline-none"
+      style={{boxSizing:'border-box',width:'min(22rem, calc(100vw - 1rem), var(--radix-popper-available-width, calc(100vw - 1rem)))',maxHeight:'min(24rem, var(--radix-popper-available-height))'}}>
+      <div className="flex min-h-0 w-full min-w-0 flex-col gap-2" onKeyDown={event=>event.stopPropagation()}>{children}</div>
     </Menu.Content></Menu.Portal>
   </Menu.Root>;
 }

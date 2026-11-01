@@ -2,7 +2,7 @@
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getStockOnHand } from "@/lib/inventory";
 import { businessDate } from '@/lib/business-date';
 import { MANAGED_WAREHOUSE_TYPES } from '@/lib/warehouse-workspace';
@@ -24,7 +24,7 @@ export default function StockTransferDialog({ open, onOpenChange, products, ware
   const [form, setForm] = useState({ product_id: "", from: "", to: "", quantity: "", reason: "", date: businessDate() });
   const [requestKey] = useState(() => crypto.randomUUID());
   const [available, setAvailable] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(false), pending=useRef(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -35,6 +35,8 @@ export default function StockTransferDialog({ open, onOpenChange, products, ware
   }, [form.product_id, form.from]);
 
   async function submit() {
+    if(pending.current)return;
+    pending.current=true;
     setSaving(true);
     try {
       const product = products.find(p => p.id === form.product_id);
@@ -54,17 +56,17 @@ export default function StockTransferDialog({ open, onOpenChange, products, ware
     } catch (e) {
       toast({ title: ui("Transfer failed"), description: e.message, variant: "destructive" });
     }
-    setSaving(false);
+    pending.current=false;setSaving(false);
   }
 
   const valid = form.product_id && form.from && form.to && form.from !== form.to && Number(form.quantity) > 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={value=>{if(!pending.current)onOpenChange(value);}}>
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>{ui("Move Stock")}</DialogTitle></DialogHeader>
-        <p className="text-sm text-slate-500">{ui("Move stock between storage locations. Use ")}<a href="/distribution" className="text-green-700 underline">{ui("Distribution")}</a>{ui(" for vehicle loads and returns, and Manufacturing to issue production materials.")}</p>
-        <div className="space-y-3">
+        <p className="text-sm text-slate-500">{ui("Move stock between storage locations. Use ")}<a href="/inventory?issue=1" className="text-green-700 underline">{ui("Issue goods")}</a>{ui(" for vehicle loads, Distribution for returns, and Manufacturing to issue production materials.")}</p>
+        <fieldset disabled={saving} className="space-y-3">
           <div>
             <Label>{ui("Product *")}</Label>
             <Select value={form.product_id} onValueChange={v => setForm(f=>({...f,product_id:v,to:""}))}>
@@ -110,9 +112,9 @@ export default function StockTransferDialog({ open, onOpenChange, products, ware
             <Input value={form.reason} onChange={e => set("reason", e.target.value)} placeholder={ui("Optional note")} />
           </div>
           <p className="text-xs text-slate-500">{ui("Lots are consumed first-expiry-first-out and their cost travels with the goods.")}</p>
-        </div>
+        </fieldset>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{ui("Cancel")}</Button>
+          <Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{ui("Cancel")}</Button>
           <Button onClick={submit} disabled={!valid || saving}>{saving ? ui("Moving...") : ui("Move Stock")}</Button>
         </DialogFooter>
       </DialogContent>

@@ -15,7 +15,7 @@ import { guardMutation } from '../src/server/access.js';
 
 async function setup(db) {
   const f=await fixture(db),s=f.entities;
-  await s.Employee.update('cashier',{role:'warehouse_manager'});
+  await s.Employee.update('cashier',{role:'cashier'});
   const original=s.AuditLog.create;
   s.AuditLog.create=async value=>{
     if(!value.id)return original(value);
@@ -36,8 +36,8 @@ async function setup(db) {
   return {...f,inventory,packagingAccount,pack,cold,store,lot,call,body};
 }
 
-test('Inventory opens Items and preserves legacy stock-location links',()=>{
-  assert.equal(inventoryWorkspaceState(new URLSearchParams()).section,'items');
+test('Inventory opens its menu and preserves legacy stock-location links',()=>{
+  assert.equal(inventoryWorkspaceState(new URLSearchParams()).section,'home');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('section=warehouses&warehouse=old')).section,'stock');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('section=warehouses&warehouse=old&panel=report')).section,'movements');
   assert.equal(INVENTORY_SECTIONS.includes('warehouses'),false);
@@ -113,7 +113,7 @@ test('packaging release requires production inspection and generic API writes ca
   for(const [entity,input,existing] of [['AuditLog',{action:'fermentation_notification'}],['StockBalance',{qc_status:'approved'},{inventory_recovery_id:'recovery'}],['StockMovement',{document_type:'ExpiryRecovery'}],['ProductionOrder',{fermentation_due_at:date}]])assert.throws(()=>guardMutation(context,entity,'update',input,existing),/checked/);
   assert.throws(()=>guardMutation(context,'ProductionOrder','update',{status:'completed'},{status:'in_production',fermentation_started_at:date}),/checked manufacturing/);
 });
-test('disposal rejects field and production roles and preserves special warehouse adjustment access',async()=>{
+test('disposal rejects field and production roles; warehouse receipt access cannot post manual losses',async()=>{
   const f=await setup(),s=f.entities,body=await f.body();
   for(const role of ['production_manager','commercial','employee','driver','procurement']){await s.Employee.update('cashier',{role});await assert.rejects(f.call(body));}
   await s.Employee.update('cashier',{role:'warehouse_manager',allowed_modules:['inventory']});await assert.rejects(f.call(body),/Special inventory/);
@@ -171,6 +171,7 @@ test('the HTTP transaction rolls back stock, recovery lots and journal when fina
     s.AuditLog.create=async row=>{if(row.action==='dispose_expired_stock')throw Error('Audit unavailable');return create(row);};
     const response=await route.POST(request(body));assert.equal(response.status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
     s.AuditLog.create=create;assert.equal((await route.POST(request(body))).status,200);
+    await s.Employee.update('cashier',{role:'warehouse_manager'});
     const held=(await s.StockBalance.list()).find(row=>row.inventory_recovery_id);
     const receipt={action:'receive',balanceId:held.id,quantity:held.quantity,reference:'RECEIPT-TRANSACTION',inspectionConfirmed:true};
     const receiptBefore=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows;

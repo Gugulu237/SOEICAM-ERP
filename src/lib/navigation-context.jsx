@@ -1,8 +1,11 @@
 'use client';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { createNavigationSession, NAVIGATION_EVENT, NAVIGATION_MARKER, pageMemoryKey } from './navigation-session';
+import { createNavigationSession, NAVIGATION_EVENT, NAVIGATION_MARKER, pageMemoryKey, navigationScreenKey } from './navigation-session';
 import { OVERLAY_EVENT, browserOverlayHistory } from './overlay-history';
+import { installSwipeBack } from './swipe-back';
+import { ArrowLeft } from 'lucide-react';
+import { ui } from './i18n';
 
 const NavigationContext = createContext(null);
 const emptyHistory = { entries: [], cursor: -1, recent: [], canBack: false, canForward: false };
@@ -34,6 +37,7 @@ export function NavigationProvider({ identity, children }) {
   const href = pathname + (params.size ? '?' + params.toString() : '');
   useEffect(()=>{if(process.env.NODE_ENV==='development' && window.parent!==window && typeof window.parent?.postMessage==='function')window.parent.postMessage({type:'soeicam:preview-route',href},window.location.origin);},[href]);
   const [store, setStore] = useState(null);
+  const [swipeProgress,setSwipeProgress]=useState(0);
   const current = useRef(null), intent = useRef(null), traversal = useRef(null), restoring = useRef(false);
   useEffect(() => {
     let storage;
@@ -42,6 +46,11 @@ export function NavigationProvider({ identity, children }) {
     setStore(session);
     return () => session.flush();
   }, [identity]);
+
+  useEffect(()=>{
+    if(!store)return;
+    return installSwipeBack(window,{canGoBack:()=>store.getSnapshot().canBack,onProgress:setSwipeProgress});
+  },[store]);
 
   useEffect(() => {
     if (!store) return;
@@ -83,7 +92,7 @@ export function NavigationProvider({ identity, children }) {
       const position = store.scrollFor(href);
       current.current = href; traversal.current = null; intent.current = null;
       if (previous === href) return;
-      const samePage = previous?.split('?')[0] === pathname;
+      const samePage = previous && navigationScreenKey(previous) === navigationScreenKey(href);
       // Changing a filter keeps the current viewport. Reopening a page restores it.
       const target = position || (samePage && !pop ? [window.scrollX, window.scrollY] : [0, 0]);
       restoring.current = true;
@@ -93,7 +102,7 @@ export function NavigationProvider({ identity, children }) {
   }, [href, pathname, store]);
 
   const value = useMemo(() => ({ store, href }), [store, href]);
-  return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
+  return <NavigationContext.Provider value={value}>{children}{swipeProgress>0&&<div aria-hidden="true" className="pointer-events-none fixed left-2 top-1/2 z-[100] flex h-12 items-center gap-2 rounded-full border border-primary/20 bg-white px-4 text-sm font-semibold text-primary shadow-lg" style={{opacity:Math.min(1,swipeProgress+.3),transform:`translateX(${(swipeProgress-1)*28}px)`}}><ArrowLeft size={20}/>{ui('Back')}</div>}</NavigationContext.Provider>;
 }
 
 export function useNavigationSession() { return useContext(NavigationContext)?.store; }

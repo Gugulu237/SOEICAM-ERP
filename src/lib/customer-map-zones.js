@@ -3,6 +3,22 @@ export const YAOUNDE_CENTER={lat:3.848,lng:11.5021};
 export const CAMEROON_BOUNDS=[[1.6,8.4],[13.2,16.3]];
 export const YAOUNDE_MUNICIPALITIES=Array.from({length:7},(_,i)=>({id:'yaounde_'+(i+1),label:'Yaoundé '+['I','II','III','IV','V','VI','VII'][i]}));
 export const ZONE_SERVICE_STATUSES=['served','planned','paused'];
+// Existing municipality IDs remain stable; new coverage areas use editable geography.
+export function zoneDivision(zone) {
+  return zone.division || (YAOUNDE_MUNICIPALITIES.some(m=>m.id===zone.municipality)?'Mfoundi':zone.town || '');
+}
+export function zoneSubdivision(zone) {
+  return zone.subdivision || (zone.municipality?.startsWith('yaounde_')?'YAOUNDÉ '+zone.municipality.slice(8):'');
+}
+export function groupDeliveryZones(zones) {
+  const groups=new Map();
+  for(const zone of zones) {
+    const name=zoneDivision(zone),key=name.trim().toLocaleLowerCase();
+    if(!groups.has(key))groups.set(key,{name,zones:[]});
+    groups.get(key).zones.push(zone);
+  }
+  return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name)).map(group=>({...group,zones:group.zones.sort((a,b)=>(zoneSubdivision(a)||a.name).localeCompare(zoneSubdivision(b)||b.name,undefined,{numeric:true}))}));
+}
 export const ZONE_MAP_COLOURS={amber:'#b45309',blue:'#2563eb',green:'#059669',purple:'#7c3aed',slate:'#64748b'};
 const cross=(a,b,c)=>(b.lng-a.lng)*(c.lat-a.lat)-(b.lat-a.lat)*(c.lng-a.lng);
 const onSegment=(a,b,p)=>Math.abs(cross(a,b,p))<1e-11&&p.lng>=Math.min(a.lng,b.lng)-1e-11&&p.lng<=Math.max(a.lng,b.lng)+1e-11&&p.lat>=Math.min(a.lat,b.lat)-1e-11&&p.lat<=Math.max(a.lat,b.lat)+1e-11;

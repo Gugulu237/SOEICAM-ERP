@@ -3,7 +3,7 @@ import { countedQuantity, roundMoney, roundQuantity } from './inventory-audit.js
 export function warehouseCountState(row) {
   const book=Number(row.book_quantity),value=Number(row.book_value),cost=Number(row.unit_cost);
   if(!Number.isFinite(book) || !Number.isFinite(value))return {count_issue:'Accounting must reconcile the missing or invalid recorded quantity and value for this lot.'};
-  if(Math.abs(book)>1e9 || book!==roundQuantity(book) || !Number.isSafeInteger(Math.round(value*100)))return {count_issue:'Accounting must reconcile the recorded precision or value for this lot.'};
+  if(Math.abs(book)>1e9 || book!==roundQuantity(book) || value!==roundMoney(value) || !Number.isSafeInteger(Math.round(value*100)))return {count_issue:'Accounting must reconcile the recorded precision or value for this lot.'};
   const requires_reconciliation=book<0 || value<0 || book===0 && value!==0 || book>0 && value===0;
   const carrying_cost=book>0 && value>0?value/book:Number.isFinite(cost) && cost>0?cost:0;
   return {requires_reconciliation,carrying_cost,count_issue:''};

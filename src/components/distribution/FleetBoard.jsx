@@ -42,7 +42,7 @@ export default function FleetBoard({ vehicles, dispatches }) {
         return (
           <button
             key={v.id}
-            onClick={() => dispatch ? navigate(`/distribution/dispatches/${dispatch.id}`) : navigate("/distribution/dispatches/new")}
+            onClick={() => dispatch ? navigate(`/distribution/dispatches/${dispatch.id}`) : navigate('/distribution?tab=vehicles')}
             className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition-all ${st.accent}`}
           >
             <div className="flex items-center justify-between mb-3">
@@ -77,7 +77,7 @@ export default function FleetBoard({ vehicles, dispatches }) {
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-400">{ui("Idle — tap to create a dispatch.")}</p>
+              <p className="text-xs text-slate-400">{ui("Available for delivery. Tap to view vehicle setup.")}</p>
             )}
           </button>
         );

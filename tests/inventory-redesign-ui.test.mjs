@@ -20,7 +20,7 @@ test('catalogue renders family then flavour then size, real per-item units and s
   const products=[{id:'b',name:'Drink vanilla',inventory_type:'assembly',product_family:'Yaourt à boire',flavor:'Vanille',size:'330 ml',unit_of_measure:'ea'},{id:'a',name:'Stirred strawberry',inventory_type:'assembly',product_family:'Yaourt brassé',flavor:'Fraise',size:'500 g',unit_of_measure:'ea'}];
   const html=await render('Groups',{products,filter:'finished',quantities:new Map([['a',12],['b',4]]),onEdit(){},renderDetails:()=>null});
   assert.ok(html.indexOf('Yaourt brassé')<html.indexOf('Stirred strawberry'));
-  assert.match(html,/Strawberry/);assert.match(html,/500 g/);const text=html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');assert.match(text,/12 ea/);assert.match(text,/4 ea/);assert.match(text,/Brassé · Strawberry · 500 g/);assert.match(text,/Drinkable · Vanilla · 330 ml/);
+  assert.match(html,/Strawberry/);assert.match(html,/500 g/);const text=html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');assert.match(text,/12 ea/);assert.match(text,/4 ea/);assert.match(text,/Brassé · Strawberry 500 g/);assert.match(text,/Drinkable · Vanilla 330 ml/);
   let depth=0;for(const tag of html.matchAll(/<button\b|<\/button>/g)){depth+=tag[0].startsWith('</')?-1:1;assert.ok(depth>=0 && depth<=1);}assert.equal(depth,0);
 });
 test('large catalogues render 25 items per page and retain the complete result count',async()=>{

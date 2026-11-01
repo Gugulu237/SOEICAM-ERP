@@ -1,3 +1,4 @@
+import {CUSTOMER_ACTIVITY_ACTIONS,customerActivityAction} from '../domain/customer-activity.js';
 import {ASSEMBLY_BUILD_ACTIONS,assemblyBuildAction} from '../domain/assembly-build.js';
 import {inclusiveSaleLine} from '../../lib/sale-vat.js';
 import {approvalActionTargets} from '../domain/role-catalogue.js';
@@ -32,7 +33,7 @@ import { commercialAction, readRecords } from '../domain/commercial-workspace.js
 import { finishedProduct, periodDates } from '../domain/commercial-rules.js';
 import { createClientFromRequest } from '../request-client.js';
 import { commercialActor } from '../domain/commercial-actor.js';
-import { normalizeSaleReplacements, combinedSupplyQuantities } from '../../lib/sale-replacements.js';
+import { normalizeSaleReplacements, combinedSupplyQuantities, validateReplacementDeclaration } from '../../lib/sale-replacements.js';
 import { commercialReturnAction, postSaleReplacements } from '../domain/commercial-returns.js';
 import { companySalesAction } from '../domain/company-sales.js';
 import { invoiceAction, INVOICE_ACTIONS, CASHIER_INVOICE_ACTIONS } from '../domain/sales-invoices.js';
@@ -160,7 +161,7 @@ export default async function (req) {
     if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)){const review=['expiredReturnReviewQueue','verifyExpiredReturn','rejectExpiredReturn'].includes(action);await selectFeature(review?'quality':action==='driverReturnsWorkspace'?'distribution':'commercial',review?'admin':action==='driverReturnsWorkspace'?'driver':'commercial');return Response.json(await commercialReturnAction(base44, user, body));}
     if(INVOICE_ACTIONS.includes(action)){const staff=await base44.auth.staff?.();const candidates=CASHIER_INVOICE_ACTIONS.includes(action)?['sales','accounting','cashier']:['sales'];await selectFeature(candidates.find(m=>staff?.full_access_modules?.includes(m))||candidates[0]);return Response.json(await invoiceAction(base44,user,body));}
     let module = ASSEMBLY_BUILD_ACTIONS.includes(action)?'manufacturing':action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
-      : CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'
+      : CUSTOMER_ACTIVITY_ACTIONS.includes(action) || CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'
       : SUPPLIER_ACTIONS.includes(action) || inActions(['purchasesWorkspace','approvePurchasePayment','rejectPurchasePayment']) ? 'purchases'
       : DISTRIBUTION_ACTIONS.includes(action) || inActions(['driverReceiveLoad','driverSaveDeliveryPlan','loadDispatch','returnDispatchStock','dispatchReconciliation','approveDispatch','approveDispatchRequest','dispatchActivity','driverActivity','issueCustody','returnCustody']) ? 'distribution'
       : CASHIER_ACTIONS.includes(action) || action === 'submitHandover' ? 'cashier'
@@ -168,7 +169,7 @@ export default async function (req) {
       : inActions(['batchCatalogue','batchTrace']) ? 'quality'
       : action === 'businessOverview' ? 'reports'
       : ['accountPosition', 'cashFlowReport'].includes(action) ? 'accounting'
-      : inActions(['submitOutletVisit','submitDeliveryShelfCheck','outletShelfOverview','outletReports','outletRoster','assignHotesse','createAssignedOutlet','reviewOutletVisit']) ? 'outlets'
+      : inActions(['submitOutletVisit','submitDeliveryShelfCheck','outletShelfOverview','outletReports','outletRoster','assignCustomerHotesse','assignHotesse','createAssignedOutlet','reviewOutletVisit']) ? 'outlets'
       : inActions(['commercialDepositCash','commercialCashiers','registerCustomer','fieldCustomers','commercialPerformance','verifyFieldCustomer','commercialDailySupplies','updateCustomerGps','commercialReturns','recordExpiredReturn','replaceExpiredReturn','saveSale','proposedJournal','approveSale','returnSale','rejectSale']) ? 'commercial'
       : null;
     if (!module && !['employeeDashboard','companySales'].includes(action)) throw new Error('Unknown function action.');
@@ -185,6 +186,7 @@ export default async function (req) {
     if (ASSET_ACTIONS.includes(action)) return Response.json(await fixedAssetAction(base44,user,body));
     if (INVENTORY_AUDIT_ACTIONS.includes(action)) return Response.json(await inventoryAuditAction(base44,user,body));
     if (SALES_ORDER_ACTIONS.includes(action)) return Response.json(await salesOrderAction(base44,user,body));
+    if (CUSTOMER_ACTIVITY_ACTIONS.includes(action)) return Response.json(await customerActivityAction(base44,user,body));
     if (CUSTOMER_DELIVERY_ACTIONS.includes(action)) return Response.json(await customerDeliveryAction(base44,user,body));
     if (SUPPLIER_ACTIONS.includes(action)) return Response.json(await supplierAction(base44, user, body));
     if (action === 'purchasesWorkspace') return Response.json(await purchaseWorkspace(base44,user,body));
@@ -204,7 +206,7 @@ export default async function (req) {
       return Response.json(await dispatchAction(base44, user, body));
     }
 
-    if (['submitOutletVisit', 'submitDeliveryShelfCheck', 'outletShelfOverview', 'outletReports', 'outletRoster', 'assignHotesse', 'createAssignedOutlet', 'reviewOutletVisit'].includes(action)) {
+    if (['submitOutletVisit', 'submitDeliveryShelfCheck', 'outletShelfOverview', 'outletReports', 'outletRoster', 'assignCustomerHotesse','assignHotesse', 'createAssignedOutlet', 'reviewOutletVisit'].includes(action)) {
       return Response.json(await outletAction(base44, user, body));
     }
 
@@ -267,6 +269,8 @@ export default async function (req) {
       const inputLines = Array.isArray(body.lines) ? body.lines : [];
       if (!inputLines.length || inputLines.length > 50 || inputLines.some(l => !l || typeof l.product_id !== 'string' || typeof l.quantity === 'boolean' || !Number.isFinite(Number(l.quantity)) || round3(l.quantity) <= 0) || new Set(inputLines.map(l => l.product_id)).size !== inputLines.length) throw new Error('Add valid positive quantities for distinct products');
       const replacements = normalizeSaleReplacements(body.stockReplacements, transactionDate);
+      const replacementError=validateReplacementDeclaration(body.replacementsDeclared,replacements,submit&&body.replacementsDeclared!==undefined);
+      if(replacementError)throw Error(replacementError);
       if (replacements.length && transactionDate > today()) throw Error('Stock replacements cannot be recorded in the future');
       const combinedLines = combinedSupplyQuantities(inputLines, replacements);
       if (combinedLines.length > 50) throw Error('Choose at most 50 distinct products for the supply and replacements');
@@ -377,6 +381,7 @@ export default async function (req) {
         receipt_reference: receiptReference,
         receipt_file_uris: receiptUris,
         stock_replacements: replacements,
+        stock_replacements_declared: body.replacementsDeclared??replacements.length>0,
         notes: body.notes || '',
         status: submit ? 'submitted' : 'draft',
         submitted_at: submit ? new Date().toISOString() : '',

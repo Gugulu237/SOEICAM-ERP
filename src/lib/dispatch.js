@@ -2,10 +2,10 @@
 // partially load a vehicle or copy stock a second time.
 import { erp } from '@/api/erpClient';
 import { getStockOnHand, round3 } from '@/lib/inventory';
-import { DISPATCH_MANAGER_ROLES } from './operations-access.js';
+import { DELIVERY_STOCK_ISSUERS, canIssueDeliveryStock } from './operations-access.js';
 
-export const DISPATCH_APPROVERS = DISPATCH_MANAGER_ROLES;
-export function canApproveDispatch(role) { return DISPATCH_APPROVERS.includes(role); }
+export const DISPATCH_APPROVERS = DELIVERY_STOCK_ISSUERS;
+export const canApproveDispatch = canIssueDeliveryStock;
 
 async function dispatchAction(action, dispatch, extra={}) {
   if (!dispatch?.id) throw new Error('Select a dispatch run');

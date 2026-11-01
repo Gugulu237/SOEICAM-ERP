@@ -12,12 +12,12 @@ test('inventory groups finished goods and ingredients while excluding service re
 });
 test('bookmarks resolve legacy inventory sections and reject unsupported section/filter choices', () => {
   assert.deepEqual(inventoryWorkspaceState(new URLSearchParams('tab=raw')), { section: 'items', filter: 'ingredients', subtype: 'raw_material', stockArea: 'all' });
-  assert.equal(inventoryWorkspaceState(new URLSearchParams('tab=delivery')).stockArea, 'delivery');
+  assert.equal(inventoryWorkspaceState(new URLSearchParams('tab=delivery')).stockArea, 'all');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('tab=map')).section, 'stock');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('section=movements&filter=services')).section, 'movements');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('section=unknown&filter=unknown')).filter, 'finished');
-  assert.equal(inventoryWorkspaceState(new URLSearchParams('section=unknown')).section, 'items');
-  assert.equal(inventoryWorkspaceState(new URLSearchParams()).section, 'items');
+  assert.equal(inventoryWorkspaceState(new URLSearchParams('section=unknown')).section, 'home');
+  assert.equal(inventoryWorkspaceState(new URLSearchParams()).section, 'home');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('filter=materials&type=packaging')).filter,'packaging');
   assert.equal(inventoryWorkspaceState(new URLSearchParams('filter=services')).filter,'all');
 });

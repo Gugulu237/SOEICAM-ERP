@@ -21,7 +21,7 @@ const ACTIONS = [
   { get label(){return ui("New Production Order");}, path: "/manufacturing/new", icon: Factory, roles: ["admin", "production_manager"] },
   { get label(){return ui("Record Payment");}, path: "/accounting/payments/new", icon: Banknote, roles: ["admin", "cashier"] },
   { get label(){return ui("New Customer");}, path: "/customers/new", icon: UserPlus, roles: ["admin", "employee", "commercial"] },
-  { get label(){return ui("Stock Request");}, path: "/distribution/requests/new", icon: Truck, roles: ["admin", "employee", "warehouse_manager"] },
+  { get label(){return ui("Issue goods");}, path: "/inventory?issue=1", icon: Truck, roles: ["admin", "warehouse_manager"], modules: ["inventory", "distribution"] },
 ];
 
 // Universal "+ New" menu — frequent actions from anywhere in the app.
@@ -30,7 +30,7 @@ export default function QuickActions() {
 
   const navigate = useNavigate();
   const { role, allowedModules } = useCurrentUser();
-  const actions = ACTIONS.filter(a => hasRoleAccess(role, a.roles) && (role === 'admin' || !allowedModules || allowedModules.includes(moduleForPath(a.path))));
+  const actions = ACTIONS.filter(a => hasRoleAccess(role, a.roles) && (role === 'admin' || !allowedModules || (a.modules||[moduleForPath(a.path)]).every(module=>allowedModules.includes(module))));
 
   if (!actions.length) return null;
 

@@ -22,13 +22,14 @@ export function dailyCashSettlements(collections = [], handovers = []) {
     const key = `${collection.commercial_id}:${collection.collection_date}`;
     if (!days.has(key)) days.set(key, { id: key, commercial_id: collection.commercial_id, commercial_name: collection.commercial_name,
       collection_date: collection.collection_date, collected: 0, received: 0, outstanding: 0, requestable: 0, depositable: 0, deposit_reported: 0,
-      collection_ids: [], handover_ids: [], receipt_references: [], cashier_names: [], requested: false, confirmed: true, disputed: false });
+      customer_receipt_outstanding: 0, collection_ids: [], handover_ids: [], receipt_references: [], cashier_names: [], requested: false, confirmed: true, disputed: false });
     const day = days.get(key), total = money(collection.amount_collected), received = money(collection.received_amount);
     const outstanding = money(total - received), handover = byHandover.get(collection.handover_id);
     day.collected = money(day.collected + total); day.received = money(day.received + received);
     day.outstanding = money(day.outstanding + Math.max(0, outstanding));
     if (outstanding > 0) {
-      if (collection.agent_deposit_reported_at) day.deposit_reported = money(day.deposit_reported + outstanding);
+      if (collection.collection_origin === 'customer_receipt') day.customer_receipt_outstanding = money(day.customer_receipt_outstanding + outstanding);
+      else if (collection.agent_deposit_reported_at) day.deposit_reported = money(day.deposit_reported + outstanding);
       else day.depositable = money(day.depositable + outstanding);
     }
     day.confirmed &&= collection.status === 'received' && outstanding === 0 && total > 0;
@@ -37,11 +38,12 @@ export function dailyCashSettlements(collections = [], handovers = []) {
     if (collection.handover_id && !day.handover_ids.includes(collection.handover_id)) day.handover_ids.push(collection.handover_id);
     day.requested ||= !!handover?.requested_by_cashier && handover.status !== 'received';
     if (received > 0) {
+      if(collection.acknowledgement_reference&&!day.receipt_references.includes(collection.acknowledgement_reference))day.receipt_references.push(collection.acknowledgement_reference);
       if (handover?.acknowledgement_reference && !day.receipt_references.includes(handover.acknowledgement_reference)) day.receipt_references.push(handover.acknowledgement_reference);
       const cashier = collection.received_by || handover?.cashier_name;
       if (cashier && !day.cashier_names.includes(cashier)) day.cashier_names.push(cashier);
     }
-    if (outstanding > 0 && !collection.handover_id && ['held_by_commercial', 'partially_received'].includes(collection.status)) {
+    if (outstanding > 0 && collection.collection_origin !== 'customer_receipt' && !collection.handover_id && ['held_by_commercial', 'partially_received'].includes(collection.status)) {
       day.requestable = money(day.requestable + outstanding); day.collection_ids.push(collection.id);
     }
   }

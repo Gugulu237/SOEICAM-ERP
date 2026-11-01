@@ -13,6 +13,7 @@ const fingerprint = row => hash(Object.entries(row).sort(([a],[b]) => a.localeCo
 // dedicated adjustment grant. The function route wraps the write in a transaction.
 export async function existingStockAction(stores,user,employee,body) {
   const isGM = principalRole(user,employee) === 'admin';
+  if(body.action==='correctExistingStock'&&!isGM)throw Error('Only the General Manager can correct imported quality and expiry metadata.');
   let eventId,payload;
   if (body.action === 'correctExistingStock') {
     if (!/^[a-f0-9-]{36}$/i.test(body.requestKey || '')) throw Error('Reopen the correction for a valid save reference.');
@@ -36,12 +37,14 @@ export async function existingStockAction(stores,user,employee,body) {
       ((b.qc_status || 'approved') !== 'approved' || b.expiry_date);
   });
   if (body.action === 'existingStockWorkspace') return {
+    can_correct_existing:isGM,
     can_correct_rejected:isGM,
     lots:candidates.map(b => ({id:b.id,product_name:productById.get(b.product_id).name,warehouse_name:locationById.get(b.warehouse_id).name,
       lot_number:b.lot_number || '',quantity:Number(b.quantity),total_value:Number(b.total_value),qc_status:b.qc_status || 'approved',
       expiry_date:b.expiry_date || '',origin:stockOrigin(b,movements),finished:isAssemblyInventoryType(productById.get(b.product_id).inventory_type),fingerprint:fingerprint(b)})),
   };
   if (body.action !== 'correctExistingStock') throw Error('Unknown existing-stock operation.');
+  if(body.confirm_import_metadata!==true)throw Error('Confirm that the selected expiry and quality settings were imported incorrectly, using physically verified evidence.');
   const reference=typeof body.reference==='string'?body.reference.trim():'',reason=typeof body.reason==='string'?body.reason.trim():'';
   if (reference.length<3 || reference.length>200 || reason.length<5 || reason.length>1000) throw Error('Enter a correction reference and reason.');
   if (!Array.isArray(body.rows) || !body.rows.length || body.rows.length>200) throw Error('Select between 1 and 200 existing stock lots.');

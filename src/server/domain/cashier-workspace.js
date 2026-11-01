@@ -63,7 +63,7 @@ async function workspace(svc, date, role) {
     readRecords(svc.entities.CashHandover, { $or: [{ status: { $in: ['submitted', 'partially_received', 'disputed'] } }, { status: 'received', $or: [{ handover_date: date }, { received_date: date }] }] }),
     readRecords(svc.entities.CashCollection, { $or: [{ collection_date: date }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
     readRecords(svc.entities.Invoice, { status: { $in: ['posted', 'partially_paid', 'overdue'] } }),
-    readRecords(svc.entities.Payment, { payment_type: 'customer_payment', $or: [{ status: { $in: ['pending_approval', 'approved'] } }, { payment_date: date, status: 'posted' }] }),
+    readRecords(svc.entities.Payment, { payment_type: 'customer_payment', $or: [{ status: { $in: ['awaiting_cashier', 'pending_approval', 'approved'] } }, { payment_date: date, status: 'posted' }] }),
     readRecords(svc.entities.Payment, { payment_type: 'supplier_payment', status: { $in: ['draft', 'pending_approval', 'approved', 'confirmed'] } }),
     readRecords(svc.entities.ExpenseRequest, { $or: [{ status: 'approved' }, { status: 'paid', $or: [{ paid_date: date }, { request_date: date }] }] }),
     readRecords(svc.entities.Account, { account_type: 'expense', is_active: true }),
@@ -73,17 +73,18 @@ async function workspace(svc, date, role) {
     readRecords(svc.entities.FieldSale, { transaction_date: date, payment_type: 'cash', status: 'approved_posted' }),
     readRecords(svc.entities.Employee),
   ]);
-  const reserved = invoice => round2(receipts.filter(p => ['pending_approval', 'approved'].includes(p.status)).reduce((sum, p) => sum + (p.receipt_allocations || []).filter(a => a.invoice_id === invoice.id).reduce((s, a) => s + Number(a.amount || 0), 0), 0));
+  const reserved = invoice => round2(receipts.filter(p => ['awaiting_cashier', 'pending_approval', 'approved'].includes(p.status)).reduce((sum, p) => sum + (p.receipt_allocations || []).filter(a => a.invoice_id === invoice.id).reduce((s, a) => s + Number(a.amount || 0), 0), 0));
   const linkedCollections = new Set(receipts.map(p => p.collection_id).filter(Boolean));
   const paidOrders = orders.length ? await readRecords(svc.entities.Payment, { po_id: { $in: orders.map(po => po.id) }, status: 'posted', payment_type: 'supplier_payment' }) : [];
   const cashCustomers = [
     ...collections.filter(c => c.collection_date === date && c.method === 'cash' && c.status !== 'cancelled' && !linkedCollections.has(c.id)).map(c => ({ id: 'collection-' + c.id, customer_name: c.customer_name, document_number: c.sale_number || c.invoice_number || c.collection_number, amount: c.amount_collected, received: c.received_amount || 0, collector: c.commercial_name, status: c.status, date: c.collection_date })),
-    ...receipts.filter(p => p.payment_date === date && p.payment_method === 'cash').map(p => ({ id: 'payment-' + p.id, customer_name: p.party_name, document_number: p.invoice_numbers || p.payment_number, amount: p.amount, received: p.status === 'posted' ? p.amount : 0, collector: p.cashier_confirmed_name || 'Cash desk', status: p.status, date: p.payment_date })),
+    ...receipts.filter(p => p.payment_date === date && p.payment_method === 'cash').map(p => ({ id: 'payment-' + p.id, customer_name: p.party_name, document_number: p.invoice_numbers || p.payment_number, amount: p.amount, received: p.status === 'posted' ? p.amount : 0, collector: p.collector_name || p.cashier_confirmed_name || 'Cash desk', status: p.status, date: p.payment_date })),
   ];
   return { role, date, pettyCashLimit: PETTY_CASH_LIMIT,
     accounts: rows(accounts.filter(a=>a.is_active===true&&canUseTreasury(role,a)), 'id name account_type balance gl_account_id float_limit custodian'),
     movements: rows(movements.filter(m=>role==='admin'||accounts.some(a=>a.id===m.treasury_account_id&&canUseTreasury(role,a))), 'id transaction_number treasury_account_id treasury_account_name transaction_type amount transaction_date description reference source source_document_number journal_id'),
     handovers: rows(visibleTreasuryDocuments(role,handovers,accounts), 'id handover_number handover_date commercial_id commercial_name status expected_amount offered_amount received_amount variance variance_reason treasury_account_name acknowledgement_reference requested_by_cashier requested_at cashier_name agent_deposit_reported_at agent_deposit_reported_amount agent_deposit_cashier_name'),
+    staffCollections: receipts.filter(p=>p.status==='awaiting_cashier'&&p.receipt_channel==='staff_collection').map(p=>pick(p,'id payment_number party_name amount collection_date collector_name collector_user_id invoice_numbers'.split(' '))),
     depositDays: dailyCashSettlements(collections.filter(c=>!linkedCollections.has(c.id)),handovers),
     dailyCash: reconcileDailyCash(collections.filter(c => c.collection_date === date && !linkedCollections.has(c.id)), handovers, sales),
     commercials: rows(employees.filter(e => e.status === 'active' && effectiveRole({ role: 'user' }, e) === 'commercial'), 'id full_name'),

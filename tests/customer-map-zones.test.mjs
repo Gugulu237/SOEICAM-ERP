@@ -76,3 +76,43 @@ test('boundary assignment through the function route rolls back when audit recor
     f.entities.AuditLog.create=create;const ok=await route(request(assign()),{params:Promise.resolve({name:'fieldOps'})});assert.equal(ok.status,200);assert.equal((await f.entities.Customer.get('customer-a')).delivery_zone_id,zoneId);
   }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
+ 
+
+test('custom divisions and subdivisions persist beyond Yaounde with retry and legacy-edit protection',async()=>{
+  const db=new PGlite();
+  try{
+    const f=await fixture(db),form={...zone,municipality:'',town:'Douala',name:'DOUALA 5',code:'DOUALA_5',division:' Wouri ',subdivision:' DOUALA 5 '};
+    const body={action:'saveDeliveryZone',requestKey:zoneId,revision:0,zone:form};
+    const saved=await customerDeliveryAction(f.client,admin,body);
+    assert.equal(saved.zone.division,'Wouri');assert.equal(saved.zone.subdivision,'DOUALA 5');
+    assert.equal((await f.entities.CompanySettings.get('settings')).delivery_zones[0].subdivision,'DOUALA 5');
+    assert.equal((await customerDeliveryAction(f.client,admin,body)).reused,true);
+    const legacy={...saved.zone};delete legacy.division;delete legacy.subdivision;
+    const edited=await customerDeliveryAction(f.client,admin,{action:'saveDeliveryZone',zoneId,revision:1,zone:{...legacy,notes:'Morning deliveries'}});
+    assert.equal(edited.zone.division,'Wouri');assert.equal(edited.zone.subdivision,'DOUALA 5');
+    await assert.rejects(customerDeliveryAction(f.client,admin,{action:'saveDeliveryZone',zoneId,revision:1,zone:{...edited.zone,division:'Different'}}),/changed in another window/);
+    assert.equal((await f.entities.CompanySettings.get('settings')).delivery_zones_revision,2);
+    const options=await customerDeliveryAction(f.client,admin,{action:'deliveryZoneOptions'});
+    assert.equal(options.zones[0].division,'Wouri');
+  }finally{await db.close();}
+});
+
+test('invalid geography is rejected before writes and only administrators can create new areas',async()=>{
+  const f=await fixture(),body={action:'saveDeliveryZone',requestKey:zoneId,revision:0,zone:{...zone,division:'Mfoundi',subdivision:'YAOUNDÉ 1'}};
+  for(const change of [{division:''},{subdivision:''},{division:42},{subdivision:'a'.repeat(151)},{division:'bad\narea'},{subdivision:{name:'unsafe'}}]){
+    await assert.rejects(customerDeliveryAction(f.client,admin,{...body,zone:{...body.zone,...change}}));
+    assert.equal((await f.entities.CompanySettings.get('settings')).delivery_zones_revision||0,0);
+  }
+  const user={id:'cashier-login',role:'user'};
+  for(const role of ['commercial','employee','driver']){
+    await f.entities.Employee.update('cashier',{role});
+    await assert.rejects(customerDeliveryAction(f.client,user,body),/restricted/);
+  }
+});
+
+test('division grouping preserves legacy municipality IDs and orders numbered subdivisions naturally',async()=>{
+  const {groupDeliveryZones,zoneSubdivision}=await import('../src/lib/customer-map-zones.js');
+  const groups=groupDeliveryZones([{id:'a',name:'A',municipality:'yaounde_2'},{id:'b',name:'B',division:'Mfoundi',subdivision:'YAOUNDÉ 10'},{id:'c',name:'C',division:'mfoundi',subdivision:'YAOUNDÉ 1'},{id:'d',name:'D',division:'Wouri',subdivision:'DOUALA 5'}]);
+  assert.equal(groups.length,2);assert.deepEqual(groups[0].zones.map(z=>z.id),['c','a','b']);assert.equal(zoneSubdivision(groups[0].zones[1]),'YAOUNDÉ 2');
+});
+

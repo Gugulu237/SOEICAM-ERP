@@ -12,6 +12,21 @@ import {guardMutation} from '../src/server/access.js';
 import {isReadOnlyFunction} from '../src/lib/function-actions.js';
 
 const admin={id:'gm',role:'admin',full_name:'General Manager'};
+test('omitting the salesperson uses the signed-in employee rather than the selected stock holder',async()=>{
+  const f=await setup(),self=await f.s.Employee.create({role:'employee',status:'active',full_name:'Signed in seller',user_id:'seller-login'});
+  const actor={id:'seller-login',role:'user',full_name:'Signed in seller'};f.client.entities.Employee.filter=async()=>[self];
+  const catalogue=await salesOrderAction(f.client,actor,{action:'salesOrderWorkspace'});assert.equal(catalogue.currentSellerId,self.id);
+  const {sellerId,...input}=f.body;void sellerId;
+  const result=await salesOrderAction(f.client,actor,input);
+  assert.equal(result.order.salesperson_id,self.id);assert.equal(result.order.sales_supply_recorded_by,actor.id);assert.equal(result.order.sales_supply_stockholder_id,f.agent.id);
+});
+
+test('an authorized account without an employee defaults to its own user identity and rejects impersonation',async()=>{
+  const f=await setup();f.client.entities.Employee.filter=async()=>[];
+  const workspace=await f.call({action:'salesOrderWorkspace'});assert.equal(workspace.currentSellerId,'user:'+admin.id);
+  await assert.rejects(f.call({...f.body,sellerId:'user:somebody-else'}),/active employee|current user|salesperson/i);
+  const result=await f.call({...f.body,sellerId:''});assert.equal(result.order.sales_supply_seller_id,'user:'+admin.id);assert.equal(result.order.salesperson_name,admin.full_name);assert.equal(result.order.sales_supply_recorded_by,admin.id);
+});
 async function setup(db){
   const f=await fixture(db),s=f.entities;f.client.auth.me=async()=>admin;
   await s.CompanySettings.update('settings',{company_name:'SOEICAM',next_invoice_number:1});
@@ -28,7 +43,7 @@ async function setup(db){
     else{if(f.rows.AuditLog.some(r=>r.id===row.id))throw Error('Duplicate save reference');f.rows.AuditLog.push(row);}
     return row;
   };
-  const body={action:'recordSuppliedOrder',requestKey:crypto.randomUUID(),sourceType:'issued',dispatchId:'run-a',customerId:'customer-a',sellerId:'cashier',date,paymentType:'cash',expectedTotal:1000,notes:'Delivered now',lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
+  const body={action:'recordSuppliedOrder',receiptReference:'RCPT-100',requestKey:crypto.randomUUID(),sourceType:'issued',dispatchId:'run-a',customerId:'customer-a',sellerId:'cashier',date,paymentType:'cash',expectedTotal:1000,notes:'Delivered now',lines:[{product_id:'product-a',quantity:2,unit_price:500,discount_pct:0}]};
   return {...f,s,agent,driver,factory,body,call:body=>salesOrderAction(f.client,admin,body)};
 }
 
@@ -224,3 +239,72 @@ test('pooled sale fully rolls back both locations and the ledger if the final au
   assert.equal((await f.s.StockMovement.list()).length,2);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,1100);
  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
+
+test('workspace returns a named signed-in seller independently of missing employee names or list membership',async()=>{
+  const f=await setup();await f.s.Employee.update('cashier',{full_name:''});
+  const list=f.s.Employee.filter;f.s.Employee.filter=async(...args)=>(await list(...args)).filter(e=>e.id!=='cashier');
+  const workspace=await f.call({action:'salesOrderWorkspace'});
+  assert.equal(workspace.currentSellerId,'cashier');assert.deepEqual(workspace.currentSeller,{id:'cashier',name:admin.full_name,user_id:admin.id});
+  assert.ok(workspace.sellers.some(s=>s.id==='cashier'&&s.name===admin.full_name));
+  const result=await f.call({...f.body,sellerId:undefined});assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.salesperson_name,admin.full_name);
+});
+
+test('loaded vehicle choices use the stored registration, independently of its descriptive vehicle name',async()=>{
+  const f=await setup();await f.s.Vehicle.update('vehicle-a',{registration:'CE 456 CD',name:'A long refrigerated delivery vehicle name'});
+  const data=await f.call({action:'salesOrderWorkspace'});assert.equal(data.runs[0].vehicle_registration,'CE 456 CD');
+});
+
+test('receipt reference is required before stock or ledger writes, saved on the order and invoice, and bound to retries',async()=>{
+  const f=await setup(),before=structuredClone(f.rows);
+  for(const receiptReference of [undefined,'','   ',5,'x'.repeat(201),'A\nB']){
+    await assert.rejects(f.call({...f.body,receiptReference}),/receipt reference|reference number of the receipt/i);
+    assert.deepEqual(f.rows,before);
+  }
+  const body={...f.body,receiptReference:'  PAPER-025  '},result=await f.call(body);
+  assert.equal(result.order.receipt_reference,'PAPER-025');
+  const invoice=await f.s.Invoice.get(result.invoiceId);
+  assert.equal(invoice.receipt_reference,'PAPER-025');assert.equal(invoice.invoice_document.options.reference,'PAPER-025');
+  assert.equal((await f.call({...body,receiptReference:'PAPER-025'})).reused,true);
+  await assert.rejects(f.call({...body,receiptReference:'PAPER-OTHER'}),/different supply details/);
+  assert.equal((await f.s.SalesOrder.list()).length,1);assert.equal((await f.s.Invoice.list()).length,1);assert.equal((await f.s.StockMovement.list()).length,1);
+});
+
+
+for(const source of ['issued','warehouse','company'])for(const paymentType of ['cash','credit'])test(source+' supply replaces spoiled units once without charging them, while recording actual cost and quarantine',async()=>{
+  const f=await setup(),sourceArgs=source==='issued'?{}:source==='company'?{sourceType:'company',dispatchId:''}:{sourceType:'warehouse',warehouseId:'factory',dispatchId:''};
+  const body={...f.body,...sourceArgs,paymentType,replacementsDeclared:true,stockReplacements:[{product_id:'product-a',quantity:3,reason:'expired',expiry_date:'2000-01-01',lot_number:'CUSTOMER-OLD'}]};
+  const result=await f.call(body),record=(await f.s.SpoilageRecord.list())[0];
+  assert.equal(record.source_order_id,result.order.id);assert.equal(record.posting_basis,'sales_order_exchange');assert.equal(record.status,'replaced');assert.equal(record.recorded_by,admin.id);
+  assert.equal((await f.s.Invoice.get(result.invoiceId)).total,1000);assert.equal((await f.s.InvoiceLine.list()).length,1);assert.equal((await f.s.InvoiceLine.list())[0].quantity,2);
+  const cost=source==='issued'?200:300;assert.equal(record.replacement_cost,3*cost);
+  assert.equal((await f.s.StockBalance.get(source==='issued'?'stock':f.factory.id)).quantity,source==='issued'?5:15);
+  const quarantine=(await f.s.StockBalance.list()).find(b=>b.warehouse_id===record.collection_warehouse_id);assert.equal(quarantine.quantity,3);assert.equal(quarantine.qc_status,'quarantine');assert.equal(quarantine.total_value,0);
+  assert.equal((await f.s.Customer.get('customer-a')).balance,paymentType==='cash'?0:1000);assert.equal((await f.s.JournalEntry.list()).length,2);
+  assert.equal((await f.s.JournalLine.list()).reduce((n,l)=>n+l.debit-l.credit,0),0);
+  const before=structuredClone(f.rows);assert.equal((await f.call(body)).reused,true);assert.deepEqual(f.rows,before);
+  await assert.rejects(f.call({...body,stockReplacements:[{...body.stockReplacements[0],quantity:2}]}),/different supply details/);assert.deepEqual(f.rows,before);
+  if(source==='issued'){const recon=await dispatchReconciliationData(f.client.asServiceRole,await f.s.Dispatch.get('run-a'));assert.equal(recon.hasVariance,false);}
+});
+
+test('replacement declaration, dates, branch ownership and combined stock are checked before supply writes',async()=>{
+  const f=await setup(),row={product_id:'product-a',quantity:3,reason:'expired',expiry_date:'2000-01-01'},before=structuredClone(f.rows);
+  assert.throws(()=>guardMutation({user:admin},'SalesOrder','create',{stock_replacements:[row]}),/checked Sales workflow/);
+  assert.throws(()=>guardMutation({user:admin},'SalesOrder','update',{stock_replacements_declared:true},{status:'draft'}),/checked Sales workflow/);
+  for(const changes of [{replacementsDeclared:false,stockReplacements:[row]},{replacementsDeclared:true,stockReplacements:[]},{replacementsDeclared:'yes',stockReplacements:[row]},{stockReplacements:[{...row,quantity:9}]},{stockReplacements:[{...row,expiry_date:date}]},{stockReplacements:[{...row,quantity:true}]},{stockReplacements:[row],locationId:'another-branch'}]){
+    await assert.rejects(f.call({...f.body,replacementsDeclared:true,...changes}));assert.deepEqual(f.rows,before);
+  }
+  const branch=await f.s.Customer.create({business_name:'Annex',parent_id:'customer-a',is_active:true});
+  const result=await f.call({...f.body,locationId:branch.id,replacementsDeclared:true,stockReplacements:[row]});
+  const record=(await f.s.SpoilageRecord.list())[0];assert.equal(record.location_id,branch.id);assert.equal(record.location_name,'Annex');assert.equal(record.source_order_id,result.order.id);
+});
+
+test('a late replacement failure rolls back the sale, invoice, stock, quarantine, ledger and counter together',async()=>{
+  const db=new PGlite();try{
+    const f=await setup(db),route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+    const body={...f.body,replacementsDeclared:true,stockReplacements:[{product_id:'product-a',quantity:3,reason:'damaged',expiry_date:''}]},post=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});
+    const before=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,update=f.s.SpoilageRecord.update;
+    f.s.SpoilageRecord.update=async()=>{throw Error('Replacement write unavailable');};assert.equal((await post()).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
+    f.s.SpoilageRecord.update=update;const response=await post();assert.equal(response.status,200,JSON.stringify(await response.json()));assert.equal((await (await post()).json()).reused,true);assert.equal((await f.s.Invoice.list()).length,1);assert.equal((await f.s.SpoilageRecord.list()).length,1);
+  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+});
+

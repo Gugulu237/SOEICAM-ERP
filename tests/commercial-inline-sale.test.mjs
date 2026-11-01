@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { commercialUI, hookRuntime } from './helpers/commercial-ui.mjs';
 import { fixture, fieldHandler, request, staff, date, user, validSupply } from './helpers/commercial-supply.mjs';
 
-async function inlineSupply(role, photo = false, dashboardPending = false, withExchange = false) {
+async function inlineSupply(role, photo = false, dashboardPending = false, withExchange = false, phone = false) {
   const render = await commercialUI(), handler = await fieldHandler(), { client, tables } = fixture();
-  tables.Invoice = [];
+  tables.Invoice = [];tables.Vehicle[0].registration='CE 123 AB';
   tables.Product.push({ id: 'not-loaded', name: 'Factory-only finished product', inventory_type: 'assembly', is_active: true, selling_price: 600 });
   tables.StockBalance.push({ id: 'factory-only', warehouse_id: 'factory', product_id: 'not-loaded', quantity: 1000, qc_status: 'approved' },
     { id: 'other-vehicle', warehouse_id: 'another-vehicle', product_id: 'product-a', quantity: 800, qc_status: 'approved' });
@@ -13,7 +13,7 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
   client.auth.me = async () => role === 'admin' ? { id: 'gm-login', role: 'admin' } : user;
   client.entities.Employee.filter = async () => role === 'admin' ? [] : [staff];
   globalThis.__dailySupplyClient = client;
-  const ui = hookRuntime(), originalWindow = globalThis.window;
+  const ui = hookRuntime(), originalWindow = globalThis.window;ui.phone=phone;
   ui.session = { role, isAdmin: role === 'admin', employee: role === 'admin' ? null : staff, loading: false };
   ui.client = { entities: client.asServiceRole.entities, functions: { invoke: async (name, body) => {
     const response = await handler(request(body)), data = await response.json();
@@ -30,23 +30,34 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
   if (dashboardPending) Object.assign(props, { data:null, actorEmployee:staff, loading:true });
   const draw = () => { ui.beforeRender(); return render(props); };
   try {
-    draw(); if (photo) ui.catalog.onSelect(ui.catalog.products[0]); else ui.buttons.find(button => button.label === 'Record sale').onClick();
+    draw(); if (photo) ui.catalog.onQuantityChange(ui.catalog.products[0],4); else ui.buttons.find(button => button.label === 'Record sale').onClick();
     for (let i = 0; i < 6; i++) { draw(); await ui.flush(); }
     const html = draw();
-    assert.match(html, /Record sale \/ supply/); assert.match(html, /Agent A/); assert.match(html, /Driver A/);
+    assert.match(html, /Record sale \/ supply/); assert.match(html, /Agent A/); assert.match(html, /CE 123 AB/);
     assert.deepEqual(ui.navigation, [], 'entry stays in the Commercial section');
     assert.equal(ui.catalog.products[0].quantity, 10);
     assert.deepEqual(ui.catalog.products.map(product => product.id), ['product-a'], 'factory stock and other vehicles never enter this agent catalogue');
-    if (photo) { assert.equal(ui.catalog.lines.length, 1); assert.equal(ui.catalog.lines[0].quantity, 1); for (let i=0;i<3;i++) { draw(); await ui.flush(); } assert.equal(ui.catalog.lines[0].quantity, 1); }
-    else ui.catalog.onSelect(ui.catalog.products[0]);
-    ui.customer.onChange('customer-a'); draw(); await ui.flush();
-    ui.buttons.find(button => button.label === 'On credit').onClick(); draw();
-    if (withExchange) {
-      ui.controls.find(input => input.type === 'checkbox').onChange({ target: { checked: true } }); draw();
-      ui.controls.find(input => input.id === 'exchange-product-0').onChange({ target: { value: 'product-a' } }); draw();
-      ui.controls.find(input => input.id === 'exchange-qty-0').onChange({ target: { value: '2' } }); draw();
-      ui.controls.find(input => input.id === 'exchange-reason-0').onChange({ target: { value: 'damaged' } }); draw();
+    if (photo) { assert.equal(ui.catalog.lines.length, 1); assert.equal(ui.catalog.lines[0].quantity, 4); for (let i=0;i<3;i++) { draw(); await ui.flush(); } assert.equal(ui.catalog.lines[0].quantity, 4); }
+
+    {
+      assert.match(draw(),/Step 1 of 3/);assert.equal(ui.buttons.some(b=>b.label==='Record supply'),false);
+      ui.buttons.find(b=>b.label==='Continue to products').onClick();assert.match(draw(),/Choose a customer for this sale/);
     }
+    ui.customer.onChange('customer-a');draw();await ui.flush();draw();
+    {
+      ui.buttons.find(b=>b.label==='Continue to products').onClick();assert.match(draw(),/Step 2 of 3/);
+      ui.buttons.find(b=>b.label==='Choose products').onClick();draw();assert.equal(ui.catalog.open,true);
+      if(!photo)ui.catalog.onQuantityChange(ui.catalog.products[0],'1');draw();ui.catalog.onOpenChange(false);draw();
+      assert.equal(ui.buttons.some(b=>b.label==='Record supply'),false);assert.equal(tables.FieldSale.length,0);
+      ui.buttons.find(b=>b.label==='Review sale').onClick();assert.match(draw(),/Please answer whether spoiled goods/);
+      ui.buttons.find(b=>b.label===(withExchange?'Yes, goods replaced':'No replacements')).onClick();draw();
+      if(withExchange){ui.buttons.find(b=>b.label==='Choose replacement products').onClick();draw();ui.replacementCatalog.onQuantityChange(ui.replacementCatalog.products[0],2);ui.replacementCatalog.onOpenChange(false);draw();ui.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});draw();}
+      ui.buttons.find(b=>b.label==='Review sale').onClick();const reviewHtml=draw();assert.match(reviewHtml,/Step 3 of 3/);assert.equal((reviewHtml.match(/id="qty-0"/g)||[]).length,1,'the review has one quantity control and no hidden duplicate IDs');
+      ui.buttons.find(b=>b.label==='Back').onClick();assert.match(draw(),/Step 2 of 3/);assert.equal(Number(ui.catalog.lines[0].quantity),photo?4:1);
+      ui.buttons.find(b=>b.label==='Review sale').onClick();draw();
+    }
+    ui.buttons.find(button => button.label === 'On credit').onClick(); draw();
+
     ui.receipt.onReferenceChange('INLINE-PROOF'); draw();
     await ui.buttons.find(button => button.label === 'Record supply').onClick();
     assert.match(draw(), /Attach a clear supply receipt photo/); assert.equal(tables.FieldSale.length, 0);
@@ -57,12 +68,12 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
     assert.match(draw(), /Posted to company Sales/); assert.deepEqual(ui.navigation, []); assert.equal(refreshed, 1);
     assert.equal(tables.FieldSale.length, 1); assert.equal(tables.FieldSale[0].status, 'approved_posted');
     assert.equal(tables.FieldSale[0].commercial_id, staff.id); assert.equal(tables.FieldSale[0].recorded_by, role === 'admin' ? 'gm-login' : user.id);
-    assert.equal(tables.StockBalance[0].quantity, withExchange ? 7 : 9); assert.equal(tables.JournalEntry.length, withExchange ? 2 : 1); assert.equal(tables.Customer[0].balance, 500);
+    assert.equal(tables.StockBalance[0].quantity, 10-(photo?4:1)-(withExchange?2:0)); assert.equal(tables.JournalEntry.length, withExchange ? 2 : 1); assert.equal(tables.Customer[0].balance, photo?2000:500);
     assert.equal(tables.StockBalance.find(row => row.id === 'factory-only').quantity, 1000); assert.equal(tables.StockBalance.find(row => row.id === 'other-vehicle').quantity, 800);
     client.auth.me = async () => ({ id: 'gm-login', role: 'admin' }); client.entities.Employee.filter = async () => [];
     const response = await handler(request({ action: 'companySales', from: date, to: date })), register = await response.json();
     assert.equal(response.status, 200, register.error); assert.equal(register.rows.length, 1);
-    assert.equal(register.rows[0].document_id, tables.FieldSale[0].id); assert.equal(register.rows[0].receipt_count, 1); assert.equal(register.totals.sales, 500);
+    assert.equal(register.rows[0].document_id, tables.FieldSale[0].id); assert.equal(register.rows[0].receipt_count, 1); assert.equal(register.totals.sales, photo?2000:500);
     assert.equal(tables.JournalEntry.length, withExchange ? 2 : 1, 'displaying company sales must not repost the ledger');
     if (withExchange) { assert.equal(tables.SpoilageRecord.length, 1); assert.equal(tables.SpoilageRecord[0].reason, 'damaged_at_store'); assert.equal(tables.SpoilageRecord[0].quantity, 2); assert.equal(tables.SpoilageRecord[0].source_sale_id, tables.FieldSale[0].id); }
   } finally {
@@ -108,10 +119,10 @@ test('phone checkout records a free damaged-stock replacement with the sale and 
 
 test('phone plus menu starts an own-account cash or credit sale while management has no entry menu', async () => {
   for (const paymentType of ['cash','credit']) {
-    const render = await commercialUI(), { client } = fixture(), runtime = hookRuntime();
+    const render = await commercialUI(), { client,tables } = fixture(), runtime = hookRuntime();
     const previous = { window: globalThis.window, document: globalThis.document };
     runtime.session = { role: 'commercial', isAdmin: false, employee: staff, loading: false };
-    runtime.client = { entities: client.asServiceRole.entities, functions: { invoke: async () => ({ data: { runs: [], runProducts: [], runBalances: [] } }) } };
+    runtime.client = { entities: client.asServiceRole.entities, functions: { invoke: async () => ({ data: { runs: [{id:'run',can_supply:true,vehicle_registration:'CE 123 AB'}], runProducts: [tables.Product[0]], runBalances: [{...tables.StockBalance[0],dispatch_id:'run',usable_quantity:10}] } }) } };
     globalThis.__commercialUI = runtime;
     globalThis.window = { addEventListener() {}, removeEventListener() {}, setInterval: () => 1, clearInterval() {} };
     globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} };
@@ -124,9 +135,15 @@ test('phone plus menu starts an own-account cash or credit sale while management
       runtime.buttons.find(button => button.label === (paymentType === 'cash' ? 'Cash sale' : 'Credit sale')).onClick();
       for (let i=0;i<5;i++) { draw(); await runtime.flush(); }
       const html = draw(); assert.match(html, /Record sale \/ supply/);
+      runtime.customer.onChange('customer-a');for(let i=0;i<3;i++){draw();await runtime.flush();}draw();
+      runtime.buttons.find(b=>b.label==='Continue to products').onClick();draw();
+      runtime.catalog.onQuantityChange(runtime.catalog.products[0],1);draw();
+      runtime.buttons.find(b=>b.label==='No replacements').onClick();draw();runtime.buttons.find(b=>b.label==='Review sale').onClick();draw();
       const selected = runtime.buttons.find(button => button.label === (paymentType === 'cash' ? 'Cash collected' : 'On credit'));
       assert.equal(selected['aria-pressed'], true);
       assert.deepEqual(runtime.navigation, []);
     } finally { runtime.cleanup(); globalThis.window = previous.window; globalThis.document = previous.document; delete globalThis.__commercialUI; }
   }
 });
+
+test('mobile agent completes customer, product and review screens with own-account stock and receipt checks',()=>inlineSupply('commercial',false,false,false,true));

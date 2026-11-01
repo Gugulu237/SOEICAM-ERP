@@ -22,7 +22,7 @@ export async function purchaseWorkspace(client, user, body) {
   const all = await readRecords(s.PurchaseOrder);
   const orders = all.filter(po => canReadPurchase(role, employee, po));
   const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required')) };
-  if (body.section === 'suppliers' && !permissions.suppliers || body.section === 'bills' && !permissions.finance || body.section === 'receiving' && !permissions.receive) throw forbidden('This Purchases section is reserved for authorized purchasing, warehouse or finance staff.');
+  if (body.section === 'suppliers' && !permissions.suppliers || ['bills','payments'].includes(body.section) && !permissions.finance || body.section === 'receiving' && !permissions.receive) throw forbidden('This Purchases section is reserved for authorized purchasing, warehouse or finance staff.');
   if (body.orderId || body.compose) {
     const order = body.orderId ? orders.find(po => po.id === body.orderId) : null;
     if (body.orderId && !order) throw forbidden('This purchase order is outside your permitted scope.');
@@ -41,7 +41,7 @@ export async function purchaseWorkspace(client, user, body) {
       orderLines: lines, requires_supplier_split: !!order && lines.some(l => l.supplier_id && l.supplier_id !== order.supplier_id),
     };
   }
-  if (body.section === 'bills') {
+  if (['bills','payments'].includes(body.section)) {
     const [bills, payments] = await Promise.all([readRecords(s.Bill), readRecords(s.Payment, { payment_type: 'supplier_payment' })]);
     return { ...base, bills: bills.map(b => pick(b, 'id bill_number supplier_id supplier_name po_id po_number receipt_number bill_date due_date total amount_paid balance status')), payments: payments.map(p => pick(p, 'id payment_number party_id party_name amount payment_date payment_method reference status po_id bill_id treasury_account_id treasury_account_name approved_by approved_at journal_id')) };
   }

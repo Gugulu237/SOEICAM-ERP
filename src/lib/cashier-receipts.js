@@ -8,6 +8,7 @@ export function receiptAllocations(invoices,amount){
 }
 export function cashDepositors(source){
  const items=[];
+ for(const p of source.staffCollections||[])items.push({id:'staff-receipt:'+p.id,name:p.collector_name,group:'Staff customer collections',reference:p.payment_number+' · '+p.party_name,date:p.collection_date,amount:p.amount,kind:'staff_receipt',document:p});
  for(const h of source.handovers||[]){const remaining=money(Number(h.expected_amount||0)-Number(h.received_amount||0));if(remaining>0&&['submitted','partially_received','disputed'].includes(h.status))items.push({id:'handover:'+h.id,name:h.commercial_name,group:'Commercial deposits',reference:h.handover_number,date:h.handover_date,amount:remaining,kind:'handover',document:h});}
  for(const day of source.depositDays||source.dailyCash||[]){if(day.requestable>0)items.push({id:'daily:'+day.id,name:day.commercial_name,group:'Commercial deposits',reference:day.collection_date,date:day.collection_date,amount:day.requestable,kind:'daily',blocked:!!day.disputed,document:{...day,expected_amount:day.requestable,received_amount:0}});}
  const customers=new Map();

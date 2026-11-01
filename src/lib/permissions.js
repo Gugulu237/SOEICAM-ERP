@@ -63,7 +63,7 @@ export const ROLE_DEFINITIONS = [
     duties: [
       'Plans production, requests materials and records output',
       'Views company sales and Commercial performance across all agents',
-      'Manages inventory, delivery teams, dispatch loading and returns',
+      'Manages inventory and oversees delivery teams and returns',
       'Oversees quality control, batch release, expiry and traceability',
       'Reviews recipes and expense requests within the existing approval workflow',
       'Provides the Operations / Production Manager cheque signature',

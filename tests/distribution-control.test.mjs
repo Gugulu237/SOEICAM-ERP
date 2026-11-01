@@ -41,7 +41,7 @@ test('one retry-safe Distribution issue uses the paired vehicle, preserves lot/e
 test('operational preview counts exact stock-backed posted sales once, separates cash and credit and excludes unresolved supplies',async()=>{
   const f=await setup(),{dispatch}=await f.run(f.body);await supply(f,dispatch);
   await f.s.FieldSale.create({dispatch_id:dispatch.id,commercial_id:f.agent.id,transaction_date:date,status:'approved_posted',total:500,journal_id:'missing'});
-  const data=await f.run({action:'distributionControl',date}),agent=data.agents.find(a=>a.id===f.agent.id),run=data.runs.find(r=>r.id===dispatch.id);
+  const data=await distributionControlAction(f.client,{id:'gm',role:'admin'},{action:'distributionControl',date}),agent=data.agents.find(a=>a.id===f.agent.id),run=data.runs.find(r=>r.id===dispatch.id);
   assert.equal(agent.sales,1000);assert.equal(agent.cash_collected,400);assert.equal(agent.credit,600);assert.equal(agent.supplies,1);assert.equal(agent.new_customers,1);assert.equal(agent.verified_customers,0);assert.equal(data.unverified_supplies,1);
   assert.equal(run.reconciliation.rows[0].sold,2);assert.equal(run.reconciliation.rows[0].expected,3);assert.equal(run.reconciliation.rows[0].actual,3);assert.equal(run.reconciliation.hasVariance,false);
   assert.equal('salary' in data.staff[0],false);assert.equal('bonus_plan' in agent,false);
@@ -62,7 +62,7 @@ test('old custody can be recovered explicitly once, retaining expired quarantine
   const f=await setup(),warehouse=await f.s.Warehouse.create({name:'Old Agent A custody',warehouse_type:'commercial_custody',custodian_employee_id:f.agent.id});
   const old=await f.s.StockBalance.create({product_id:'product-a',product_name:'YOLA',warehouse_id:warehouse.id,quantity:3,unit_cost:100,total_value:300,lot_number:'OLD-LOT',expiry_date:'2020-01-01',qc_status:'quarantine'});
   const body={action:'recoverLegacyCustody',warehouseId:warehouse.id,toWarehouseId:'factory',requestKey:crypto.randomUUID(),lines:[{product_id:'product-a',quantity:3}],reason:'Counted legacy goods'};
-  const before=await f.run({action:'distributionControl',date});assert.equal(before.legacy.length,1);
+  const before=await distributionControlAction(f.client,{id:'gm',role:'admin'},{action:'distributionControl',date});assert.equal(before.legacy.length,1);
   await f.run(body);assert.equal((await f.run(body)).reused,true);assert.equal((await f.s.StockBalance.get(old.id)).quantity,0);
   const returned=(await f.s.StockBalance.list()).find(b=>b.warehouse_id==='factory'&&b.lot_number==='OLD-LOT');assert.equal(returned.quantity,3);assert.equal(returned.qc_status,'quarantine');assert.equal(returned.expiry_date,'2020-01-01');assert.equal((await f.s.Dispatch.list()).length,0);
   await assert.rejects(f.run({...body,reason:'Changed recovery'}),/already recorded/);
@@ -96,4 +96,21 @@ test('inventory issue lookup reads only load setup and stock, with no performanc
   assert.deepEqual(f.rows,before);
   await f.s.Employee.update('cashier',{role:'commercial'});
   await assert.rejects(f.run({action:'distributionIssueWorkspace'}),/Not permitted/);
+});
+
+test('delivery stock issuance belongs to warehouse management; production retains reporting but cannot issue through any endpoint',async()=>{
+  const f=await setup(),before=structuredClone(f.rows);
+  await f.s.Employee.update('cashier',{role:'production_manager'});
+  const deniedState=structuredClone(f.rows);
+  await assert.rejects(f.run({action:'distributionControl',date}),/Only top administrators/);
+  await assert.rejects(f.run({action:'distributionIssueWorkspace'}),/Only warehouse management/);
+  await assert.rejects(f.run(f.body),/Only warehouse management/);
+  for(const action of ['approveDispatchRequest','approveDispatch','loadDispatch'])await assert.rejects(dispatchAction(f.client,user,{action,dispatchId:'legacy',requestId:'legacy'}),/Only warehouse management/);
+  assert.deepEqual(f.rows,deniedState,'denied issue calls must not create drafts, approval metadata or stock movements');
+  await f.s.Employee.update('cashier',{role:'warehouse_manager'});
+  const {dispatch}=await f.run(f.body);assert.equal(dispatch.status,'loaded');assert.equal((await f.s.StockBalance.get(f.stock.id)).quantity,15);
+  await f.s.Employee.update('cashier',{role:'production_manager'});
+  await assert.rejects(f.run(f.body),/Only warehouse management/);
+  assert.equal((await f.s.Dispatch.list()).length,1);assert.equal((await f.s.StockBalance.get(f.stock.id)).quantity,15);
+  assert.equal(before.StockMovement.length,0);
 });

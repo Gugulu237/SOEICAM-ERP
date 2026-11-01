@@ -7,7 +7,7 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
   const ids = allocations.map(a => a.invoice_id);
   if (new Set(ids).size !== ids.length) throw new Error('An invoice may only appear once');
   const { items: invoices } = await svc.entities.Invoice.filter({ id: { $in: ids } }, { limit: 50 });
-  const pending = await svc.entities.Payment.filter({ payment_type: 'customer_payment', status: { $in: ['pending_approval', 'approved'] }, id: { $ne: excludePaymentId }, allocated_to_invoices: { $regex: ids.map(id => String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') } }, { limit: 100 });
+  const pending = await svc.entities.Payment.filter({ payment_type: 'customer_payment', status: { $in: ['awaiting_cashier', 'pending_approval', 'approved'] }, id: { $ne: excludePaymentId }, allocated_to_invoices: { $regex: ids.map(id => String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') } }, { limit: 100 });
   if (pending.has_more) throw new Error('Too many pending receipts for these invoices; approve them first');
   for(const invoice of invoices.filter(i=>i.opening_batch_id))if(!await verifiedOpeningDocument(svc.entities,invoice,'Invoice'))throw Error('Reconcile the imported customer receivable before recording payment.');
   for (const invoice of invoices.filter(i=>i.field_sale_id)) {
@@ -28,7 +28,7 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
 export async function approveReceipt(svc, payment, user) {
   if (payment.status === 'posted') return payment;
   if (!['pending_approval', 'approved'].includes(payment.status) || !payment.cashier_confirmed_by) throw new Error('Receipt confirmation is required before GM approval');
-  if (payment.cashier_confirmed_by === user.id) throw new Error('You cannot approve a receipt you recorded; another administrator must approve it');
+  if (payment.cashier_confirmed_by === user.id || payment.collector_user_id === user.id) throw new Error('You cannot approve a receipt you recorded; another administrator must approve it');
   const token = crypto.randomUUID();
   if (!await claimField(svc, 'Payment', payment.id, 'receipt_posting_token', token)) throw new Error('This receipt is already being processed');
   try {

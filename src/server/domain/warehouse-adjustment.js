@@ -14,19 +14,20 @@ import { stockUnit } from '../../lib/item-units.js';
 import { roundMoney, roundQuantity } from '../../lib/inventory-audit.js';
 import { MANAGED_WAREHOUSE_TYPES } from '../../lib/warehouse-workspace.js';
 
-export const WAREHOUSE_ADJUSTMENT_ACTIONS=['warehouseAdjustmentWorkspace','postWarehouseAdjustment',...EXISTING_STOCK_ACTIONS];
+export const WAREHOUSE_ADJUSTMENT_ACTIONS=['warehouseAdjustmentWorkspace','warehouseAdjustmentHistory','postWarehouseAdjustment',...EXISTING_STOCK_ACTIONS];
 const hash=value=>createHash('sha256').update(JSON.stringify(value,(_,v)=>v && typeof v==='object' && !Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
 const validDate=value=>typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value;
 const factory=w=>w && w.is_active!==false && !MANAGED_WAREHOUSE_TYPES.includes(w.warehouse_type);
-const configured=p=>p && p.is_active!==false && p.inventory_type!=='service' && p.configuration_status!=='draft';
+const configured=p=>p && p.is_active!==false && !p.item_removed_at && p.inventory_type!=='service' && p.item_type!=='service' && p.configuration_status!=='draft';
 const accountView=a=>({id:a.id,account_number:a.account_number,name:a.name,account_type:a.account_type});
-function stockSnapshot(balance,product,warehouse) {
+function stockSnapshot(balance,product,warehouse,rules) {
   if (!configured(product)) throw Error('Choose an active, configured inventory item.');
   const row={balance_id:balance.id,product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,
     configured_unit_cost:itemUnitCost(product),inventory_type:product.inventory_type,requires_expiry:!!balance.production_order_id,opening_batch_id:balance.opening_batch_id || '',lot_number:balance.lot_number || '',batch_number:balance.batch_number || '',expiry_date:balance.expiry_date || '',qc_status:balance.qc_status || 'approved',production_order_id:balance.production_order_id || '',
-    book_quantity:Number(balance.quantity ?? 0),book_value:Number(balance.total_value ?? 0),unit_cost:Number(balance.quantity ?? 0)===0 && Number(balance.unit_cost ?? 0)===0?itemUnitCost(product):Number(balance.unit_cost ?? 0)};
+    book_quantity:Number(balance.quantity),book_value:Number(balance.total_value),unit_cost:Number(balance.quantity)===0 && Number(balance.unit_cost ?? 0)===0?itemUnitCost(product):Number(balance.unit_cost ?? 0)};
   Object.assign(row,warehouseCountState(row));
-  return {...row,fingerprint:hash([balance,stockUnit(product),product.inventory_account_id || '',product.inventory_type,warehouse.is_active,warehouse.warehouse_type,itemUnitCost(product),product.purchase_to_storage_factor])};
+  const rule=isAssemblyInventoryType(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
+  return {...row,fingerprint:hash([balance,stockUnit(product),product.inventory_account_id || rules.find(r=>r.rule_key===rule)?.account_id || '',product.inventory_type,warehouse.is_active,warehouse.warehouse_type,itemUnitCost(product),product.purchase_to_storage_factor])};
 }
 
 // The function route commits stock, movements, journal and audit as one
@@ -35,8 +36,23 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const {role,employee}=await requireStaff(client,user,['admin','warehouse_manager','cashier'],'warehouse quantity adjustments');
   if(role!=='admin' && employee?.assigned_role==='production_manager')throw Error('Warehouse quantity adjustments require warehouse management.');
   if (employee?.status && employee.status!=='active' || role!=='admin' && employee?.status!=='active') throw Error('An active warehouse management account is required.');
-  const access=await adjustmentAccess(client,role,employee);
+  const access=await adjustmentAccess(client,role,employee,{user});
   const s=client.asServiceRole.entities;
+  if(body.action==='warehouseAdjustmentHistory') {
+    if(body.adjustmentId) {
+      if(typeof body.adjustmentId!=='string'||!/^WA-[a-f0-9]{40}$/.test(body.adjustmentId))throw Error('Choose a valid adjustment reference.');
+      const event=await s.AuditLog.get(body.adjustmentId);
+      if(!event || event.action!=='warehouse_quantity_adjusted' || event.module!=='inventory_adjustment')throw Error('Quantity adjustment not found.');
+      return {adjustment:event.warehouse_adjustment_result,reason:event.reason,recorded_by:event.user_name||event.user_id,recorded_at:event.created_date};
+    }
+    const page=Number(body.page||1);
+    if(!Number.isSafeInteger(page)||page<1||page>100000)throw Error('Choose a valid adjustment history page.');
+    const result=await s.AuditLog.filter({module:'inventory_adjustment',action:'warehouse_quantity_adjusted'},{sort:'-created_date,-id',limit:20,skip:(page-1)*20});
+    return {page,total:result.total,has_more:result.has_more,adjustments:result.items.map(event=>{
+      const r=event.warehouse_adjustment_result;
+      return {id:event.id,date:r.date,reference:r.reference,warehouse_name:r.warehouse_name||r.rows?.[0]?.warehouse_name||'',line_count:r.rows?.length||0,value_difference:r.value_difference,journal_number:r.journal_number||'',recorded_by:event.user_name||event.user_id};
+    })};
+  }
   if(EXISTING_STOCK_ACTIONS.includes(body.action))return existingStockAction(s,user,employee,body);
   let eventId,payload;
   if(body.action==='postWarehouseAdjustment') {
@@ -61,12 +77,13 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const adjustmentMovements=await readRecords(s.StockMovement);
   const counted=b=>isExistingStockOrigin(stockOrigin(b,adjustmentMovements)) && ['approved','quarantine','quarantined'].includes(b.qc_status || 'approved') && companySalesWarehouse(warehouse);
   if(body.action==='warehouseAdjustmentWorkspace') return {...access,warehouse:{id:warehouse.id,name:warehouse.name},date:businessDate(),warehouses:warehouses.filter(factory).map(w=>({id:w.id,name:w.name})),
-    rows:balances.filter(b=>configured(byProduct.get(b.product_id))).map(b=>({...stockSnapshot(b,byProduct.get(b.product_id),warehouse),adjusted_stock:counted(b)})),
+    rows:balances.filter(b=>configured(byProduct.get(b.product_id))).map(b=>({...stockSnapshot(b,byProduct.get(b.product_id),warehouse,rules),adjusted_stock:counted(b)})),
     items:liveProducts.filter(configured).map(p=>({id:p.id,name:p.name,sku:p.sku || '',unit:stockUnit(p),unit_cost:itemUnitCost(p),inventory_type:p.inventory_type,requires_expiry:false})),
     accounts:accounts.filter(a=>validAccount(a)).map(accountView)};
   if(body.action!=='postWarehouseAdjustment')throw Error('Unknown warehouse adjustment action.');
   const date=body.date,reason=typeof body.reason==='string'?body.reason.trim():'',reference=typeof body.reference==='string'?body.reference.trim():'';
   if(!validDate(date) || date>businessDate())throw Error('Choose a valid adjustment date that is not in the future.');
+  if(date!==businessDate())throw Error('Post physical counts on today\'s date. Historical opening stock uses the opening inventory workflow.');
   if(reason.length<5 || reason.length>1000 || reference.length<3 || reference.length>200)throw Error('Enter an adjustment reason and a physical count sheet or evidence reference.');
   if(!Array.isArray(body.rows) || !body.rows.length || body.rows.length>100)throw Error('Select between 1 and 100 stock records to adjust.');
   const periods=await readRecords(s.AccountingPeriod,{start_date:{$lte:date},end_date:{$gte:date}});
@@ -80,19 +97,20 @@ export async function warehouseAdjustmentAction(client,user,body) {
     if(input.balance_id) {
       const balance=balances.find(b=>b.id===input.balance_id);
       if(!balance)throw Error('A stock record is missing or belongs to another warehouse. Reload quantities.');
-      product=byProduct.get(balance.product_id);row=stockSnapshot(balance,product,warehouse);
+      product=byProduct.get(balance.product_id);row=stockSnapshot(balance,product,warehouse,rules);
       if(row.fingerprint!==input.fingerprint)throw Error('Stock or lot details changed since this count. Reload quantities and verify the physical count again.');
     } else {
       product=byProduct.get(input.product_id);
       if(!configured(product))throw Error('Choose an active, configured inventory item.');
       if(input.unit && input.unit!==stockUnit(product))throw Error('The item unit changed. Reload quantities before saving.');
-      const lot=typeof input.lot_number==='string'?input.lot_number.trim():'',expiry='';
+      const lot=typeof input.lot_number==='string'?input.lot_number.trim():'',expiry=input.expiry_date || '';
+      if(expiry && !validDate(expiry))throw Error('Enter a valid printed expiry date for the counted lot.');
       if(!lot || lot.length>100)throw Error('New counted stock requires its physical batch or lot number.');
       if(balances.some(b=>b.product_id===product.id && (b.lot_number || '').toLowerCase()===lot.toLowerCase()))throw Error('This lot already exists in the warehouse. Adjust its existing stock record.');
       const unitCost=itemUnitCost(product);
       if(!Number.isFinite(unitCost) || unitCost<=0)throw Error('Establish the item carrying cost before recording newly counted stock.');
       if(Number(input.unit_cost)!==unitCost)throw Error('The item carrying cost changed. Reload quantities before recording new stock.');
-      row={product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:lot,expiry_date:expiry,qc_status:'approved',configured_unit_cost:unitCost,book_quantity:0,book_value:0,unit_cost:unitCost};
+      row={product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:lot,expiry_date:expiry,qc_status:'quarantine',configured_unit_cost:unitCost,book_quantity:0,book_value:0,unit_cost:unitCost};
     }
     const key=row.balance_id || row.product_id+':'+row.lot_number.toLowerCase();
     if(seen.has(key))throw Error('Each stock record or new lot can appear only once.');seen.add(key);
@@ -107,14 +125,15 @@ export async function warehouseAdjustmentAction(client,user,body) {
     const adjustedStock=!existing || counted(existing);
     const requestedRelease=saleRelease||useRelease;
     if(requestedRelease && (!adjustedStock || variance.counted_quantity<=0))throw Error('Only verified counted stock can be released here. Production batches use their quality-release workflow.');
-    const release=adjustedStock && (row.qc_status!=='approved' || !!row.expiry_date);
+    if(requestedRelease && (row.expiry_date && row.expiry_date<businessDate() || finished && !validDate(row.expiry_date)))throw Error('Verify a current printed expiry before releasing counted finished or expired stock. Quantity adjustments cannot remove expiry dates.');
+    const release=requestedRelease && row.qc_status!=='approved';
     if(!variance.difference && !variance.value_difference && !(requestedRelease && release))continue;
     if(variance.difference>0 && !companySalesWarehouse(warehouse))throw Error('Choose an active company stock location for counted inventory.');
 
     const rule=['assembly','finished_product'].includes(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
     const inventory=accounts.find(a=>a.id===(product.inventory_account_id || rules.find(r=>r.rule_key===rule)?.account_id));
     if(!validAccount(inventory,true))throw Error('Configure an active inventory asset account for every adjusted item.');
-    rows.push({...row,...variance,adjusted_stock:adjustedStock,previous_expiry_date:row.expiry_date || '',previous_qc_status:row.qc_status,...(adjustedStock?{expiry_date:'',qc_status:'approved'}:{}),release_for_sale:saleRelease,release_for_use:useRelease,use_current_cost:input.use_current_cost===true,reconciliation_confirmed:state.requires_reconciliation && input.confirm_reconciliation===true,inventory});
+    rows.push({...row,...variance,adjusted_stock:adjustedStock,previous_expiry_date:row.expiry_date || '',previous_qc_status:row.qc_status,...(release?{qc_status:'approved'}:{}),release_for_sale:saleRelease,release_for_use:useRelease,use_current_cost:input.use_current_cost===true,reconciliation_confirmed:state.requires_reconciliation && input.confirm_reconciliation===true,inventory});
   }
   if(!rows.length)throw Error('The physical quantities match the system. There is nothing to adjust.');
   if(rows.some(row=>row.value_difference!==0)&&!validAccount(offset))throw Error('Choose an active inventory adjustment expense account.');
@@ -127,9 +146,9 @@ export async function warehouseAdjustmentAction(client,user,body) {
   if(lines.size){const posted=await postJournal({entities:s},{entryDate:date,description:`Warehouse quantity adjustment: ${warehouse.name} / ${reference}`,sourceModule:'inventory_adjustment',sourceDocumentType:'WarehouseAdjustment',sourceDocumentId:eventId,userId:user.id,lines:[...lines.values()]});if(posted.reused)throw Error('Reconcile the existing adjustment journal before retrying.');journal=posted.journal;}
   for(const row of rows) {
     const stock={quantity:row.counted_quantity,total_value:row.value_after,unit_cost:row.counted_quantity>0?row.value_after/row.counted_quantity:Number.isFinite(row.unit_cost) && row.unit_cost>0?row.unit_cost:0};
-    if(row.adjusted_stock)Object.assign(stock,{expiry_date:'',qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:'Counted stock available without manufacturing expiry: '+reference+' - '+reason});
+    if(row.release_for_sale||row.release_for_use)Object.assign(stock,{qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:'Explicit counted-stock quality verification: '+reference+' - '+reason});
     if(row.balance_id)await s.StockBalance.update(row.balance_id,stock);
-    else row.balance_id=(await s.StockBalance.create({...stock,product_id:row.product_id,product_name:row.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:row.lot_number,expiry_date:'',qc_status:'approved',stock_origin:'adjustment'})).id;
+    else row.balance_id=(await s.StockBalance.create({...stock,product_id:row.product_id,product_name:row.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:row.lot_number,expiry_date:row.expiry_date,qc_status:row.qc_status,stock_origin:'adjustment'})).id;
     if(row.difference || row.value_difference)await s.StockMovement.create({product_id:row.product_id,product_name:row.product_name,quantity:Math.abs(row.difference),source_warehouse_id:row.difference<0 || !row.difference && row.value_difference<0?warehouse.id:'',destination_warehouse_id:row.difference>0 || !row.difference && row.value_difference>0?warehouse.id:'',movement_type:'stock_count_variance',movement_date:date,status:'approved',lot_number:row.lot_number,batch_number:row.batch_number || '',expiry_date:row.expiry_date || undefined,production_order_id:row.production_order_id || '',unit_cost:row.use_current_cost?row.applied_unit_cost:row.reconciliation_confirmed?Number(row.verified_unit_cost || 0):row.book_quantity>0?row.book_value/row.book_quantity:row.unit_cost,total_value:Math.abs(row.value_difference),document_type:'WarehouseAdjustment',document_id:eventId,journal_id:journal?.id || '',warehouse_adjustment_balance_id:row.balance_id,reason:reference+' — '+reason,created_by:user.id});
   }
   for(const id of new Set(rows.map(r=>r.product_id))) {
@@ -138,7 +157,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
     const quantity=roundQuantity(all.reduce((n,b)=>n+Number(b.quantity),0)),value=roundMoney(all.reduce((n,b)=>n+Number(b.total_value),0));
     if(quantity>0)await s.Product.update(id,{current_cost:value/quantity});
   }
-  const result={id:eventId,warehouse_id:warehouse.id,reference,date,journal_id:journal?.id || '',journal_number:journal?.journal_number || '',value_difference:roundMoney(rows.reduce((n,r)=>n+r.value_difference,0)),rows:rows.map(({inventory:omitted,...row})=>row)};
+  const result={id:eventId,warehouse_id:warehouse.id,warehouse_name:warehouse.name,reference,date,journal_id:journal?.id || '',journal_number:journal?.journal_number || '',value_difference:roundMoney(rows.reduce((n,r)=>n+r.value_difference,0)),rows:rows.map(({inventory:omitted,...row})=>row)};
   await s.AuditLog.create({id:eventId,action:'warehouse_quantity_adjusted',module:'inventory_adjustment',entity_type:'WarehouseAdjustment',entity_id:eventId,user_id:user.id,user_name:employee?.full_name || user.full_name || user.email,description:`${warehouse.name}: ${reference}`,reason,warehouse_adjustment_payload:payload,warehouse_adjustment_result:result});
   return result;
 }

@@ -18,8 +18,8 @@ async function setup(db){
 }
 
 test('Purchases combines suppliers with role-specific receiving and finance tabs, retaining deep links',()=>{
-  assert.deepEqual(purchaseSections('admin').map(s=>s.key),['orders','suppliers','receiving','bills']);
-  assert.deepEqual(purchaseSections('cashier').map(s=>s.key),['orders','suppliers','bills']);
+  assert.deepEqual(purchaseSections('admin').map(s=>s.key),['orders','suppliers','receiving','bills','payments']);
+  assert.deepEqual(purchaseSections('cashier').map(s=>s.key),['orders','suppliers','bills','payments']);
   for(const role of ['production_manager','employee'])assert.deepEqual(purchaseSections(role).map(s=>s.key),['orders']);
   assert.deepEqual(purchaseSections('warehouse_manager').map(s=>s.key),['orders','receiving']);
   const link=legacySupplierPath({supplier:'vendor / A',tab:'bills',role:'admin'});
@@ -108,3 +108,12 @@ test('the real public entity endpoints cannot bypass purchase forms or rewrite a
   }finally{delete globalThis.__purchaseStores;}
 });
 
+
+test('separate payments destination uses the same finance permissions as bills',async()=>{
+  const f=await setup(),s=f.entities;
+  await s.Employee.update('cashier',{role:'warehouse_manager'});
+  await assert.rejects(purchaseWorkspace(f.client,user,{section:'payments'}),/reserved/);
+  await s.Employee.update('cashier',{role:'cashier'});
+  const result=await purchaseWorkspace(f.client,user,{section:'payments'});
+  assert.ok(Array.isArray(result.payments));assert.ok(Array.isArray(result.bills));assert.equal(result.permissions.approve,false);
+});

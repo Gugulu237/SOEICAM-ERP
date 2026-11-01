@@ -21,7 +21,8 @@ test('Operations opens all seven requested modules while financial and staff adm
   for (const permission of [canApprovePO, canApproveProduction, canApproveFieldSale, canDisburse]) assert.equal(permission(role), false);
   for (const entity of ['Product', 'StockBalance', 'StockMovement', 'ProductionOrder', 'QualityCheck', 'Dispatch', 'DispatchLine', 'DispatchRequest', 'Route', 'Vehicle']) assert.doesNotThrow(() => assertEntityAccess(context, entity, 'update'), entity);
   for (const entity of ['Employee', 'User', 'Invoice', 'SalesOrder', 'FieldSale', 'CashHandover', 'TreasuryAccount', 'JournalEntry', 'PayrollRun']) assert.throws(() => assertEntityAccess(context, entity, 'update'), entity);
-  for (const entity of ['Dispatch', 'DispatchLine', 'DispatchRequest', 'SalesOrder', 'SalesOrderLine', 'Vehicle', 'Route', 'Customer', 'CustomerLocation']) assert.doesNotThrow(() => assertEntityAccess(context, entity, 'filter'), entity);
+  for (const entity of ['Dispatch','DispatchLine','DispatchRequest','Vehicle','Route']) assert.throws(()=>assertEntityAccess(context,entity,'filter'),/Only top administrators/);
+  for (const entity of ['SalesOrder', 'SalesOrderLine', 'Customer', 'CustomerLocation']) assert.doesNotThrow(() => assertEntityAccess(context, entity, 'filter'), entity);
 });
 
 test('Operations can select active delivery staff without gaining their login, salary or personal records', async () => {
@@ -53,10 +54,9 @@ test('Operations can filter reports across agents but cannot verify customers or
   await assert.rejects(commercialAction(client, user, body), /not active/);
 });
 
-test('Operations reviews driver reports but cannot impersonate a driver or preview another staff workspace', async () => {
+test('Operations cannot review driver reports across teams, impersonate a driver or preview another staff workspace', async () => {
   const { client, entities } = await fixture(); await entities.Employee.update('cashier', { role });
-  const result = await employeeWorkspaceAction(client, user, { action: 'dispatchActivity', dispatchId: 'run-a' });
-  assert.deepEqual(result.activities, []);
+  await assert.rejects(employeeWorkspaceAction(client,user,{action:'dispatchActivity',dispatchId:'run-a'}),/Only top administrators/);
   await assert.rejects(employeeWorkspaceAction(client, user, { action: 'driverActivity', dispatchId: 'run-a' }), /Only the assigned/);
   await assert.rejects(employeeWorkspaceAction(client, user, { action: 'employeeDashboard', employeeId: 'driver-a' }), /own workspace/);
 });
@@ -71,8 +71,8 @@ test('Operations approval inbox never requests payroll, cash releases or custome
   try {
     const { loadPendingApprovals, canDecide } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
     assert.deepEqual(await loadPendingApprovals(role), []);
-    assert.deepEqual(reads.sort(), ['PurchaseOrder', 'ProductionOrder', 'DispatchRequest', 'ExpenseRequest', 'Recipe'].sort());
-    assert.equal(canDecide('dispatch', role), true);
+    assert.deepEqual(reads.sort(), ['PurchaseOrder', 'ProductionOrder', 'ExpenseRequest', 'Recipe'].sort());
+    assert.equal(canDecide('dispatch', role), false);
     for (const type of ['cash', 'customer_receipt', 'payroll', 'po', 'production']) assert.equal(canDecide(type, role), false);
   } finally { delete globalThis.__operationsClient; }
 });

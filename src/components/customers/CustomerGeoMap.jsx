@@ -88,7 +88,7 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
     destroy(){clearRoute();clear();click.remove();maps.event.clearInstanceListeners(map);element.replaceChildren();}
   };
 }
-export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,onClose,drawingControls}){
+export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,onClose,drawingControls,mapControls,onOpenCustomer,onEditPoint}){
   const element=useRef(null),fullHost=useRef(null),canvas=useRef(null),adapter=useRef(null),navigator=useRef(null),callbacks=useRef({}),latestPoints=useRef(points),lastRequest=useRef(null);
   const [ready,setReady]=useState(0),[status,setStatus]=useState('loading'),[provider,setProvider]=useState(''),[error,setError]=useState(''),[useGoogle,setUseGoogle]=useState(true),[diagnostic,setDiagnostic]=useState('');
   const [expanded,setExpanded]=useState(initialExpanded),[localSelected,setLocalSelected]=useState(selectedId),[navigation,setNavigation]=useState(emptyNavigation);
@@ -163,8 +163,9 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
           <button type="button" className={actionClass} aria-label={ui(full?'Close full map':'Expand map')} onClick={()=>full?closeFull():setExpanded(true)}>{full?<Minimize2 size={15}/>:<Maximize2 size={15}/>}<span>{ui(full?'Close':'Full map')}</span></button>
         </div>
       </div>
+      {mapControls&&<details className="max-h-[40dvh] shrink-0 overflow-y-auto overscroll-contain border-b"><summary className="min-h-11 cursor-pointer px-3 py-3 text-xs font-medium">{ui('Filters and zones')}</summary><div className="p-3 pt-0">{mapControls}</div></details>}
       <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
-        <div ref={full?setFullHost:element} className="h-full w-full" role="region" aria-label={ui('Customer delivery map')}/>
+        <div ref={full?setFullHost:element} className="h-full w-full" role="region" data-swipe-back="ignore" aria-label={ui('Customer delivery map')}/>
         {status==='loading'&&<p role="status" className="pointer-events-none absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
       </div>
       {status==='ready'&&!drawing&&(selected||navigation.phase!=='idle')&&<section aria-label={ui('Delivery directions')} className="max-h-[38dvh] shrink-0 space-y-2 overflow-y-auto overscroll-contain border-t p-3 text-sm">
@@ -173,6 +174,10 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
           {selected&&navigation.phase==='idle'&&<><p className="break-words text-xs text-slate-500">{[selected.address,selected.neighbourhood,selected.town].filter(Boolean).join(', ')}</p>{selected.gps_status!=='ready'&&<p className="text-xs text-amber-700">{ui('Delivery pin needs verification.')}</p>}</>}
         </div><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label={ui('Close delivery directions')} onClick={clearSelection}><X size={17}/></button></div>
         {navigation.phase==='idle'&&selected&&<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>}
+        {navigation.phase==='idle'&&selected&&<div className="flex flex-wrap gap-2">
+          {onOpenCustomer&&<button type="button" className={actionClass} onClick={()=>onOpenCustomer(selected.customer_id||selected.id)}>{ui('Open customer profile')}</button>}
+          {onEditPoint&&<button type="button" className={actionClass} onClick={()=>onEditPoint(selected)}>{ui('Delivery details')}</button>}
+        </div>}
         {busy&&<div className="flex flex-wrap items-center justify-between gap-2"><p role="status" className="text-xs">{ui(navigation.phase==='locating'?'Finding your position...':'Calculating driving route...')}</p><button type="button" className={actionClass} onClick={()=>navigator.current?.clear()}>{ui('Cancel')}</button></div>}
         {navigation.phase==='error'&&<div className="space-y-2">
           {navigation.origin&&<p role="status" className="text-xs text-emerald-800">{ui('Your GPS position was obtained.')}</p>}

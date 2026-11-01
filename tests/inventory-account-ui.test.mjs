@@ -5,14 +5,15 @@ import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);let compiled;
 async function renderer(){if(compiled)return compiled;const out=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import InventoryAudit from './src/views/AccountingInventory.jsx';import Inventory from './src/views/Inventory.jsx';import Manufacturing from './src/views/Manufacturing.jsx';import Item from './src/views/ItemForm.jsx';import Recipe from './src/views/RecipeForm.jsx';import Accounts from './src/components/accounting/ChartOfAccountsManager.jsx';import {setLanguage} from './src/lib/i18n.js';export {setLanguage};export const markup=element=>renderToStaticMarkup(element);export const render=(name,props)=>renderToStaticMarkup(React.createElement({Inventory,Manufacturing,Item,Recipe,Accounts,InventoryAudit}[name],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,external:['next/*'],plugins:[{name:'inventory-account-ui',setup(b){
-  b.onResolve({filter:/^react$/},a=>/(Inventory|Manufacturing|ItemForm|RecipeForm|ChartOfAccountsManager|AccountFormDialog)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
+  b.onResolve({filter:/^react$/},a=>/(AccountingInventory|Inventory|Manufacturing|ItemForm|RecipeForm|ChartOfAccountsManager|AccountFormDialog)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
   b.onLoad({filter:/.*/,namespace:'hooks'},a=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(a.path)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__iaUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__iaUI.state(key,v),useRef=v=>globalThis.__iaUI.ref(key,v),useEffect=(f,d)=>globalThis.__iaUI.effect(key,f,d),useMemo=f=>f(),useCallback=f=>f;export const lazy=React.lazy,Suspense=React.Suspense;`,resolveDir:process.cwd()}));
   const leaf=names=>`import React from 'react';${names.map(n=>`export const ${n}=({children,...p})=>React.createElement('div',{'data-widget':'${n}'},children);`).join('')}`;
   const mocks={
+      '@/hooks/useMenuBack':"export const useMenuBack=href=>()=>globalThis.__iaUI.navigation.push(href);",
     '@/api/erpClient':'export const invalidateERPReads=()=>{};export const erp=new Proxy({},{get:(_,k)=>globalThis.__iaUI.client[k]});',
     '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__iaUI.session;',
     '@/lib/navigation-context':'export const usePageState=(key,v)=>globalThis.__iaUI.state(key,v);',
-    '@/lib/router':'export const Link=()=>null;export const useParams=()=>({id:globalThis.__iaUI.routeId});export const useNavigate=()=>p=>globalThis.__iaUI.navigation.push(p);export const useBack=()=>()=>{};export const useSearchParams=()=>[new URLSearchParams(globalThis.__iaUI.search),()=>{}];',
+    '@/lib/router':'export const Link=()=>null;export const useParams=()=>({id:globalThis.__iaUI.routeId});export const useNavigate=()=>p=>globalThis.__iaUI.navigation.push(p);export const useBack=()=>()=>{};export const useSearchParams=()=>[new URLSearchParams(globalThis.__iaUI.search),value=>{const state=globalThis.__iaUI;state.search=String(typeof value==="function"?value(new URLSearchParams(state.search)):new URLSearchParams(value)); }];',
     '@/lib/item-lookup-cache':'export const getItemCatalog=async()=>globalThis.__iaUI.catalogue;export const invalidateItemLookups=()=>{};',
     '@/components/ui/use-toast':'export const useToast=()=>({toast:v=>globalThis.__iaUI.notifications.push(v)});',
     '@/components/ui/input':`import React from 'react';export const Input=p=>{globalThis.__iaUI.capture('input',p,[]);return React.createElement('input',p);};`,
@@ -45,7 +46,48 @@ async function renderer(){if(compiled)return compiled;const out=await build({std
 }}]});const m={exports:{}};new Function('require','module','exports',out.outputFiles[0].text)(require,m,m.exports);return compiled=m.exports;}
 function runtime(){const r=hookRuntime(),base=r.capture.bind(r);r.elements=[];r.search='';r.session={role:'admin',isAdmin:true};r.capture=(tag,props,children)=>{base(tag,props,children);r.elements.push({tag,props:props || {},children});};r.client={entities:{Product:{filter:async()=>[]},Account:{filter:async()=>[]}},functions:{invoke:async()=>({data:{accounts:[],balances:{}}})}};globalThis.__iaUI=r;return r;}
 const painter=(r,ui,name,props={})=>()=>{r.beforeRender();r.elements=[];return ui.render(name,props);};
-const button=(r,label)=>r.buttons.find(b=>b.label.trim()===label);
+const button=(r,label)=>r.buttons.find(b=>b['aria-label']===label||b.label.trim()===label);
+test('Inventory opens a light icon menu, loads only the selected workspace and keeps its return action',async()=>{
+ const r=runtime(),ui=await renderer(),previous={fetch:globalThis.fetch,window:globalThis.window,document:globalThis.document};let reads=0;
+ globalThis.window={setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}};
+ globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
+ globalThis.fetch=async()=>{reads++;return Response.json({products:[],balances:[],warehouses:[]});};
+ try{
+  const paint=painter(r,ui,'Inventory');let html=paint();await r.flush();html=paint();
+  assert.match(html,/aria-label="Inventory sections"/);assert.match(html,/grid-cols-2/);assert.match(html,/Inventory count review/);assert.doesNotMatch(html,/Stock counts &amp; adjustments/);assert.doesNotMatch(html,/Moving an existing business|Enter opening inventory|Item types/);assert.equal(reads,0);
+  r.buttons.find(b=>b['aria-label']==='Stock on Hand').onClick();paint();await r.flush();html=paint();assert.ok(reads>0);assert.equal(new URLSearchParams(r.search).get('section'),'stock');assert.doesNotMatch(html,/Item types|Inventory sections/);assert.ok(!r.elements.some(e=>e.props.embedded&&e.props.itemId));button(r,'Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
+  r.search='';r.session={role:'warehouse_manager',allowedModules:['inventory']};html=paint();assert.doesNotMatch(html,/Issue goods|Stock counts &amp; adjustments|Inventory count review|Receive inventory/);
+ }finally{r.cleanup();Object.assign(globalThis,previous);delete globalThis.__iaUI;}
+});
+
+test('legacy adjustment links route native admins to Accounting and removed stock correction links open no correction form',async()=>{
+ const ui=await renderer();
+ for(const principalRole of ['admin','warehouse_manager']){
+  const r=runtime();r.session={role:'admin',principalRole,allowedModules:['inventory','accounting','inventory_adjustments']};r.search='section=adjustments';const paint=painter(r,ui,'Inventory');
+  try{paint();await r.flush();let html=paint();if(principalRole==='admin')assert.equal(r.navigation.at(-1),'/accounting/inventory?view=adjustments');else{assert.deepEqual(r.navigation,[]);assert.match(html,/Stock adjustments are managed in Accounting/);}r.search='correct=existing';html=paint();assert.doesNotMatch(html,/Correct existing stock|Adjust quantity/);}finally{r.cleanup();delete globalThis.__iaUI;}
+ }
+});
+
+test('opening Accounting adjustment history does not fetch the full stock-count workspace',async()=>{
+ const r=runtime(),ui=await renderer(),calls=[];r.search='view=adjustments';r.client.functions.invoke=async(_name,body)=>{calls.push(body.action);return {data:{rows:[],warehouses:[],audits:[],total:0}};};
+ const paint=painter(r,ui,'InventoryAudit');try{paint();await r.flush();paint();assert.ok(!calls.includes('inventoryAuditWorkspace'));assert.ok(button(r,'Inventory count review'));}finally{r.cleanup();delete globalThis.__iaUI;}
+});
+
+test('Inventory issue links wait for authentication, open the warehouse issue form once and reject other roles',async()=>{
+  const ui=await renderer(),previous={fetch:globalThis.fetch,window:globalThis.window,document:globalThis.document};
+  globalThis.window={setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}};globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
+  globalThis.fetch=async()=>Response.json({products:[],balances:[],warehouses:[]});
+  try{for(const role of ['warehouse_manager','admin','production_manager','procurement']){
+    const r=runtime();r.session={role,loading:true};r.search='section=items&issue=1&commercial=agent-a';const paint=painter(r,ui,'Inventory');
+    try{
+      paint();await r.flush();assert.equal(new URLSearchParams(r.search).get('issue'),'1');assert.ok(!r.elements.some(e=>e.props.initialAgent==='agent-a'));
+      r.session.loading=false;paint();await r.flush();paint();
+      const form=r.elements.find(e=>e.props.initialAgent==='agent-a');assert.equal(Boolean(form),['warehouse_manager','admin'].includes(role));
+      assert.equal(r.search,'section=items');assert.deepEqual(r.navigation,[]);
+      if(form){form.props.onClose();paint();await r.flush();paint();assert.ok(!r.elements.some(e=>e.props.initialAgent==='agent-a'),'the consumed link must not reopen after closing');}
+    }finally{r.cleanup();delete globalThis.__iaUI;}
+  }}finally{Object.assign(globalThis,previous);}
+});
 test('inventory item clicks open an embedded editor and keep the current section and navigation',async()=>{
   const r=runtime(),ui=await renderer();r.search='section=items&filter=materials';const previous={fetch:globalThis.fetch,window:globalThis.window,document:globalThis.document};
   const item={id:'milk',name:'Milk',inventory_type:'raw_material',is_active:true,unit_of_measure:'kg'};
@@ -94,7 +136,7 @@ test('embedded item editing loads the selected record, confirms a unit correctio
 });
 
 test('Inventory keeps operational shortcuts compact and removes redundant warehouse banners',async()=>{
-  const r=runtime(),ui=await renderer();const oldFetch=globalThis.fetch,oldWindow=globalThis.window,oldDocument=globalThis.document;
+  const r=runtime(),ui=await renderer();r.search='section=items';const oldFetch=globalThis.fetch,oldWindow=globalThis.window,oldDocument=globalThis.document;
   globalThis.window={setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}};globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
   globalThis.fetch=async()=>Response.json({products:[],balances:[],warehouses:[{id:'cold',name:'Cold Room',warehouse_type:'cold_room',is_active:true}]});
   try{const paint=painter(r,ui,'Inventory');paint();await r.flush();const html=paint();assert.match(html,/Inventory/);assert.match(html,/New item/);assert.match(html,/Receive inventory/);assert.doesNotMatch(html,/Cold Room.*finished products|Fermentation Tank|Warehouse cards|Manage items &amp; assemblies|Items, quantities, costs and stock movements|Stock updated|Refreshes every|Stock value:|Quick edit adds groups/);button(r,'New item').onClick();button(r,'Receive inventory').onClick();assert.equal(button(r,'Manufacturing'),undefined);assert.deepEqual(r.navigation,['/items/new','/purchases?section=receiving']);
@@ -103,7 +145,7 @@ test('Inventory keeps operational shortcuts compact and removes redundant wareho
     assert.equal(grid.renderPrice,undefined,'the compact inventory listing keeps prices inside the item editor');
     assert.doesNotMatch(ui.markup(grid.renderDetails(finished)),/Build assembly/);
     assert.doesNotMatch(ui.markup(grid.renderDetails(material)),/Build assembly/);assert.doesNotMatch(ui.markup(grid.renderDetails({...finished,configuration_status:'draft'})),/Build assembly/);
-    for(const [role,modules,receive,issue] of [['warehouse_manager',undefined,true,true],['procurement',undefined,true,false],['production_manager',undefined,false,true],['warehouse_manager',['inventory'],false,false]]) {r.session={role,allowedModules:modules};paint();assert.equal(!!button(r,'Receive inventory'),receive);assert.equal(!!button(r,'Manufacturing'),false);assert.equal(!!button(r,'Issue to driver & agent'),issue);}
+    for(const [role,modules,receive,issue] of [['warehouse_manager',undefined,true,true],['procurement',undefined,true,false],['production_manager',undefined,false,false],['warehouse_manager',['inventory'],false,false]]) {r.session={role,allowedModules:modules};paint();assert.equal(!!button(r,'Receive inventory'),receive);assert.equal(!!button(r,'Manufacturing'),false);assert.equal(!!button(r,'Issue goods'),issue);}
     r.session={role:'admin'};r.client.entities.ProductionOrder={filter:async()=>[]};r.client.entities.Recipe={filter:async()=>[]};const manufacturing=painter(r,ui,'Manufacturing');manufacturing();await r.flush();const productionHtml=manufacturing();assert.match(productionHtml,/Manufacturing/);assert.doesNotMatch(productionHtml,/Production responsibilities|Plan batches and record|Authorize production and purchase|Receive approved purchases|active recipes/);}
   finally{r.cleanup();globalThis.fetch=oldFetch;globalThis.window=oldWindow;globalThis.document=oldDocument;delete globalThis.__iaUI;}
 });
@@ -128,9 +170,9 @@ test('account list hides inactive/hidden rows by default, restores hidden accoun
   }finally{r.cleanup();delete globalThis.__iaUI;}
 });
 
-test('accounting inventory exposes direct quantity correction only with the dedicated role permission',async()=>{
+test('accounting inventory exposes quantity correction only to native top admins with dedicated permission',async()=>{
  const r=runtime(),ui=await renderer();r.session={role:'cashier',allowedModules:['accounting']};r.client.functions.invoke=async()=>({data:{rows:[],warehouses:[{id:'cold',name:'Cold Room',warehouse_type:'cold_room'}],audits:[],total:0}});
- const paint=painter(r,ui,'InventoryAudit');try{paint();await r.flush();assert.doesNotMatch(paint(),/>Adjust quantity</);r.session={role:'cashier',allowedModules:['accounting','inventory_adjustments']};assert.match(paint(),/>Adjust quantity</);r.elements.find(e=>e.props['aria-label']==='Warehouse for inventory audit').props.onChange({target:{value:'cold'}});paint();button(r,'Adjust quantity').onClick();paint();assert.equal(r.adjustment.warehouseId,'cold');assert.equal(r.adjustment.open,true);}
+ const paint=painter(r,ui,'InventoryAudit');try{paint();await r.flush();assert.doesNotMatch(paint(),/>Adjust quantity</);r.session={role:'cashier',allowedModules:['accounting','inventory_adjustments']};assert.doesNotMatch(paint(),/>Adjust quantity</);r.session={role:'admin',principalRole:'warehouse_manager',allowedModules:['accounting','inventory_adjustments']};assert.doesNotMatch(paint(),/>Adjust quantity</);r.session={role:'admin',principalRole:'admin',allowedModules:['accounting','inventory_adjustments']};assert.match(paint(),/>Adjust quantity</);r.elements.find(e=>e.props['aria-label']==='Warehouse for inventory audit').props.onChange({target:{value:'cold'}});paint();button(r,'Adjust quantity').onClick();paint();assert.equal(r.adjustment.warehouseId,'cold');assert.equal(r.adjustment.open,true);r.adjustment.onOpenChange(false);paint();button(r,'Adjustment history').onClick();assert.equal(new URLSearchParams(r.search).get('view'),'adjustments');paint();assert.ok(button(r,'Inventory count review'));button(r,'Inventory count review').onClick();assert.equal(new URLSearchParams(r.search).has('view'),false);r.search='view=adjustments';r.session={role:'admin',principalRole:'warehouse_manager',allowedModules:['accounting','inventory_adjustments']};r.adjustment=null;assert.match(paint(),/Stock adjustments are managed in Accounting/);assert.equal(r.adjustment,null);}
  finally{r.cleanup();delete globalThis.__iaUI;}
 });
 

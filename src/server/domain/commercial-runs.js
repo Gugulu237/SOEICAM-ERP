@@ -28,7 +28,7 @@ async function runStockSource(svc, run, verifyingReturn = false) {
     || warehouse.id === run.warehouse_id) throw new Error('The assigned vehicle stock location changed. Ask dispatch management to check this run.');
   if (conflicts.some(other => other.id !== run.id)) throw new Error('More than one active run uses this vehicle stock or paired team. Dispatch management must reconcile the runs before supplies can be recorded.');
   if (!verifyingReturn && (activities.length || run.return_date)) throw new Error('This run has returned to base. Ask dispatch management before recording more supplies.');
-  return { stock_warehouse_id: warehouse.id, stock_warehouse_name: warehouse.name || vehicle.name || run.vehicle_name || 'Vehicle stock' };
+  return { vehicle_registration:vehicle.registration||'', stock_warehouse_id: warehouse.id, stock_warehouse_name: warehouse.name || vehicle.name || run.vehicle_name || 'Vehicle stock' };
 }
 
 async function assignedRun(svc, commercialId, dispatchId, date) {

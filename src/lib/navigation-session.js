@@ -18,12 +18,43 @@ export function pageMemoryKey(href) {
   return url.pathname + url.search;
 }
 
+// A section change is a different screen; a search/filter change is the same screen.
+export function navigationScreenKey(href) {
+  const url=new URL(href||'/', 'https://workspace.local');
+  const selectors=new URLSearchParams();
+  for(const key of ['section','tab','view','group','customer','supplier','supplier_tab'])if(url.searchParams.has(key))selectors.set(key,url.searchParams.get(key));
+  return url.pathname+(selectors.size?'?'+selectors:'');
+}
+
+// Return through the current workspace's history, keeping Forward usable.
+// Direct links and cross-workspace visits replace the screen with its menu.
+export function menuReturnTarget(history,parentHref) {
+  const parent=workspaceHref(parentHref);
+  if(!parent)return {href:'/',replace:true};
+  const root=new URL(parent,'https://workspace.local').pathname;
+  for(let i=(history?.cursor??0)-1;i>=0;i--){
+    const href=history.entries[i]?.href;
+    if(!href)break;
+    const path=new URL(href,'https://workspace.local').pathname;
+    if(path!==root&&!path.startsWith(root+'/'))break;
+    if(pageMemoryKey(href)===pageMemoryKey(parent))return {delta:i-history.cursor};
+  }
+  return {href:parent,replace:true};
+}
+
 export function navigationLabel(href) {
   const url = new URL(href, 'https://workspace.local'), parts = url.pathname.split('/').filter(Boolean);
   const labels = { profile:ui('My profile'), 'team-workspaces': ui("Employee Dashboard"), inventory: 'Inventory', items: 'Items', commercial: ui("Commercial Dashboard"), 'field-customers': ui("Field customers"), 'field-sales': ui("Field sales"), 'field-review': ui("Supply review"), 'supply-chain': ui("Supply Chain"), manufacturing: 'Manufacturing', quality: ui("Quality Control"), accounting: 'Accounting', purchases: 'Purchases', customers: 'Customers', sales: 'Sales', distribution: 'Distribution', cashier: 'Cashier', employees: 'Employees', admin: 'Administration', cockpit: ui("Business Cockpit"), expenses: 'Expenses', reports: 'Reports', payroll: 'Payroll', 'outlet-reports': ui("Outlet reports") };
   const readable = value => String(value).replaceAll('_', ' ').replaceAll('-', ' ').replace(/\b\w/g, c => c.toUpperCase());
   const section = url.searchParams.get('group') || url.searchParams.get('section') || url.searchParams.get('tab') || url.searchParams.get('view') || url.searchParams.get('role');
-  const detail = parts.length > 1 ? (parts.at(-1) === 'new' ? 'New' : ui("Detail · {0}", parts.at(-1).slice(-6))) : section ? readable(section) : '';
+  const sectionLabels={
+    sales:{all:'All sales',orders:'Sales orders',invoices:'Invoices',field:'Field sales',outlets:'Outlet reports'},
+    cashier:{handovers:'Receive payments',expenses:'Petty cash',accounts:'Daily savings',payments:'Approved payments',invoices:'Customer invoices',cheques:'Cheques & signatures'},
+    purchases:{orders:'Purchase orders',suppliers:'Suppliers',bills:'Bills',payments:'Payments',receiving:'Receiving'},
+    customers:{list:'View customers',zones:'Delivery zones',map:'Map'},
+    distribution:{stock:'Field stock',deliveries:'Deliveries',fleet:'Fleet',dispatches:'Dispatches',requests:'Issue records',routes:'Routes',vehicles:'Vehicles',exchanges:'Expired exchanges'}
+  };
+  const detail = parts.length > 1 ? (parts.at(-1) === 'new' ? 'New' : ui("Detail · {0}", parts.at(-1).slice(-6))) : section ? ui(sectionLabels[parts[0]]?.[section]||readable(section)) : '';
   return [labels[parts[0]] || (parts[0] ? readable(parts[0]) : 'Home'), detail].filter(Boolean).join(' / ');
 }
 

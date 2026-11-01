@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import {canManageDeliveries} from '@/lib/operations-access';
 import { canApproveDispatch } from "@/lib/dispatch";
 import {
   getWarehouseAvailability, submitDispatchRequest,
@@ -35,7 +36,7 @@ export default function DispatchRequestForm() {
   const { toast } = useToast();
   const { user, role, loading: authLoading } = useCurrentUser();
   const isEdit = !!id;
-  const canApprove = canApproveDispatch(role);
+  const canApprove = canApproveDispatch(role), canReview = canManageDeliveries(role);
 
   const [request, setRequest] = useState(null);
   const [items, setItems] = useState([]);
@@ -53,7 +54,7 @@ export default function DispatchRequestForm() {
   });
 
   useEffect(() => {
-    if (authLoading || !canApprove) return;
+    if (authLoading || !canReview) return;
     let active = true;
     setLoading(true); setLoadError('');
     Promise.all([
@@ -70,7 +71,7 @@ export default function DispatchRequestForm() {
     }).catch(error => { if (active) setLoadError(error.message || sourceMessage("The stock request could not be loaded.")); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id, isEdit, authLoading, canApprove]);
+  }, [id, isEdit, authLoading, canReview]);
 
   useEffect(() => {
     let active = true;
@@ -96,7 +97,7 @@ export default function DispatchRequestForm() {
     });
   }
 
-  const editable = !isEdit || request?.status === "draft";
+  const editable = canApprove && (!isEdit || request?.status === "draft");
   const teamEditable = editable || (request?.status === 'pending_approval' && canApprove);
   const sourceWarehouses = warehouses.filter(w => ['finished_goods', 'cold_room', 'general'].includes(w.warehouse_type));
   const drivers = employees.filter(e => e.role === 'driver' && e.status === 'active');
@@ -184,8 +185,8 @@ export default function DispatchRequestForm() {
     finally { setBusy(false); }
   }
 
-  if (authLoading || (canApprove && loading)) return <p role="status" className="p-8 text-sm text-slate-500">{ui("Loading delivery stock request...")}</p>;
-      if (!canApprove) return <div className="mx-auto max-w-lg rounded-xl border bg-white p-6"><h2 className="font-semibold">{ui("Warehouse management prepares delivery stock")}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{ui("Ask a warehouse manager to pair your driver and Commercial agent, then load finished products onto the delivery run.")}</p><Button variant="outline" className="mt-4" onClick={() => navigate(role === 'driver' ? '/distribution?tab=deliveries' : '/commercial')}>{ui("Back to workspace")}</Button></div>;
+  if (authLoading || (canReview && loading)) return <p role="status" className="p-8 text-sm text-slate-500">{ui("Loading delivery stock request...")}</p>;
+      if (!canReview) return <div className="mx-auto max-w-lg rounded-xl border bg-white p-6"><h2 className="font-semibold">{ui("Warehouse management prepares delivery stock")}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{ui("Ask a warehouse manager to pair your driver and Commercial agent, then load finished products onto the delivery run.")}</p><Button variant="outline" className="mt-4" onClick={() => navigate(role === 'driver' ? '/distribution?tab=deliveries' : '/commercial')}>{ui("Back to workspace")}</Button></div>;
   if (loadError) return <div role="alert" className="mx-auto max-w-lg rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{uiMessage(loadError)}<Button variant="outline" className="mt-4 block" onClick={() => navigate('/distribution')}>{ui("Back to Distribution")}</Button></div>;
 
   return (

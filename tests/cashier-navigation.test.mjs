@@ -8,7 +8,7 @@ const require=createRequire(import.meta.url);
 
 test('handover links retain the selected agent and received-history view within Cashier',()=>{
   assert.equal(cashierHandoverPath(new URLSearchParams('commercial=a%26b&tab=history&role=admin')),'/cashier?section=handovers&commercial=a%26b&handover_view=history');
-  assert.equal(cashierHandoverPath(),'/cashier?section=handovers');assert.equal(cashierSection('accounts'),'accounts');assert.equal(cashierSection('unrecognized'),'handovers');
+  assert.equal(cashierHandoverPath(),'/cashier?section=handovers');assert.equal(cashierSection('accounts'),'accounts');assert.equal(cashierSection('unrecognized'),'home');
 });
 
 async function ui(){const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Page from './src/views/CashHandovers.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Page));`,loader:'jsx',resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'handover-navigation',setup(b){

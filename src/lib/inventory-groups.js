@@ -30,11 +30,11 @@ export function inventoryVariants(item) {
 }
 // Short presentation labels only. Keep the original catalogue name for search,
 // editing, accessibility, printed records and items without a clear variant.
-export function inventoryDisplayName(item){
+export function inventoryDisplayName(item,{includeSize=true}={}){
   if(!isAssemblyInventoryType(item.inventory_type))return item.name;
   const variant=inventoryVariants(item),flavor=flavourChoice(variant.flavor),family=variantFamily(item);
   if(!flavor||!variant.size)return item.name;
-  return [family?ui(family==='brasse'?'Brassé':'Drinkable'):'',ui(flavor.label),variant.size].filter(Boolean).join(' · ');
+  return [family?ui(family==='brasse'?'Brassé':'Drinkable'):'',ui(flavor.label),includeSize?variant.size:''].filter(Boolean).join(' · ');
 }
 export function groupedInventory(products, finished) {
   const groups = new Map(inventoryGroups(products, finished).map(name => [name, []]));

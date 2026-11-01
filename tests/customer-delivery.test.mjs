@@ -15,6 +15,20 @@ const fix=()=>({gps_lat:4.05,gps_lng:9.7,gps_accuracy_m:8,gps_captured_at:new Da
 const saveZone=(changes={})=>({action:'saveDeliveryZone',revision:0,requestKey:zoneId,zone:{...zone},...changes});
 async function setup(db){const f=await fixture(db);f.client.auth.me=async()=>admin;await f.entities.CompanySettings.update('settings',{delivery_zones:[zone],delivery_zones_revision:1});return f;}
 
+test('quick GPS returns the saved outlet pin and revision, preserves headquarters and blocks deleted customers',async()=>{
+  const f=await setup();const entrance=await f.entities.CustomerLocation.create({customer_id:'customer-a',name:'East branch',is_active:true,delivery_revision:3});
+  await f.entities.Customer.update('customer-a',{...fix(),gps_lat:3.85,balance:4200});
+  const body={action:'saveDeliveryPoint',kind:'location',recordId:entrance.id,revision:3,details:fix()};
+  const saved=await customerDeliveryAction(f.client,admin,body);
+  assert.equal(saved.success,true);assert.equal(saved.point.id,entrance.id);assert.equal(saved.point.delivery_revision,4);assert.equal(saved.point.gps_capture_source,'device');assert.equal(saved.point.gps_updated_by,admin.id);
+  assert.equal(saved.point.balance,undefined);assert.equal((await f.entities.Customer.get('customer-a')).gps_lat,3.85);
+  const map=await customerDeliveryAction(f.client,admin,{action:'customerMapWorkspace'});assert.equal(map.points.find(p=>p.record_id===entrance.id).gps_lat,4.05);
+  await assert.rejects(customerDeliveryAction(f.client,admin,body),/another window/);
+  await f.entities.Customer.update('customer-a',{customer_removed_at:new Date().toISOString()});
+  await assert.rejects(customerDeliveryAction(f.client,admin,{...body,revision:4}),/active customer/);
+  assert.equal((await f.entities.Customer.get('customer-a')).balance,4200);assert.equal((await f.entities.JournalEntry.list()).length,0);
+});
+
 test('delivery coverage treats every outlet separately and never copies headquarters coordinates or zone into branches',()=>{
   const customers=[{id:'hq',business_name:'Chain',is_active:true,...fix(),gps_capture_source:'device',delivery_zone_id:zoneId},{id:'shop',business_name:'Shop',is_active:true},{id:'inactive',business_name:'Closed',is_active:false}];
   const locations=[{id:'a',customer_id:'hq',name:'Branch A',is_active:true},{id:'b',customer_id:'hq',name:'Branch B',is_active:true,...fix(),gps_capture_source:'device',delivery_zone_id:zoneId},{id:'old',customer_id:'hq',name:'Closed outlet',is_active:false}];

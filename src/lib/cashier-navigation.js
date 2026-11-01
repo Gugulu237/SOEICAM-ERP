@@ -1,5 +1,5 @@
 export const CASHIER_SECTIONS = ['handovers','invoices','expenses','payments','accounts'];
-export const cashierSection = value => CASHIER_SECTIONS.includes(value) ? value : 'handovers';
+export const cashierSection = value => CASHIER_SECTIONS.includes(value) ? value : 'home';
 export function cashierHandoverPath(query = {}) {
   const get = key => query instanceof URLSearchParams ? query.get(key) : query[key];
   const params = new URLSearchParams({section:'handovers'});

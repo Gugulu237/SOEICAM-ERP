@@ -7,10 +7,10 @@ const require=createRequire(import.meta.url);
 let compiled;
 async function renderer(){
   if(compiled)return compiled;
-  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Correction from './src/components/inventory/ExistingStockCorrection.jsx';import Dialog from './src/components/inventory/StockAdjustmentDialog.jsx';import Zones from './src/components/inventory/WarehouseZones.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement({dialog:Dialog,zones:Zones,correction:Correction}[kind],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',platform:'node',format:'cjs',write:false,plugins:[{name:'adjustment-ui',setup(b){
-    b.onResolve({filter:/^react\/jsx-runtime$/},a=>/(ExistingStockCorrection|StockAdjustmentDialog|WarehouseZones|WarehouseStockItems)\.jsx$/.test(a.importer)?{path:'jsx',namespace:'capture-jsx'}:undefined);
+  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import History from './src/components/inventory/AdjustmentHistory.jsx';import Correction from './src/components/inventory/ExistingStockCorrection.jsx';import Dialog from './src/components/inventory/StockAdjustmentDialog.jsx';import Zones from './src/components/inventory/WarehouseZones.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement({dialog:Dialog,zones:Zones,correction:Correction,history:History}[kind],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',platform:'node',format:'cjs',write:false,plugins:[{name:'adjustment-ui',setup(b){
+    b.onResolve({filter:/^react\/jsx-runtime$/},a=>/(AdjustmentHistory|ExistingStockCorrection|StockAdjustmentDialog|WarehouseZones|WarehouseStockItems)\.jsx$/.test(a.importer)?{path:'jsx',namespace:'capture-jsx'}:undefined);
     b.onLoad({filter:/.*/,namespace:'capture-jsx'},()=>({contents:`import {jsx as baseJsx,jsxs as baseJsxs,Fragment} from ${JSON.stringify(require.resolve('react/jsx-runtime'))};export {Fragment};export const jsx=(tag,props,key)=>{globalThis.__adjustmentUI.capture(tag,props,props?.children);return baseJsx(tag,props,key);};export const jsxs=(tag,props,key)=>{globalThis.__adjustmentUI.capture(tag,props,props?.children);return baseJsxs(tag,props,key);};`,resolveDir:process.cwd()}));
-    b.onResolve({filter:/^react$/},a=>/(ExistingStockCorrection|StockAdjustmentDialog|WarehouseZones|WarehouseStockItems)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
+    b.onResolve({filter:/^react$/},a=>/(AdjustmentHistory|ExistingStockCorrection|StockAdjustmentDialog|WarehouseZones|WarehouseStockItems)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(key)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__adjustmentUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useRef=value=>globalThis.__adjustmentUI.ref(key,value);export const useState=value=>globalThis.__adjustmentUI.state(key,value),useEffect=(fn,deps)=>globalThis.__adjustmentUI.effect(key,fn,deps),useMemo=fn=>fn();export const Fragment=React.Fragment,lazy=React.lazy,Suspense=React.Suspense;`,resolveDir:process.cwd()}));
     const mocks={
       '@/lib/field-ops':`export const invokeFieldOps=body=>globalThis.__adjustmentUI.invoke(body);`,
@@ -32,6 +32,17 @@ const workspace={warehouse,warehouses:[warehouse],accounts:[{id:'variance',accou
 const postedReceipt=(body,journal_number)=>({id:'WA-1',reference:body.reference,date:body.date,journal_number,value_difference:-20,rows:body.rows.map(row=>({...workspace.rows[0],...row,difference:Number(row.counted_quantity)-10,value_after:Number(row.counted_quantity)*10,value_difference:(Number(row.counted_quantity)-10)*10}))});
 const element=(r,tag,label)=>r.elements.find(e=>e.tag===tag && e.props['aria-label']===label)?.props;
 const button=(r,text)=>r.elements.find(e=>e.tag==='button' && JSON.stringify(e.children).includes(text))?.props;
+test('adjustment history opens an immutable receipt, pages results and offers a new physical count',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;let counts=0;
+ r.invoke=async body=>{calls.push(body);return {data:body.adjustmentId?{adjustment:{...postedReceipt({reference:'COUNT-SIGNED',date:'2026-11-01',rows:[{balance_id:'lot',counted_quantity:8}]},'JV-0001'),warehouse_name:'Ingredients'},recorded_by:'Warehouse manager',reason:'Signed physical inventory count'}:{adjustments:body.page===1?[{id:'WA-test',date:'2026-11-01',reference:'COUNT-SIGNED',warehouse_name:'Ingredients',line_count:1,value_difference:-20,journal_number:'JV-0001',recorded_by:'Warehouse manager'}]:[],page:body.page,total:21,has_more:body.page===1}};};
+ const draw=()=>{r.beforeRender();return render('history',{onAdjust:()=>counts++});};
+ try{
+  draw();await r.flush();let html=draw();assert.match(html,/COUNT-SIGNED/);assert.match(html,/Warehouse manager/);assert.match(html,/JV-0001/);
+  button(r,'Record physical count').onClick();assert.equal(counts,1);
+  button(r,'COUNT-SIGNED').onClick();draw();await r.flush();html=draw();assert.match(html,/Posted stock adjustment/);assert.match(html,/Signed physical inventory count/);assert.match(html,/Before count/);assert.ok(button(r,'Print / save PDF'));
+  button(r,'Next').onClick();draw();await r.flush();draw();assert.equal(calls.at(-1).page,2);assert.equal(button(r,'Next').disabled,true);assert.ok(calls.every(c=>c.action==='warehouseAdjustmentHistory'));
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
 
 test('warehouse count shows old/new quantity and value change, preserves a failed draft, then retries the same checked save',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;let fail=true,saved=0,closed=false;
@@ -48,7 +59,7 @@ test('warehouse count shows old/new quantity and value change, preserves a faile
 test('a zero-stock catalogue item can be counted as a new lot, with explicit batch details and a quality-hold explanation',async()=>{
   const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[]}});
   const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',productId:'milk',onOpenChange:()=>{}});};
-  try{draw();await r.flush();const html=draw();assert.ok(element(r,'input','Lot number for Milk powder'));assert.equal(element(r,'input','Printed expiry for Milk powder'),undefined);assert.match(html,/Adjusted quantities are available immediately/);assert.equal(element(r,'input','Physical quantity for Milk powder').value,'');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+  try{draw();await r.flush();const html=draw();assert.ok(element(r,'input','Lot number for Milk powder'));assert.ok(element(r,'input','Printed expiry for Milk powder'));assert.match(html,/does not remove expiry dates or automatically release/);assert.equal(element(r,'input','Physical quantity for Milk powder').value,'');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 test('large warehouse counts paginate and retain counted quantities across pages and searches',async()=>{
@@ -105,7 +116,7 @@ test('rapid repeated quantity submission writes once and reports busy state unti
 
 test('ready-for-sale release submits the existing count without inventing another quantity adjustment',async()=>{
  const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
- const readyWorkspace={...workspace,rows:[{...workspace.rows[0],product_name:'YOLA',inventory_type:'assembly',requires_expiry:true,production_order_id:'',expiry_date:'2099-01-01'}]};
+ const readyWorkspace={...workspace,rows:[{...workspace.rows[0],product_name:'YOLA',inventory_type:'assembly',requires_expiry:true,adjusted_stock:true,production_order_id:'',expiry_date:'2099-01-01'}]};
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?readyWorkspace:postedReceipt(body,'')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
  try{draw();await r.flush();draw();assert.equal(element(r,'input','Physical quantity for YOLA').value,'');element(r,'input','Ready for sale: YOLA').onChange({target:{checked:true}});element(r,'input','Count sheet / reference').onChange({target:{value:'CHECKED'}});element(r,'input','Adjustment reason').onChange({target:{value:'Printed expiry and quality physically verified'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const body=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(body.rows[0].counted_quantity,10);assert.equal(body.rows[0].ready_for_sale,true);assert.equal(body.rows[0].fingerprint,'server-snapshot');}finally{r.cleanup();delete globalThis.__adjustmentUI;}
@@ -114,32 +125,32 @@ test('ready-for-sale release submits the existing count without inventing anothe
 
 test('expiry-tracked ingredients show production-use controls and never sale controls',async()=>{
  const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
- const materials={...workspace,items:[{...workspace.items[0],inventory_type:'raw_material',requires_expiry:true}],rows:[{...workspace.rows[0],inventory_type:'raw_material',requires_expiry:true,expiry_date:'2099-01-01',production_order_id:''}]};
+ const materials={...workspace,items:[{...workspace.items[0],inventory_type:'raw_material',requires_expiry:true}],rows:[{...workspace.rows[0],inventory_type:'raw_material',requires_expiry:true,adjusted_stock:true,expiry_date:'2099-01-01',production_order_id:''}]};
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?materials:postedReceipt(body,'')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
  try{draw();await r.flush();const html=draw();assert.doesNotMatch(html,/Ready for sale/);assert.ok(element(r,'input','Ready for production use: Milk powder'));element(r,'input','Ready for production use: Milk powder').onChange({target:{checked:true}});element(r,'input','Count sheet / reference').onChange({target:{value:'USE-CHECK'}});element(r,'input','Adjustment reason').onChange({target:{value:'Materials physically checked for production'}});draw();await button(r,'Save quantity adjustment').onClick();const row=calls.find(c=>c.action==='postWarehouseAdjustment').rows[0];assert.equal(row.ready_for_use,true);assert.equal(Object.hasOwn(row,'ready_for_sale'),false);assert.equal(row.counted_quantity,10);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 test('packaging counts do not present finished-product sale instructions',async()=>{
- const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[{...workspace.rows[0],inventory_type:'packaging',product_name:'YOLA cups',production_order_id:''}],items:[{...workspace.items[0],inventory_type:'packaging'}]}});
+ const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,rows:[{...workspace.rows[0],inventory_type:'packaging',adjusted_stock:true,product_name:'YOLA cups',production_order_id:''}],items:[{...workspace.items[0],inventory_type:'packaging'}]}});
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
  try{draw();await r.flush();const html=draw();assert.doesNotMatch(html,/Ready for sale/);assert.match(html,/Ingredients and packaging are for production use/);assert.ok(element(r,'input','Ready for production use: YOLA cups'));}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 
-test('existing adjusted stock can be selected for expiry-free release without changing counts',async()=>{
- const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
- r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,rows:[{...workspace.rows[0],inventory_type:'assembly',adjusted_stock:true,expiry_date:'2020-01-01',qc_status:'approved'}]}:postedReceipt(body,'')};};
+test('expired adjusted stock has no bulk expiry removal or quality release checkbox',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;
+ r.invoke=async()=>({data:{...workspace,rows:[{...workspace.rows[0],inventory_type:'assembly',adjusted_stock:true,expiry_date:'2020-01-01',qc_status:'quarantine'}]}});
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
- try{draw();await r.flush();draw();button(r,'Select adjusted stock to release without expiry').onClick();draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const body=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(body.rows[0].counted_quantity,10);assert.equal(body.rows[0].ready_for_sale,true);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+ try{draw();await r.flush();const html=draw();assert.equal(button(r,'Select adjusted stock to release without expiry'),undefined);assert.equal(element(r,'input','Ready for sale: Milk powder'),undefined);assert.match(html,/2020-01-01/);assert.equal(button(r,'Save quantity adjustment').disabled,true);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 
 test('existing stock correction keeps rejected lots unselected and requires explicit confirmation before saving',async()=>{
  const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
- r.invoke=async body=>{calls.push(body);return {data:body.action==='existingStockWorkspace'?{can_correct_rejected:true,lots:[{id:'old-stock',product_name:'YOLA',lot_number:'OLD-1',quantity:5,total_value:50,qc_status:'rejected',expiry_date:'2020-01-01',fingerprint:'checked'}]}:{corrected:1}};};
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='existingStockWorkspace'?{can_correct_existing:true,can_correct_rejected:true,lots:[{id:'old-stock',product_name:'YOLA',lot_number:'OLD-1',quantity:5,total_value:50,qc_status:'rejected',expiry_date:'2020-01-01',fingerprint:'checked'}]}:{corrected:1}};};
  const draw=()=>{r.beforeRender();return render('correction',{});};
- try{draw();await r.flush();draw();assert.equal(element(r,'input','Correct existing lot OLD-1').checked,false);element(r,'input','Correct existing lot OLD-1').onChange({target:{checked:true}});draw();assert.equal(button(r,'Correct selected existing stock').disabled,true);element(r,'input','Confirm rejected existing stock is usable').onChange({target:{checked:true}});draw();assert.equal(button(r,'Correct selected existing stock').disabled,false);await button(r,'Correct selected existing stock').onClick();const body=calls.find(c=>c.action==='correctExistingStock');assert.equal(body.confirm_rejected_stock,true);assert.deepEqual(body.rows,[{id:'old-stock',fingerprint:'checked'}]);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+ try{draw();await r.flush();draw();assert.equal(element(r,'input','Correct existing lot OLD-1').checked,false);element(r,'input','Correct existing lot OLD-1').onChange({target:{checked:true}});draw();assert.equal(button(r,'Correct selected existing stock').disabled,true);element(r,'input','Confirm rejected existing stock is usable').onChange({target:{checked:true}});element(r,'input','Confirm incorrect import metadata').onChange({target:{checked:true}});element(r,'input','Count sheet / reference').onChange({target:{value:'IMPORT-CHECK'}});element(r,'input','Correction reason').onChange({target:{value:'Verified erroneous import metadata'}});draw();assert.equal(button(r,'Correct selected existing stock').disabled,false);await button(r,'Correct selected existing stock').onClick();const body=calls.find(c=>c.action==='correctExistingStock');assert.equal(body.confirm_rejected_stock,true);assert.deepEqual(body.rows,[{id:'old-stock',fingerprint:'checked'}]);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 
@@ -148,15 +159,15 @@ test('admin count previews quantity times the current configured cost and submit
  const priced={...workspace,can_reconcile_value:true,rows:[{...workspace.rows[0],configured_unit_cost:12}]};
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?priced:postedReceipt(body,'JV-PRICE')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
- try{draw();await r.flush();draw();assert.equal(element(r,'input','Use current item cost for Milk powder').checked,true);element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'NEW-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Counted stock at updated milk cost'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});const preview=draw();assert.match(preview,/-4/);assert.match(preview,/Value after count/);assert.match(preview,/96/);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.find(c=>c.action==='postWarehouseAdjustment').rows[0].use_current_cost,true);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
+ try{draw();await r.flush();draw();assert.equal(element(r,'input','Use current item cost for Milk powder').checked,false);element(r,'input','Use current item cost for Milk powder').onChange({target:{checked:true}});element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'NEW-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Counted stock at updated milk cost'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});const preview=draw();assert.match(preview,/-4/);assert.match(preview,/Value after count/);assert.match(preview,/96/);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.find(c=>c.action==='postWarehouseAdjustment').rows[0].use_current_cost,true);}finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
 
-test('a live material price refresh preserves the typed count and updates its value and save fingerprint',async()=>{
+test('a changed valuation preserves the typed count but requires a fresh recount',async()=>{
  const render=await renderer(),r=runtime(),calls=[],beforeWindow=globalThis.window,beforeDocument=globalThis.document;
  const target=new EventTarget();target.setInterval=()=>1;target.clearInterval=()=>{};const document=new EventTarget();document.visibilityState='visible';globalThis.window=target;globalThis.document=document;globalThis.__adjustmentUI=r;
  let price=10;
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,can_reconcile_value:true,rows:[{...workspace.rows[0],configured_unit_cost:price,fingerprint:'price-'+price}]}:postedReceipt(body,'JV-LIVE')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
- try{draw();await r.flush();draw();await r.flush();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'LIVE-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Physical count with latest material price'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});draw();price=12;target.dispatchEvent(new Event('soeicam:item-catalogue-changed'));await r.flush();draw();assert.equal(element(r,'input','Physical quantity for Milk powder').value,'8');await button(r,'Save quantity adjustment').onClick();const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(saved.rows[0].fingerprint,'price-12');assert.equal(saved.rows[0].counted_quantity,8);assert.equal(saved.rows[0].use_current_cost,true);}finally{r.cleanup();globalThis.window=beforeWindow;globalThis.document=beforeDocument;delete globalThis.__adjustmentUI;}
+ try{draw();await r.flush();draw();await r.flush();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'LIVE-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Physical count with latest material price'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});draw();price=12;target.dispatchEvent(new Event('soeicam:item-catalogue-changed'));await r.flush();draw();assert.equal(element(r,'input','Physical quantity for Milk powder').value,'8');assert.equal(button(r,'Save quantity adjustment').disabled,true);assert.match(draw(),/Reload quantities and count again/);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.filter(c=>c.action==='postWarehouseAdjustment').length,0);}finally{r.cleanup();globalThis.window=beforeWindow;globalThis.document=beforeDocument;delete globalThis.__adjustmentUI;}
 });

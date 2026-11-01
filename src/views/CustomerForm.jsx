@@ -242,7 +242,7 @@ export default function CustomerForm() {
         )}
       </Tabs>
       </fieldset>
-      {isEdit && isAdmin && customerRecord && <section className="mt-6 max-w-3xl rounded-xl border border-red-100 bg-white p-4"><CustomerRemoval customer={customerRecord} disabled={saving || locating || loading || !!loadError} onDone={customer => navigate(customer.customer_removed_at ? "/customers?view=removed" : "/customers?view=visual&customer=" + encodeURIComponent(customer.id))} /></section>}
+      {isEdit && isAdmin && customerRecord && <section className="mt-6 max-w-3xl rounded-xl border border-red-100 bg-white p-4"><CustomerRemoval customer={customerRecord} disabled={saving || locating || loading || !!loadError} onDone={customer => navigate(customer.customer_removed_at ? "/customers" : "/customers?view=list&customer=" + encodeURIComponent(customer.id))} /></section>}
     </div>
   );
 }

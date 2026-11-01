@@ -1,6 +1,6 @@
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
+import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useCallback } from "react";
 import { erp } from "@/api/erpClient";
@@ -9,26 +9,31 @@ import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/shared/StatusBadge";
 import CustomerInfo from "./CustomerInfo";
 import CustomerMapLinks from "./CustomerMapLinks";
+import CustomerGpsButton from "./CustomerGpsButton";
 import SpoilageDialog from "./SpoilageDialog";
+import CustomerActionGrid from "./CustomerActionGrid";
+import CustomerSpoilageReports from "./CustomerSpoilageReports";
 import PartnerGroupPanel from "./PartnerGroupPanel";
 import PartnerStockPanel from "./PartnerStockPanel";
 import PartnerSalesPanel from "./PartnerSalesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatXAF, formatDate, statusLabel } from "@/lib/formatters";
-import { Plus, AlertTriangle, Pencil } from "lucide-react";
+import { formatXAF } from "@/lib/formatters";
+import { Plus } from "lucide-react";
 
 // 360° view of one business partner: its group (sub-partners), locations,
 // deliveries and spoilage per branch.
-export default function PartnerDetail({ partner, onChanged, subPartners = [], parentPartner = null, locationsByCustomer = {}, onSelect }) {
+export default function PartnerDetail({ partner, onChanged, subPartners = [], parentPartner = null, locationsByCustomer = {}, onSelect, onEditGps, onSale, onReceive, canReportSpoilage=false, paymentSummary }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
   const [locations, setLocations] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [spoilage, setSpoilage] = useState([]);
-  const [spoilOpen, setSpoilOpen] = useState(false);
+  const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState('');
+  const [spoilOpen, setSpoilOpen] = useState(false),[reportVersion,setReportVersion]=useState(0);
 
   const load = useCallback(async () => {
+    setLoadError('');
+    try {
     const [locs, ords, spls] = await Promise.all([
       erp.entities.CustomerLocation.filter({ customer_id: partner.id, is_active: true }),
       erp.entities.SalesOrder.filter({ customer_id: partner.id }, "-order_date", 200),
@@ -37,6 +42,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
     setLocations(locs);
     setOrders(ords);
     setSpoilage(spls);
+    } catch(error) { setLoadError(error.message); }
   }, [partner.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -45,10 +51,6 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const deliveredValue = deliveredOrders.reduce((s, o) => s + (o.total || 0), 0);
   const spoilageValue = spoilage.reduce((s, r) => s + (r.total_value || 0), 0);
 
-  async function markReplaced(record) {
-    await erp.entities.SpoilageRecord.update(record.id, { status: "replaced", replaced_at: new Date().toISOString() });
-    load();
-  }
 
   return (
     <div className="space-y-5">
@@ -68,13 +70,22 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
           </div>
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate(`/customers/${partner.id}`)}><Pencil size={13} className="mr-1" />{ui(" Edit")}</Button>
-          {locations.length>0&&<Button size="sm" variant="outline" onClick={() => setSpoilOpen(true)}><AlertTriangle size={13} className="mr-1" />{ui(" Report Spoilage")}</Button>}
+
           <Button size="sm" onClick={() => navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={13} className="mr-1" />{ui("Add branch")}</Button>
         </div>
       </div>
 
-      <CustomerMapLinks customer={partner} />
+      <CustomerActionGrid onSale={onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
+      {paymentSummary}
+      {loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>}
+      <section aria-label={ui("Customer delivery location")} className="space-y-3 rounded-xl border bg-white p-4">
+        <h3 className="text-sm font-semibold">{ui("Customer delivery location")}</h3>
+        {(locationsByCustomer[partner.id]?.length ? locationsByCustomer[partner.id] : [partner]).map(point=><div key={point.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          {point.id!==partner.id&&<p className="w-full break-words text-sm font-medium">{point.name}</p>}
+          <CustomerMapLinks customer={point}/>
+          {onEditGps&&partner.is_active!==false&&point.is_active!==false&&<CustomerGpsButton point={point} onClick={()=>onEditGps(partner,point.id===partner.id?undefined:point)}/>}
+        </div>)}
+      </section>
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">{ui("Overview")}</TabsTrigger>
@@ -112,28 +123,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
       </div>
 
       {locations.length>0&&<details className="rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{ui('Previous delivery points')}</summary><div className="mt-3 space-y-2">{locations.map(l=><div key={l.id} className="border-b py-2 text-sm"><strong>{l.name}</strong><p className="text-xs text-slate-500">{[l.town,l.neighbourhood].filter(Boolean).join(' · ')}</p></div>)}</div></details>}
-      {/* Spoilage log */}
-      {spoilage.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-900 mb-2">{ui("Spoilage History")}</h3>
-          <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
-            {spoilage.slice(0, 10).map(r => (
-              <div key={r.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-slate-900 truncate">{r.quantity} × {r.product_name}{ui(" at ")}<span className="font-medium">{r.location_name}</span></p>
-                  <p className="text-xs text-slate-500">{formatDate(r.reported_date)} · {statusLabel(r.reason)} · {formatXAF(r.total_value)}</p>
-                </div>
-                <StatusBadge status={r.status} />
-                {r.status === "reported" && (
-                  <Button size="sm" variant="outline" onClick={() => markReplaced(r)}>{ui("Mark Replaced")}</Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {spoilage.some(r=>r.record_type!=='customer_spoilage_report')&&<details className="rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{ui('Previous spoilage records')}</summary><div className="mt-3 space-y-3">{spoilage.filter(r=>r.record_type!=='customer_spoilage_report').map(r=><div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-sm"><span>{r.product_name} · {r.quantity} {r.unit}<small className="block text-slate-500">{r.location_name} · {r.reported_date}</small></span><StatusBadge status={r.status}/></div>)}</div></details>}
         </TabsContent>
 
         <TabsContent value="stock" className="mt-4">
@@ -145,13 +135,14 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </TabsContent>
       </Tabs>
 
-      <SpoilageDialog
+      {canReportSpoilage&&<CustomerSpoilageReports key={partner.id} customer={partner} reload={reportVersion}/>}
+      {spoilOpen&&<SpoilageDialog
         open={spoilOpen}
         onOpenChange={setSpoilOpen}
         customer={partner}
         locations={locations}
-        onSaved={load}
-      />
+        onSaved={()=>{setReportVersion(n=>n+1);onChanged?.();}}
+      />}
     </div>
   );
 }

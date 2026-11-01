@@ -4,7 +4,7 @@ import { normalizeRole } from './roles.js';
 import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { ensureVehicleStockLocation } from './vehicle-locations.js';
 import { receiveVehicleExpiredReturns } from './commercial-returns.js';
-import { DISPATCH_MANAGER_ROLES } from '../../lib/operations-access.js';
+import { DISPATCH_MANAGER_ROLES, canIssueDeliveryStock } from '../../lib/operations-access.js';
 
 // These operations execute inside the function route's serializable transaction.
 // All validation is completed before the first stock write. A load is custody,
@@ -314,6 +314,7 @@ export async function dispatchAction(base44, user, body) {
   const { employee, role } = await requireStaff(base44, user, managers, 'dispatch stock management');
   if (role !== 'admin' && employee?.status !== 'active') throw new Error('An active management staff record is required');
   if (!['approveDispatchRequest', 'approveDispatch', 'loadDispatch', 'returnDispatchStock', 'dispatchReconciliation'].includes(body.action)) throw new Error('Unknown dispatch stock action');
+  if (['approveDispatchRequest','approveDispatch','loadDispatch'].includes(body.action) && !canIssueDeliveryStock(role)) throw new Error('Only warehouse management or the General Manager can issue delivery goods');
   const svc = base44.asServiceRole;
   if (body.action === 'approveDispatchRequest') return approveRequest(svc, user, body);
   if (typeof body.dispatchId !== 'string' || !body.dispatchId.trim()) throw new Error('Choose a dispatch');

@@ -39,13 +39,19 @@ test('driver collection form uses scoped data and retains its receipt, values an
   try {
     paint(); await r.flush(); paint(); await r.flush(); paint(); assert.equal(calls[0].action, 'driverReturnsWorkspace'); assert.equal(calls[0].driverId, 'driver');
     r.customer.onChange('c'); paint(); await r.flush(); paint();
-    r.catalog.onSelect(product); paint();
-    r.elements.find(e => e.props.type === 'number').props.onChange({ target: { value: '2' } });
+    r.catalog.onQuantityChange(product,1200); paint();
+    assert.equal(r.elements.find(e=>e.props.type==='number').props.value,1200);
+    r.elements.find(e=>e.props.type==='date').props.onChange({target:{value:'2000-01-01'}});
+    r.elements.find(e=>e.props.maxLength===200).props.onChange({target:{value:'OLD-LOT'}});paint();
+    const otherProduct={id:'other',name:'Other product',unit_of_measure:'ea'};workspace.products.push(otherProduct);
+    r.catalog.onQuantityChange(otherProduct,800);paint();assert.equal(r.elements.find(e=>e.props.type==='date').props.value,'');assert.equal(r.elements.find(e=>e.props.maxLength===200).props.value,'');
+    r.catalog.onQuantityChange(product,1200);paint();
+    r.receipt.onBusyChange(true);paint();r.catalog.onQuantityChange(product,2);paint();assert.equal(r.catalog.disabled,true);assert.equal(r.elements.find(e=>e.props.type==='number').props.value,1200);r.receipt.onBusyChange(false);paint();
     r.elements.find(e => e.props.type === 'date').props.onChange({ target: { value: '2000-01-01' } });
     r.receipt.onReferenceChange('RETURN-1'); r.receipt.onChange(['private/proof']); paint();
     await r.elements.find(e => e.tag === 'form').props.onSubmit({ preventDefault() {} }); assert.match(paint(), /Connection interrupted/); assert.equal(saved, 0);
     fail = false; await r.elements.find(e => e.tag === 'form').props.onSubmit({ preventDefault() {} }); assert.equal(saved, 1);
-    const writes = calls.filter(c => c.action === 'recordExpiredReturn'); assert.equal(writes.length, 2); assert.equal(writes[0].requestKey, writes[1].requestKey); assert.equal(writes[1].driverId, 'driver'); assert.equal(writes[1].commercialId, undefined); assert.equal(writes[1].replaceNow, false); assert.equal(writes[1].quantity, 2); assert.equal(writes[1].dispatchId, 'run'); assert.deepEqual(writes[1].receiptFileUris, ['private/proof']);
+    const writes = calls.filter(c => c.action === 'recordExpiredReturn'); assert.equal(writes.length, 2); assert.equal(writes[0].requestKey, writes[1].requestKey); assert.equal(writes[1].driverId, 'driver'); assert.equal(writes[1].commercialId, undefined); assert.equal(writes[1].replaceNow, false); assert.equal(writes[1].quantity, 1200); assert.equal(writes[1].dispatchId, 'run'); assert.deepEqual(writes[1].receiptFileUris, ['private/proof']);
   } finally { r.cleanup(); delete globalThis.__warehouseUI; }
 });
 test('inventory cards retain usable/held quantities and planned loads are not displayed as physical stock', async () => {

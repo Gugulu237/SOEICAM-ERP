@@ -18,7 +18,7 @@ async function byIds(entity, key, ids) {
 // from the delivery's lot issues, never the current warehouse balance or an
 // ordered quantity. Unknown historical batches stay explicitly unknown.
 export function outletStockSnapshot(location, date, { orders = [], orderLines = [], fieldSales = [], fieldLines = [], movements = [], products = [], reports = [], expiredReturns = [] }) {
-  const atOutlet = row => row.location_id === location.id && row.customer_id === location.customer_id;
+  const atOutlet = row => (row.customer_id === location.customer_id && (row.location_id === location.id || location.customer_reporting_point && !row.location_id)) || Boolean(location.customer_reporting_point && location.reporting_parent_id && row.customer_id === location.reporting_parent_id && row.location_id === location.customer_id);
   const deliveredOrders = orders.filter(row => atOutlet(row) && ['delivered', 'partially_delivered', 'invoiced'].includes(row.status));
   const postedSales = fieldSales.filter(row => atOutlet(row) && row.status === 'approved_posted' && row.transaction_date <= date);
   const events = [], groups = new Map(), supported = new Map(products.filter(finished).map(product => [product.id, product]));
@@ -92,11 +92,13 @@ export function outletStockSnapshot(location, date, { orders = [], orderLines = 
 }
 
 export async function loadOutletStock(svc, location, date) {
+  if(location.customer_reporting_point){const customer=await svc.entities.Customer.get(location.customer_id);location={...location,reporting_parent_id:customer?.parent_id||''};}
+  const scope=location.customer_reporting_point?{$or:[{customer_id:location.customer_id,$or:[{location_id:location.id},{location_id:''},{location_id:null},{location_id:{$exists:false}}]},...(location.reporting_parent_id?[{customer_id:location.reporting_parent_id,location_id:location.customer_id}]:[])]}:{location_id:location.id,customer_id:location.customer_id};
   const [orders, fieldSales, reports, expiredReturns] = await Promise.all([
-    readRecords(svc.entities.SalesOrder, { location_id: location.id, customer_id: location.customer_id, status: { $in: ['delivered', 'partially_delivered', 'invoiced'] } }),
-    readRecords(svc.entities.FieldSale, { location_id: location.id, customer_id: location.customer_id, status: 'approved_posted', transaction_date: { $lte: date } }),
+    readRecords(svc.entities.SalesOrder, { ...scope, status: { $in: ['delivered', 'partially_delivered', 'invoiced'] } }),
+    readRecords(svc.entities.FieldSale, { ...scope, status: 'approved_posted', transaction_date: { $lte: date } }),
     readRecords(svc.entities.OutletVisit, { location_id: location.id, report_type: { $in: observedTypes }, visit_date: { $lte: date } }),
-    readRecords(svc.entities.SpoilageRecord, { record_type: 'field_expired_return', location_id: location.id, customer_id: location.customer_id, reported_date: { $lte: date } }),
+    readRecords(svc.entities.SpoilageRecord, { record_type: 'field_expired_return', ...scope, reported_date: { $lte: date } }),
   ]);
   const [orderLines, fieldLines, movements] = await Promise.all([
     byIds(svc.entities.SalesOrderLine, 'order_id', orders.map(row => row.id)),

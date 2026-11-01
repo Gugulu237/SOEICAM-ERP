@@ -11,13 +11,14 @@ async function renderer() {
     b.onResolve({ filter: /^react$/ }, args => args.importer.endsWith('AccountingInventory.jsx') ? { path: 'hooks', namespace: 'fixture' } : undefined);
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};
       export default {...React,createElement:(tag,props,...children)=>{globalThis.__inventoryUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};
-      export const useState=v=>globalThis.__inventoryUI.state('inventory',v),useRef=v=>globalThis.__inventoryUI.ref('inventory',v),useEffect=(fn,deps)=>globalThis.__inventoryUI.effect('inventory',fn,deps);
+      export const lazy=React.lazy,Suspense=React.Suspense;export const useState=v=>globalThis.__inventoryUI.state('inventory',v),useRef=v=>globalThis.__inventoryUI.ref('inventory',v),useEffect=(fn,deps)=>globalThis.__inventoryUI.effect('inventory',fn,deps);
       export const useMemo=(fn,deps)=>{const r=useRef();if(!r.current||deps.some((v,i)=>!Object.is(v,r.current.deps[i])))r.current={value:fn(),deps};return r.current.value;};export const useCallback=(fn,deps)=>useMemo(()=>fn,deps);`, resolveDir: process.cwd() }));
     const mocks = {
       '@/api/erpClient': 'export const erp={};',
       '@/lib/router': `import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const useSearchParams=()=>{};`,
       '@/components/shared/PageHeader': 'export default ()=>null;',
       '@/components/inventory/StockAdjustmentDialog': 'export default ()=>null;',
+      '@/components/inventory/AdjustmentHistory':'export default ()=>null;',
       '@/hooks/useCurrentUser': "export const useCurrentUser=()=>({role:'cashier'});",
       '@/components/ui/button': `import React from 'react';export const Button=({children,variant,size,asChild,...props})=>React.createElement('button',props,children);`,
       '@/components/ui/input': `import React from 'react';export const Input=props=>React.createElement('input',props);`,
@@ -66,7 +67,7 @@ test('posted counts are read-only; approved counts require adjustment permission
   const s = await screen({ status: 'posted', journal_id: 'journal', journal_number: 'JV-1' }, { can_post_adjustments: true }); try {
     const html = s.paint(); assert.match(html, /read-only/); assert.match(html, /\/accounting\/journals\/journal/); assert.equal(s.button('Save counts'), undefined); assert.equal(s.button('Cancel count'), undefined);
     s.props.detail.audit.status = 'approved'; s.paint(); assert.equal(s.button('Post approved stock & journal adjustment').disabled, false);
-    s.props.workspace.can_post_adjustments = false; assert.match(s.paint(), /requires Inventory quantity adjustments access/); assert.equal(s.button('Post approved stock & journal adjustment'), undefined);
+    s.props.workspace.can_post_adjustments = false; assert.match(s.paint(), /Only top administrators with inventory adjustment access/); assert.equal(s.button('Post approved stock & journal adjustment'), undefined);
     s.props.workspace.can_post_adjustments = true;
     s.props.detail.stale = ['Changed']; s.paint(); assert.equal(s.button('Post approved stock & journal adjustment').disabled, true);
     s.props.workspace.user_id = 'other-accountant'; s.paint(); assert.equal(s.button('Post approved stock & journal adjustment'), undefined);

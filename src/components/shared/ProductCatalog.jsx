@@ -2,7 +2,7 @@
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { usePageState } from '@/lib/navigation-context';
 import { Check, PackageSearch, Plus, Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -10,12 +10,19 @@ import { Button } from '@/components/ui/button';
 import { ProductPhoto } from './ProductThumb';
 import { normalizeProductText, productPresentation } from '@/lib/product-images';
 import { formatXAF } from '@/lib/formatters';
+import PickerPopdown from '@/components/ui/picker-popdown';
+import ProductQuantityBar from './ProductQuantityBar';
+import {validProductQuantity} from '@/lib/product-quantity';
 import { isAssemblyInventoryType } from '@/lib/item-types';
 
-export default function ProductCatalog({ products, onSelect, lines = [], selling = false, selecting = false, disabled = false, emptyMessage = ui("No products yet."), actions = undefined, renderDetails = undefined, hidePrice = false }) {
+export default function ProductCatalog({ products, onSelect, lines = [], selling = false, selecting = false, disabled = false, emptyMessage = ui("No products yet."), actions = undefined, renderDetails = undefined, hidePrice = false, onQuantityChange, quantityLabel, quantityLimit, hideAvailability = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const picking = selling || selecting;
+  const picking = selling || selecting || !!onQuantityChange;
+  const [editing,setEditing]=useState(''),[draft,setDraft]=useState(''),anchor=useRef(null);
+  const active=products.find(product=>product.id===editing);
+  const limit=product=>quantityLimit?Number(quantityLimit(product)):Number(product.quantity);
+  const closeQuantity=()=>setEditing('');
   const [search, setSearch] = usePageState(picking ? 'product-picker:search' : 'catalogue:search', '');
   const [family, setFamily] = usePageState(picking ? 'product-picker:family' : 'catalogue:family', 'All');
   const [flavor, setFlavor] = usePageState(picking ? 'product-picker:flavor' : 'catalogue:flavor', 'All');
@@ -41,7 +48,7 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
         {['All', ...families].map((f) => <button type="button" key={f} aria-pressed={family === f} onClick={() => setFamily(f)}
           className={`min-h-10 rounded-full border px-4 text-sm font-medium transition-colors ${family === f ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>{f}</button>)}
       </div>}
-      <div className="flex items-center justify-between text-xs text-slate-500"><span>{filtered.length}{ui(" product")}{filtered.length !== 1 ? 's' : ''}</span>{picking && <span>{ui("Tap a photo to add")}</span>}</div>
+      <div className="flex items-center justify-between text-xs text-slate-500"><span>{filtered.length}{ui(" product")}{filtered.length !== 1 ? 's' : ''}</span>{picking && <span>{ui(onQuantityChange?'Tap a product to enter quantity':'Tap a photo to add')}</span>}</div>
       {!filtered.length ? <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center">
         <PackageSearch className="mx-auto mb-3 h-9 w-9 text-slate-400" /><p className="text-sm text-slate-600">{products.length ? ui("No products match these filters.") : emptyMessage}</p>
         {products.length > 0 && <Button variant="link" onClick={reset}>{ui("Clear filters")}</Button>}
@@ -49,9 +56,12 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
         {filtered.map(({ product, size, flavor: productFlavor }) => {
           const quantity = Number(lines.find((line) => line.product_id === product.id)?.quantity) || 0;
           const remaining = Math.max(0, Math.round(((product.quantity || 0) - quantity) * 1000) / 1000);
-          const unavailable = picking && (remaining <= 0 || (selling && !(Number(product.selling_price) > 0)));
+          const selected=lines.some(line=>line.product_id===product.id);
+          const unavailable = picking && (onQuantityChange
+            ? !selected && (!(limit(product)>0) || !Number.isFinite(limit(product)) || (selling && !(Number(product.selling_price)>0)))
+            : remaining<=0 || (selling && !(Number(product.selling_price)>0)));
           return <article key={product.id} className={`group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white transition-shadow hover:shadow-md ${quantity ? 'border-slate-400 ring-1 ring-primary' : 'border-slate-200'}`}>
-            <button type="button" disabled={disabled || unavailable} onClick={() => onSelect(product)} aria-label={picking ? ui("Add {0} to {1}", product.name, selling ? 'sale' : 'selection') : ui("Open {0}", product.name)}
+            <button type="button" disabled={disabled || unavailable} onClick={event=>{if(onQuantityChange){anchor.current=event.currentTarget;setEditing(product.id);setDraft(lines.find(line=>line.product_id===product.id)?.quantity??'');}else onSelect?.(product);}} aria-label={onQuantityChange?ui('Enter quantity for {0}',product.name):picking ? ui("Add {0} to {1}", product.name, selling ? 'sale' : 'selection') : ui("Open {0}", product.name)}
               className="flex flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-default">
               <div className="relative w-full">
                 <ProductPhoto product={product} className="aspect-[4/3] w-full" imageClassName="p-2 transition-transform group-hover:scale-105" />
@@ -64,7 +74,7 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
                 {!picking && <p className="mb-2 text-xs text-slate-500">{product.sku || ui("No code")}{isAssemblyInventoryType(product.inventory_type) ? ` · ${(product.components || []).length} components` : ''}</p>}
                 <div className="mt-auto flex flex-wrap items-end justify-between gap-2 pt-3">
                   <div>{!selecting && !hidePrice && <div className="text-sm font-bold tabular-nums text-slate-900">{formatXAF(product.selling_price || 0)}</div>}
-                    {picking && <div className={`mt-1 text-[11px] ${remaining > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{selling && !(Number(product.selling_price) > 0) ? ui("Price needed") : `${remaining} ${product.storage_unit || ui("units")} left`}</div>}
+                    {picking && !hideAvailability && <div className={`mt-1 text-[11px] ${remaining > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>{selling && !(Number(product.selling_price) > 0) ? ui("Price needed") : `${onQuantityChange?limit(product):remaining} ${product.storage_unit || ui("units")} ${ui(onQuantityChange?"available":"left")}`}</div>}
                     {!picking && product.quantity != null && <p className="mt-1 text-xs text-slate-500">{product.quantity} {product.storage_unit || ui("units")}{ui(" on hand")}</p>}
                     {!picking && product.is_active === false && <span className="text-xs text-slate-500">{ui("Inactive")}</span>}
                   </div>
@@ -77,6 +87,7 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
           </article>;
         })}
       </div>}
+      {active&&onQuantityChange&&<PickerPopdown anchorRef={anchor} onOpenChange={open=>{if(!open)closeQuantity();}} label={ui('Enter quantity for {0}',active.name)}><ProductQuantityBar product={active} value={draft} onChange={setDraft} maximum={limit(active)} label={quantityLabel} existing={lines.some(line=>line.product_id===active.id)} disabled={disabled} showAvailability={!hideAvailability} onConfirm={quantity=>{if(disabled||!validProductQuantity(quantity,limit(active)))return;onQuantityChange(active,quantity);closeQuantity();}} onCancel={closeQuantity} onRemove={()=>{if(!disabled){onQuantityChange(active,null);closeQuantity();}}}/></PickerPopdown>}
     </div>
   );
 }

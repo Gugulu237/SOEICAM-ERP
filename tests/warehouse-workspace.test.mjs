@@ -30,6 +30,31 @@ function fixture(extra={}) {
   return {rows,stores,writes,reads};
 }
 const transfer={productId:'product',fromWarehouseId:'from',toWarehouseId:'to',quantity:3,movementDate:'2026-10-19',requestKey:'11111111-1111-4111-8111-111111111111',reason:'Rebalance cold stock'};
+test('partial transfers preserve actual carrying value even when the cached unit cost is stale',async()=>{
+ const f=fixture();Object.assign(f.rows.StockBalance[0],{quantity:3,total_value:1,unit_cost:0.2});
+ await warehouseTransfer(admin,f.stores,{...transfer,quantity:1});
+ const source=f.rows.StockBalance.find(b=>b.id==='stock'),target=f.rows.StockBalance.find(b=>b.warehouse_id==='to');
+ assert.equal(source.quantity,2);assert.equal(source.total_value,0.67);assert.equal(target.quantity,1);assert.equal(target.total_value,0.33);assert.equal(source.total_value+target.total_value,1);assert.equal(source.unit_cost,0.335);
+ await warehouseTransfer(admin,f.stores,{...transfer,quantity:2,requestKey:'22222222-2222-4222-8222-222222222222'});
+ assert.equal(source.quantity,0);assert.equal(source.total_value,0);assert.equal(target.quantity,3);assert.equal(target.total_value,1);
+});
+
+test('transfers retain opening and recovery provenance and do not merge different origins',async()=>{
+ const f=fixture();Object.assign(f.rows.StockBalance[0],{opening_batch_id:'OPEN-1',stock_origin:'adjustment',inventory_recovery_id:'REC-1'});
+ f.rows.StockBalance.push({...f.rows.StockBalance[0],id:'different-origin',warehouse_id:'to',quantity:2,total_value:4,inventory_recovery_id:'REC-OTHER'});
+ await warehouseTransfer(admin,f.stores,transfer);
+ const target=f.rows.StockBalance.find(b=>b.warehouse_id==='to'&&b.inventory_recovery_id==='REC-1');
+ assert.ok(target);assert.equal(target.opening_batch_id,'OPEN-1');assert.equal(target.stock_origin,'adjustment');assert.equal(target.production_order_id,'production');
+ assert.equal(f.rows.StockBalance.find(b=>b.id==='different-origin').quantity,2);
+});
+
+test('transfers reject malformed quantities, missing carrying values and residual-value destination lots',async()=>{
+ const f=fixture();
+ await assert.rejects(warehouseTransfer(admin,f.stores,{...transfer,quantity:true}),/positive quantity/);assert.equal(f.writes.length,0);
+ f.rows.StockBalance[0].total_value=undefined;await assert.rejects(warehouseTransfer(admin,f.stores,transfer),/cost/);assert.equal(f.writes.length,0);
+ f.rows.StockBalance[0].total_value=20;f.rows.StockBalance.push({...f.rows.StockBalance[0],id:'residual',warehouse_id:'to',quantity:0,total_value:2});
+ await assert.rejects(warehouseTransfer(admin,f.stores,transfer),/destination stock balance/);assert.equal(f.writes.length,0);
+});
 
 test('warehouse management permissions preserve read-only and field-role boundaries',()=>{
   for(const role of ['warehouse_manager','production_manager'])assert.doesNotThrow(()=>guardMutation(context(role),'Warehouse','update',{name:'New name'},warehouse));

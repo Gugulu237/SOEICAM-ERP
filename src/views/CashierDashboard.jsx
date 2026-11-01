@@ -5,7 +5,8 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useMemo } from "react";
 import { DashboardIdentity } from '@/components/home/DashboardIdentity';
 import CashierWorkspace from '@/components/cashier/CashierWorkspace';
-import { Link, useSearchParams } from '@/lib/router';
+import { useSearchParams } from '@/lib/router';
+import {useMenuBack} from '@/hooks/useMenuBack';
 import { erp } from "@/api/erpClient";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { prepareCashDisbursement } from "@/lib/purchase-payments";
@@ -29,9 +30,9 @@ export default function CashierDashboard() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { role, roleLabel, employee, user, loading } = useCurrentUser();
-  const [params] = useSearchParams();
+  const [params] = useSearchParams(),backToMenu=useMenuBack('/cashier');
   if (loading) return <p role="status" className="p-8 text-slate-500">{ui("Loading cash desk...")}</p>;
-  if (role === 'production_manager' || params.get('view') === 'cheques') return <><Link to="/cashier" className="mb-4 inline-block text-sm text-emerald-800 underline">{ui("Back to cash workspace")}</Link><ChequeDesk /></>;
+  if (role === 'production_manager' || params.get('view') === 'cheques') return <>{role!=='production_manager'&&<Button variant="ghost" className="mb-4" onClick={backToMenu}>{ui('Cashier menu')}</Button>}<ChequeDesk /></>;
   return <DashboardIdentity value={{roleName: roleLabel, employeeName: employee?.full_name || user?.full_name}}><CashierWorkspace /></DashboardIdentity>;
 }
 

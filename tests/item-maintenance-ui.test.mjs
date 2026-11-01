@@ -23,12 +23,11 @@ async function renderer(){
 }
 const item={id:'milk',name:'Milk powder',inventory_type:'raw_material',is_active:true,unit_of_measure:'kg'};
 const event={preventDefault(){}};
-test('item editor opens a quantity adjustment for the selected item and retains role boundaries',async()=>{
+test('item editor retains catalogue maintenance but never exposes quantity adjustments',async()=>{
  const rt=hookRuntime(),render=await renderer();rt.session={role:'admin'};globalThis.__itemActions=rt;
  const draw=(current=item)=>{rt.beforeRender();rt.adjustment=null;return render({item:current});};
  try{
-  draw();assert.ok(rt.buttons.find(b=>b.label==='Delete item'));rt.buttons.find(b=>b.label==='Adjust quantity').onClick();draw();
-  assert.equal(rt.adjustment.productId,'milk');assert.equal(rt.adjustment.open,true);
+  draw();assert.ok(rt.buttons.find(b=>b.label==='Delete item'));assert.ok(!rt.buttons.find(b=>b.label==='Adjust quantity'));assert.equal(rt.adjustment,null);
   rt.session={role:'warehouse_manager',allowedModules:['inventory']};draw();assert.ok(rt.buttons.find(b=>b.label==='Delete item'));assert.ok(!rt.buttons.find(b=>b.label==='Adjust quantity'));
   rt.session={role:'commercial',allowedModules:['inventory','inventory_adjustments']};assert.equal(draw(),'');
  }finally{rt.cleanup();delete globalThis.__itemActions;}

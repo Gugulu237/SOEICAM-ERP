@@ -1,4 +1,4 @@
-import LearnMore from '@/components/shared/LearnMore';
+import {useMenuBack} from '@/hooks/useMenuBack';
 import ReportExport from '@/components/shared/ReportExport';
 import {salesStatusDocument} from '@/lib/sales-report-documents';
 
@@ -18,10 +18,10 @@ import PageHeader from '@/components/shared/PageHeader';
 import DataTable from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import CompanySalesRegister from '@/components/sales/CompanySalesRegister';
-import { Plus,RefreshCw } from 'lucide-react';
+import { Plus,RefreshCw,ArrowLeft,ReceiptText,ClipboardList,FileText,Truck,Store } from 'lucide-react';
 const InvoiceWorkspace=dynamic(()=>import('@/components/sales/InvoiceWorkspace'));
 const FieldSalesPanel=dynamic(()=>import('@/components/sales/FieldSalesPanel'));
 const OutletReports=dynamic(()=>import('@/views/OutletReports'));
@@ -31,21 +31,36 @@ export default function Sales() {
 
   const {role,loading}=useCurrentUser();
   if(loading)return <p role="status" className="py-8 text-sm text-slate-500">{ui("Loading sales…")}</p>;
-  if(['production_manager','warehouse_manager'].includes(role))return <div className="space-y-5"><PageHeader title={ui("Company sales")} subtitle={<LearnMore title={ui("Company sales")}><p>{ui("Sales activity and current customer balances.")}</p></LearnMore>}/><CompanySalesRegister readOnly/></div>;
-  return <SalesWorkspace/>;
+  return <SalesWorkspace readOnly={['production_manager','warehouse_manager'].includes(role)}/>;
 }
-function SalesWorkspace() {
-  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-
-  const {role}=useCurrentUser(),navigate=useNavigate(),[params,setParams]=useSearchParams();
-  const allowed=['all','orders','invoices',...(role==='admin'?['field','outlets']:[])];
-  const tab=allowed.includes(params.get('tab'))?params.get('tab'):'all';
-  return <div><PageHeader title={ui("Sales")} subtitle={<LearnMore title={ui("Sales")}><p>{ui("Company sales, customer invoices and supply reports")}</p></LearnMore>} actions={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={()=>navigate('/sales?tab=invoices')}>{ui("Customer invoices")}</Button><Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui("New sale")}</Button></div>}/><Tabs value={tab} onValueChange={value=>setParams({tab:value})}><TabsList className="h-auto flex-wrap justify-start"><TabsTrigger value="all">{ui("All sales")}</TabsTrigger><TabsTrigger value="orders">{ui("Sales orders")}</TabsTrigger><TabsTrigger value="invoices">{ui("Invoices")}</TabsTrigger>{role==='admin'&&<><TabsTrigger value="field">{ui("Field sales")}</TabsTrigger><TabsTrigger value="outlets">{ui("Outlet reports")}</TabsTrigger></>}</TabsList>
-    <TabsContent value="all" className="mt-4">{tab==='all'&&<CompanySalesRegister/>}</TabsContent>
-    <TabsContent value="orders" className="mt-4">{tab==='orders'&&<SalesOrders/>}</TabsContent>
-    <TabsContent value="invoices" className="mt-4">{tab==='invoices'&&<InvoiceWorkspace/>}</TabsContent>
-    {role==='admin'&&<><TabsContent value="field" className="mt-4">{tab==='field'&&<FieldSalesPanel/>}</TabsContent><TabsContent value="outlets" className="mt-4">{tab==='outlets'&&<OutletReports embedded/>}</TabsContent></>}
-  </Tabs></div>;
+function SalesWorkspace({readOnly=false}) {
+  useInterfaceLanguage();
+  const {role}=useCurrentUser(),navigate=useNavigate(),[params,setParams]=useSearchParams(),backToMenu=useMenuBack('/sales');
+  const choices=readOnly?[{key:'all',label:ui('Company sales'),Icon:ReceiptText}]:[
+    {key:'new',label:ui('New sale'),Icon:Plus},
+    {key:'all',label:ui('All sales'),Icon:ReceiptText},
+    {key:'orders',label:ui('Sales orders'),Icon:ClipboardList},
+    {key:'invoices',label:ui('Invoices'),Icon:FileText},
+    ...(role==='admin'?[{key:'field',label:ui('Field sales'),Icon:Truck},{key:'outlets',label:ui('Outlet reports'),Icon:Store}]:[])
+  ];
+  const tab=choices.some(choice=>choice.key===params.get('tab')&&choice.key!=='new')?params.get('tab'):'home';
+  const selected=choices.find(choice=>choice.key===tab);
+  return <div className="min-w-0 space-y-5">
+    {tab!=='home'&&<Button variant="ghost" onClick={backToMenu}><ArrowLeft size={16} className="mr-2"/>{ui('Sales menu')}</Button>}
+    <PageHeader title={selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>
+    {tab==='home'?<nav aria-label={ui('Sales sections')} className={'mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 '+(choices.length>4?'lg:grid-cols-3':'lg:grid-cols-4')}>
+      {choices.map(({key,label,Icon})=><button key={key} type="button" aria-label={label} onClick={()=>key==='new'?navigate('/sales/new'):setParams({tab:key})} className="flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span>
+        <span className="break-words text-sm font-semibold text-slate-900 sm:text-base">{label}</span>
+      </button>)}
+    </nav>:<section aria-label={selected?.label}>
+      {tab==='all'&&<CompanySalesRegister readOnly={readOnly}/>}
+      {tab==='orders'&&<SalesOrders/>}
+      {tab==='invoices'&&<InvoiceWorkspace/>}
+      {tab==='field'&&<FieldSalesPanel/>}
+      {tab==='outlets'&&<OutletReports embedded/>}
+    </section>}
+  </div>;
 }
 function SalesOrders() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

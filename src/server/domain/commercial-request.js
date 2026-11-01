@@ -17,6 +17,7 @@ export function supplyRequestFingerprint(body, sale, lines) {
     reference: String(body.receiptReference || '').trim(), photos: [...(body.receiptFileUris || [])].filter(Boolean).sort(),
     notes: body.notes || '', override: body.creditOverrideReason || '',
     replacements: body.stockReplacements || [],
+    ...(body.replacementsDeclared!==undefined?{replacementsDeclared:body.replacementsDeclared}:{}),
     lines: (body.lines || []).map(line => ({ product: line.product_id, quantity: number(line.quantity, 3),
       price: line.unit_price === '' || line.unit_price == null ? Number(lines.find(saved => saved.product_id === line.product_id)?.unit_price) : number(line.unit_price, 2),
     })).sort((a, b) => String(a.product).localeCompare(String(b.product))),
