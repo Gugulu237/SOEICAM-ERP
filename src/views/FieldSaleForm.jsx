@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import SaleProductPicker from '@/components/sales/SaleProductPicker';
+import {quantityAfterReplacements} from '@/lib/product-quantity';
 import SaleStockPicker,{vehicleSaleLabel} from '@/components/sales/SaleStockPicker';
 import FieldSaleLines from '@/components/field/FieldSaleLines';
 import FieldCustomerRegistration from '@/components/field/FieldCustomerRegistration';
@@ -312,7 +313,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
       </section>
     </div>
     {wizard&&<div className="mt-5 flex gap-3">{step!=='customer'&&<Button type="button" variant="outline" className="min-h-12 flex-1" disabled={busy} onClick={()=>goTo(step==='checkout'?'products':'customer')}><ArrowLeft size={16} className="mr-2"/>{ui('Back')}</Button>}{step!=='checkout'&&<Button type="button" className="min-h-12 flex-1" disabled={busy||runLoading||outletLoading} onClick={step==='customer'?nextProducts:review}>{ui(step==='customer'?'Continue to products':'Review sale')}<ArrowRight size={16} className="ml-2"/></Button>}</div>}
-    <SaleProductPicker open={pickerOpen} onOpenChange={setPickerOpen} products={availableProducts.map(p=>({...p,available:p.quantity,unit:p.unit_of_measure||p.storage_unit}))} lines={form.lines} onQuantityChange={setProductQuantity} disabled={disabled||runLoading||Boolean(runError)}/>
+    <SaleProductPicker open={pickerOpen} onOpenChange={setPickerOpen} products={availableProducts.map(p=>({...p,available:quantityAfterReplacements(p,form.stock_replacements),unit:p.unit_of_measure||p.storage_unit}))} lines={form.lines} onQuantityChange={setProductQuantity} disabled={disabled||runLoading||Boolean(runError)}/>
 
   </div>;
 }

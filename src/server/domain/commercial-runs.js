@@ -6,7 +6,7 @@ import { effectiveRole } from './roles.js';
 export const commercialRunStates = ['approved', 'loaded', 'in_transit', 'returned', 'completed'];
 export const supplyRunStates = ['loaded', 'in_transit'];
 const fields = ['id', 'dispatch_number', 'dispatch_date', 'status', 'driver_id', 'driver_name', 'vehicle_id', 'vehicle_name', 'vehicle_warehouse_id', 'route_id', 'route_name'];
-const productFields = ['id', 'name', 'inventory_type', 'image_url', 'size', 'unit_of_measure', 'storage_unit', 'sales_unit', 'selling_price', 'tax_rate', 'is_active'];
+const productFields = ['id', 'name', 'sku', 'category', 'inventory_type', 'image_url', 'size', 'flavor', 'product_family', 'unit_of_measure', 'storage_unit', 'sales_unit', 'selling_price', 'tax_rate', 'is_active'];
 const pick = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
 const round3 = value => Math.round(Number(value) * 1000) / 1000;
 const active = employee => employee && employee.status === 'active' && !employee.employee_removed_at;

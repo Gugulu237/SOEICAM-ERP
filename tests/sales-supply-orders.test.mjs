@@ -52,7 +52,11 @@ test('Sales offers actual issued loads first and keeps empty main finished wareh
   const options=await f.call({action:'salesOrderWorkspace'});
   assert.equal(options.runs[0].commercial_name,'Agent A');assert.ok(options.warehouses.some(w=>w.name==='Main Cold Room'));
   assert.ok(!options.warehouses.some(w=>w.name==='Ingredients'));
+  await f.s.Product.update('product-a',{product_family:'Yaourt brasse',flavor:'Vanille',size:'500 g'});
   const stock=await f.call({action:'salesOrderStock',sourceType:'issued',dispatchId:'run-a'});
+  assert.deepEqual([stock.products[0].product_family,stock.products[0].flavor,stock.products[0].size],['Yaourt brasse','Vanille','500 g']);
+  const companyStock=await f.call({action:'salesOrderStock',sourceType:'company'});
+  assert.deepEqual([companyStock.products[0].product_family,companyStock.products[0].flavor,companyStock.products[0].size],['Yaourt brasse','Vanille','500 g']);
   assert.equal(stock.source.stock_warehouse_id,'van-stock');assert.equal(stock.products[0].available,10);
   assert.equal('unit_cost' in stock.products[0],false);assert.equal('cost_of_goods' in stock,false);
   assert.equal(isReadOnlyFunction('fieldOps','salesOrderWorkspace'),true);assert.equal(isReadOnlyFunction('fieldOps','recordSuppliedOrder'),false);

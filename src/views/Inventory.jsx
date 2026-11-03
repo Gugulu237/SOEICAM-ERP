@@ -22,10 +22,10 @@ import { finishedStockOutsideColdRoom } from '@/lib/finished-product-storage';
 import { inventoryLowStock } from '@/lib/stock-alerts';
 import { isAssemblyInventoryType } from '@/lib/item-types';
 import { canAdjustInventory } from '@/lib/inventory-adjustment-access';
-import StockOnHand from "@/components/inventory/StockOnHand";
+const StockOnHand=lazy(()=>import("@/components/inventory/StockOnHand"));
 import GroupedItems from "@/components/inventory/GroupedItems";
 import ViewToggle from "@/components/shared/ViewToggle";
-import QuickItemEditor from "@/components/items/QuickItemEditor";
+const QuickItemEditor=lazy(()=>import("@/components/items/QuickItemEditor"));
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -74,8 +74,8 @@ export default function Inventory() {
     const next=new URLSearchParams(params);next.delete('issue');next.delete('commercial');setParams(next,{replace:true});
   },[authLoading,canIssueStock,params,setParams]);
   useEffect(()=>{
-    if(!authLoading && workspace.section==='adjustments' && canAdjustStock) navigate('/accounting/inventory?view=adjustments',{replace:true});
-  },[authLoading,workspace.section,canAdjustStock,navigate]);
+if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const query=new URLSearchParams({view:'adjustments',filter:workspace.filter});if(params.get('warehouse'))query.set('warehouse',params.get('warehouse'));navigate('/accounting/inventory?'+query.toString(),{replace:true});}
+  },[authLoading,workspace.section,workspace.filter,params,canAdjustStock,navigate]);
   const lowStock = useMemo(() => inventoryLowStock(products, balances), [products, balances]);
   const [movementVersion, setMovementVersion] = useState(0);
   const [showTransfer, setShowTransfer] = useState(false);
@@ -84,7 +84,7 @@ export default function Inventory() {
   const closeItemEditor = () => { if (!editorBusy.current) setEditingItem(null); };
   const [customUnits, setCustomUnits] = useState([]), [unitsLoading, setUnitsLoading] = useState(false);
   const loadSequence = useRef(0), unitRequest = useRef(null);
-  const pendingLoad = useRef(null), lastLoadAt = useRef(0);
+  const pendingLoad = useRef(null), lastLoadAt = useRef(0), overviewTag = useRef(null);
   const catalogue=showRemoved?removedProducts:products;
   const counts = useMemo(() => inventoryItemCounts(catalogue), [catalogue]);
   const stock = useMemo(() => inventoryStockIndex(balances, warehouses), [balances, warehouses]);
@@ -111,10 +111,16 @@ export default function Inventory() {
     setRefreshing(true);
     if (!options?.background) setError("");
     try {
-      const response = await fetch("/api/inventory/overview", { cache: "no-store", credentials: "same-origin", signal: controller.signal });
+      const url="/api/inventory/overview?compact=1"+(showRemoved?"&removed=1":"");
+      if(overviewTag.current?.url!==url&&!options?.background)setLoading(true);
+      const tag=overviewTag.current?.url===url?overviewTag.current.value:null;
+      const response = await fetch(url, { cache: "no-store", credentials: "same-origin", signal: controller.signal,headers:tag?{"If-None-Match":tag}:{} });
+      if(controller.signal.aborted||sequence!==loadSequence.current)return;
+      if(response.status===304){lastLoadAt.current=Date.now();setError("");return;}
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || ui("Inventory could not load"));
       if (controller.signal.aborted || sequence !== loadSequence.current) return;
+      overviewTag.current={url,value:response.headers?.get?.("etag")||null};
       setProducts(data.products); setRemovedProducts(data.removedProducts||[]); setBalances(data.balances); setWarehouses(data.warehouses);
       lastLoadAt.current = Date.now(); setError("");
       setMovementVersion(value => value + 1);
@@ -123,7 +129,7 @@ export default function Inventory() {
       if (pendingLoad.current === controller) pendingLoad.current = null;
       if (sequence === loadSequence.current) { setLoading(false); setRefreshing(false); }
     }
-  }, []);
+  }, [showRemoved]);
   const needsOverview = ['items','stock','movements','alerts','locations','counts'].includes(workspace.section) || alertsOpen || showTransfer;
   useEffect(() => {
     if(authLoading || !needsOverview)return;
@@ -134,7 +140,7 @@ export default function Inventory() {
     return () => { loadSequence.current++; pendingLoad.current?.abort(); window.clearInterval(timer); window.removeEventListener('focus', refreshVisible); document.removeEventListener('visibilitychange', refreshVisible); };
   }, [loadData,authLoading,needsOverview]);
 
-  useEffect(()=>{if(!authLoading&&needsOverview)return watchItemCatalogue(()=>loadData(),{interval:0});},[loadData,authLoading,needsOverview]);
+  useEffect(()=>{if(!authLoading&&needsOverview)return watchItemCatalogue(event=>loadData({background:!['soeicam:item-catalogue-changed','storage'].includes(event?.type)}),{interval:0});},[loadData,authLoading,needsOverview]);
 
   function loadUnits() {
     if (unitRequest.current) return unitRequest.current;
@@ -147,12 +153,13 @@ export default function Inventory() {
   }
   function savedItem(item) {
     // A refresh begun before this save must not overwrite the returned record.
+    overviewTag.current=null;
     loadSequence.current++; pendingLoad.current?.abort(); pendingLoad.current = null; setRefreshing(false); setLoading(false);
     setProducts(rows => item.item_removed_at ? rows.filter(row => row.id !== item.id) : rows.some(row => row.id === item.id) ? rows.map(row => row.id === item.id ? item : row) : [...rows, item]);
     setRemovedProducts(rows => !item.item_removed_at ? rows.filter(row => row.id !== item.id) : rows.some(row => row.id === item.id) ? rows.map(row => row.id === item.id ? item : row) : [...rows, item]);
   }
-  const quickEditor = item => canEdit ? <QuickItemEditor className="min-w-0 [&>button]:h-full [&>button]:w-full" item={item} catalogueItems={products} units={units} unitsLoading={unitsLoading} onOpen={loadUnits} onSaved={item=>{savedItem(item);loadData();}} onEditDetails={editItem} /> : null;
-  const misplaced=finishedStockOutsideColdRoom(products,warehouses,balances);
+  const quickEditor = item => canEdit ? <Suspense fallback={<span role="status" className="text-xs">{ui("Loading...")}</span>}><QuickItemEditor className="min-w-0 [&>button]:h-full [&>button]:w-full" item={item} catalogueItems={products} units={units} unitsLoading={unitsLoading} onOpen={loadUnits} onSaved={item=>{savedItem(item);loadData();}} onEditDetails={editItem} /></Suspense> : null;
+  const misplaced=useMemo(()=>finishedStockOutsideColdRoom(products,warehouses,balances),[products,warehouses,balances]);
 
   useEffect(() => {
     if (workspace.section !== 'recovery') return;
@@ -220,7 +227,7 @@ export default function Inventory() {
           <label className="grid w-full min-w-0 gap-1 text-xs text-slate-600 xl:max-w-sm">{ui('Location')}<select aria-label={ui('Stock location')} value={params.get('warehouse') || ''} onChange={event=>changeWorkspace({warehouse:event.target.value})} className="h-11 w-full min-w-0 rounded-xl border bg-white px-3 text-sm"><option value="">{ui('All locations')}</option>{warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
           <div className="flex flex-wrap gap-2"><Button variant="ghost" size="icon" className="h-11 w-11" aria-label={ui('Refresh stock')} disabled={refreshing} onClick={()=>loadData()}><RefreshCw size={17}/></Button>{canMoveStock && <Button className="min-h-11" disabled={loading} onClick={()=>setShowTransfer(true)}><ArrowLeftRight size={16} className="mr-1"/>{ui('Move stock')}</Button>}</div>
         </div>
-        {loading ? <Pending/> : <StockOnHand key={params.get('warehouse') || 'all'} products={products} balances={balances} warehouses={warehouses} warehouseId={params.get('warehouse') || ''}/>}
+        {loading ? <Pending/> : <Suspense fallback={<Pending/>}><StockOnHand key={params.get('warehouse') || 'all'} products={products} balances={balances} warehouses={warehouses} warehouseId={params.get('warehouse') || ''}/></Suspense>}
 
         </div>}
         {workspace.section === 'locations' && canManageWarehouses && <div className="space-y-3"><div className="flex justify-end"><Button className="min-h-11" onClick={()=>setLocationDialog({})}>{ui('Add location')}</Button></div>{loading?<Pending/>:<div className="divide-y rounded-xl border bg-white">{warehouses.filter(w=>!['vehicle','commercial_custody'].includes(w.warehouse_type)).map(w=><div key={w.id} className="flex items-center justify-between gap-3 p-3 text-sm"><div className="min-w-0 break-words"><strong>{w.name}</strong><p className="text-xs text-slate-500">{w.code} · {ui(w.is_active===false?'Inactive':'Active')}</p></div><Button variant="outline" className="min-h-11 shrink-0" onClick={()=>setLocationDialog(w)}>{ui('Edit')}</Button></div>)}</div>}</div>}

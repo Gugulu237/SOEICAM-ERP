@@ -9,8 +9,10 @@ async function renderer(){
  if(compiled)return compiled;
  const result=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Stock from './src/components/inventory/StockOnHand.jsx';export const render=props=>renderToStaticMarkup(React.createElement(Stock,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'stock-ui',setup(b){
   b.onResolve({filter:/^react$/},a=>a.importer.endsWith('StockOnHand.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
-  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__stockUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=value=>globalThis.__stockUI.state('stock',value),useMemo=fn=>fn();`,resolveDir:process.cwd()}));
+  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__stockUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=value=>globalThis.__stockUI.state('stock',value),useMemo=fn=>fn(),useRef=v=>globalThis.__stockUI.ref('stock',v);`,resolveDir:process.cwd()}));
   const mocks={
+   '@/components/ui/dialog':"import React from 'react';export const Dialog=({open,onOpenChange,children})=>{globalThis.__stockUI.closePopup=()=>onOpenChange(false);return open?React.createElement('div',{role:'dialog'},children):null;};export const DialogContent=({children,...p})=>React.createElement('div',p,children);export const DialogHeader=({children})=>React.createElement('header',null,children);export const DialogTitle=DialogHeader;export const DialogDescription=DialogHeader;",
+
    '@/lib/business-date':"export const businessDate=()=> '2026-11-01';",
    '@/components/ui/button':"import React from 'react';export function Button({children,...props}){globalThis.__stockUI.capture('button',props,children);return React.createElement('button',props,children);}",
   };
@@ -19,14 +21,14 @@ async function renderer(){
 }
 const products=[{id:'milk',name:'Fresh milk',inventory_type:'assembly',unit_of_measure:'bottle'}],warehouses=[{id:'cold',name:'Cold room',warehouse_type:'cold_room'}];
 const balances=[{id:'first',product_id:'milk',warehouse_id:'cold',lot_number:'LOT-001',batch_number:'PROD-1',quantity:12,expiry_date:'2026-11-03'},{id:'second',product_id:'milk',warehouse_id:'cold',lot_number:'LOT-002',batch_number:'PROD-2',quantity:5,expiry_date:'2026-11-10'}];
-test('item details start collapsed, open accessibly and close again; search and expiry filters reconcile quantities',async()=>{
+test('stock quick view retains batch reports and closes independently; filters reconcile quantities',async()=>{
  const render=await renderer(),r=hookRuntime();globalThis.__stockUI=r;
  const paint=()=>{r.beforeRender();return render({products,balances,warehouses});};
  const item=()=>r.buttons.find(b=>b['aria-label']==='Stock details for Fresh milk');
  try{
   let html=paint();assert.match(html,/Fresh milk/);assert.doesNotMatch(html,/LOT-001|PROD-1|Send first/);assert.equal(item()['aria-expanded'],false);
-  item().onClick();html=paint();assert.match(html,/LOT-001/);assert.match(html,/PROD-1/);assert.match(html,/Send first/);assert.match(html,/Cold room/);assert.equal(item()['aria-expanded'],true);assert.match(html,/overflow-y-auto/);
-  item().onClick();assert.doesNotMatch(paint(),/LOT-001/);
+  item().onClick();html=paint();assert.match(html,/LOT-001/);assert.match(html,/PROD-1/);assert.match(html,/Send first/);assert.match(html,/Cold room/);assert.equal(item()['aria-expanded'],true);assert.match(html,/overflow-y-auto/);assert.match(html,/role="dialog"/);assert.equal(item()['aria-haspopup'],'dialog');
+  r.closePopup();assert.doesNotMatch(paint(),/LOT-001/);
   r.controls.find(c=>c['aria-label']==='Search items, lots or batches').onChange({target:{value:'PROD-2'}});paint();item().onClick();html=paint();assert.match(html,/LOT-002/);assert.doesNotMatch(html,/LOT-001|Send first/);assert.match(html,/only matching lots/);
   r.controls.find(c=>c['aria-label']==='Expiry window').onChange({target:{value:'7'}});assert.match(paint(),/No remaining stock/);
  }finally{r.cleanup();delete globalThis.__stockUI;}

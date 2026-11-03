@@ -1,6 +1,9 @@
 import french from './locales/fr.json' with {type:'json'};
 const listeners=new Set();
-const foldedFrench=new Map(Object.entries(french).map(([en,fr])=>[en.toLowerCase(),fr]));
+// Build fallback indexes only when needed; ordinary labels use direct lookups.
+let foldedFrench,reverseFrench,patterns;
+const foldedTranslations=()=>foldedFrench??=new Map(Object.entries(french).map(([en,fr])=>[en.toLowerCase(),fr]));
+const reverseTranslations=()=>reverseFrench??=new Map(Object.entries(french).map(([en,fr])=>[fr,en]));
 let language='en',identity=null,companyLanguage='fr';
 export const supportedLanguages=['fr','en'];
 export const localeFor=lang=>lang==='fr'?'fr-CM':'en-CM';
@@ -25,24 +28,23 @@ export function updateCompanyLanguage(value){if(!supportedLanguages.includes(val
 export function translate(source,lang=language,...values){
   if(typeof source!=='string')return source;
   const normalized=source.replace(/\s+/g,' ').trim();
-  const translation=lang==='fr'?(french[source]??french[normalized]??foldedFrench.get(normalized.toLowerCase())):undefined;
+  const translation=lang==='fr'?(french[source]??french[normalized]??foldedTranslations().get(normalized.toLowerCase())):undefined;
   const text=translation===undefined?source:(source.match(/^\s*/)?.[0]||'')+translation.trim()+(source.match(/\s*$/)?.[0]||'');
   return text.replace(/\{(\d+)\}/g,(match,index)=>Number(index)<values.length?String(values[Number(index)]??''):match);
 }
 export const ui=(source,...values)=>translate(source,language,...values);
 const messageSources=new Map();
 export function sourceMessage(source,...values){const text=translate(source,'en',...values);if(messageSources.size>2000)messageSources.clear();messageSources.set(text,{source,values});return text;}
-const reverseFrench=new Map(Object.entries(french).map(([en,fr])=>[fr,en]));
 const escapePattern=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-const patterns=Object.keys(french).filter(s=>/\{\d+\}/.test(s)).map(source=>{
+const messagePatterns=()=>patterns??=Object.keys(french).filter(s=>/\{\d+\}/.test(s)).map(source=>{
   const indices=[];let cursor=0,pattern='^';for(const match of source.matchAll(/\{(\d+)\}/g)){pattern+=escapePattern(source.slice(cursor,match.index))+'([\\s\\S]*?)';indices.push(Number(match[1]));cursor=match.index+match[0].length;}pattern+=escapePattern(source.slice(cursor))+'$';return {source,indices,pattern:new RegExp(pattern)};
 });
 // Only call on trusted interface labels/errors, never on business record values.
 export function uiMessage(message){
   if(typeof message!=='string')return message;
   const saved=messageSources.get(message);if(saved)return translate(saved.source,language,...saved.values);
-  if(language==='en')return reverseFrench.get(message)??message;
+  if(language==='en')return reverseTranslations().get(message)??message;
   if(french[message])return french[message];
-  for(const {source,indices,pattern} of patterns){const match=pattern.exec(message);if(match){const values=[];indices.forEach((index,i)=>{values[index]=match[i+1];});return translate(source,language,...values);}}
+  for(const {source,indices,pattern} of messagePatterns()){const match=pattern.exec(message);if(match){const values=[];indices.forEach((index,i)=>{values[index]=match[i+1];});return translate(source,language,...values);}}
   return message;
 }

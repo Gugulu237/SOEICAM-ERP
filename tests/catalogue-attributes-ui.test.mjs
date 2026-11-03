@@ -30,16 +30,19 @@ test('catalogue sorting runs before pagination and keeps size/flavour filters an
  }finally{r.cleanup();delete globalThis.__catalogueUI;}
 });
 
-test('item taps open a separate sliding action row while both product tiles keep their size',async()=>{
+test('item taps open one quick view without expanding cards, retain the item identity and close cleanly',async()=>{
  const r=runtime(),render=await renderer(),edited=[],details=[];
  const paint=()=>{r.beforeRender();return render('Groups',{products,filter:'finished',quantities:new Map([['a',24]]),onEdit:item=>edited.push(item.id),renderDetails:item=>{details.push(item.id);return 'Pricing controls for '+item.id;}});};
  try{
   let html=paint();assert.equal(details.length,0);assert.doesNotMatch(html,/Pricing controls|Edit item details/);
-  assert.equal(field(r,'Item details for YOLA Fraise 500 g')['aria-expanded'],false);
-  field(r,'Item details for YOLA Fraise 500 g').onClick();html=paint();assert.deepEqual(edited,[]);assert.deepEqual(details,['a']);assert.doesNotMatch(html,/col-span-full/);assert.match(html,/transition-\[grid-template-rows,opacity\]/);assert.match(html,/motion-reduce:transition-none/);assert.equal((html.slice(0,html.indexOf('data-open="true"')).match(/<article\b/g)||[]).length,2);const cards=html.match(/<article\b[\s\S]*?<\/article>/g);assert.ok(cards.every(card=>/aspect-\[4\/3\]/.test(card)));assert.ok(cards.every(card=>!card.includes('Pricing controls')));assert.match(html,/Pricing controls for a/);assert.doesNotMatch(html,/Pricing controls for b/);
+  assert.equal(field(r,'Item details for YOLA Fraise 500 g')['aria-haspopup'],'dialog');
+  field(r,'Item details for YOLA Fraise 500 g').onClick();html=paint();
+  assert.deepEqual(edited,[]);assert.deepEqual(details,['a']);assert.doesNotMatch(html,/data-item-action-row|grid-template-rows/);
+  const cards=html.match(/<article\b[\s\S]*?<\/article>/g);assert.equal(cards.length,3);assert.ok(cards.every(card=>!card.includes('Pricing controls')));
+  assert.match(html,/Pricing controls for a/);assert.doesNotMatch(html,/Pricing controls for b/);
   field(r,'Edit item details for YOLA Fraise 500 g').onClick();assert.deepEqual(edited,['a']);
-  field(r,'Item details for YOLA Fraise 1 kg').onClick();html=paint();assert.doesNotMatch(html,/Pricing controls for a/);assert.match(html,/Pricing controls for b/);
-  field(r,'Item details for YOLA Fraise 1 kg').onClick();html=paint();assert.match(html,/data-open="false" aria-hidden="true" inert=""/);const row=r.elements.find(e=>Object.hasOwn(e.props,'data-item-action-row')&&e.props.id===field(r,'Item details for YOLA Fraise 1 kg')['aria-controls']).props;const node={};row.onTransitionEnd({target:node,currentTarget:node});assert.doesNotMatch(paint(),/Pricing controls/);
+  const popup=r.elements.find(e=>e.props.title==='YOLA Fraise 500 g'&&e.props.onClose);assert.ok(popup);popup.props.onClose();assert.doesNotMatch(paint(),/Pricing controls/);
+  field(r,'Item details for YOLA Fraise 1 kg').onClick();html=paint();assert.match(html,/Pricing controls for b/);assert.doesNotMatch(html,/Pricing controls for a/);
  }finally{r.cleanup();delete globalThis.__catalogueUI;}
 });
 
@@ -52,28 +55,24 @@ test('read-only staff can expand item information and filtering closes the selec
  }finally{r.cleanup();delete globalThis.__catalogueUI;}
 });
 
-test('action strips follow the selected visual row at mobile, tablet and desktop column counts',async()=>{
- const render=await renderer(),React=require('react');
- for(const columns of [2,3,4,5]){
-  const r=runtime();r.columns=columns;
-  const items=Array.from({length:7},(_,i)=>({...products[0],id:'item-'+i,name:'Fixture '+i}));
-  const paint=()=>{r.beforeRender();return render('Groups',{products:items,filter:'finished',quantities:new Map(),onEdit(){},renderActions:()=>React.createElement('button',{type:'button'},'Quick edit')});};
-  try{
-   paint();field(r,'Item details for Fixture 1').onClick();let html=paint();
-   assert.equal((html.slice(0,html.indexOf('data-open="true"')).match(/<article\b/g)||[]).length,columns);
-   assert.match(html,/aria-label="Actions for Fixture 1" class="grid gap-2[^\"]*grid-cols-2/);
-   assert.equal(r.elements.filter(e=>e.props['data-open']===true).length,1);
-   field(r,'Item details for Fixture 6').onClick();html=paint();assert.equal((html.slice(0,html.indexOf('data-open="true"')).match(/<article\b/g)||[]).length,7);
-   assert.equal(r.elements.filter(e=>e.props['data-open']===true).length,1);
-   const inactive=r.elements.filter(e=>Object.hasOwn(e.props,'data-item-action-row')&&!e.props['data-open']);assert.ok(inactive.every(e=>e.props.inert===true&&e.props['aria-hidden']===true));
-  }finally{r.cleanup();delete globalThis.__catalogueUI;}
- }
+test('quick view keeps item actions together and closes when the catalogue page changes',async()=>{
+ const r=runtime(),render=await renderer(),React=require('react');
+ const items=Array.from({length:30},(_,i)=>({...products[0],id:'item-'+i,name:'Fixture '+i}));
+ const paint=()=>{r.beforeRender();return render('Groups',{products:items,filter:'finished',quantities:new Map(),onEdit(){},renderActions:item=>React.createElement('button',{type:'button'},'Quick edit '+item.id)});};
+ try{
+  paint();field(r,'Item details for Fixture 1').onClick();let html=paint();
+  assert.equal((html.match(/data-dialog="true"/g)||[]).length,1);
+  assert.match(html,/Actions for Fixture 1/);assert.match(html,/Quick edit item-1/);
+  assert.doesNotMatch(html,/Quick edit item-6|data-item-action-row/);
+  field(r,'Next item page').onClick();html=paint();assert.doesNotMatch(html,/data-dialog="true"|Quick edit item-1/);
+  field(r,'Previous item page').onClick();assert.doesNotMatch(paint(),/Quick edit item-1/);
+ }finally{r.cleanup();delete globalThis.__catalogueUI;}
 });
 
 test('photo catalogue keeps compact images and stock while hiding card metadata and retaining its compact table alternative',async()=>{
   const r=runtime(),render=await renderer(),props={products,filter:'finished',quantities:new Map([['a',24]]),onEdit(){},renderPrice:()=>{throw Error('Listing prices must not be rendered');},renderDetails:()=>null};
-  try{r.beforeRender();let html=render('Groups',props);assert.match(html,/grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5/);assert.match(html,/aspect-\[4\/3\] w-full/);assert.match(html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' '),/24 ea/);const cards=[...html.matchAll(/<article\b[\s\S]*?<\/article>/g)].map(match=>match[0]).join('');assert.doesNotMatch(cards,/Milk type:|Packaging type:|Skimmed|rounded-full|Yaourt/);assert.match(cards,/Brassé · Strawberry/);assert.match(cards,/>500 g</);assert.doesNotMatch(cards,/on hand|XAF/);assert.equal([...html.matchAll(/<article\b/g)].length,3);
-    r.beforeRender();html=render('Groups',{...props,table:true});assert.match(html,/width:56px/);assert.doesNotMatch(html,/aspect-\[4\/3\]/);
+  try{r.beforeRender();let html=render('Groups',props);assert.match(html,/grid-cols-3 items-start gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6/);assert.match(html,/h-14 w-full/);assert.match(html.replace(/<[^>]+>/g,' ').replace(/\s+/g,' '),/24 ea/);const cards=[...html.matchAll(/<article\b[\s\S]*?<\/article>/g)].map(match=>match[0]).join('');assert.doesNotMatch(cards,/Milk type:|Packaging type:|Skimmed|rounded-full|Yaourt/);assert.match(cards,/Brassé · Strawberry/);assert.match(cards,/>500 g</);assert.doesNotMatch(cards,/on hand|XAF/);assert.equal([...html.matchAll(/<article\b/g)].length,3);
+    r.beforeRender();html=render('Groups',{...props,table:true});assert.match(html,/width:36px/);assert.doesNotMatch(html,/aspect-\[4\/3\]/);
   }finally{r.cleanup();delete globalThis.__catalogueUI;}
 });
 

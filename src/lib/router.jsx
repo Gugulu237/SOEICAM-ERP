@@ -6,11 +6,11 @@ import { useNavigationHistory, useNavigationSession } from './navigation-context
 import { announceNavigation } from './navigation-session';
 
 const hrefFor = to => typeof to === 'string' ? to : `${to?.pathname || ''}${to?.search || ''}${to?.hash || ''}`;
-export const Link = React.forwardRef(function Link({ to, replace, replaceOverlay = false, resume = false, onNavigate, ...props }, ref) {
+export const Link = React.forwardRef(function Link({ to, replace, replaceOverlay = false, resume = false, prefetch = false, onNavigate, ...props }, ref) {
   const session = useNavigationSession();
   useNavigationHistory();
   const href = resume ? session?.lastPage(hrefFor(to)) || hrefFor(to) : hrefFor(to);
-  return <NextLink ref={ref} href={href} replace={replace || replaceOverlay} {...props} onNavigate={event => {
+  return <NextLink ref={ref} href={href} prefetch={prefetch} replace={replace || replaceOverlay} {...props} onNavigate={event => {
     let cancelled = false;
     onNavigate?.({ ...event, preventDefault() { cancelled = true; event.preventDefault(); } });
     if (cancelled) return;

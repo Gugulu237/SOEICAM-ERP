@@ -37,5 +37,5 @@ export async function salesSourceProducts(svc,context,date=businessDate()){
     const manifest=await runManifest(svc,context.dispatch_id,context.stock_warehouse_id);
     available=available.map(p=>({...p,available:Math.min(p.available,Math.max(0,manifest.get(p.id)||0))})).filter(p=>p.available>0);
   }
-  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:p.tax_rate,available:p.available}));
+  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:p.tax_rate,available:p.available}));
 }

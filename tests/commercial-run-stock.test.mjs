@@ -80,12 +80,14 @@ test('the real load manifest and active finished-product definition limit every 
 
 test('commercial inventory is actual assigned-run finished stock and strips costs and legacy custody', async () => {
   const { rows, svc } = fixture();
+  Object.assign(rows.Product[0],{product_family:'Yaourt brasse',flavor:'Fraise',size:'500 g',sku:'Y-500'});
   rows.Dispatch.push({ ...rows.Dispatch[0], id: 'planned', status: 'approved' });
   rows.DispatchLine.push({ id: 'raw-manifest', dispatch_id: 'run', product_id: 'raw', loaded_quantity: 100 });
   const inventory = await commercialRunInventory(svc, 'agent', date);
   assert.equal(inventory.runs.find(run => run.id === 'run').can_supply, true);
   assert.equal(inventory.runs.find(run => run.id === 'planned').can_supply, false);
   assert.equal(inventory.products.length, 1);
+  assert.deepEqual([inventory.products[0].product_family,inventory.products[0].flavor,inventory.products[0].size,inventory.products[0].sku],['Yaourt brasse','Fraise','500 g','Y-500']);
   assert.equal(inventory.products[0].current_cost, undefined);
   assert.equal(inventory.balances.length, 3);
   assert.ok(inventory.balances.every(balance => balance.dispatch_id === 'run' && balance.warehouse_id === 'vehicle-stock' && balance.product_id === 'finished'));

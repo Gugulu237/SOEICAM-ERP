@@ -52,7 +52,7 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
       assert.equal(ui.buttons.some(b=>b.label==='Record supply'),false);assert.equal(tables.FieldSale.length,0);
       ui.buttons.find(b=>b.label==='Review sale').onClick();assert.match(draw(),/Please answer whether spoiled goods/);
       ui.buttons.find(b=>b.label===(withExchange?'Yes, goods replaced':'No replacements')).onClick();draw();
-      if(withExchange){ui.buttons.find(b=>b.label==='Choose replacement products').onClick();draw();ui.replacementCatalog.onQuantityChange(ui.replacementCatalog.products[0],2);ui.replacementCatalog.onOpenChange(false);draw();ui.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});draw();}
+      if(withExchange){ui.buttons.find(b=>b.label==='Choose replacement products').onClick();draw();assert.equal(ui.replacementCatalog.products[0].available,10-(photo?4:1));ui.replacementCatalog.onQuantityChange(ui.replacementCatalog.products[0],2);ui.replacementCatalog.onOpenChange(false);draw();assert.equal(ui.catalog.products[0].available,8,'commercial paid picker reserves replacement stock');ui.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});draw();}
       ui.buttons.find(b=>b.label==='Review sale').onClick();const reviewHtml=draw();assert.match(reviewHtml,/Step 3 of 3/);assert.equal((reviewHtml.match(/id="qty-0"/g)||[]).length,1,'the review has one quantity control and no hidden duplicate IDs');
       ui.buttons.find(b=>b.label==='Back').onClick();assert.match(draw(),/Step 2 of 3/);assert.equal(Number(ui.catalog.lines[0].quantity),photo?4:1);
       ui.buttons.find(b=>b.label==='Review sale').onClick();draw();

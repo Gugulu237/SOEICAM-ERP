@@ -13,6 +13,7 @@ import {formatXAF,formatNumber} from '@/lib/formatters';
 import SaleStockPicker,{vehicleSaleLabel} from '@/components/sales/SaleStockPicker';
 import CustomerPicker from '@/components/field/CustomerPicker';
 import SaleProductPicker from '@/components/sales/SaleProductPicker';
+import {quantityAfterReplacements} from '@/lib/product-quantity';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import ProductThumb from '@/components/shared/ProductThumb';
@@ -181,6 +182,6 @@ export default function SalesOrderForm(){
       {wizard&&step===2&&<Button type="button" variant="outline" className="mt-4 w-full" disabled={saving} onClick={()=>goTo(1)}>{ui('Edit products')}</Button>}
       {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsLoading||!!pointsError||!lines.length||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui('Record sale & deduct stock')}</Button>}
     </div>
-    <SaleProductPicker open={pickerOpen&&!locked} onOpenChange={setPickerOpen} products={products} lines={lines} onQuantityChange={setProductQuantity} disabled={saving||sourceLoading||!!sourceError}/>
+    <SaleProductPicker open={pickerOpen&&!locked} onOpenChange={setPickerOpen} products={products.map(p=>({...p,available:quantityAfterReplacements(p,replacements)}))} lines={lines} onQuantityChange={setProductQuantity} disabled={saving||sourceLoading||!!sourceError}/>
   </div>;
 }

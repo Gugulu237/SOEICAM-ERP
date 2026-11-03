@@ -115,7 +115,7 @@ test('replacement question is required, product picker preserves free quantities
     f.button('Choose replacement products').onClick();f.paint();assert.equal(f.r.replacementPicker.purpose,'replacement');assert.equal(f.r.replacementPicker.products[0].available,8);
     f.r.replacementPicker.onQuantityChange(f.r.replacementPicker.products[0],9);f.r.replacementPicker.onOpenChange(false);f.paint();
     f.r.controls.find(c=>c.id==='exchange-expiry-0').onChange({target:{value:'2000-01-01'}});f.paint();f.button('Review sale').onClick();assert.match(f.paint(),/exceed the available/);
-    f.r.controls.find(c=>c.id==='exchange-qty-0').onChange({target:{value:'3'}});f.paint();f.button('Review sale').onClick();assert.match(f.paint(),/Free spoilage replacements/);
+    f.r.controls.find(c=>c.id==='exchange-qty-0').onChange({target:{value:'3'}});f.paint();assert.equal(f.r.productPicker.products[0].available,7,'paid picker reserves the three replacement units');f.button('Review sale').onClick();assert.match(f.paint(),/Free spoilage replacements/);
     f.control('Receipt reference number').onChange({target:{value:'WITH-EXCHANGE'}});f.paint();await f.button('Record sale & deduct stock').onClick();assert.match(f.paint(),/Connection interrupted/);
     const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.replacementsDeclared,true);assert.equal(body.stockReplacements[0].quantity,'3');assert.equal(body.expectedTotal,1000);assert.equal(body.lines[0].quantity,2);
     f.button('Edit products').onClick();f.paint();assert.equal(f.r.controls.find(c=>c.id==='exchange-qty-0').value,'3');

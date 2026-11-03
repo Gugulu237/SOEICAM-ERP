@@ -403,3 +403,118 @@ test('changed material prices invalidate adjustment snapshots and warehouse-only
 test('an empty existing lot takes its configured purchase cost instead of a stale zero carrying-cost cache',async()=>{
  const f=await setup(),s=f.entities;await s.Product.update(f.product.id,{purchase_price:12,current_cost:0});await s.StockBalance.update(f.lots[0].id,{quantity:0,total_value:0,unit_cost:0});const body=await f.body([2,5]);body.rows=body.rows.slice(0,1);await f.call(body);const b=await s.StockBalance.get(f.lots[0].id);assert.equal(b.quantity,2);assert.equal(b.unit_cost,12);assert.equal(b.total_value,24);
 });
+
+
+async function simpleBody(f,counts=[8,6]){
+ const original=await f.body(counts),workspace=await f.workspace();
+ const surplus=await f.entities.Account.create({name:'Stock surplus',account_number:'7580',account_type:'other_income',normal_balance:'credit',currency:'XAF',is_active:true,is_posting:true,balance:0});
+ const {accountId,...body}=original;void accountId;
+ return {...body,lossAccountId:'expense',gainAccountId:surplus.id,item_counts:[{product_id:f.product.id,item_fingerprint:workspace.items.find(p=>p.id===f.product.id).count_fingerprint,counted_quantity:counts.reduce((sum,n)=>sum+n,0),snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}]};
+}
+test('item counts post losses and surpluses to dedicated accounts and retain a balanced immutable item receipt',async()=>{
+ const f=await setup(),body=await simpleBody(f),beforeCash=await f.entities.TreasuryAccount.list();
+ const result=await f.call(body);
+ assert.deepEqual(result.item_counts.map(row=>[row.book_quantity,row.counted_quantity,row.difference]),[[15,14,-1]]);
+ assert.equal((await f.entities.Account.get('expense')).balance,20);
+ assert.equal((await f.entities.Account.get(body.gainAccountId)).balance,10);
+ assert.equal((await f.entities.Account.get(f.inventory.id)).balance,140);
+ assert.equal(result.posting_lines.reduce((sum,line)=>sum+line.debit-line.credit,0),0);
+ assert.equal(result.loss_account.id,'expense');assert.equal(result.gain_account.id,body.gainAccountId);
+ assert.deepEqual(await f.entities.TreasuryAccount.list(),beforeCash);
+ const first=await f.entities.StockBalance.get(f.lots[0].id);assert.equal(first.qc_status,'quarantine');assert.equal(first.expiry_date,'2027-01-01');
+ assert.equal((await f.call(body)).reused,true);assert.equal((await f.entities.JournalEntry.list()).length,1);
+});
+test('a total-only request cannot quietly overwrite different batch totals or omit unchanged stock evidence',async()=>{
+ for(const mutate of [
+  body=>{body.item_counts[0].counted_quantity=1;},
+  body=>{body.item_counts[0].snapshots.pop();},
+  body=>{body.item_counts.push(structuredClone(body.item_counts[0]));},
+  body=>{body.item_counts[0].item_fingerprint='changed';},
+  body=>{body.rows[0].ready_for_sale=true;},
+ ]){
+  const f=await setup(),body=await simpleBody(f),before=JSON.stringify(await f.entities.StockBalance.list());mutate(body);
+  await assert.rejects(f.call(body),/physical item count|changed|once|separately/);
+  assert.equal(JSON.stringify(await f.entities.StockBalance.list()),before);assert.equal((await f.entities.JournalEntry.list()).length,0);assert.equal((await f.entities.StockMovement.list()).length,0);
+ }
+});
+test('changes to an unchanged batch or a newly received batch invalidate the whole item count before posting',async()=>{
+ for(const newBatch of [false,true]){
+  const f=await setup(),body=await simpleBody(f,[8,5]);body.rows=body.rows.slice(0,1);
+  if(newBatch)await f.entities.StockBalance.create({product_id:f.product.id,warehouse_id:f.warehouse.id,lot_number:'ARRIVED',quantity:3,total_value:30,unit_cost:10,qc_status:'approved'});
+  else await f.entities.StockBalance.update(f.lots[1].id,{quantity:6,total_value:60});
+  const before=JSON.stringify(await f.entities.StockBalance.list());
+  await assert.rejects(f.call(body),/changed since this item count/);assert.equal(JSON.stringify(await f.entities.StockBalance.list()),before);
+  assert.equal((await f.entities.JournalEntry.list()).length,0);
+ }
+});
+test('simple surplus counts cannot credit an expense, treasury or foreign-currency account',async()=>{
+ for(const patch of [{account_type:'expense',normal_balance:'debit'},{is_treasury:true},{currency:'USD'},{is_posting:false},{account_number:'1050'}]){
+  const f=await setup(),body=await simpleBody(f,[11,5]);await f.entities.Account.update(body.gainAccountId,patch);
+  const before=JSON.stringify(await f.entities.StockBalance.list());await assert.rejects(f.call(body),/surplus income account/);
+  assert.equal(JSON.stringify(await f.entities.StockBalance.list()),before);assert.equal((await f.entities.JournalEntry.list()).length,0);
+ }
+});
+test('new counted items validate their account fingerprint and remain on quality hold',async()=>{
+ const f=await setup(),s=f.entities;
+ for(const lot of f.lots)f.rows.StockBalance.splice(f.rows.StockBalance.findIndex(row=>row.id===lot.id),1);
+ const data=await f.workspace(),item=data.items.find(p=>p.id===f.product.id);
+ const income=await s.Account.create({name:'Surplus',account_number:'7580',account_type:'other_income',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'FOUND-COUNT',reason:'Counted unrecorded sealed stock',gainAccountId:income.id,item_counts:[{product_id:item.id,item_fingerprint:item.count_fingerprint,counted_quantity:3,snapshots:[]}],rows:[{product_id:item.id,unit:item.unit,lot_number:'FOUND-LOT',unit_cost:item.unit_cost,counted_quantity:3}]};
+ await s.Product.update(item.id,{inventory_account_id:'changed'});
+ await assert.rejects(f.call(body),/accounts changed/);
+ await s.Product.update(item.id,{inventory_account_id:f.inventory.id});
+ const result=await f.call(body),row=await s.StockBalance.get(result.rows[0].balance_id);
+ assert.equal(row.quantity,3);assert.equal(row.qc_status,'quarantine');assert.equal(row.total_value,30);assert.equal(result.item_counts[0].book_quantity,0);
+});
+
+
+test('grouped count workspaces return only the selected group and live balances from the selected warehouse',async()=>{
+ const f=await setup(),s=f.entities;
+ const pack=await s.Warehouse.create({name:'Packaging store',warehouse_type:'packaging',is_active:true});
+ const cold=await s.Warehouse.create({name:'Cold room',warehouse_type:'cold_room',is_active:true});
+ const cup=await s.Product.create({...f.product,id:undefined,name:'YOLA sticker 500g',inventory_type:'inventory_item',material_group:'Labels'});
+ const finished=await s.Product.create({...f.product,id:undefined,name:'YOLA 500g',inventory_type:'assembly'});
+ const local=await s.StockBalance.create({product_id:cup.id,warehouse_id:f.warehouse.id,quantity:7,total_value:70,unit_cost:10,qc_status:'quarantine'});
+ await s.StockBalance.create({product_id:cup.id,warehouse_id:pack.id,quantity:90,total_value:900,unit_cost:10,qc_status:'approved'});
+ await s.StockBalance.create({product_id:finished.id,warehouse_id:f.warehouse.id,quantity:3,total_value:30,unit_cost:10,qc_status:'approved'});
+ const expected={ingredients:f.product.id,packaging:cup.id,finished:finished.id};
+ for(const [itemGroup,id] of Object.entries(expected)){
+  const data=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup});
+  assert.equal(data.item_group,itemGroup);assert.ok(data.items.some(item=>item.id===id));
+  assert.ok(data.items.every(item=>item.count_group===itemGroup));assert.ok(data.rows.every(row=>row.product_id===id&&row.warehouse_id===f.warehouse.id));
+  assert.equal(data.warehouse.warehouse_type,'raw_material');assert.ok(Number.isFinite(Date.parse(data.as_of)));
+ }
+ assert.equal((await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'auto'})).item_group,'ingredients');
+ const preferred=await f.call({action:'warehouseAdjustmentWorkspace',warehouseId:undefined,itemGroup:'packaging'});
+ assert.equal(preferred.warehouse.id,pack.id);assert.equal(preferred.rows.reduce((sum,row)=>sum+row.book_quantity,0),90);
+ assert.equal((await f.call({action:'warehouseAdjustmentWorkspace',warehouseId:cold.id,itemGroup:'auto'})).item_group,'finished');
+ await s.StockBalance.update(local.id,{quantity:9,total_value:90});
+ const fresh=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'packaging'});
+ assert.equal(fresh.rows.reduce((sum,row)=>sum+row.book_quantity,0),9);
+ await assert.rejects(f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'unknown'}),/valid stock count item group/);
+});
+
+test('independent group posting cannot change another group or another warehouse and stores its scope on the receipt',async()=>{
+ const f=await setup(),s=f.entities,body=await simpleBody(f,[8,5]);
+ const cup=await s.Product.create({...f.product,id:undefined,name:'Yogurt cups',inventory_type:'packaging'});
+ const local=await s.StockBalance.create({product_id:cup.id,warehouse_id:f.warehouse.id,quantity:7,total_value:70,unit_cost:10,qc_status:'approved'});
+ const elsewhere=await s.StockBalance.create({product_id:cup.id,warehouse_id:f.other.id,quantity:90,total_value:900,unit_cost:10,qc_status:'approved'});
+ body.rows=body.rows.slice(0,1);body.itemGroup='packaging';
+ await assert.rejects(f.call(body),/selected group/);assert.equal((await s.JournalEntry.list()).length,0);
+ body.itemGroup='ingredients';const posted=await f.call(body);assert.equal(posted.item_group,'ingredients');
+ assert.equal((await s.StockBalance.get(local.id)).quantity,7);assert.equal((await s.StockBalance.get(elsewhere.id)).quantity,90);
+ const data=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'packaging'}),item=data.items.find(p=>p.id===cup.id),row=data.rows.find(r=>r.balance_id===local.id);
+ const second={...body,requestKey:crypto.randomUUID(),reference:'PACK-COUNT',itemGroup:'packaging',item_counts:[{product_id:cup.id,item_fingerprint:item.count_fingerprint,counted_quantity:6,snapshots:[{balance_id:row.balance_id,fingerprint:row.fingerprint}]}],rows:[{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:6}]};
+ const saved=await f.call(second);assert.equal(saved.item_group,'packaging');assert.equal((await s.StockBalance.get(local.id)).quantity,6);assert.equal((await s.StockBalance.get(elsewhere.id)).quantity,90);
+ assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,8);assert.equal((await s.StockBalance.get(f.lots[1].id)).quantity,5);
+ assert.equal((await f.call(second)).reused,true);assert.equal((await s.JournalEntry.list()).length,2);
+});
+
+test('reclassifying an item during counting blocks the previous group snapshot',async()=>{
+ const f=await setup(),body=await simpleBody(f,[8,5]);body.rows=body.rows.slice(0,1);body.itemGroup='ingredients';
+ await f.entities.Product.update(f.product.id,{material_group:'Packaging'});
+ await assert.rejects(f.call(body),/selected group/);
+ body.itemGroup='packaging';await assert.rejects(f.call(body),/accounts changed/);
+ assert.equal((await f.entities.JournalEntry.list()).length,0);
+ assert.equal((await f.entities.StockBalance.get(f.lots[0].id)).quantity,10);
+});
