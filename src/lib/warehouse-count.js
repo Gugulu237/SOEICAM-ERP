@@ -1,5 +1,19 @@
 import { countedQuantity, roundMoney, roundQuantity } from './inventory-audit.js';
 
+// Display each item once, while retaining every stock record for checked,
+// lot-specific counts. Equal lot labels are not proof of duplicate stock.
+export function groupWarehouseCountRows(rows) {
+  const groups=new Map();
+  for(const row of rows) {
+    const id=JSON.stringify([row.warehouse_id||'',row.product_id,row.unit||'']);
+    if(!groups.has(id))groups.set(id,{id,product_id:row.product_id,product_name:row.product_name,unit:row.unit,rows:[]});
+    groups.get(id).rows.push(row);
+  }
+  return [...groups.values()].map(group=>({...group,
+    book_quantity:group.rows.every(row=>Number.isFinite(Number(row.book_quantity)))?roundQuantity(group.rows.reduce((sum,row)=>sum+Number(row.book_quantity),0)):null,
+  }));
+}
+
 export function warehouseCountState(row) {
   const book=Number(row.book_quantity),value=Number(row.book_value),cost=Number(row.unit_cost);
   if(!Number.isFinite(book) || !Number.isFinite(value))return {count_issue:'Accounting must reconcile the missing or invalid recorded quantity and value for this lot.'};

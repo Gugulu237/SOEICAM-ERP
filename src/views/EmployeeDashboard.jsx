@@ -8,6 +8,7 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams, useLocation } from '@/lib/router';
+import {useDashboardNavigation} from '@/hooks/useDashboardNavigation';
 import { RefreshCw, ArrowLeft, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -87,6 +88,7 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
 
   const { employee, roleLabel, allowedModules, user } = useCurrentUser();
   const [params,setParams] = useSearchParams();
+  const dashboardNavigation=useDashboardNavigation();
   const mode = profile.key;
   const template = mode === 'supply_chain_manager' ? mode : profile.template_role;
   const Component = dashboards[template];
@@ -147,8 +149,8 @@ function LiveWorkspace({ profile, options = [], managing = false }) {
       {loading && !data && <p role="status" className="text-sm text-slate-500">{ui("Loading live records...")}</p>}
       {needsEmployee && !employeeId ? <p className="rounded-2xl border bg-white p-6 text-sm text-slate-600">{ui("Choose an employee to see their assigned work and reports.")}{data?.choices?.length === 0 && <>{ui(" No employees have this role yet. ")}<Link to="/team-workspaces?section=people" className="font-semibold text-green-800 underline">{ui("Add an employee")}</Link></>}</p> : <>
 {managing && <div className="hidden sm:block"><ReadOnlyWorkspaceNotice employeeName={needsEmployee ? data?.employee?.full_name : undefined} sharedDepartment={!needsEmployee}/></div>}
-        {managing&&template==='commercial'&&employeeId&&<section className="rounded-xl border bg-white p-4"><Button variant="outline" aria-expanded={showPerformance} onClick={()=>setShowPerformance(value=>!value)}>{ui('Performance report')}</Button>{showPerformance&&<CommercialPerformance embedded readOnly selectedAgentId={employeeId}/>}</section>}
-        {Component && <Component key={scope} data={data} loading={!data && loading} mode={profile.template_role} roleLabel={title} showReadOnlyNotice={false} hideMobileHero managing={managing} preview={readOnly} onRefresh={refresh} />}
+        {managing&&template==='commercial'&&employeeId&&dashboardNavigation.activeTab==='home'&&<section className="rounded-xl border bg-white p-4"><Button variant="outline" aria-expanded={showPerformance} onClick={()=>setShowPerformance(value=>!value)}>{ui('Performance report')}</Button>{showPerformance&&<CommercialPerformance embedded readOnly selectedAgentId={employeeId}/>}</section>}
+        {Component && <Component key={scope} {...dashboardNavigation} data={data} loading={!data && loading} mode={profile.template_role} roleLabel={title} showReadOnlyNotice={false} hideMobileHero managing={managing} preview={readOnly} onRefresh={refresh} />}
       </>}
     </>}
   </div></DashboardIdentity></WorkspaceAccess>;

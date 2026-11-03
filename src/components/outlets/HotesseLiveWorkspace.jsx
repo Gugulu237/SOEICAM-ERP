@@ -9,8 +9,10 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import HotesseWorkspace from './HotesseWorkspace';
+import {useDashboardNavigation} from '@/hooks/useDashboardNavigation';
 export default function HotesseLiveWorkspace() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const dashboardNavigation=useDashboardNavigation();
 
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [reload, setReload] = useState(0);
   useEffect(() => {
@@ -26,5 +28,5 @@ export default function HotesseLiveWorkspace() {
     refresh(); const timer = window.setInterval(visible, 30000); window.addEventListener('focus', visible); document.addEventListener('visibilitychange', visible);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', visible); document.removeEventListener('visibilitychange', visible); };
   }, [reload]);
-  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" disabled={loading} onClick={() => setReload(value => value + 1)}>{ui("Refresh shelves")}</Button></div>{error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}</p>}<HotesseWorkspace data={data} loading={loading && !data} onRefresh={() => setReload(value => value + 1)} /></div>;
+  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" disabled={loading} onClick={() => setReload(value => value + 1)}>{ui("Refresh shelves")}</Button></div>{error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}</p>}<HotesseWorkspace {...dashboardNavigation} data={data} loading={loading && !data} onRefresh={() => setReload(value => value + 1)} /></div>;
 }

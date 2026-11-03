@@ -1,3 +1,5 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 import React, {useMemo, useState} from 'react';
 import {ChevronDown, Search, CalendarClock} from 'lucide-react';
 import {stockOnHandGroups} from '@/lib/stock-on-hand';
@@ -41,8 +43,10 @@ function BatchDetails({group}) {
 
 export default function StockOnHand({products, balances, warehouses, warehouseId = ''}) {
   const [search, setSearch] = useState(''), [expiry, setExpiry] = useState('all'), [expanded, setExpanded] = useState(null), [page, setPage] = useState(1);
+  const [sort,setSort]=useState('name');
   const date = businessDate();
-  const groups = useMemo(() => stockOnHandGroups(products, balances, warehouses, {warehouseId, search, expiry, date}), [products, balances, warehouses, warehouseId, search, expiry, date]);
+  const matching = useMemo(() => stockOnHandGroups(products, balances, warehouses, {warehouseId, search, expiry, date}), [products, balances, warehouses, warehouseId, search, expiry, date]);
+  const groups=sortProductRows(matching,sort,row=>row.product);
   const pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE)), currentPage = Math.min(page, pages);
   const filtered = search.trim() || expiry !== 'all';
   return <div className="min-w-0 space-y-3">
@@ -52,6 +56,7 @@ export default function StockOnHand({products, balances, warehouses, warehouseId
         <option value="all">{ui('All expiry dates')}</option><option value="7">{ui('Expires within 7 days')}</option><option value="30">{ui('Expires within 30 days')}</option><option value="expired">{ui('Expired')}</option><option value="undated">{ui('Expiry missing')}</option>
       </select>
     </div>
+    <ProductSortSelect value={sort} onChange={value=>{setSort(value);setPage(1);setExpanded(null);}} className="sm:max-w-xs"/>
     <p className="flex items-start gap-2 text-xs text-slate-500"><CalendarClock size={16} className="shrink-0"/>{ui('Open an item to see remaining quantities by lot, expiry and location. Earliest available expiry appears first.')}</p>
     {filtered && <p role="status" className="text-xs text-slate-600">{ui('Quantities below include only matching lots.')}</p>}
     {!groups.length && <p role="status" className="rounded-xl border bg-white p-6 text-sm text-slate-500">{ui('No remaining stock matches these filters.')}</p>}

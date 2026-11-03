@@ -4,6 +4,11 @@ import {postJournal,audit} from './field-ops.js';
 export async function verifiedOpeningDocument(stores,document,kind){
  if(!document?.opening_batch_id||!document.opening_account_id)return false;
  const [event,journal]=await Promise.all([stores.AuditLog.get(document.opening_batch_id),stores.JournalEntry.get(document.journal_id)]);
+ if(event?.action==='import_customer_opening_balance'&&kind==='Invoice'){
+  if(event.audit_source==='client_reported'||event.opening_customer_id!==document.customer_id||event.opening_customer_amount!==Number(document.total)||!event.opening_position_result?.receivables?.includes(document.id)||event.opening_position_result?.journal?.id!==journal?.id||journal?.status!=='posted'||journal.source_module!=='opening_balances')return false;
+  const lines=await readRecords(stores.JournalLine,{journal_id:journal.id,account_id:document.opening_account_id});
+  return lines.flatMap(openingPartyLines).some(l=>l.party_type==='customer'&&l.party_id===document.customer_id&&Number(l.debit)===Number(document.total)&&Number(l.credit||0)===0);
+ }
  return !!event&&['import_opening_position','attach_opening_details'].includes(event.action)&&event.opening_position_result?.[kind==='Invoice'?'receivables':'payables']?.includes(document.id)&&journal?.status==='posted'&&journal.source_module==='opening_balances'&&journal.opening_detail_account_ids?.includes(document.opening_account_id);
 }
 export async function requestOpeningBillPayment(svc,user,bill,body,account,date,key,actor){

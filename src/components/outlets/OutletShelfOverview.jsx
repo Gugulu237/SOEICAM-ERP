@@ -1,3 +1,5 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 import LearnMore from '@/components/shared/LearnMore';
 
 /* localized-messages */
@@ -17,6 +19,7 @@ import { RefreshCw } from 'lucide-react';
 
 export default function OutletShelfOverview({ onAssign }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const [sort,setSort]=useState('name');
 
   const [data, setData] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true), [reload, setReload] = useState(0);
   const [search, setSearch] = useState(''), [attention, setAttention] = useState(false), [expanded, setExpanded] = useState('');
@@ -41,8 +44,9 @@ export default function OutletShelfOverview({ onAssign }) {
     <div className="flex flex-wrap items-center justify-between gap-3"><Input value={search} onChange={event => setSearch(event.target.value)} placeholder={ui("Find point, customer or Hotesse")} aria-label={ui("Find staffed point")} className="max-w-sm" /><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={attention} onChange={event => setAttention(event.target.checked)} />{ui("Needs stock or shelf check")}</label></div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}</p>}{loading && !data && <p role="status" className="py-8 text-sm text-slate-500">{ui("Loading staffed points...")}</p>}
     {!loading && !error && !rows.length && <div className="rounded-xl border bg-white p-6 text-sm text-slate-500"><p>{all.length ? ui("No points match this filter.") : ui("Assign active Hotesse staff to registered customer outlets to begin shelf reporting.")}</p>{!all.length && <Button className="mt-4" onClick={onAssign}>{ui("Assign outlets")}</Button>}</div>}
+    <ProductSortSelect value={sort} onChange={setSort} className="sm:max-w-xs"/>
     {!error && rows.map(outlet => <article key={outlet.id} className="space-y-4 rounded-2xl border bg-white p-4 sm:p-5"><header className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold">{outlet.customer_name} / {outlet.name}</h3><p className="mt-1 text-xs text-slate-500">{outlet.staff_names.join(', ')} / {outlet.daily_report_submitted ? ui("Daily report submitted") : ui("No daily report today")}</p></div><Button variant="outline" size="sm" onClick={() => setExpanded(value => value === outlet.id ? '' : outlet.id)}>{ui("Supplies & batches")}{needsCount(outlet) ? ui(" ({0} to count)", needsCount(outlet)) : ''}</Button></header>
-      {!outlet.products.length && <p className="text-sm text-slate-500">{ui("No confirmed supplies to this exact point of sale yet.")}</p>}<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{outlet.products.map(product => <div key={product.id} className="flex items-start gap-3 rounded-xl border p-3"><ProductThumb product={product} size={50} /><div><h4 className="text-sm font-semibold">{product.name}</h4><p className={'mt-2 text-sm font-bold ' + (product.display_quantity === 0 ? 'text-red-700' : 'text-slate-900')}>{formatQuantity(product.display_quantity)} {product.unit_of_measure || product.storage_unit || ui("units")}{product.display_quantity === 0 ? ui(" / Stock-out") : ''}</p><p className="mt-1 text-[11px] leading-5 text-slate-500">{product.last_count_at ? ui("Last shelf count: {0} / {1}", product.last_count_quantity, formatDateTime(product.last_count_at)) : ui("Not yet shelf-counted")}<br />{ui("Total supplied: ")}{formatQuantity(product.supplied_quantity)}</p></div></div>)}</div>
+      {!outlet.products.length && <p className="text-sm text-slate-500">{ui("No confirmed supplies to this exact point of sale yet.")}</p>}<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{sortProductRows(outlet.products,sort).map(product => <div key={product.id} className="flex items-start gap-3 rounded-xl border p-3"><ProductThumb product={product} size={50} /><div><h4 className="text-sm font-semibold">{product.name}</h4><p className={'mt-2 text-sm font-bold ' + (product.display_quantity === 0 ? 'text-red-700' : 'text-slate-900')}>{formatQuantity(product.display_quantity)} {product.unit_of_measure || product.storage_unit || ui("units")}{product.display_quantity === 0 ? ui(" / Stock-out") : ''}</p><p className="mt-1 text-[11px] leading-5 text-slate-500">{product.last_count_at ? ui("Last shelf count: {0} / {1}", product.last_count_quantity, formatDateTime(product.last_count_at)) : ui("Not yet shelf-counted")}<br />{ui("Total supplied: ")}{formatQuantity(product.supplied_quantity)}</p></div></div>)}</div>
       {expanded === outlet.id && <OutletDeliveryHistory deliveries={outlet.deliveries} preview />}
     </article>)}
   </section>;

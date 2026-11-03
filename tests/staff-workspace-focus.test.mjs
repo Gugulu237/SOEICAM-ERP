@@ -15,17 +15,17 @@ test('Commercial performance and rewards appear only in their dedicated task vie
     runtime.beforeRender(); html = render({ data });
     assert.match(html, /Commission estimate this month/); assert.match(html, /1,500/);
     assert.match(html, /Tax and free replacements are excluded/); assert.match(html, /management must review and approve payment/);
-    runtime.buttons.find(row => row.label === 'Sales').onClick(); runtime.beforeRender(); html = render({ data });
+    runtime.buttons.find(row => row['data-page-back'] !== undefined).onClick(); runtime.beforeRender(); html = render({ data });
     assert.doesNotMatch(html, /Commission estimate this month|Monthly goals/);
   } finally { runtime.cleanup(); delete globalThis.__commercialUI; }
 });
-test('Hotesse starts at the assigned outlet daily report and opens performance separately', async () => {
+test('Hotesse starts at the assigned outlet task grid and opens performance separately', async () => {
   const render = await commercialUI(), runtime = hookRuntime(); globalThis.__commercialUI = runtime;
   const data = { employee: { bonus_plan: 'Performance review at month end.' }, date: '2026-10-21', locations: [{ id: 'point', customer_name: 'Partner shop', name: 'Main' }],
     outletProducts: { point: [{ id: 'product', name: 'YOLA', opening_quantity: 12 }] }, reports: [{ id: 'report', report_type: 'daily_sales', location_id: 'point', visit_date: '2026-10-20', status: 'reviewed', lines: [{ product_id: 'product', product_name: 'YOLA', unit: 'ea', sold_quantity: 7 }] }] };
   try {
     runtime.beforeRender(); let html = render({ data }, 'hotesse');
-    assert.match(html, /Partner shop/); assert.match(html, /Record daily report/); assert.doesNotMatch(html, /Estimated rewards|Reports reviewed|Your shelves, your daily report/);
+    assert.match(html, /Partner shop/); assert.match(html, /aria-label="Daily report"/); assert.doesNotMatch(html, /Record daily report|Estimated rewards|Reports reviewed|Your shelves, your daily report/);
     runtime.buttons.find(row => row.label === 'Performance & rewards').onClick(); runtime.beforeRender(); html = render({ data }, 'hotesse');
     assert.match(html, /Reports reviewed/); assert.match(html, /7 ea/); assert.match(html, /Estimated rewards/); assert.match(html, /has not been configured/);
     assert.match(html, /Performance review at month end/); assert.doesNotMatch(html, /Record daily report|XAF/);

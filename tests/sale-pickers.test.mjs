@@ -6,6 +6,27 @@ import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
 let compiled;
 
+test('sales, spoilage and shared goods pickers offer the same size/flavour order and preserve selected quantities',async()=>{
+ const render=await bundle();
+ for(const kind of ['product','catalog']){
+  const r=hookRuntime();globalThis.__picker=r;
+  const products=[{id:'large',name:'YOLA Vanille 1 kg',size:'1 kg',flavor:'Vanille',quantity:100,available:100,selling_price:500},{id:'small',name:'YOLA Fraise 250 g',size:'250 g',flavor:'Fraise',quantity:100,available:100,selling_price:500},{id:'medium',name:'YOLA Chocolat 500 g',size:'500 g',flavor:'Chocolat',quantity:100,available:100,selling_price:500}];
+  const lines=[{product_id:'large',quantity:27}],chosen=[];
+  const props={open:true,products,lines,selecting:true,onOpenChange(){},onQuantityChange:(p,q)=>chosen.push([p.id,q])};
+  const draw=()=>{r.beforeRender();return render(kind,props);};
+  const sort=value=>{r.controls.find(c=>c['aria-label']==='Sort products').onChange({target:{value}});return draw();};
+  const order=()=>r.buttons.filter(b=>/^Select YOLA|^Enter quantity for YOLA/.test(b['aria-label']||'')).map(b=>b['aria-label']);
+  try {
+   draw();sort('size');assert.match(order()[0],/250 g/);assert.match(order()[2],/1 kg/);
+   sort('size-desc');assert.match(order()[0],/1 kg/);assert.match(order()[2],/250 g/);
+   sort('flavour');assert.match(order()[0],/Chocolat/);assert.match(order()[1],/Fraise/);
+   assert.deepEqual(lines,[{product_id:'large',quantity:27}]);assert.deepEqual(chosen,[]);
+   r.buttons.find(b=>/Select YOLA Vanille|Enter quantity for YOLA Vanille/.test(b['aria-label']||'')).onClick({currentTarget:{}});draw();
+   assert.ok(r.controls.some(c=>Number(c.value)===27));
+  }finally{r.cleanup();delete globalThis.__picker;}
+ }
+});
+
 test('spoilage reports accept typed quantities without fresh stock or price, and do not commit invalid drafts',async()=>{
   const render=await bundle(),r=hookRuntime();globalThis.__picker=r;
   const props={open:true,purpose:'spoilage',onOpenChange:()=>{},products:[{id:'a',name:'YOLA Yaourt Vanille 500G',available:0,selling_price:0},{id:'b',name:'YOLA Yaourt a boire Fraise 1L',available:0,selling_price:0}],lines:[],onQuantityChange:(p,v)=>{props.lines=v===null?[]:[{product_id:p.id,quantity:v}];}};
@@ -23,7 +44,7 @@ async function bundle(){
   if(compiled)return compiled;
   const output=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Product from './src/components/sales/SaleProductPicker.jsx';import Customer from './src/components/field/CustomerPicker.jsx';import Stock from './src/components/sales/SaleStockPicker.jsx';import Catalog from './src/components/shared/ProductCatalog.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='product'?Product:kind==='catalog'?Catalog:kind==='stock'?Stock:Customer,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,
     plugins:[{name:'picker-runtime',setup(b){
-      b.onResolve({filter:/^react$/},a=>/(SaleProductPicker|CustomerPicker|SaleStockPicker|ProductCatalog|ProductQuantityBar)\.jsx$/.test(a.importer)?{path:'hooks',namespace:'test'}:undefined);
+      b.onResolve({filter:/^react$/},a=>/(SaleProductPicker|CustomerPicker|SaleStockPicker|ProductCatalog|ProductQuantityBar|ProductSortSelect)\.jsx$/.test(a.importer)?{path:'hooks',namespace:'test'}:undefined);
       b.onLoad({filter:/.*/,namespace:'test'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,p,...children)=>{globalThis.__picker.capture(tag,p,children);if(tag==='div'&&p?.onKeyDown)globalThis.__picker.quantityKeyDown=p.onKeyDown;return React.createElement(tag,p,...children)}};export const useState=v=>globalThis.__picker.state('picker',v);export const useMemo=fn=>fn();export const useRef=v=>globalThis.__picker.ref('picker',v);",resolveDir:process.cwd()}));
       const mocks={
         '@/lib/navigation-context':"export const usePageState=(key,value)=>globalThis.__picker.state(key,value);",

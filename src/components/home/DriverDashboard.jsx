@@ -3,9 +3,11 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import { MobileDashboardIdentity, useDashboardIdentity } from './DashboardIdentity';
-import MobileInfo from '@/components/shared/MobileInfo';
+import DashboardTaskGrid from '@/components/shared/DashboardTaskGrid';
+import PageHeader from '@/components/shared/PageHeader';
+import DriverReceiveInventory from './DriverReceiveInventory';
 import React, { useState } from 'react';
-import { Truck, MapPin, Package, Phone, ArrowLeft, Play, Flag, AlertTriangle, ClipboardCheck, RefreshCw, Users } from 'lucide-react';
+import { Truck, MapPin, Package, Phone, Play, Flag, AlertTriangle, ClipboardCheck, RefreshCw, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProductThumb from '@/components/shared/ProductThumb';
 import CustomerMapLinks from '@/components/customers/CustomerMapLinks';
@@ -21,16 +23,21 @@ const formatQuantity = value => value == null ? '-' : new Intl.NumberFormat('en-
 
 const statusLabel = (status) => ({ approved: ui("Awaiting warehouse loading"), loaded: ui("Ready to depart"), in_transit: ui("On the road"), returned: ui("Returned to warehouse"), completed: 'Closed', cancelled: 'Cancelled' }[status] || status);
 
-export default function DriverDashboard({ data, preview = false, loading = false, onRefresh }) {
+export default function DriverDashboard({ data, preview = false, loading = false, onRefresh, activeTab, onTabChange, onBackToMenu, managing=false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const { centralHero } = useDashboardIdentity();
 
   const [selected, setSelected] = useState('');
-  const [panel, setPanel] = useState('runs');
+  const tasks=[['receive','Receive inventory',ClipboardCheck],['plan','Plan deliveries & view customers',MapPin],['runs','My delivery runs',Truck],['inventory','Vehicle stock',Package],['returns','Report expired collections',AlertTriangle]];
+  const [localPanel,setLocalPanel]=useState('home');
+  const panel=['home',...tasks.map(([key])=>key)].includes(activeTab)?activeTab:localPanel;
+  const setPanel=value=>{setSelected('');setSearch('');onTabChange?onTabChange(value):setLocalPanel(value);};
+  const backToMenu=()=>{setSelected('');onBackToMenu?onBackToMenu():setPanel('home');};
+  preview=preview||managing||data?.readOnly===true;
   const [tab, setTab] = useState('active');
   const [task, setTask] = useState(null);
   const [search, setSearch] = useState('');
-  const ready = !!data?.employee && !loading;
+  const ready = !!data?.employee && (!data.employee.status || data.employee.status==='active') && !loading;
   const runs = data?.dispatches || [], activities = data?.activities || [], stops = data?.stops || [];
   const returned = (id) => activities.some((a) => a.dispatch_id === id && a.type === 'trip_returned');
   const activeRuns = runs.filter((r) => ['approved', 'loaded', 'in_transit'].includes(r.status) && !returned(r.id));
@@ -49,21 +56,18 @@ export default function DriverDashboard({ data, preview = false, loading = false
   const canReport = current && current.status === 'in_transit' && !returned(current.id) && ready && !preview;
   const openTask = (type, order) => { if (!preview && ready) setTask({ dispatch: current, type, order }); };
 
-  if (panel !== 'runs') return <div className="space-y-5"><Button variant="outline" onClick={() => setPanel('runs')}><ArrowLeft size={16} className="mr-2" />{ui("My delivery runs")}</Button>{panel === 'plan' ? <DriverDeliveryPlanner data={data || {}} preview={preview || !ready} onRefresh={onRefresh} /> : panel === 'inventory' ? <FieldInventoryCards employeeId={data?.employee?.id} enabled={ready && !preview} /> : <CommercialReturns key={data?.employee?.id} employeeId={data?.employee?.id} driver preview={preview || !ready} onChanged={onRefresh} />}</div>;
+  if(panel==='home')return <div className="min-w-0 space-y-4">{!centralHero&&<header><MobileDashboardIdentity/><h1 className="hidden text-xl font-semibold sm:block">{ui('Driver workspace')}</h1></header>}<DashboardTaskGrid label={ui('Driver inventory actions')} tasks={tasks.map(([key,label,icon])=>({key,label:ui(label),icon,primary:key==='receive',onSelect:()=>setPanel(key)}))}/></div>;
+  const heading=<PageHeader title={current&&panel==='runs'?current.dispatch_number:ui(tasks.find(([key])=>key===panel)?.[1])} back={{onClick:current&&panel==='runs'?()=>setSelected(''):backToMenu,label:ui(current&&panel==='runs'?'All my runs':'Driver workspace')}}/>;
+  if(panel!=='runs')return <div className="min-w-0 space-y-4">{heading}{panel==='receive'?<DriverReceiveInventory data={data||{}} preview={preview||!ready} onRefresh={onRefresh}/>:panel==='plan'?<DriverDeliveryPlanner data={data||{}} preview={preview||!ready} onRefresh={onRefresh}/>:panel==='inventory'?<FieldInventoryCards employeeId={data?.employee?.id} enabled={ready&&(!preview||managing)}/>:<CommercialReturns key={data?.employee?.id} employeeId={data?.employee?.id} driver preview={preview||!ready} onChanged={onRefresh}/>}</div>;
 
-  return <div className="space-y-6">
-    <nav aria-label={ui("Driver inventory actions")} className="flex flex-wrap gap-3"><Button className="h-12" disabled={!ready} onClick={() => setPanel('plan')}><MapPin size={18} className="mr-2" />{ui('Plan deliveries & view customers')}</Button><Button className="h-12" variant="outline" disabled={!ready} onClick={() => setPanel('inventory')}>{ui("Goods in my possession")}</Button><Button className="h-12" variant="outline" disabled={!ready} onClick={() => setPanel('returns')}><Package size={18} className="mr-2" />{ui('Report expired collections')}</Button></nav>
-    <section className={(centralHero ? "hidden sm:block " : "") + "relative overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-4 sm:p-8"}>
-      <div className="max-w-xl"><MobileDashboardIdentity /><div className="hidden sm:block"><p className="text-xs font-semibold uppercase tracking-widest text-blue-700">{ui("Driver workspace")}</p><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">{ui("Your deliveries, in one place")}</h1><p className="mt-3 text-sm leading-6 text-slate-600">{ui("Welcome")}{data?.employee?.full_name ? ', ' + data.employee.full_name.split(' ')[0] : ''}{ui(". Receive finished products from the warehouse, travel with your commercial agent and follow the stock still on your vehicle.")}</p></div><MobileInfo mobileOnly title={ui("Driver workspace")}><p>{ui("Receive finished products from the warehouse, travel with your commercial agent and follow the stock still on your vehicle.")}</p></MobileInfo><div className="mt-5 hidden sm:inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-4 py-2 text-xs font-medium text-blue-800"><Truck size={16} />{ui("Assigned runs and delivery contacts")}</div></div>
-      <Truck className="absolute bottom-8 right-10 hidden h-32 w-32 text-blue-200 xl:block" strokeWidth={1} aria-hidden="true" />
-    </section>
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[[ui("Active runs"), activeRuns.length], [ui("Stops to follow up"), pending.length], [ui("Complete deliveries reported today"), doneToday], [ui("Runs back for reconciliation"), runs.filter((r) => returned(r.id) && !['completed', 'cancelled'].includes(r.status)).length]].map(([label, value]) => <div key={label} className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold text-slate-900">{ready ? value : '—'}</p></div>)}</div>
+  return <div className="min-w-0 space-y-5">
+    {heading}
+    {!current&&<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[[ui("Active runs"), activeRuns.length], [ui("Stops to follow up"), pending.length], [ui("Complete deliveries reported today"), doneToday], [ui("Runs back for reconciliation"), runs.filter((r) => returned(r.id) && !['completed', 'cancelled'].includes(r.status)).length]].map(([label, value]) => <div key={label} className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold text-slate-900">{ready ? value : '—'}</p></div>)}</div>}
     {!current ? <section><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{ui("My runs")}</h2><div className="flex gap-1"><Button variant={tab === 'active' ? 'default' : 'outline'} onClick={() => setTab('active')}>{ui("Active")}</Button><Button variant={tab === 'history' ? 'default' : 'outline'} onClick={() => setTab('history')}>{ui("Recent history")}</Button></div></div>
       <div className="grid gap-4 lg:grid-cols-2">{!(tab === 'active' ? activeRuns : history).length && <div className="rounded-2xl border border-dashed bg-white p-8 text-center lg:col-span-2"><Truck size={34} className="mx-auto mb-3 text-slate-400" /><h3 className="font-semibold">{ready ? ui("No runs in this view") : ui("Your assigned runs will appear here")}</h3><p className="mt-2 text-sm text-slate-500">{ui("Dispatch assigns your vehicle, route and customer orders before departure.")}</p></div>}
         {[...(tab === 'active' ? activeRuns : history)].sort((a, b) => (a.dispatch_date || '').localeCompare(b.dispatch_date || '')).map((r) => <button key={r.id} onClick={() => { setSelected(r.id); setSearch(''); }} className="rounded-2xl border bg-white p-5 text-left transition hover:border-blue-400 hover:shadow-sm"><div className="flex flex-wrap items-start justify-between gap-2"><span className="rounded-xl bg-blue-50 p-3 text-blue-700"><Truck size={23} /></span><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">{returned(r.id) && !['completed', 'cancelled'].includes(r.status) ? ui("Back at base · reconciliation pending") : statusLabel(r.status)}</span></div><h3 className="mt-4 text-lg font-semibold">{r.route_name || ui("Assigned delivery run")}</h3><p className="mt-1 text-sm text-slate-500">{r.vehicle_name} · {r.dispatch_number}</p><div className="mt-5 flex justify-between border-t pt-3 text-xs text-slate-500"><span>{r.dispatch_date}</span><span>{stops.filter((s) => s.dispatch_id === r.id).length}{ui(" customer orders →")}</span></div></button>)}
       </div><p className="mt-3 text-xs text-slate-500">{ui("History includes recently closed runs from the last 30 days and runs still awaiting reconciliation.")}</p>
     </section> : <section className="space-y-5">
-      <button className="flex min-h-10 items-center gap-2 text-sm text-slate-500" onClick={() => setSelected('')}><ArrowLeft size={16} />{ui("All my runs")}</button>
       <div className="rounded-2xl border bg-white p-5"><div className="flex flex-wrap justify-between gap-4"><div><h2 className="text-xl font-bold">{current.route_name || current.dispatch_number}</h2><p className="mt-1 text-sm text-slate-500">{current.vehicle_name} · {current.dispatch_number} · {current.dispatch_date}</p></div><span className="h-fit rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800">{returned(current.id) ? ui("Return reported to dispatch") : statusLabel(current.status)}</span></div>
         <div className="mt-4 flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-sm"><Users size={18} className="mt-0.5 shrink-0 text-blue-600" /><div><p className="font-medium">{ui("Commercial agent: ")}{current.salesperson_name || ui("Not paired yet")}</p><p className="mt-1 text-xs leading-5 text-slate-500">{ui("Your agent records the customer, cash or credit terms, exact supplied quantities and receipt photo. Delivery outcome reports below are for coordination.")}</p></div></div>
         {current.notes && <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm">{current.notes}</p>}

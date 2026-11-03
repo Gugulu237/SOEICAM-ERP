@@ -66,7 +66,7 @@ test('manager launcher omits personal Commercial tools and exposes a separate Qu
 
 test('driver management detail keeps recorded runs and outcomes but removes all submission controls',async()=>{
   const ui=await uiBundle();
-  const props={preview:true,data:{employee:{id:'driver-a'},date:'2026-10-21',dispatches:[{id:'run-a',status:'in_transit',route_name:'Verified route',vehicle_name:'Van A'}],stops:[{id:'stop',dispatch_id:'run-a',customer_name:'Reported customer',order_number:'SO-1'}],activities:[{id:'report',dispatch_id:'run-a',driver_id:'driver-a',order_id:'stop',type:'delivery_attempted',recorded_at:'2026-10-21T10:00:00Z',notes:'Original driver note'}]}};
+  const props={activeTab:'runs',preview:true,data:{employee:{id:'driver-a'},date:'2026-10-21',dispatches:[{id:'run-a',status:'in_transit',route_name:'Verified route',vehicle_name:'Van A'}],stops:[{id:'stop',dispatch_id:'run-a',customer_name:'Reported customer',order_number:'SO-1'}],activities:[{id:'report',dispatch_id:'run-a',driver_id:'driver-a',order_id:'stop',type:'delivery_attempted',recorded_at:'2026-10-21T10:00:00Z',notes:'Original driver note'}]}};
   try {
     globalThis.__driverState=0;
     const report=ui.render('driver',props);
@@ -81,8 +81,8 @@ test('driver management detail keeps recorded runs and outcomes but removes all 
 test('Hotesse management preview preserves shelf facts without daily-report or product-entry controls',async()=>{
   const ui=await uiBundle();
   const data={date:'2026-10-21',locations:[{id:'outlet',customer_name:'Recorded outlet',name:'Main shelf'}],outletProducts:{outlet:[{id:'product',name:'YOLA stock',display_quantity:7,opening_quantity:7,supplied_quantity:9}]}};
-  const report=ui.render('hotesse',{data,preview:true});
+  const report=ui.render('hotesse',{data,activeTab:'today',preview:true});
   assert.match(report,/Recorded outlet/);assert.match(report,/YOLA stock/);assert.match(report,/View reported stock for/);
   assert.doesNotMatch(report,/Record daily report|Record daily report for|<form/);
-  assert.match(ui.render('hotesse',{data,preview:false}),/Record daily report/);
+  assert.match(ui.render('hotesse',{data,activeTab:'today',preview:false}),/Record daily report/);
 });

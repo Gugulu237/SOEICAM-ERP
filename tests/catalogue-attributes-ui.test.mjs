@@ -6,7 +6,7 @@ import { hookRuntime } from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);let compiled;
 async function renderer(){
   compiled ||= build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Groups from './src/components/inventory/GroupedItems.jsx';import Attributes from './src/components/items/ItemAttributesEditor.jsx';import Components from './src/components/items/AssemblyComponents.jsx';import Variants from './src/components/items/ProductVariantFields.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement({Groups,Attributes,Components,Variants}[kind],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'catalogue-hooks',setup(b){
-    b.onResolve({filter:/^react$/},a=>/(GroupedItems|ItemAttributeFilters|ItemAttributesEditor|AssemblyComponents|AssemblyComponentPicker|ProductVariantFields)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
+    b.onResolve({filter:/^react$/},a=>/(GroupedItems|ItemAttributeFilters|ItemAttributesEditor|AssemblyComponents|AssemblyComponentPicker|ProductVariantFields|ProductSortSelect)\.jsx$/.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'hooks'},a=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(a.path)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__catalogueUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__catalogueUI.state(key,v),useMemo=f=>f(),useRef=v=>globalThis.__catalogueUI.ref(key,v),useId=()=> 'attribute-editor',useEffect=(fn,deps)=>globalThis.__catalogueUI.effect(key,fn,deps);`,resolveDir:process.cwd()}));
     const mocks={'@/hooks/useCatalogueColumns':"export const useCatalogueColumns=table=>table?1:globalThis.__catalogueUI.columns||2;",'@/lib/navigation-context':"export const usePageState=(name,value)=>globalThis.__catalogueUI.state('page:'+name,value);",'@/components/ui/picker-popdown':`import React from 'react';export default function Popdown({children}){return React.createElement('section',{'data-popdown':true},children);}`,'@/hooks/useCurrentUser':`export const useCurrentUser=()=>({role:'admin'});`,'@/components/ui/dialog':`import React from 'react';export const Dialog=({children,open})=>open?React.createElement('div',{'data-dialog':true},children):null;export const DialogContent=({children})=>React.createElement('section',null,children);export const DialogHeader=({children})=>React.createElement('header',null,children);export const DialogTitle=({children})=>React.createElement('h2',null,children);export const DialogDescription=({children})=>React.createElement('p',null,children);export const DialogFooter=DialogContent;export const DialogTrigger=DialogContent;export const DialogClose=DialogContent;export const DialogPortal=DialogContent;export const DialogOverlay=DialogContent;`};b.onResolve({filter:/^@/},a=>mocks[a.path]?{path:a.path,namespace:'leaf'}:undefined);b.onLoad({filter:/.*/,namespace:'leaf'},a=>({contents:mocks[a.path],resolveDir:process.cwd()}));
   }}]}).then(out=>{const m={exports:{}};new Function('require','module','exports',out.outputFiles[0].text)(require,m,m.exports);return m.exports.render;});return compiled;
@@ -15,6 +15,20 @@ const products=[{id:'a',name:'YOLA Fraise 500 g',inventory_type:'assembly',produ
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r),capture=r.capture.bind(r);r.elements=[];r.capture=(tag,props,children)=>{capture(tag,props,children);r.elements.push({tag,props:props||{},children});};r.beforeRender=()=>{before();r.elements=[];};globalThis.__catalogueUI=r;return r;}
 function field(r,label){const e=r.elements.find(e=>e.props['aria-label']===label);assert.ok(e,'Missing '+label);return e.props;}
 function button(r,label){const e=r.elements.find(e=>e.props.onClick && e.children.flat().join('')===label);assert.ok(e,'Missing '+label);return e.props;}
+
+test('catalogue sorting runs before pagination and keeps size/flavour filters and item quantities',async()=>{
+ const r=runtime(),render=await renderer();
+ const many=Array.from({length:30},(_,index)=>({...products[0],id:'item-'+index,name:'YOLA Fraise '+(index+1)+' kg',size:(index+1)+' kg'}));
+ const quantities=new Map(many.map((p,i)=>[p.id,i+50]));
+ const paint=()=>{r.beforeRender();return render('Groups',{products:many,filter:'finished',quantities});};
+ const names=()=>r.elements.filter(e=>e.tag==='button'&&e.props['aria-label']?.startsWith('Item details for')).map(e=>e.props['aria-label']);
+ try {
+  paint();field(r,'Next item page').onClick();paint();assert.equal(names().length,5);
+  field(r,'Sort products').onChange({target:{value:'size-desc'}});let html=paint();assert.equal(names().length,25);assert.match(names()[0],/30 kg/);assert.match(html,/Quantity for YOLA Fraise 30 kg/);
+  field(r,'Size').onChange({target:{value:'1000 g'}});paint();assert.equal(names().length,1);
+  field(r,'Sort products').onChange({target:{value:'flavour'}});paint();assert.equal(names().length,1);assert.equal(field(r,'Size').value,'1000 g');assert.equal(quantities.get('item-0'),50);
+ }finally{r.cleanup();delete globalThis.__catalogueUI;}
+});
 
 test('item taps open a separate sliding action row while both product tiles keep their size',async()=>{
  const r=runtime(),render=await renderer(),edited=[],details=[];

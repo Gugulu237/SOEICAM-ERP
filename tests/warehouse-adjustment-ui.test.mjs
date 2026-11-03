@@ -28,7 +28,7 @@ async function renderer(){
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.elements=[];r.capture=(tag,props,children)=>r.elements.push({tag,props:props || {},children});r.beforeRender=()=>{before();r.elements=[];};return r;}
 const warehouse={id:'raw',name:'Ingredients',warehouse_type:'raw_material',is_active:true};
 const product={id:'milk',name:'Milk powder',sku:'MILK',inventory_type:'raw_material',unit_of_measure:'kg',current_cost:10,is_active:true};
-const workspace={warehouse,warehouses:[warehouse],accounts:[{id:'variance',account_number:'6590',name:'Inventory adjustments'}],items:[{id:'milk',name:'Milk powder',unit:'kg',unit_cost:10}],rows:[{balance_id:'lot',product_id:'milk',product_name:'Milk powder',unit:'kg',lot_number:'MILK-01',book_quantity:10,book_value:100,unit_cost:10,qc_status:'quarantine',fingerprint:'server-snapshot'}]};
+const workspace={warehouse,warehouses:[warehouse],accounts:[{id:'variance',account_number:'6590',name:'Inventory adjustments'}],items:[{id:'milk',name:'Milk powder',unit:'kg',unit_cost:10}],rows:[{balance_id:'lot',warehouse_id:'raw',product_id:'milk',product_name:'Milk powder',unit:'kg',lot_number:'MILK-01',book_quantity:10,book_value:100,unit_cost:10,qc_status:'quarantine',fingerprint:'server-snapshot'}]};
 const postedReceipt=(body,journal_number)=>({id:'WA-1',reference:body.reference,date:body.date,journal_number,value_difference:-20,rows:body.rows.map(row=>({...workspace.rows[0],...row,difference:Number(row.counted_quantity)-10,value_after:Number(row.counted_quantity)*10,value_difference:(Number(row.counted_quantity)-10)*10}))});
 const element=(r,tag,label)=>r.elements.find(e=>e.tag===tag && e.props['aria-label']===label)?.props;
 const button=(r,text)=>r.elements.find(e=>e.tag==='button' && JSON.stringify(e.children).includes(text))?.props;
@@ -64,7 +64,7 @@ test('a zero-stock catalogue item can be counted as a new lot, with explicit bat
 
 test('large warehouse counts paginate and retain counted quantities across pages and searches',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
-  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,rows:Array.from({length:60},(_,i)=>({...workspace.rows[0],balance_id:'lot-'+i,product_name:'Milk powder '+i,lot_number:'LOT-'+i,fingerprint:'snapshot-'+i}))}:postedReceipt(body,'JV-002')};};
+  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,rows:Array.from({length:60},(_,i)=>({...workspace.rows[0],balance_id:'lot-'+i,product_id:'item-'+i,product_name:'Milk powder '+i,lot_number:'LOT-'+i,fingerprint:'snapshot-'+i}))}:postedReceipt(body,'JV-002')};};
   const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange:()=>{}});};
   try{draw();await r.flush();draw();assert.equal(r.elements.filter(e=>e.tag==='input' && e.props.type==='number').length,25);
     element(r,'input','Physical quantity for Milk powder 0').onChange({target:{value:'8'}});button(r,'Next').onClick();draw();element(r,'input','Physical quantity for Milk powder 25').onChange({target:{value:'9'}});
@@ -93,7 +93,7 @@ test('authorized accounting correction accepts an explicit zero count, previews 
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 test('a blocked valuation lot remains visible with a specific reason while other warehouse quantities are editable',async()=>{
- const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,can_reconcile_value:false,rows:[{...workspace.rows[0],book_quantity:0,book_value:25,requires_reconciliation:true},{...workspace.rows[0],balance_id:'good',product_name:'Other material'}]}});
+ const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:{...workspace,can_reconcile_value:false,rows:[{...workspace.rows[0],book_quantity:0,book_value:25,requires_reconciliation:true},{...workspace.rows[0],balance_id:'good',product_id:'other',product_name:'Other material'}]}});
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{draw();await r.flush();assert.match(draw(),/Ask Accounting or the General Manager/);assert.equal(element(r,'input','Physical quantity for Milk powder').disabled,true);assert.equal(!!element(r,'input','Physical quantity for Other material').disabled,false);}
  finally{r.cleanup();delete globalThis.__adjustmentUI;}
@@ -170,4 +170,36 @@ test('a changed valuation preserves the typed count but requires a fresh recount
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,can_reconcile_value:true,rows:[{...workspace.rows[0],configured_unit_cost:price,fingerprint:'price-'+price}]}:postedReceipt(body,'JV-LIVE')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{draw();await r.flush();draw();await r.flush();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});element(r,'input','Count sheet / reference').onChange({target:{value:'LIVE-COST'}});element(r,'input','Adjustment reason').onChange({target:{value:'Physical count with latest material price'}});element(r,'select','Adjustment account').onChange({target:{value:'variance'}});draw();price=12;target.dispatchEvent(new Event('soeicam:item-catalogue-changed'));await r.flush();draw();assert.equal(element(r,'input','Physical quantity for Milk powder').value,'8');assert.equal(button(r,'Save quantity adjustment').disabled,true);assert.match(draw(),/Reload quantities and count again/);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.filter(c=>c.action==='postWarehouseAdjustment').length,0);}finally{r.cleanup();globalThis.window=beforeWindow;globalThis.document=beforeDocument;delete globalThis.__adjustmentUI;}
+});
+
+test('one item total covers all lots; selecting it again cannot create duplicate stock and a batch search keeps the full total',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
+ const lots=[workspace.rows[0],{...workspace.rows[0],balance_id:'second',lot_number:'MILK-02',book_quantity:5,book_value:50,fingerprint:'snapshot-two'}];
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,rows:lots}:postedReceipt(body,'JV-GROUP')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try {
+   draw();await r.flush();let html=draw();assert.equal((html.match(/data-count-product=/g)||[]).length,1);assert.match(html,/Total on hand for Milk powder[^>]*>15\.000/);
+   assert.equal(r.elements.filter(e=>e.tag==='input'&&e.props.type==='number').length,0);
+   element(r,'select','Add counted item').onChange({target:{value:'milk'}});draw();button(r,'Count item').onClick();draw();button(r,'Count item').onClick();draw();
+   assert.equal(r.elements.filter(e=>e.tag==='input'&&e.props.type==='number').length,2);assert.equal(element(r,'input','Lot number for Milk powder'),undefined);
+   element(r,'input','Physical quantity for Milk powder / MILK-01 / Stock record 1').onChange({target:{value:'8'}});
+   element(r,'input','Search count items or lots').onChange({target:{value:'MILK-02'}});html=draw();assert.match(html,/Total on hand for Milk powder[^>]*>15\.000/);assert.match(html,/13\.000/);
+   assert.equal(element(r,'input','Physical quantity for Milk powder / MILK-01 / Stock record 1').value,'8');
+   const sort=r.elements.find(e=>typeof e.tag==='function'&&e.tag.name==='ProductSortSelect');sort.props.onChange('size');draw();
+   element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-LOTS'}});element(r,'input','Adjustment reason').onChange({target:{value:'Counted individual physical lots'}});draw();
+   await button(r,'Save quantity adjustment').onClick();
+   assert.deepEqual(calls.find(c=>c.action==='postWarehouseAdjustment').rows,[{balance_id:'lot',fingerprint:'server-snapshot',counted_quantity:8}]);
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+test('new lots require an explicit action and repeated clicks keep a single draft for that product',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__adjustmentUI=r;r.invoke=async()=>({data:workspace});
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try {
+   draw();await r.flush();draw();element(r,'button','Add another counted lot for Milk powder').onClick();draw();
+   assert.equal(r.elements.filter(e=>e.tag==='input'&&e.props['aria-label']==='Lot number for Milk powder').length,1);
+   element(r,'button','Add another counted lot for Milk powder').onClick();draw();
+   assert.equal(r.elements.filter(e=>e.tag==='input'&&e.props['aria-label']==='Lot number for Milk powder').length,1);
+   assert.match(draw(),/Total on hand for Milk powder[^>]*>10\.000/);
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });

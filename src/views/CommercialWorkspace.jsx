@@ -4,6 +4,7 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from '@/lib/router';
+import {useDashboardNavigation} from '@/hooks/useDashboardNavigation';
 import { RefreshCw } from 'lucide-react';
 import { erp } from '@/api/erpClient';
 import { Button } from '@/components/ui/button';
@@ -20,9 +21,10 @@ const CommercialPerformance = dynamic(() => import('@/views/CommercialPerformanc
 export default function CommercialWorkspace() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { role, roleLabel, employee, user, loading: authLoading, error: authError } = useCurrentUser();
+  const { role, roleLabel, employee, user, allowedModules, loading: authLoading, error: authError } = useCurrentUser();
   const [params, setParams] = useSearchParams();
   const managing = role === 'admin';
+  const dashboardNavigation=useDashboardNavigation({commercial:!managing});
   const section = commercialWorkspaceSection(role,params);
   const reviewing = managing && section==='review';
   const reportSection = managing && (section==='performance'||reviewing);
@@ -109,6 +111,6 @@ export default function CommercialWorkspace() {
     {!employeeId && !reportSection && !rosterLoading && managing && !rosterError && <div className="rounded-2xl border bg-white p-6"><h3 className="font-semibold">{roster.length ? ui("Choose the agent whose activity you want to review") : ui("Set up your first Commercial agent")}</h3><p className="mt-2 text-sm text-slate-600">{roster.length ? ui("Their actual stock, customers and sales will load here.") : ui("Create or edit an employee, choose Commercial, set the account to Active and link their login. Then pair them with a driver and load finished products onto their delivery run.")}</p>{!roster.length && <Button asChild className="mt-4"><Link to="/employees">{ui("Open Employees")}</Link></Button>}</div>}
     {!employeeId && !managing && <p role="alert" className="rounded-xl bg-slate-50 p-4 text-sm text-slate-900">{ui("Link this login to an active Commercial employee to open the live dashboard.")}</p>}
     {employeeId && !reportSection && error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p className="font-semibold">{ui("Live records could not be loaded.")}</p><p className="mt-1">{serviceMissing ? ui("The Commercial workspace service needs activation on the linked SOEICAM backend. Your local dashboard is ready.") : error}</p><button onClick={refresh} className="mt-2 font-semibold underline">{ui("Retry connection")}</button></div>}
-    {reportSection ? <CommercialPerformance key={section+':'+reload} embedded selectedAgentId={managing ? employeeId : ''} readOnly={managing && !reviewing} reviewMode={reviewing} /> : employeeId && <CommercialDashboard key={scope} section={section} activeTab={params.get('view') || 'sales'} onTabChange={value => setParams(current => { current.set('view', value); if (!managing) { current.delete('section'); current.delete('new'); current.delete('customer'); } return current; })} openFromLink={section === 'pos' && params.get('new') === '1'} initialCustomerId={params.get('customer') || ''} onClearEntry={() => setParams(current => { current.delete('new'); current.delete('customer'); return current; }, { replace: true })} data={data} actorEmployee={managing ? undefined : employee} loading={loading && !data} managing={managing} onRefresh={refresh} onEntryChange={setEntryActive} />}
+    {reportSection ? <CommercialPerformance key={section+':'+reload} embedded selectedAgentId={managing ? employeeId : ''} readOnly={managing && !reviewing} reviewMode={reviewing} /> : employeeId && <CommercialDashboard key={scope} section={section} {...dashboardNavigation} allowedModules={allowedModules} openFromLink={section === 'pos' && params.get('new') === '1'} initialCustomerId={params.get('customer') || ''} onClearEntry={() => setParams(current => { current.delete('new'); current.delete('customer'); return current; }, { replace: true })} data={data} actorEmployee={managing ? undefined : employee} loading={loading && !data} managing={managing} onRefresh={refresh} onEntryChange={setEntryActive} />}
   </div>;
 }

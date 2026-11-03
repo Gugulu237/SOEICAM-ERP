@@ -7,7 +7,7 @@ import {stockUnit} from '../../lib/item-units.js';
 import {companySalesWarehouse} from '../../lib/sales-stock.js';
 import {MANAGED_WAREHOUSE_TYPES} from '../../lib/warehouse-workspace.js';
 import {assetDate,assetMonths,shiftMonth} from '../../lib/asset-schedule.js';
-import {openingPartyLines} from '../../lib/opening-records.js';
+import {openingPartyLines,isOpeningRecord} from '../../lib/opening-records.js';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
@@ -87,6 +87,7 @@ async function prepare(stores,context,body){
   }else{
    const customer=row.kind==='receivable',party=by(customer?'customers':'suppliers',row.party_id),ref=reference(row.reference);
    if(!party)throw fail('Choose an existing customer or supplier for the opening debt.');
+   if(customer&&(existingInvoices.some(d=>d.customer_id===party.id&&isOpeningRecord(d))||(await stores.Customer.get(party.id))?.opening_balance_batch_id))throw fail('An opening balance is already recorded for this customer.');
    const issued=assetDate(row.document_date||date),due=assetDate(row.due_date||date),amount=positive(row.amount,'outstanding balance');
    if(issued>date||due<issued)throw fail('The original debt date must be on or before opening, and its due date cannot precede that document.');
    const existing=customer?existingInvoices:existingBills,field=customer?'customer_id':'supplier_id',number=customer?'invoice_number':'bill_number';

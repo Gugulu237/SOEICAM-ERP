@@ -1,3 +1,5 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 import React, {useMemo, useRef, useState} from 'react';
 import {Check, Search, ShoppingBag} from 'lucide-react';
 import {ui} from '@/lib/i18n';
@@ -15,18 +17,21 @@ import {validProductQuantity} from '@/lib/product-quantity';
 const invalidQuantity=(quantity,available)=>!validProductQuantity(quantity,available);
 export default function SaleProductPicker({open,onOpenChange,products,lines,onQuantityChange,disabled=false,purpose='sale'}) {
   const [search,setSearch]=useState(''),[family,setFamily]=useState('All');
+  const [sort,setSort]=useState('name');
   const [editing,setEditing]=useState(''),[draft,setDraft]=useState(''),anchor=useRef(null);
   const closeQuantity=()=>setEditing('');
   const closePicker=value=>{closeQuantity();onOpenChange(value);};
   const active=open?products.find(p=>p.id===editing):null;
   const replacement=purpose==='replacement',spoilage=purpose==='spoilage',families=[...new Set(products.map(p=>productPresentation(p).family))];
   const availableFor=p=>spoilage?1000000:Number(p.available);
-  const visible=useMemo(()=>products.filter(p=>(family==='All'||productPresentation(p).family===family)&&normalizeProductText([p.name,p.sku,p.size,p.category].filter(Boolean).join(' ')).includes(normalizeProductText(search))),[products,search,family]);
+  const matching=useMemo(()=>products.filter(p=>(family==='All'||productPresentation(p).family===family)&&normalizeProductText([p.name,p.sku,p.size,p.category,p.flavor,productPresentation(p).flavor].filter(Boolean).join(' ')).includes(normalizeProductText(search))),[products,search,family]);
+  const visible=sortProductRows(matching,sort);
   const invalid=lines.some(line=>{const product=products.find(p=>p.id===line.product_id);return !product||invalidQuantity(line.quantity,availableFor(product));});
   return <Dialog open={open} onOpenChange={closePicker}><DialogContent className="flex h-[85dvh] max-h-[760px] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl sm:p-0">
     <DialogHeader className="shrink-0 border-b px-5 pb-4 pt-5"><DialogTitle>{ui('Choose products')}</DialogTitle><DialogDescription>{replacement?ui('Select the fresh products given free to replace spoiled goods.'):spoilage?ui('Choose product types and enter the affected quantities.'):ui('Tap a product, type the quantity and confirm.')}</DialogDescription></DialogHeader>
     <div className="relative mx-4 my-3 shrink-0"><Search size={17} className="pointer-events-none absolute left-3 top-3.5 text-slate-400"/><Input aria-label={ui('Search sale products')} placeholder={ui('Search by name, flavour or code')} value={search} onChange={e=>setSearch(e.target.value)} className="h-11 pl-10"/></div>
     {families.length>1&&<div className="mx-4 mb-3 shrink-0"><label className="text-xs text-slate-600">{ui('Product type')}<select aria-label={ui('Product type')} value={family} onChange={e=>setFamily(e.target.value)} className="mt-1 h-11 w-full rounded-md border bg-white px-3 text-sm"><option value="All">{ui('All product types')}</option>{families.map(f=><option key={f} value={f}>{f}</option>)}</select></label></div>}
+    <ProductSortSelect value={sort} onChange={setSort} className="mx-4 mb-3 shrink-0"/>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4" tabIndex={0} aria-label={ui('Available products')}>
       <p className="mb-3 text-xs text-slate-500">{ui('{0} products available',visible.length)}</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{visible.map(product=>{

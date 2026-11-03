@@ -1,3 +1,5 @@
+import {compareProductSizes,sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 import React, { useMemo, useState } from 'react';
 import { SlidersHorizontal, Search, ChevronDown, Pencil } from 'lucide-react';
 import {useCatalogueColumns} from '@/hooks/useCatalogueColumns';
@@ -56,22 +58,20 @@ function CatalogueRow({items,expanded,onToggle,quantities,onEdit,renderDetails,r
 // The page mounts at most 25 cards, including their lazy images/editors.
 export default function GroupedItems({ products, filter, quantities, onEdit, renderDetails, renderActions, table = false }) {
   const [search,setSearch] = usePageState('inventory:'+filter+':search',''), [group,setGroup] = usePageState('inventory:'+filter+':group',''), [flavor,setFlavor] = usePageState('inventory:'+filter+':flavor',''), [size,setSize] = usePageState('inventory:'+filter+':size',''), [attributes,setAttributes] = usePageState('inventory:'+filter+':attributes',{}), [page,setPage] = usePageState('inventory:'+filter+':page',1);
+  const [sort,setSort]=usePageState('inventory:'+filter+':sort','name');
   const [showFilters,setShowFilters]=useState(false),[expanded,setExpanded]=useState(null);
   const columns=useCatalogueColumns(table);
   const finished = filter === 'finished',packaging = filter === 'packaging';
   const rows = useMemo(() => products.map(item => {const variant=packaging?packagingVariants(item):inventoryVariants(item);return {item,variant,group:packaging?packagingGroup(item):inventoryGroup(item),search:normalize(itemSearchText(item)+' '+variant.flavor+' '+(flavourChoice(variant.flavor)?.label || '')+' '+variant.size)};}),[products,packaging]);
   const groups = useMemo(() => packaging?[...new Set(rows.map(row=>row.group))].sort((a,b)=>a.localeCompare(b)):filter==='all'?[...inventoryGroups(products,true),...inventoryGroups(products,false)]:inventoryGroups(products, finished).filter(group=>rows.some(row=>row.group===group)), [products,finished,filter,packaging,rows]);
   const flavors = useMemo(() => [...new Set([...(finished?PRODUCT_FLAVOURS.map(option=>option.value):[]),...rows.filter(r=>!group || r.group===group).map(r=>r.variant.flavor).filter(Boolean)])], [rows,group,finished]);
-  const sizes = useMemo(() => [...new Set([...(finished?productSizeChoices(group):[]),...rows.filter(r=>(!group || r.group===group) && (!flavor || r.variant.flavor===flavor)).map(r=>r.variant.size).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})), [rows,group,flavor,finished]);
+  const sizes = useMemo(() => [...new Set([...(finished?productSizeChoices(group):[]),...rows.filter(r=>(!group || r.group===group) && (!flavor || r.variant.flavor===flavor)).map(r=>r.variant.size).filter(Boolean)])].sort(compareProductSizes), [rows,group,flavor,finished]);
   const facets = useMemo(() => attributeFacets(products),[products]);
   const filtered = useMemo(() => {
     const terms=normalize(search).split(/\s+/).filter(Boolean);
     return rows.filter(r => (!group || r.group===group) && (!flavor || r.variant.flavor===flavor) && (!size || r.variant.size===size) && terms.every(term=>r.search.includes(term)) && matchesAttributes(r.item,attributes));
   }, [rows,group,flavor,size,search,attributes]);
-  const ordered = useMemo(() => {
-    const groupOrder=new Map(groups.map((value,index)=>[value,index])),flavourOrder=new Map(PRODUCT_FLAVOURS.map((option,index)=>[option.value,index]));
-    return [...filtered].sort((a,b)=>(groupOrder.get(a.group) ?? groups.length)-(groupOrder.get(b.group) ?? groups.length) || a.group.localeCompare(b.group) || (finished?(flavourOrder.get(a.variant.flavor) ?? 99)-(flavourOrder.get(b.variant.flavor) ?? 99) || a.variant.flavor.localeCompare(b.variant.flavor) || a.variant.size.localeCompare(b.variant.size,undefined,{numeric:true}):0) || a.item.name.localeCompare(b.item.name) || String(a.item.id).localeCompare(String(b.item.id)));
-  },[filtered,groups,finished]);
+  const ordered = sortProductRows(filtered,sort,row=>({...row.item,size:row.variant.size,flavor:row.variant.flavor==='Flavour not assigned'?'':row.variant.flavor}));
   const pages=Math.max(1,Math.ceil(ordered.length/25)),currentPage=Math.min(page,pages),offset=(currentPage-1)*25;
   const visible=ordered.slice(offset,offset+25),displayRows=[];
   for(let index=0;index<visible.length;index+=columns)displayRows.push(visible.slice(index,index+columns));
@@ -82,6 +82,7 @@ export default function GroupedItems({ products, filter, quantities, onEdit, ren
   return <div className="space-y-4">
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
       <div className="flex min-w-0 items-center gap-2"><div className="relative min-w-0 flex-1"><Search size={17} aria-hidden="true" className="pointer-events-none absolute left-3 top-3.5 text-slate-400"/><Input aria-label={ui('Search items')} placeholder={ui('Search items')} value={search} onChange={e=>update(setSearch,e.target.value)} className="h-11 min-w-0 bg-slate-50 pl-9 text-base sm:text-sm"/></div><Button variant="outline" className="h-11 shrink-0 gap-2 xl:hidden" aria-expanded={showFilters} aria-controls={'item-filters-'+filter} onClick={()=>setShowFilters(value=>!value)}><SlidersHorizontal size={16}/>{ui('Filters')}{activeFilters>0&&<span className="rounded-full bg-green-100 px-1.5 text-green-900">{activeFilters}</span>}</Button>{hasFilters&&<Button type="button" variant="ghost" className="h-11 shrink-0 px-2 text-xs" onClick={clear}>{ui('Clear filters')}</Button>}</div>
+      <ProductSortSelect value={sort} onChange={value=>update(setSort,value)} className="sm:max-w-xs"/>
       <div id={'item-filters-'+filter} className={(showFilters?'grid':'hidden')+' grid-cols-2 gap-2 xl:flex xl:flex-wrap [&>select]:h-11 [&>select]:min-w-0 [&>select]:w-full xl:[&>select]:w-auto'}>
         {filter!=='all' && <select aria-label={ui(packaging?'Packaging type':'Item group')} value={group} onChange={e=>{update(setGroup,e.target.value);setFlavor('');setSize('');}} className="h-10 max-w-full rounded-md border bg-white px-3 text-sm"><option value="">{ui(packaging?'All packaging types':'All groups')}</option>{groups.map(value=><option key={value}>{value}</option>)}</select>}
         {(finished||packaging) && <><select aria-label={ui('Flavour')} value={flavor} onChange={e=>{update(setFlavor,e.target.value);setSize('');}} className="h-10 max-w-full rounded-md border bg-white px-3 text-sm"><option value="">{ui('All flavours')}</option>{flavors.map(value=><option key={value} value={value}>{ui(flavourChoice(value)?.label || value)}</option>)}</select><select aria-label={ui('Size')} value={size} onChange={e=>update(setSize,e.target.value)} className="h-10 max-w-full rounded-md border bg-white px-3 text-sm"><option value="">{ui('All sizes')}</option>{sizes.map(value=><option key={value}>{value}</option>)}</select></>}

@@ -29,9 +29,9 @@ test('own Commercial dashboard exposes entry while management reports remain rea
   try {
     globalThis.__commercialButtons = [];
     const own = module.exports.render({ data, managing:false });
-    assert.match(own, /Record sale/); assert.match(own, /Customers/);
+    assert.match(own, /Record sale/); assert.match(own, /Acquired customers/);
     assert.match(own, /Exchanges/); assert.match(own, /Performance &amp; rewards/); assert.doesNotMatch(own, /Commission estimate this month|Cash awaiting clearance|Your day in the field/);
-    assert.match(own, /Driver A/); assert.match(own, /Van A/);
+    assert.doesNotMatch(own, /Driver A|Van A|Supply date/);
     const sale = globalThis.__commercialButtons.find(button => label(button.children) === 'Record sale');
     assert.equal(sale.disabled,false); sale.onClick();
     assert.equal(globalThis.__commercialNavigation,undefined,'own sale stays inside the dashboard');
@@ -48,7 +48,7 @@ test('own Commercial dashboard exposes entry while management reports remain rea
       globalThis.__commercialButtons = [];
       const report=module.exports.render({data,managing:true,section,openFromLink:true,initialCustomerId:'forged'});
       assert.match(report,/Read-only management view/);assert.match(report,/Agent A/);
-      assert.match(report,/Daily supplies/);assert.match(report,/Supply date/);
+      assert.match(report,/Daily supplies/);assert.doesNotMatch(report,/Supply date/);
       assert.doesNotMatch(report,/Record sale|Register customer|Mark cash as deposited|credited to this agent/);
       assert.equal(globalThis.__commercialButtons.some(button => label(button.children)==='Record sale'),false);
     }
@@ -62,7 +62,7 @@ test('own Commercial dashboard exposes entry while management reports remain rea
     globalThis.__commercialButtons = [];
     const pos = module.exports.render({ data: posData, section: 'pos' });
     assert.match(pos, /Tap a product/);
-    assert.match(pos, /YOLA finished/); assert.match(pos, /8 units left/);
+    assert.match(pos, /YOLA finished/); assert.match(pos, /Enter quantity for YOLA finished/);
     assert.doesNotMatch(pos, /Raw material/);
     assert.match(pos, /Sales history/); assert.doesNotMatch(pos, /Monthly goals|Daily supplies/);
     assert.equal(globalThis.__commercialButtons.find(button => label(button.children) === 'Record sale').disabled, false);

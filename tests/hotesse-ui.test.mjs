@@ -22,8 +22,10 @@ test('Hotesse UI shows informational shelf stock, delivery batch quantities and 
   const location = { id: 'point', customer_name: 'Registered supermarket', name: 'Main shop' };
   const product = { id: 'p', name: 'YOLA', storage_unit: 'ea', inventory_type: 'assembly', opening_quantity: 20, display_quantity: 0, supplied_quantity: 20, cumulative_supplied: 20 };
   const delivery = { key: 'delivery', document_number: 'FS-001', date: '2026-10-18', lines: [{ product_id: 'p', product_name: 'YOLA', unit: 'ea', quantity: 20, lot_number: 'BATCH-20261018', expiry_date: '2026-11-18' }] };
-  const markup = module.exports.render('workspace', { data: { date: '2026-10-18', locations: [location], outletProducts: { point: [product] }, outletDeliveries: { point: [delivery] } } });
-  assert.match(markup, /My point of sale/); assert.match(markup, /Performance &amp; rewards/); assert.doesNotMatch(markup, /Your shelves, your daily report|Estimated rewards/); assert.match(markup, /Stock-out/); assert.match(markup, /Record daily report/); assert.match(markup, /Supplies &amp; batches/);
+  const data={date:'2026-10-18',locations:[location],outletProducts:{point:[product]},outletDeliveries:{point:[delivery]}};
+  const landing=module.exports.render('workspace',{data});assert.match(landing,/My point of sale/);assert.match(landing,/Performance &amp; rewards/);assert.match(landing,/Point of sale tasks/);assert.doesNotMatch(landing,/Stock-out|Estimated rewards/);
+  const markup = module.exports.render('workspace', {data,activeTab:'today'});
+  assert.match(markup, /My point of sale/);assert.doesNotMatch(markup,/Point of sale tasks/);assert.match(markup, /Stock-out/); assert.match(markup, /Record daily report/); assert.match(markup, /Supplies &amp; batches/);
   const history = module.exports.render('history', { deliveries: [delivery], onCount() {} });
   assert.match(history, /BATCH-20261018/); assert.match(history, /20 ea/); assert.match(history, /Count shelves after delivery/);
   const formProps = { location, products: [product], snapshotKey: 'snapshot', onClose() {}, onDone() {} };

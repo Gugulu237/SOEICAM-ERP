@@ -23,6 +23,7 @@ import { canCaptureCustomerGps } from "@/components/customers/CustomerGpsButton"
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import useCustomerPaymentStatus from '@/components/customers/useCustomerPaymentStatus';
 import CustomerPaymentSummary from '@/components/customers/CustomerPaymentSummary';
+import CustomerOpeningBalance from '@/components/customers/CustomerOpeningBalance';
 import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
 import CustomerInfo from '@/components/customers/CustomerInfo';
 import PartnerDetail from "@/components/customers/PartnerDetail";
@@ -157,7 +158,7 @@ export function CustomerDirectory({selectedId,back}) {
                 onSale={(isAdmin||isCommercial)?()=>navigate((isCommercial?'/commercial?section=pos&new=1&customer=':'/sales/new?customer=')+encodeURIComponent(selected.id)):undefined}
                 onReceive={canCollect?()=>setReceiptCustomer(selected):undefined}
                 canReportSpoilage={canReport}
-                paymentSummary={isAdmin?<CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onRetry={()=>paymentStatus.refetch()}/>:null}
+                paymentSummary={isAdmin?<><CustomerOpeningBalance key={selected.id} customer={selected} onSaved={()=>{load();paymentStatus.refetch();}}/><CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onRetry={()=>paymentStatus.refetch()}/></>:null}
                 onEditGps={canEditGps?editGps:undefined}
                 onChanged={load}
                 subPartners={childrenByParent[selected.id] || []}

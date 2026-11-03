@@ -104,6 +104,17 @@ async function setup(db) {
   return {...f,warehouse,other,inventory,product,lots,call,workspace,body};
 }
 
+test('new count entries cannot duplicate an existing physical lot through whitespace, case or production batch aliases',async()=>{
+ const f=await setup(),s=f.entities;
+ await s.StockBalance.update(f.lots[0].id,{lot_number:' LOT-10 ',batch_number:' BATCH-10 '});
+ const snapshot=JSON.stringify(await s.StockBalance.list());
+ for(const lot_number of ['lot-10',' LOT-10 ','batch-10',' BATCH-10 ']){
+   await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-ALIAS',reason:'Verify known lot before counting',rows:[{product_id:f.product.id,lot_number,unit_cost:10,counted_quantity:8}]}),/already exists/);
+   assert.equal(JSON.stringify(await s.StockBalance.list()),snapshot);
+ }
+ assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.StockMovement.list()).length,0);
+});
+
 test('warehouse count posts signed quantity and carrying-value changes together, preserving lot holds and leaving cash unchanged',async()=>{
   const f=await setup(),s=f.entities,beforeTreasury=await s.TreasuryAccount.list(),body=await f.body();
   const result=await f.call(body);assert.equal(result.rows.length,2);assert.equal(result.value_difference,-10);assert.ok(result.journal_id);

@@ -1,3 +1,5 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 import React,{useEffect,useRef,useState} from 'react';
 import { PRODUCT_FLAVOURS } from '@/lib/product-variants';
 import { recipeCatalogue } from '@/lib/yogurt-recipe-presets';
@@ -9,11 +11,12 @@ import PickerPopdown from '@/components/ui/picker-popdown';
 
 export default function RecipeProductCatalogue({items,family,outputs,onSelect,onEditItem,onItemSaved,disabled=false}) {
   const [open,setOpen]=useState(false),[path,setPath]=useState([]),[query,setQuery]=useState(''),[limit,setLimit]=useState(25);
+  const [sort,setSort]=useState('name');
   const anchorRef=useRef(null),resultsRef=useRef(null);
   useEffect(()=>{if(open&&resultsRef.current){resultsRef.current.scrollTop=0;resultsRef.current.querySelector('button')?.focus({preventScroll:true});}},[open,path]);
   const rows=recipeCatalogue(items,family),flavor=path[0],size=path[1];
   const flavorName=value=>ui(PRODUCT_FLAVOURS.find(f=>f.value===value)?.label || 'Needs setup');
-  const filtered=rows.filter(row=>(!flavor||row.flavor===flavor||flavor==='setup'&&!row.flavor)&&(!size||row.size===size)&&`${row.item.name} ${flavorName(row.flavor)} ${row.size}`.toLowerCase().includes(query.toLowerCase()));
+  const filtered=sortProductRows(rows.filter(row=>(!flavor||row.flavor===flavor||flavor==='setup'&&!row.flavor)&&(!size||row.size===size)&&`${row.item.name} ${flavorName(row.flavor)} ${row.size}`.toLowerCase().includes(query.toLowerCase())),sort,row=>({...row.item,size:row.size,flavor:row.flavor}));
   const groups=flavor?[...new Set(rows.filter(row=>row.flavor===flavor).map(row=>row.size).filter(Boolean))].sort((a,b)=>parseFloat(a)-parseFloat(b)):
     [...PRODUCT_FLAVOURS.filter(f=>rows.some(row=>row.flavor===f.value)).map(f=>f.value),...(rows.some(row=>!row.flavor)?['setup']:[])];
   function move(next){setPath(next);setQuery('');setLimit(25);if(resultsRef.current)resultsRef.current.scrollTop=0;}
@@ -23,6 +26,7 @@ export default function RecipeProductCatalogue({items,family,outputs,onSelect,on
       {path.length>0&&<button type="button" onClick={()=>move([])} className="text-sm text-slate-600 underline">{ui('All products')}</button>}
       <input aria-label={ui('Search projected products')} value={query} onChange={e=>{setQuery(e.target.value);setLimit(25);}} placeholder={ui('Search products')} className="h-10 min-w-0 flex-1 rounded-md border px-3 text-sm"/>
     </div>
+    <ProductSortSelect value={sort} onChange={value=>{setSort(value);setLimit(25);}} className="sm:max-w-xs"/>
     {open&&<PickerPopdown anchorRef={anchorRef} onOpenChange={setOpen} label={ui('Browse by flavour and size')}>
       <div className="flex items-center gap-2"><button type="button" disabled={!path.length} onClick={()=>move(path.slice(0,-1))} className="rounded border px-2 py-1 text-sm">{ui('Back')}</button><button type="button" onClick={()=>move([])} className="text-sm underline">{ui('All flavours')}</button></div>
       <div ref={resultsRef} className="max-h-60 overflow-y-auto">

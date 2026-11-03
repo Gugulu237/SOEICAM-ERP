@@ -1,8 +1,10 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React from "react";
+import React, {useState} from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,6 +14,8 @@ import ProductThumb from "@/components/shared/ProductThumb";
 
 export default function DispatchLinesEditor({ lines, setLines, products, stockMap, readOnly }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
+  const [sort,setSort]=useState('name');
 
   function addLine() {
     setLines(l => [...l, { product_id: "", product_name: "", unit: "unit", requested_quantity: 0, loaded_quantity: 0 }]);
@@ -38,6 +42,7 @@ export default function DispatchLinesEditor({ lines, setLines, products, stockMa
         <h3 className="font-semibold text-slate-900">{ui("Finished products to load")}</h3>
         {!readOnly && <Button variant="outline" size="sm" onClick={addLine}><Plus size={14} className="mr-1" />{ui(" Add Product")}</Button>}
       </div>
+      {!readOnly&&<ProductSortSelect value={sort} onChange={setSort} className="mb-3 sm:max-w-xs"/>}
       <div className="overflow-x-auto">
         <table className="mobile-table-cards w-full text-sm">
           <thead>
@@ -56,7 +61,7 @@ export default function DispatchLinesEditor({ lines, setLines, products, stockMa
                   <div className="flex min-w-0 sm:min-w-64 items-center gap-3"><ProductThumb product={products.find(p => p.id === l.product_id)} name={l.product_name} size={44} /><div className="min-w-0 flex-1">{readOnly ? <span>{l.product_name}</span> : (
                     <Select value={l.product_id} onValueChange={v => updateLine(i, "product_id", v)}>
                       <SelectTrigger className="h-9"><SelectValue placeholder={ui("Select product")} /></SelectTrigger>
-                      <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}><span className="flex items-center gap-2"><ProductThumb product={p} size={32} /><span>{p.name}</span></span></SelectItem>)}</SelectContent>
+                      <SelectContent>{sortProductRows(products,sort).map(p => <SelectItem key={p.id} value={p.id}><span className="flex items-center gap-2"><ProductThumb product={p} size={32} /><span>{p.name}</span></span></SelectItem>)}</SelectContent>
                     </Select>
                   )}<p className="mt-1 text-xs text-slate-500">{l.unit || ui("Select a product to see its U/M")}</p></div></div>
                 </td>

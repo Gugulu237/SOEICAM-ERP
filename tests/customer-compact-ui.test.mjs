@@ -17,7 +17,7 @@ const output=await build({stdin:{contents:"import React from 'react';import {ren
     '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__clients.session||({isAdmin:true,role:'admin'});",
     '@/lib/router':"export const useNavigate=()=>path=>{globalThis.__clients.navigation.push(path);globalThis.__clients.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__clients.query||''),params=>{globalThis.__clients.query=params.toString();}];",
     '@/lib/navigation-context':"export const useNavigationSession=()=>null;export const usePageState=(key,value)=>globalThis.__clients.state('page:'+key,value);",
-    '@/api/erpClient':"export const erp={entities:{Customer:'customers',CustomerLocation:'locations'}};",
+    '@/api/erpClient':"export const erp={entities:{Customer:'customers',CustomerLocation:'locations'}};export const invalidateERPReads=()=>{};",
     '@/lib/field-pos':"export const readAll=async entity=>globalThis.__clients[entity]||[];",
     '@/components/customers/useCustomerPaymentStatus':"export default ()=>({data:{}});",
     '@/components/customers/CustomerPaymentBadge':"export default ()=>null;",

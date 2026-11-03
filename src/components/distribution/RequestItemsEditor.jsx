@@ -1,8 +1,10 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React from "react";
+import React, {useState} from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,6 +13,8 @@ import { Plus, Trash2 } from "lucide-react";
 
 export default function RequestItemsEditor({ items, setItems, products, available, readOnly }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+
+  const [sort,setSort]=useState('name');
 
   function addItem() {
     setItems(list => [...list, { product_id: "", product_name: "", unit: "unit", quantity: 0 }]);
@@ -37,6 +41,7 @@ export default function RequestItemsEditor({ items, setItems, products, availabl
         {!readOnly && <Button variant="outline" size="sm" onClick={addItem}><Plus size={14} className="mr-1" />{ui(" Add")}</Button>}
       </div>
 
+      {!readOnly&&<ProductSortSelect value={sort} onChange={setSort} className="mb-3 sm:max-w-xs"/>}
       {items.map((item, i) => {
         const stock = available[item.product_id] || 0;
         const short = Number(item.quantity) > stock;
@@ -48,7 +53,7 @@ export default function RequestItemsEditor({ items, setItems, products, availabl
               <Select value={item.product_id} onValueChange={v => updateItem(i, "product_id", v)}>
                 <SelectTrigger><SelectValue placeholder={ui("Select product")} /></SelectTrigger>
                 <SelectContent>
-                  {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {sortProductRows(products,sort).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}

@@ -79,6 +79,12 @@ Sales PDF/Excel controls export the chosen summary, daily, customer or salespers
 
 Customers offers a GPS map centred on Yaoundé, Cameroon-wide navigation, outlet pins and named delivery zones with Yaoundé I–VII labels and explicit served/planned/paused coverage. Zone matching requires review and verified GPS; it preserves assignments to other zones and staff visibility rules. Descriptions are available from small information icons. OpenStreetMap works without a Google key; optional Google Maps configuration is documented in [HOSTINGER_SETUP.md](HOSTINGER_SETUP.md#customer-delivery-maps).
 
+### Customer opening balances
+
+Administrators with Customers and Accounting access can open a customer profile and select **Customer opening balance**. Enter the total debt owed before using SOEICAM, the migration date, payment due date and previous-system reference, then review and confirm. The due date can precede migration so overdue debt retains its age. A new ledger opening requires an explicitly selected posting equity counterpart. Each customer or branch has its own one-time entry; existing imports and paid opening debts still block another entry.
+
+If the receivable control account already has an unallocated opening amount, this action links the customer debt to that amount without posting another journal. It rejects amounts exceeding the remainder. Sequential customer entries can complete that allocation; a fully allocated prior GL opening requires an Accounting review for corrections. Opening dates follow the existing migration date and cannot be later than the first posted transaction. The checked transaction saves the receivable, ledger evidence, customer balance and immutable audit together. These debts are collected through the normal customer payment workflow and do not count as new sales or cash receipts. Installation and testing do not modify live balances.
+
 ## Checks
 
 ```bash

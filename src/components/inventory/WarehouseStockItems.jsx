@@ -1,3 +1,5 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
@@ -14,13 +16,15 @@ export default function WarehouseStockItems({ rows, renderItemActions, onEditIte
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [search, setSearch] = usePageState('warehouse-stock:search', ''), [filter, setFilter] = usePageState('warehouse-stock:filter', 'all'), [expanded, setExpanded] = useState('');
-  const filtered = rows.filter(row => {
+  const [sort,setSort]=usePageState('warehouse-stock:sort','name');
+  const filtered = sortProductRows(rows.filter(row => {
     const matches = `${row.name} ${row.product?.sku || ''}`.toLowerCase().includes(search.toLowerCase());
     const level = warehouseStockLevel(row.product, row.quantity);
     return matches && (filter === 'all' || (filter === 'stock' ? row.quantity > 0 : ['empty', 'negative', 'low'].includes(level.status)));
-  });
+  }),sort,row=>row.product||row);
   return <section className="overflow-hidden rounded-2xl border bg-white">
     <div className="flex flex-wrap items-center gap-3 border-b p-4">
+      <ProductSortSelect value={sort} onChange={setSort} className="w-full sm:w-auto"/>
       <div className="relative min-w-48 flex-1"><Search size={16} aria-hidden="true" className="absolute left-3 top-3 text-slate-400" /><input aria-label={ui("Search warehouse items")} value={search} onChange={e => setSearch(e.target.value)} placeholder={ui("Search items or codes...")} className="h-10 w-full rounded-lg border pl-9 pr-3 text-sm" /></div>
       <select aria-label={ui("Warehouse stock status")} className="h-10 rounded-lg border bg-white px-3 text-sm" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">{ui("All items (")}{rows.length})</option><option value="stock">{ui("In stock")}</option><option value="low">{ui("Low / out of stock")}</option></select>
       <span className="text-xs text-slate-500">{filtered.length}{ui(" items")}</span>

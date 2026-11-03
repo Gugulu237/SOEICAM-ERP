@@ -27,6 +27,7 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
   globalThis.requestAnimationFrame = callback => callback();
   let refreshed = 0;
   const props = { data: { employee: staff, date, monthStart: date.slice(0, 8) + '01', products: [tables.Product[0]], balances: [tables.StockBalance[0]] }, managing: role === 'admin', onRefresh: () => { refreshed++; } };
+  if (photo) props.section='pos';
   if (dashboardPending) Object.assign(props, { data:null, actorEmployee:staff, loading:true });
   const draw = () => { ui.beforeRender(); return render(props); };
   try {
@@ -117,7 +118,7 @@ test('tapping a dashboard product photo carries that product into the sale once,
 
 test('phone checkout records a free damaged-stock replacement with the sale and updates held stock without changing the customer bill', () => inlineSupply('commercial', false, false, true));
 
-test('phone plus menu starts an own-account cash or credit sale while management has no entry menu', async () => {
+test('first dashboard tile starts an own-account sale with cash or credit selected during review', async () => {
   for (const paymentType of ['cash','credit']) {
     const render = await commercialUI(), { client,tables } = fixture(), runtime = hookRuntime();
     const previous = { window: globalThis.window, document: globalThis.document };
@@ -129,16 +130,15 @@ test('phone plus menu starts an own-account cash or credit sale while management
     const props = { actorEmployee: staff, loading: true };
     const draw = () => { runtime.beforeRender(); return render(props); };
     try {
-      draw(); runtime.buttons.find(button => button['aria-label'] === 'New transaction or customer').onClick();
-      assert.match(draw(), /Quick actions/); assert.ok(runtime.buttons.some(button => button.label === 'Register a new customer'));
-      runtime.buttons.find(button => button.label === 'Record sale').onClick(); draw();
-      runtime.buttons.find(button => button.label === (paymentType === 'cash' ? 'Cash sale' : 'Credit sale')).onClick();
+      draw();assert.equal(runtime.buttons[0]['aria-label'],'Record sale');assert.ok(runtime.buttons.some(button=>button['aria-label']==='Register a new customer'));
+      runtime.buttons[0].onClick();
       for (let i=0;i<5;i++) { draw(); await runtime.flush(); }
       const html = draw(); assert.match(html, /Record sale \/ supply/);
       runtime.customer.onChange('customer-a');for(let i=0;i<3;i++){draw();await runtime.flush();}draw();
       runtime.buttons.find(b=>b.label==='Continue to products').onClick();draw();
       runtime.catalog.onQuantityChange(runtime.catalog.products[0],1);draw();
       runtime.buttons.find(b=>b.label==='No replacements').onClick();draw();runtime.buttons.find(b=>b.label==='Review sale').onClick();draw();
+      runtime.buttons.find(button => button.label === (paymentType === 'cash' ? 'Cash collected' : 'On credit')).onClick();draw();
       const selected = runtime.buttons.find(button => button.label === (paymentType === 'cash' ? 'Cash collected' : 'On credit'));
       assert.equal(selected['aria-pressed'], true);
       assert.deepEqual(runtime.navigation, []);

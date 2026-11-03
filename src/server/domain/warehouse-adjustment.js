@@ -78,7 +78,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const counted=b=>isExistingStockOrigin(stockOrigin(b,adjustmentMovements)) && ['approved','quarantine','quarantined'].includes(b.qc_status || 'approved') && companySalesWarehouse(warehouse);
   if(body.action==='warehouseAdjustmentWorkspace') return {...access,warehouse:{id:warehouse.id,name:warehouse.name},date:businessDate(),warehouses:warehouses.filter(factory).map(w=>({id:w.id,name:w.name})),
     rows:balances.filter(b=>configured(byProduct.get(b.product_id))).map(b=>({...stockSnapshot(b,byProduct.get(b.product_id),warehouse,rules),adjusted_stock:counted(b)})),
-    items:liveProducts.filter(configured).map(p=>({id:p.id,name:p.name,sku:p.sku || '',unit:stockUnit(p),unit_cost:itemUnitCost(p),inventory_type:p.inventory_type,requires_expiry:false})),
+    items:liveProducts.filter(configured).map(p=>({id:p.id,name:p.name,sku:p.sku || '',size:p.size||'',flavor:p.flavor||'',product_family:p.product_family||'',unit:stockUnit(p),unit_cost:itemUnitCost(p),inventory_type:p.inventory_type,requires_expiry:false})),
     accounts:accounts.filter(a=>validAccount(a)).map(accountView)};
   if(body.action!=='postWarehouseAdjustment')throw Error('Unknown warehouse adjustment action.');
   const date=body.date,reason=typeof body.reason==='string'?body.reason.trim():'',reference=typeof body.reference==='string'?body.reference.trim():'';
@@ -106,7 +106,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
       const lot=typeof input.lot_number==='string'?input.lot_number.trim():'',expiry=input.expiry_date || '';
       if(expiry && !validDate(expiry))throw Error('Enter a valid printed expiry date for the counted lot.');
       if(!lot || lot.length>100)throw Error('New counted stock requires its physical batch or lot number.');
-      if(balances.some(b=>b.product_id===product.id && (b.lot_number || '').toLowerCase()===lot.toLowerCase()))throw Error('This lot already exists in the warehouse. Adjust its existing stock record.');
+      if(balances.some(b=>b.product_id===product.id && [b.lot_number,b.batch_number].some(code=>String(code||'').trim().toLowerCase()===lot.toLowerCase())))throw Error('This lot already exists in the warehouse. Adjust its existing stock record.');
       const unitCost=itemUnitCost(product);
       if(!Number.isFinite(unitCost) || unitCost<=0)throw Error('Establish the item carrying cost before recording newly counted stock.');
       if(Number(input.unit_cost)!==unitCost)throw Error('The item carrying cost changed. Reload quantities before recording new stock.');

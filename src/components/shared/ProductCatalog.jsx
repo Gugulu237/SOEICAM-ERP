@@ -1,3 +1,5 @@
+import {sortProductRows} from '@/lib/product-sorting';
+import ProductSortSelect from '@/components/shared/ProductSortSelect';
 
 /* localized-interface */
 import { ui } from '@/lib/i18n';
@@ -26,11 +28,12 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
   const [search, setSearch] = usePageState(picking ? 'product-picker:search' : 'catalogue:search', '');
   const [family, setFamily] = usePageState(picking ? 'product-picker:family' : 'catalogue:family', 'All');
   const [flavor, setFlavor] = usePageState(picking ? 'product-picker:flavor' : 'catalogue:flavor', 'All');
+  const [sort,setSort]=usePageState('product-picker:sort','name');
   const decorated = useMemo(() => products.map((product) => ({ product, ...productPresentation(product) })), [products]);
   const families = [...new Set(decorated.map((p) => p.family))];
   const flavors = [...new Set(decorated.map((p) => p.flavor).filter(Boolean))];
-  const filtered = decorated.filter((p) => (family === 'All' || p.family === family) && (flavor === 'All' || p.flavor === flavor)
-    && normalizeProductText([p.product.name, p.product.sku, p.product.category, p.size, p.flavor].join(' ')).includes(normalizeProductText(search)));
+  const filtered = sortProductRows(decorated.filter((p) => (family === 'All' || p.family === family) && (flavor === 'All' || p.flavor === flavor)
+    && normalizeProductText([p.product.name, p.product.sku, p.product.category, p.size, p.flavor].join(' ')).includes(normalizeProductText(search))),sort,row=>row.product);
   const reset = () => { setSearch(''); setFamily('All'); setFlavor('All'); };
   return (
     <div className="space-y-4">
@@ -48,6 +51,7 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
         {['All', ...families].map((f) => <button type="button" key={f} aria-pressed={family === f} onClick={() => setFamily(f)}
           className={`min-h-10 rounded-full border px-4 text-sm font-medium transition-colors ${family === f ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>{f}</button>)}
       </div>}
+      <ProductSortSelect value={sort} onChange={setSort} className="sm:max-w-xs"/>
       <div className="flex items-center justify-between text-xs text-slate-500"><span>{filtered.length}{ui(" product")}{filtered.length !== 1 ? 's' : ''}</span>{picking && <span>{ui(onQuantityChange?'Tap a product to enter quantity':'Tap a photo to add')}</span>}</div>
       {!filtered.length ? <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center">
         <PackageSearch className="mx-auto mb-3 h-9 w-9 text-slate-400" /><p className="text-sm text-slate-600">{products.length ? ui("No products match these filters.") : emptyMessage}</p>
