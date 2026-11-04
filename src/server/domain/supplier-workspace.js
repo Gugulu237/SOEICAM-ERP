@@ -52,6 +52,7 @@ async function allocateAdvances(svc,bill) {
 }
 async function billForReceipt(svc, user, supplier, po, receipt) {
   const s=svc.entities;
+  if(receipt.historical_settlement_id)throw Error('This pre-start receipt has an archived paid setup bill and cannot be billed again.');
   const previous=(await readRecords(s.Bill,{receipt_id:receipt.id})).find(b=>b.status!=='cancelled');
   if(previous)return allocateAdvances(svc,previous);
   // Historical POs may already have one bill for the whole PO. Never add a

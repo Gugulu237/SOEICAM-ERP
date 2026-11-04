@@ -57,14 +57,17 @@ export default function GroupedItems({ products, filter, quantities, onEdit, ren
       <div className={showFilters?'':'hidden xl:block'}><ItemAttributeFilters facets={facets} selected={attributes} onChange={value=>update(setAttributes,value)}/></div>
     </div>
     {!filtered.length && <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-slate-500">{ui('No items match these filters.')}{hasFilters && <Button type="button" variant="link" onClick={clear}>{ui('Clear filters')}</Button>}</div>}
-    {!!visible.length&&<div className={table?'divide-y rounded-xl border bg-white':'grid grid-cols-3 items-start gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'}>
+    {!!visible.length&&<div className={table?'divide-y rounded-xl border bg-white':'grid grid-cols-2 items-stretch gap-3 lg:grid-cols-1'}>
       {visible.map(({item,variant},index)=><article key={item.id} className={table?'min-w-0':'min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white'}>
-        <button type="button" aria-label={ui('Item details for {0}',item.name)} aria-haspopup="dialog" aria-expanded={expanded===item.id} onClick={event=>{anchor.current=event?.currentTarget;setExpanded(item.id);}} title={item.name} className={'flex w-full min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary '+(table?'items-center gap-2 p-2.5':'flex-col')}>
-          {table?<ProductThumb product={item} name={item.name} size={36}/>:<ProductPhoto product={item} name={item.name} priority={index<2} className="h-14 w-full bg-slate-50 sm:h-16" imageClassName="p-1" sizes="(min-width: 1024px) 160px, (min-width: 640px) 140px, 100px"/>}
-          <span className={table?'min-w-0 flex-1':'block w-full min-w-0 p-2'}>
-            <span className="line-clamp-2 min-h-8 break-words text-xs font-semibold leading-4 text-slate-900">{inventoryDisplayName(item,{includeSize:false})}</span>
-            {variant.size&&<span className="mt-0.5 block text-[11px] text-slate-500">{variant.size}</span>}
-            {item.inventory_type!=='service'&&<span aria-label={ui('Quantity for {0}',item.name)} className="mt-1 block break-words text-sm font-bold tabular-nums text-primary">{formatQuantity(quantities.get(item.id)||0)} <span className="text-[11px] font-normal text-slate-500">{stockUnit(item)}</span></span>}
+        <button type="button" aria-label={ui('Item details for {0}',item.name)} aria-haspopup="dialog" aria-expanded={expanded===item.id} onClick={event=>{anchor.current=event?.currentTarget;setExpanded(item.id);}} title={item.name} className={'flex w-full min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary '+(table?'items-center gap-3 p-3':'h-full flex-col lg:flex-row lg:items-center lg:gap-5 lg:p-4')}>
+          {table?<ProductThumb product={item} name={item.name} size={48}/>:<ProductPhoto product={item} name={item.name} priority={index<2} className="h-28 w-full bg-slate-50 sm:h-32 lg:h-24 lg:w-28 lg:shrink-0 lg:rounded-lg" imageClassName="p-3" sizes="(min-width: 1024px) 112px, (min-width: 640px) 300px, 45vw"/>}
+          <span className={table?'min-w-0 flex-1':'grid w-full min-w-0 flex-1 gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(100px,160px)_minmax(100px,160px)] lg:items-center lg:gap-5 lg:p-0'}>
+            <span className="block min-w-0">
+              <span className="line-clamp-2 min-h-10 break-words text-sm font-semibold leading-5 text-slate-900 lg:min-h-0 lg:text-base">{inventoryDisplayName(item,{includeSize:false})}</span>
+              <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">{variant.size&&<span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">{variant.size}</span>}{!table&&item.sku&&<span className="hidden break-all lg:inline">{item.sku}</span>}</span>
+            </span>
+            {item.inventory_type!=='service'?<span aria-label={ui('Quantity for {0}',item.name)} className={'block min-w-0 '+(table?'mt-2':'lg:text-right')}><span className="hidden text-xs text-slate-500 lg:block">{ui('On hand')}</span><span className="block break-words text-lg font-bold leading-6 tabular-nums text-primary">{formatQuantity(quantities.get(item.id)||0)} <span className="text-xs font-normal text-slate-500">{stockUnit(item)}</span></span></span>:!table&&<span/>}
+            {!table&&<span className="hidden min-w-0 lg:block lg:text-right">{Number(item.selling_price)>0&&<><span className="block text-xs text-slate-500">{ui('Sales price')}</span><span className="block break-words text-base font-semibold tabular-nums text-slate-900">{formatXAF(item.selling_price)}</span></>}</span>}
           </span>
         </button>
       </article>)}

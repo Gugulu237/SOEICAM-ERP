@@ -24,15 +24,15 @@ test('form requires selection and reviewed confirmation, and preserves the same 
   globalThis.fetch=async(url,options)=>{
     if(!options.method)return Response.json({date:'2026-01-20',bills:[{id:'bill',number:'TEST',date:'2026-01-01',balance:120.25,eligible:true}],accounts:[{id:'equity',number:'E',name:'Clearing'}]});
     const body=JSON.parse(options.body);calls.push(body);
-    if(body.action==='preview')return Response.json({token:'a'.repeat(64),total:120.25,bills:[{id:'bill',number:'TEST',balance:120.25}],lines:[{account_id:'ap',account:'Payable',debit:120.25,credit:0},{account_id:'equity',account:'Clearing',debit:0,credit:120.25}],date:body.date,reference:body.reference});
+    if(body.action==='preview')return Response.json({token:'a'.repeat(64),total:120.25,bills:[{id:'bill',number:'TEST',balance:120.25}],changes:[{journal_id:'receipt-journal',journal_number:'TEST-JOURNAL',date:'2026-01-01',from:'Payable',to:'Clearing',amount:120.25}],new_journals:0,date:body.date,reference:body.reference});
     if(fail)throw Error('Connection interrupted');return Response.json({balance:0});
   };
   const draw=()=>{r.beforeRender();return render(props);};
   try{
     draw();await r.flush();draw();assert.equal(r.buttons.find(b=>b.label==='Review correction').disabled,true);
     r.controls.find(c=>c.type==='checkbox').onChange({target:{checked:true}});draw();r.controls.find(c=>c.tag==='select').onChange({target:{value:'equity'}});draw();r.controls.find(c=>c.maxLength===500).onChange({target:{value:'Historical payment'}});draw();
-    await r.buttons.find(b=>b.label==='Review correction').onClick();assert.match(draw(),/120.25 XAF/);assert.equal(r.buttons.find(b=>b.label==='Confirm historical settlement').disabled,true);
-    r.controls.find(c=>c.type==='checkbox').onChange({target:{checked:true}});draw();await r.buttons.find(b=>b.label==='Confirm historical settlement').onClick();assert.equal(saved,0);assert.equal(closed,0);assert.match(draw(),/Connection interrupted/);
-    fail=false;await r.buttons.find(b=>b.label==='Confirm historical settlement').onClick();assert.equal(saved,1);assert.equal(closed,1);assert.equal(r.invalidated,1);assert.equal(calls[1].requestKey,calls[2].requestKey);assert.equal(calls[2].confirmed,true);assert.deepEqual(calls[2].billIds,['bill']);
+    await r.buttons.find(b=>b.label==='Review correction').onClick();assert.match(draw(),/120.25 XAF/);assert.match(draw(),/No new journal or payment will be created/);assert.match(draw(),/TEST-JOURNAL/);assert.equal(r.buttons.find(b=>b.label==='Confirm setup cleanup').disabled,true);
+    r.controls.find(c=>c.type==='checkbox').onChange({target:{checked:true}});draw();await r.buttons.find(b=>b.label==='Confirm setup cleanup').onClick();assert.equal(saved,0);assert.equal(closed,0);assert.match(draw(),/Connection interrupted/);
+    fail=false;await r.buttons.find(b=>b.label==='Confirm setup cleanup').onClick();assert.equal(saved,1);assert.equal(closed,1);assert.equal(r.invalidated,1);assert.equal(calls[1].requestKey,calls[2].requestKey);assert.equal(calls[2].confirmed,true);assert.ok(calls.every(c=>c.mode==='setup_cleanup'));assert.deepEqual(calls[2].billIds,['bill']);
   }finally{r.cleanup();globalThis.fetch=oldFetch;delete globalThis.__historicalUI;}
 });

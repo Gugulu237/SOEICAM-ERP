@@ -2,8 +2,7 @@ import {createHash} from 'node:crypto';
 import {requireOpeningAccess} from './opening-balances.js';
 import {assertModule} from './role-catalogue.js';
 import {readRecords} from './commercial-workspace.js';
-import {postJournal} from './field-ops.js';
-import {journalCents, journalDate, checkedJournalLines, ledgerStatuses} from './journal-validation.js';
+import {journalCents, journalDate, checkedJournalLines, journalPayload, ledgerStatuses} from './journal-validation.js';
 import {openingPartyLines} from '../../lib/opening-records.js';
 import {businessDate} from '../../lib/business-date.js';
 
@@ -12,6 +11,7 @@ const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Obje
 const hash=v=>createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');
 const ordered=rows=>[...rows].sort((a,b)=>a.id.localeCompare(b.id));
 const eventId=id=>'HSS-'+hash(id);
+const policy='paid-setup-reclassification-v1';
 const open=b=>!['cancelled','draft'].includes(b.status)&&journalCents(b.balance)>0;
 const active=a=>a&&a.is_active!==false&&a.is_posting!==false&&(!a.currency||a.currency==='XAF');
 function access(context){requireOpeningAccess(context);assertModule({...context,role:'admin'},'purchases');}
@@ -45,11 +45,12 @@ export async function historicalSettlementWorkspace(s,context,id){
     ledger_balance:moneySum(t.partyLines)/100};
 }
 function selection(body){
+  if(body.mode!=='setup_cleanup')throw fail('Reopen the form to review the paid setup-bill cleanup.');
   if(!Array.isArray(body.billIds)||!body.billIds.length||body.billIds.length>100||body.billIds.some(id=>typeof id!=='string'||!id)||new Set(body.billIds).size!==body.billIds.length)throw fail('Select the bills already paid before the new records began.');
-  journalDate(body.date);if(body.date>businessDate())throw fail('The correction date cannot be in the future.');
+  journalDate(body.date);if(body.date>businessDate())throw fail('The official accounting start date cannot be in the future.');
   if(typeof body.reference!=='string'||body.reference.trim().length<3||body.reference.trim().length>500)throw fail('Enter the previous payment or migration reference.');
   if(typeof body.offsetAccountId!=='string'||!body.offsetAccountId)throw fail('Choose the migration equity clearing account.');
-  return {billIds:[...body.billIds].sort(),date:body.date,reference:body.reference.trim(),offsetAccountId:body.offsetAccountId};
+  return {policy,billIds:[...body.billIds].sort(),date:body.date,reference:body.reference.trim(),offsetAccountId:body.offsetAccountId};
 }
 function plan(t,selected){
   if(t.marker)throw fail('This supplier already has a historical settlement correction.',409);
@@ -64,20 +65,26 @@ function plan(t,selected){
   for(const b of bills){
     const total=journalCents(b.total);
     if(b.accounting_source!=='goods_receipt'||b.status!=='open'||!total||journalCents(b.amount_paid)!==0||journalCents(b.balance)!==total||b.historical_settlement_id)throw fail('Only wholly unpaid goods-receipt bills can use this correction. Rent and other expenses must be reconciled separately.');
-    if(journalDate(b.bill_date)>selected.date)throw fail('The correction must be dated on or after the selected bills.');
+    if(journalDate(b.bill_date)>=selected.date)throw fail('Only setup bills dated before the official accounting start can be cleared.');
     const receipt=t.receipts.find(r=>r.id===b.receipt_id),order=t.orders.find(o=>o.id===b.po_id);
     if(!receipt||receipt.status!=='confirmed'||receipt.po_id!==b.po_id||!order||receipt.bill_id&&receipt.bill_id!==b.id)throw fail('The bill needs a verified goods receipt and purchase order.');
+    if(!['received','fully_received','billed','closed'].includes(order.status)||journalDate(receipt.receipt_date)>=selected.date||receipt.historical_settlement_id||order.historical_settlement_id)throw fail('Complete the old purchase order and verify its pre-start receipt before cleanup.');
     const journals=t.journals.filter(j=>j.source_document_id===receipt.id);
     const j=journals[0];
-    if(journals.length!==1||j.id!==b.journal_id||j.status!=='posted'||j.source_document_type!=='GoodsReceipt'||j.entry_date>selected.date)throw fail('Reconcile the original goods-receipt journal before correcting this bill.');
+    if(journals.length!==1||j.id!==b.journal_id||j.status!=='posted'||j.source_module!=='procurement'||j.source_document_type!=='GoodsReceipt'||journalDate(j.entry_date)>=selected.date||j.historical_settlement_id)throw fail('Reconcile the original pre-start goods-receipt journal before cleanup.');
+    if(t.periods.some(p=>p.start_date<=j.entry_date&&j.entry_date<=p.end_date&&!['open','review'].includes(p.status)))throw fail('The original setup entry is in a closed or locked accounting period.');
     const lines=t.lines.filter(l=>l.journal_id===j.id),checked=checkedJournalLines(lines);
     if(journalCents(j.total_debit)!==journalCents(checked.debit)||journalCents(j.total_credit)!==journalCents(checked.credit))throw fail('The original journal totals do not reconcile.');
+    const payload=journalPayload({entryDate:j.entry_date,description:j.description,sourceModule:j.source_module,sourceDocumentType:j.source_document_type,lines:checked.lines});
+    if(j.posting_payload&&j.posting_payload!==payload)throw fail('The original journal evidence has changed. Reconcile it before cleanup.');
     const payable=lines.filter(l=>t.ap.has(l.account_id));
     if(payable.length!==1||payable[0].party_type!=='supplier'||payable[0].party_id!==t.supplier.id||journalCents(payable[0].debit)!==0||journalCents(payable[0].credit)!==total||moneySum(payable)!==total)throw fail('The original supplier payable does not match the bill.');
     const account=t.accounts.find(a=>a.id===payable[0].account_id);
     if(!active(account)||account.account_type!=='liability'||account.normal_balance!=='credit'||account.is_treasury||t.treasury.some(a=>a.gl_account_id===account.id))throw fail('The bill needs an active supplier liability account.');
-    debits.set(account.id,(debits.get(account.id)||0)+total);sources.push({bill:b,receipt,order,journal:j,lines});
+    if(lines.some(l=>l.id!==payable[0].id&&(journalCents(l.credit)>0||t.accounts.find(a=>a.id===l.account_id)?.account_type!=='asset')))throw fail('Only an inventory receiving entry can be reclassified as paid setup stock.');
+    debits.set(account.id,(debits.get(account.id)||0)+total);sources.push({bill:b,receipt,order,journal:j,lines,payable:payable[0]});
   }
+  if(new Set(sources.map(x=>x.journal.id)).size!==sources.length)throw fail('Several bills share a receiving journal. Reconcile duplicate bills before cleanup.');
   const ids=new Set([...debits.keys(),...t.partyLines.map(l=>l.account_id)]);
   for(const id of ids)if(moneySum(t.partyLines.filter(l=>l.account_id===id))!==(debits.get(id)||0))throw fail('The supplier ledger differs from the selected unpaid bills. Reconcile advances, unbilled receipts or previous corrections first.');
   const accounts=t.accounts.filter(a=>debits.has(a.id)||a.id===offset.id);
@@ -96,26 +103,46 @@ function plan(t,selected){
 }
 export async function previewHistoricalSettlement(s,context,id,body){
   access(context);const selected=selection(body),p=plan(await state(s,id),selected);
-  return {token:p.token,total:p.total,date:selected.date,reference:selected.reference,bills:p.bills.map(b=>({id:b.id,number:b.bill_number,balance:b.balance})),lines:p.lines.map(l=>({...l,account:p.accounts.find(a=>a.id===l.account_id)?.name})),offset:p.offset.name};
+  return {token:p.token,total:p.total,date:selected.date,reference:selected.reference,bills:p.bills.map(b=>({id:b.id,number:b.bill_number,balance:b.balance})),changes:p.sources.map(x=>({journal_id:x.journal.id,journal_number:x.journal.journal_number,date:x.journal.entry_date,from:p.accounts.find(a=>a.id===x.payable.account_id)?.name,to:p.offset.name,amount:Number(x.payable.credit)})),offset:p.offset.name,new_journals:0};
 }
 export async function postHistoricalSettlement(s,context,id,body){
   access(context);const selected=selection(body);
   if(body.confirmed!==true||!/^[a-f\d-]{36}$/i.test(body.requestKey||'')||!/^[a-f\d]{64}$/.test(body.token||''))throw fail('Review and confirm the historical settlement first.');
   const t=await state(s,id),payload=hash({selected,userId:context.user.id,requestKey:body.requestKey,token:body.token});
   if(t.marker){
-    if(t.marker.audit_source!=='server_verified'||t.marker.action!=='supplier_historical_settlement'||t.marker.historical_settlement_payload!==payload)throw fail('This supplier already has a different historical settlement correction.',409);
+    if(t.marker.audit_source!=='server_verified'||t.marker.action!=='supplier_historical_settlement'||t.marker.historical_settlement_policy!==policy||t.marker.historical_settlement_payload!==payload)throw fail('This supplier already has a different historical correction. Review its audit before further changes.',409);
     return {...t.marker.historical_settlement_result,reused:true};
   }
   const p=plan(t,selected);
   if(p.token!==body.token)throw fail('Supplier or accounting records changed. Review the correction again.',409);
   const correctionId=eventId(id),now=new Date().toISOString();
-  const {journal}=await postJournal({entities:s},{entryDate:selected.date,description:'Historical supplier bills paid before ERP recording: '+selected.reference,sourceModule:'accounting_correction',sourceDocumentType:'SupplierHistoricalSettlement',sourceDocumentId:correctionId,lines:p.lines,userId:context.user.id});
-  for(const b of p.bills)await s.Bill.update(b.id,{amount_paid:Number(b.total),balance:0,status:'paid',historical_settlement_id:correctionId,historical_settlement_amount:Number(b.balance),historical_settlement_journal_id:journal.id,historical_settlement_date:selected.date,historical_settlement_reference:selected.reference,historical_settlement_by:context.user.id,historical_settlement_at:now});
+  // A narrowly scoped setup correction, not a settlement of an operational bill.
+  // Retain the existing receipt journals and their inventory debits. Reclassify
+  // only the false creditor credit; keep full before images in the audited event.
+  const mark={historical_settlement_id:correctionId,historical_settlement_policy:policy,historical_settlement_date:selected.date,historical_settlement_reference:selected.reference,historical_settlement_by:context.user.id,historical_settlement_at:now};
+  for(const source of p.sources){
+    const replacement={account_id:p.offset.id,account_number:p.offset.account_number||'',account_name:p.offset.name||'',party_type:'',party_id:''};
+    await s.JournalLine.update(source.payable.id,{...replacement,...mark});
+    const lines=source.lines.map(l=>l.id===source.payable.id?{...l,...replacement}:l);
+    const j=source.journal;
+    await s.JournalEntry.update(j.id,{...mark,posting_payload:journalPayload({entryDate:j.entry_date,description:j.description,sourceModule:j.source_module,sourceDocumentType:j.source_document_type,lines:checkedJournalLines(lines).lines})});
+    await s.GoodsReceipt.update(source.receipt.id,mark);
+    await s.Bill.update(source.bill.id,{...mark,balance:0,status:'cancelled',historical_settlement_amount:Number(source.bill.balance),historical_settlement_journal_id:j.id});
+  }
+  for(const id of new Set(p.sources.map(x=>x.order.id)))await s.PurchaseOrder.update(id,mark);
+  const newLines=(await readRecords(s.JournalLine)).filter(l=>t.journals.some(j=>j.id===l.journal_id));
+  for(const a of p.accounts)await s.Account.update(a.id,{balance:moneySum(newLines.filter(l=>l.account_id===a.id))*(a.normal_balance==='credit'?1:-1)/100});
   await s.Supplier.update(id,{balance:0});
-  const result={supplier_id:id,bill_ids:selected.billIds,total:p.total,balance:0,journal_id:journal.id,journal_number:journal.journal_number,date:selected.date,cash_movement:0};
-  await s.AuditLog.create({id:correctionId,action:'supplier_historical_settlement',module:'accounting',entity_type:'Supplier',entity_id:id,user_id:context.user.id,audit_source:'server_verified',description:'Cleared previously paid goods-receipt bills through migration equity clearing; no cash, stock or expense movement.',reason:selected.reference,historical_settlement_payload:payload,historical_settlement_result:result,historical_settlement_before:{supplier:t.supplier,bills:p.bills,accounts:p.accounts},historical_settlement_sources:p.sources.map(x=>({bill_id:x.bill.id,receipt_id:x.receipt.id,journal_id:x.journal.id})),historical_settlement_lines:p.lines});
+  const result={supplier_id:id,bill_ids:selected.billIds,total:p.total,balance:0,original_journal_ids:p.sources.map(x=>x.journal.id),date:selected.date,cash_movement:0,new_journals:0};
+  await s.AuditLog.create({id:correctionId,action:'supplier_historical_settlement',module:'accounting',entity_type:'Supplier',entity_id:id,user_id:context.user.id,audit_source:'server_verified',description:'Archived paid setup bills and reclassified their original creditor credits to opening clearing. No new journal, payment, expense or stock movement.',reason:selected.reference,historical_settlement_policy:policy,historical_settlement_payload:payload,historical_settlement_result:result,historical_settlement_before:{supplier:t.supplier,bills:p.bills,accounts:p.accounts,sources:p.sources},historical_settlement_lines:p.lines});
   const after=await state(s,id);
-  if(moneySum(after.partyLines)!==0||after.bills.some(b=>selected.billIds.includes(b.id)&&(b.status!=='paid'||journalCents(b.balance)!==0||journalCents(b.amount_paid)!==journalCents(b.total))))throw fail('Final supplier reconciliation failed; no correction was saved.');
+  if(moneySum(after.partyLines)!==0||after.bills.some(b=>selected.billIds.includes(b.id)&&(b.status!=='cancelled'||journalCents(b.balance)!==0||journalCents(b.amount_paid)!==0)))throw fail('Final supplier reconciliation failed; no correction was saved.');
+  if(after.journals.length!==t.journals.length||after.lines.length!==t.lines.length)throw fail('Setup cleanup must not create or remove journal records.');
+  for(const source of p.sources){
+    const j=after.journals.find(j=>j.id===source.journal.id),lines=after.lines.filter(l=>l.journal_id===j?.id),sum=checkedJournalLines(lines);
+    if(j.entry_date!==source.journal.entry_date||j.status!==source.journal.status||j.journal_number!==source.journal.journal_number||sum.credit!==Number(j.total_credit)||sum.debit!==Number(j.total_debit))throw fail('Original journal reconciliation failed; no cleanup was saved.');
+    for(const original of source.lines){const saved=lines.find(l=>l.id===original.id);if(!saved||journalCents(saved.debit)!==journalCents(original.debit)||journalCents(saved.credit)!==journalCents(original.credit)||saved.account_id!==(original.id===source.payable.id?p.offset.id:original.account_id))throw fail('Original receiving amounts changed; no cleanup was saved.');}
+  }
   for(const id of p.accounts.map(a=>a.id)){const a=after.accounts.find(a=>a.id===id),net=moneySum(after.postedLines.filter(l=>l.account_id===id))*(a.normal_balance==='credit'?1:-1);if(Math.abs(Number(a.balance)*100-net)>0.001)throw fail('Final ledger reconciliation failed; no correction was saved.');}
   return result;
 }

@@ -158,6 +158,7 @@ export async function cashierAction(base44, user, body) {
     if (bill && round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance)) throw Error('Reconcile the bill total, amount paid and balance before requesting another payment');
     if(bill?.opening_batch_id||bill?.accounting_source==='recurring_expense')return requestOpeningBillPayment(svc,user,bill,body,await treasury(svc,body.accountId,role),date,key,actor);
     const po = await svc.entities.PurchaseOrder.get(bill?.po_id || body.orderId), account = await treasury(svc, body.accountId, role), amount = amountOf(body.amount);
+    if(po?.historical_settlement_id)throw Error('This purchase was paid before ERP start. No further payment can be requested.');
     if (!po || (bill ? !['approved','partially_received','received','billed'].includes(po.status) || bill.supplier_id!==po.supplier_id : po.status !== 'approved' || po.cash_disbursed)) throw Error('Select an approved, unpaid purchase order');
     if (bill && amount>round2(bill.balance)) throw Error('The amount exceeds the unpaid bill balance');
     const pending = await readRecords(svc.entities.Payment, { po_id: po.id, status: { $in: ['draft', 'pending_approval', 'approved', 'confirmed', 'posted'] } });
@@ -250,6 +251,7 @@ export async function cashierAction(base44, user, body) {
     if (!document || document.payment_type !== 'supplier_payment' || !document.po_id || document.payment_method === 'cheque' || document.status !== 'approved' || !document.approved_by || !document.approved_at) throw Error('A non-cheque purchase payment approved by the General Manager is required');
     if (document.treasury_account_id !== account.id) throw Error('Release cash from the account approved for this payment');
     po = await svc.entities.PurchaseOrder.get(document.po_id);
+    if(po?.historical_settlement_id)throw Error('This purchase was paid before ERP start. No further payment can be released.');
     if (!po || !['approved', 'partially_received', 'received', 'billed'].includes(po.status) || po.cash_disbursed || po.supplier_id !== document.party_id) throw Error('This purchase order is already paid, not approved or does not match the supplier');
     if (document.journal_id || (await readRecords(svc.entities.JournalEntry, { source_document_id: document.id, status: 'posted' })).length) throw Error('This payment has an earlier ledger entry; reconcile it before releasing cash again');
     amount = amountOf(document.amount); description = `${document.payment_number}: ${document.party_name}`;

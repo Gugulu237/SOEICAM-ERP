@@ -19,21 +19,21 @@ export default function SupplierHistoricalSettlement({supplier,onClose,onSaved})
   async function submit(action){
     if(flight.current)return;flight.current=true;setBusy(true);setError('');
     try{
-      const r=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,action,...(action==='post'?{token:review.token,requestKey:key.current,confirmed}: {})})});
+      const r=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,mode:'setup_cleanup',action,...(action==='post'?{token:review.token,requestKey:key.current,confirmed}: {})})});
       const value=await r.json();if(!r.ok)throw Error(value.error||'Supplier correction failed.');
       if(action==='preview'){key.current=crypto.randomUUID();setReview(value);setConfirmed(false);}
       else{invalidateERPReads();onSaved(value);onClose();}
     }catch(e){setError(e.message);}finally{flight.current=false;setBusy(false);}
   }
-  return <Dialog open onOpenChange={open=>{if(!open&&!flight.current)onClose();}}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Correct bills paid before migration')}</DialogTitle><DialogDescription>{supplier.name}</DialogDescription></DialogHeader>
-    <p className="text-sm text-slate-600">{ui('Use once for supplier bills already paid before the new records began. This clears the payable through migration equity clearing without another cash payment, expense or stock movement.')}</p>
+  return <Dialog open onOpenChange={open=>{if(!open&&!flight.current)onClose();}}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>{ui('Clear paid setup bills')}</DialogTitle><DialogDescription>{supplier.name}</DialogDescription></DialogHeader>
+    <p className="text-sm text-slate-600">{ui('Use once for abandoned setup bills already paid before the official accounting start. Archive the bills and move the original payable credits to opening equity clearing. Original dates, receiving amounts and stock history are retained in the audit.')}</p>
     {error&&<p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
     {!data&&!error&&<p>{ui('Loading supplier records...')}</p>}
     {data?.completed&&<p>{ui('This supplier already has a historical settlement correction.')}</p>}
     {data&&!data.completed&&!review&&<div className="space-y-4">
       <fieldset disabled={busy} className="space-y-3"><legend className="mb-2 text-sm font-semibold">{ui('Select bills already paid')}</legend>{data.bills.map(b=><label key={b.id} className="flex min-h-11 items-center gap-3 rounded border p-3 text-sm"><input type="checkbox" checked={form.billIds.includes(b.id)} disabled={!b.eligible} onChange={e=>change({billIds:e.target.checked?[...form.billIds,b.id]:form.billIds.filter(id=>id!==b.id)})}/><span className="flex-1">{b.number}<span className="block text-xs text-slate-500">{b.date}{!b.eligible?' · '+ui('Requires separate reconciliation'):''}</span></span><strong>{amount(b.balance)}</strong></label>)}</fieldset>
       {!data.bills.length&&<p>{ui('No unpaid registered bills.')}</p>}
-      <label className="block space-y-1 text-sm"><span>{ui('Correction date')}</span><Input type="date" value={form.date} max={data.date} disabled={busy} onChange={e=>change({date:e.target.value})}/></label>
+      <label className="block space-y-1 text-sm"><span>{ui('Official accounting start date')}</span><Input type="date" value={form.date} max={data.date} disabled={busy} onChange={e=>change({date:e.target.value})}/></label>
       <label className="block space-y-1 text-sm"><span>{ui('Migration equity clearing account')}</span><select className="min-h-11 w-full rounded-md border bg-white px-3" value={form.offsetAccountId} disabled={busy} onChange={e=>change({offsetAccountId:e.target.value})}><option value="">{ui('Select account')}</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.number} · {a.name}</option>)}</select></label>
       <label className="block space-y-1 text-sm"><span>{ui('Previous payment or migration reference')}</span><Input value={form.reference} maxLength={500} disabled={busy} onChange={e=>change({reference:e.target.value})}/></label>
       <Button disabled={busy||!form.billIds.length||!form.date||!form.offsetAccountId||form.reference.trim().length<3} onClick={()=>submit('preview')}>{ui('Review correction')}</Button>
@@ -41,10 +41,11 @@ export default function SupplierHistoricalSettlement({supplier,onClose,onSaved})
     {review&&<div className="space-y-4">
       <p className="text-sm font-semibold">{ui('Historical amount to clear')}: {amount(review.total)}</p>
       <ul className="space-y-1 text-sm">{review.bills.map(b=><li key={b.id}>{b.number}: {amount(b.balance)}</li>)}</ul>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="text-left">{ui('Account')}</th><th>{ui('Debit')}</th><th>{ui('Credit')}</th></tr></thead><tbody>{review.lines.map(l=><tr key={l.account_id}><td className="py-2">{l.account}</td><td className="px-2 text-right">{amount(l.debit)}</td><td className="px-2 text-right">{amount(l.credit)}</td></tr>)}</tbody></table></div>
+      <p className="rounded border bg-slate-50 p-3 text-sm">{ui('No new journal or payment will be created.')}</p>
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="text-left">{ui('Original receiving journal')}</th><th className="text-left">{ui('Credit account correction')}</th><th className="text-right">{ui('Amount')}</th></tr></thead><tbody>{review.changes.map(l=><tr key={l.journal_id}><td className="py-2 pr-3">{l.journal_number}<span className="block text-xs text-slate-500">{l.date}</span></td><td className="py-2 pr-3">{l.from}<span className="block">→ {l.to}</span></td><td className="py-2 text-right">{amount(l.amount)}</td></tr>)}</tbody></table></div>
       <p className="text-xs text-slate-600">{review.date} · {review.reference}</p>
-      <label className="flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/><span>{ui('I confirm these bills were already paid before ERP recording and no supplier debt remains. The clearing account will be reconciled with the complete opening trial balance.')}</span></label>
-      <div className="flex flex-wrap gap-2"><Button disabled={busy||!confirmed} onClick={()=>submit('post')}>{ui(busy?'Saving...':'Confirm historical settlement')}</Button><Button variant="outline" disabled={busy} onClick={()=>{setReview(null);setConfirmed(false);}}>{ui('Back')}</Button></div>
+      <label className="flex items-start gap-3 text-sm"><input className="mt-1" type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/><span>{ui('I confirm these are abandoned setup bills, paid before the official start, with no supplier debt remaining. I approve correcting their original payable credits. The clearing account must be reconciled with the complete opening trial balance.')}</span></label>
+      <div className="flex flex-wrap gap-2"><Button disabled={busy||!confirmed} onClick={()=>submit('post')}>{ui(busy?'Saving...':'Confirm setup cleanup')}</Button><Button variant="outline" disabled={busy} onClick={()=>{setReview(null);setConfirmed(false);}}>{ui('Back')}</Button></div>
     </div>}
     <Button variant="outline" disabled={busy} onClick={onClose}>{ui('Close')}</Button>
   </DialogContent></Dialog>;
