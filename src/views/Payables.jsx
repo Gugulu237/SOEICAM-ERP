@@ -66,9 +66,10 @@ export default function Payables() {
         title={ui("Accounts Payable")}
         subtitle={ui("Supplier bills, payment allocation, aging and statements")}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={()=>navigate('/accounting/recurring-expenses')}>{ui('Recurring expenses')}</Button>
             <Button onClick={() => setShowNewBill(true)}><Plus size={16} className="mr-1" />{ui(" New Bill from PO")}</Button>
-            
+
           </div>
         }
       />

@@ -20,6 +20,7 @@ import PayExpenseDialog from "@/components/expenses/PayExpenseDialog";
 import BudgetManager from "@/components/expenses/BudgetManager";
 import ExpenseRegister from "@/components/expenses/ExpenseRegister";
 import ExpenseReport from "@/components/expenses/ExpenseReport";
+import {Link} from '@/lib/router';
 import { Plus } from "lucide-react";
 
 export default function Expenses() {
@@ -78,7 +79,7 @@ export default function Expenses() {
       <PageHeader
         title={ui("Expenses & Budgets")}
         subtitle={ui("Request, approve, categorise and report every operating expense paid out of treasury")}
-        actions={<Button onClick={() => setNewOpen(true)}><Plus size={16} className="mr-1" />{ui(" New Expense Request")}</Button>}
+        actions={<div className="flex flex-wrap gap-2">{['admin','cashier'].includes(role)&&<Button variant="outline" asChild><Link to="/accounting/recurring-expenses">{ui('Recurring expenses')}</Link></Button>}<Button onClick={() => setNewOpen(true)}><Plus size={16} className="mr-1" />{ui(" New Expense Request")}</Button></div>}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

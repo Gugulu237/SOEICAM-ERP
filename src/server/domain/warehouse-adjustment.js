@@ -25,7 +25,7 @@ const accountView=a=>({id:a.id,account_number:a.account_number,name:a.name,accou
 function stockSnapshot(balance,product,warehouse,rules) {
   if (!configured(product)) throw Error('Choose an active, configured inventory item.');
   const row={balance_id:balance.id,product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,
-    configured_unit_cost:itemUnitCost(product),inventory_type:product.inventory_type,requires_expiry:!!balance.production_order_id,opening_batch_id:balance.opening_batch_id || '',lot_number:balance.lot_number || '',batch_number:balance.batch_number || '',expiry_date:balance.expiry_date || '',qc_status:balance.qc_status || 'approved',production_order_id:balance.production_order_id || '',
+    configured_unit_cost:itemUnitCost(product),inventory_type:product.inventory_type,count_group:stockCountGroup(product),requires_expiry:stockCountGroup(product)!=='packaging'&&!!balance.production_order_id,opening_batch_id:balance.opening_batch_id || '',lot_number:balance.lot_number || '',batch_number:balance.batch_number || '',expiry_date:balance.expiry_date || '',qc_status:balance.qc_status || 'approved',production_order_id:balance.production_order_id || '',
     book_quantity:Number(balance.quantity),book_value:Number(balance.total_value),unit_cost:Number(balance.quantity)===0 && Number(balance.unit_cost ?? 0)===0?itemUnitCost(product):Number(balance.unit_cost ?? 0)};
   Object.assign(row,warehouseCountState(row));
   const rule=isAssemblyInventoryType(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
@@ -122,7 +122,11 @@ export async function warehouseAdjustmentAction(client,user,body) {
       product=byProduct.get(input.product_id);
       if(!configured(product))throw Error('Choose an active, configured inventory item.');
       if(input.unit && input.unit!==stockUnit(product))throw Error('The item unit changed. Reload quantities before saving.');
-      const lot=typeof input.lot_number==='string'?input.lot_number.trim():'',expiry=input.expiry_date || '';
+      const packaging=stockCountGroup(product)==='packaging';
+      const enteredLot=typeof input.lot_number==='string'?input.lot_number.trim():'';
+      // Internal count references identify the valuation layer; packaging does
+      // not need a supplier batch number or a manufactured expiry date.
+      const lot=enteredLot||(packaging?'COUNT-'+hash([eventId,product.id]).slice(0,16).toUpperCase():''),expiry=packaging?'':input.expiry_date || '';
       if(expiry && !validDate(expiry))throw Error('Enter a valid printed expiry date for the counted lot.');
       if(!lot || lot.length>100)throw Error('New counted stock requires its physical batch or lot number.');
       if(balances.some(b=>b.product_id===product.id && [b.lot_number,b.batch_number].some(code=>String(code||'').trim().toLowerCase()===lot.toLowerCase())))throw Error('This lot already exists in the warehouse. Adjust its existing stock record.');

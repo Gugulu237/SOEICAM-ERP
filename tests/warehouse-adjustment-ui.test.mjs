@@ -207,6 +207,18 @@ test('new lots require an explicit action and repeated clicks keep a single draf
 
 
 const simpleWorkspace=()=>({...structuredClone(workspace),date:'2026-11-03',gain_accounts:[{id:'surplus',account_number:'7580',name:'Stock surplus'}],items:workspace.items.map(item=>({...item,inventory_account:{id:'inventory',account_number:'1310',name:'Inventory'}}))});
+test('packaging count review has no batch or expiry inputs and can submit the physical quantity',async()=>{
+ const render=await renderer(),r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
+ data.items[0]={...data.items[0],count_group:'packaging',inventory_type:'raw_material'};data.rows=[];data.item_group='packaging';
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-PACK')};};
+ const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try{
+  draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'100'}});draw();button(r,'Review adjustment').onClick();let html=draw();
+  assert.equal(element(r,'input','Lot number for Milk powder'),undefined);assert.equal(element(r,'input','Printed expiry for Milk powder'),undefined);assert.match(html,/No batch or expiry is needed for packaging/);
+  element(r,'input','Count sheet / reference').onChange({target:{value:'PACK-COUNT'}});element(r,'input','Adjustment reason').onChange({target:{value:'Physical packaging verified'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
+  await button(r,'Post adjustment').onClick();const posted=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(posted.rows[0].counted_quantity,100);assert.equal(posted.rows[0].expiry_date,'');assert.equal(posted.rows[0].lot_number,'');
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
 test('simple item count shows one input per product and posts the reviewed physical total with all snapshots',async()=>{
  const render=await renderer(),r=runtime(),calls=[],data=simpleWorkspace();globalThis.__adjustmentUI=r;
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-COUNT')};};

@@ -7,6 +7,21 @@ import { warehouseAdjustmentAction } from '../src/server/domain/warehouse-adjust
 import { guardMutation } from '../src/server/access.js';
 import {FEATURE_AUTHORITY} from '../src/server/domain/roles.js';
 
+test('packaging physical counts post without entered lots or expiry and retry without duplicate quantities or journals',async()=>{
+ const f=await setup(),s=f.entities;
+ const p=await s.Product.create({...f.product,id:undefined,name:'Packaging cups',inventory_type:'raw_material',material_group:'Packaging',unit_of_measure:'ea'});
+ const ws=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'packaging'}),item=ws.items.find(i=>i.id===p.id);
+ assert.equal(item.count_group,'packaging');
+ const gain=await s.Account.create({name:'Stock surplus',account_number:'7580',account_type:'other_income',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:'packaging',gainAccountId:gain.id,reference:'PACK-COUNT',reason:'Physical packaging count verified',item_counts:[{product_id:p.id,counted_quantity:100,item_fingerprint:item.count_fingerprint,snapshots:[]}],rows:[{product_id:p.id,unit:'ea',unit_cost:10,counted_quantity:100}]};
+ const result=await f.call(body),[stock]=await s.StockBalance.filter({product_id:p.id});
+ assert.equal(stock.quantity,100);assert.equal(stock.total_value,1000);assert.ok(!stock.expiry_date);assert.match(stock.lot_number,/^COUNT-[A-F0-9]{16}$/);assert.equal(stock.qc_status,'quarantine');
+ assert.equal(result.value_difference,1000);assert.ok(result.journal_id);const count=(await s.JournalEntry.list()).length;
+ assert.equal((await f.call(body)).reused,true);assert.equal((await s.StockBalance.filter({product_id:p.id})).length,1);assert.equal((await s.JournalEntry.list()).length,count);
+ const line=await s.JournalLine.filter({journal_id:result.journal_id});assert.equal(line.reduce((sum,l)=>sum+l.debit-l.credit,0),0);
+ await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/Stock changed/);
+});
+
 test('direct count posting is denied to non-admin principals even with elevated feature access',async()=>{
  const f=await setup(),s=f.entities,body=await f.body();
  const before=JSON.stringify(await s.StockBalance.list());

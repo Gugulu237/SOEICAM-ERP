@@ -18,6 +18,7 @@ export async function supplierLifecycle(context,stores,id,body){
  if(Number(supplier.supplier_lifecycle_revision||0)!==body.revision)throw fail('This supplier changed. Refresh before continuing.',409);
  if(body.action==='remove'?supplier.supplier_removed_at:!supplier.supplier_removed_at)throw fail(body.action==='remove'?'This supplier is already deleted.':'This supplier is already in the directory.',409);
  if(body.action==='remove'){
+  if((await readRecords(stores.Account)).some(a=>a.recurring_expense?.versions?.some(v=>v.supplier_id===id)))throw fail('This supplier is referenced by recurring expense history. Keep the supplier record for reconciliation.');
   const [bills,orders,payments,products,rules,accounts,journals,receipts]=await Promise.all([
    readRecords(stores.Bill,{supplier_id:id}),readRecords(stores.PurchaseOrder,{supplier_id:id}),readRecords(stores.Payment,{party_id:id,payment_type:'supplier_payment'}),
    readRecords(stores.Product,{preferred_supplier_id:id}),readRecords(stores.PostingRule,{rule_key:'supplier_payable',is_active:true}),readRecords(stores.Account,{account_number:'4010'}),readRecords(stores.JournalEntry,{status:{$in:['posted','reversed']}}),readRecords(stores.GoodsReceipt,{supplier_id:id}),

@@ -5,6 +5,14 @@ import {warehouseAdjustmentDocument} from '../src/lib/report-models.js';
 const item={id:'milk',name:'Milk',unit:'kg',unit_cost:10,inventory_account:{id:'stock',name:'Stock',account_number:'1310'}};
 const rows=[{balance_id:'a',product_id:'milk',book_quantity:10,book_value:100,unit_cost:10,fingerprint:'A',lot_number:'A',expiry_date:'2027-01-01',qc_status:'approved'},{balance_id:'b',product_id:'milk',book_quantity:5,book_value:100,unit_cost:20,fingerprint:'B',lot_number:'B',expiry_date:'2027-02-01',qc_status:'quarantine'}];
 const loss={id:'loss',name:'Losses',account_number:'6590'},gain={id:'gain',name:'Surplus',account_number:'7580'};
+
+test('new packaging counts need quantity and carrying cost but no supplier batch or expiry',()=>{
+ for(const packaging of [{inventory_type:'packaging'},{count_group:'packaging',inventory_type:'raw_material'},{material_group:'Packaging',inventory_type:'raw_material'}]){
+  const plan=physicalItemCount({...item,...packaging},[],100);
+  assert.equal(plan.needs_lot,undefined);assert.equal(plan.rows[0].lot_number,'');assert.equal(plan.rows[0].expiry_date,'');assert.equal(plan.value_difference,1000);assert.equal(plan.rows[0].qc_status,'quarantine');
+ }
+ assert.equal(physicalItemCount({...item,inventory_type:'finished_product'},[],100).needs_lot,true);
+});
 test('an item count never invents a batch allocation; explicit batch counts use their individual carrying values',()=>{
  const before=structuredClone(rows),pending=physicalItemCount(item,rows,13);
  assert.equal(pending.needs_batches,true);assert.deepEqual(pending.rows,[]);

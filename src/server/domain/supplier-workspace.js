@@ -28,8 +28,8 @@ function requestKey(user,body) {
 }
 const supplierFields = 'id supplier_number name contact_person phone email address city tax_id category payment_terms_days is_active notes supplier_items updated_date supplier_removed_at supplier_lifecycle_revision';
 async function postedSupplierBalances(svc){
-  const s=svc.entities,[rules,legacy,journals]=await Promise.all([readRecords(s.PostingRule,{rule_key:'supplier_payable',is_active:true}),readRecords(s.Account,{account_number:'4010'}),readRecords(s.JournalEntry,{status:'posted',entry_date:{$lte:businessDate()}})]);
-  const accounts=[...new Set([...rules.map(r=>r.account_id),...legacy.map(a=>a.id)].filter(Boolean))],totals={};
+  const s=svc.entities,[rules,legacy,journals,bills]=await Promise.all([readRecords(s.PostingRule,{rule_key:'supplier_payable',is_active:true}),readRecords(s.Account,{account_number:'4010'}),readRecords(s.JournalEntry,{status:'posted',entry_date:{$lte:businessDate()}}),readRecords(s.Bill)]);
+  const accounts=[...new Set([...rules.map(r=>r.account_id),...legacy.map(a=>a.id),...bills.flatMap(b=>[b.opening_account_id,b.payable_account_id])].filter(Boolean))],totals={};
   if(!accounts.length)throw Error('Configure the supplier payable account before reviewing supplier balances');
   for(let i=0;i<journals.length;i+=100){
     const lines=await readRecords(s.JournalLine,{account_id:{$in:accounts},journal_id:{$in:journals.slice(i,i+100).map(j=>j.id)}});

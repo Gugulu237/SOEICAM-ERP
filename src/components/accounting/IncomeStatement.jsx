@@ -8,9 +8,12 @@ import { formatXAF } from "@/lib/formatters";
 import { round2 } from "@/lib/posting";
 import { sectionRows } from "@/lib/statements";
 import StatementSection from "@/components/accounting/StatementSection";
+import {useRecurringExpenseReview} from './useRecurringExpenseReview';
+import {Link} from '@/lib/router';
 
 export default function IncomeStatement({ accounts, activity, fromDate, toDate }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const recurring=useRecurringExpenseReview(fromDate,toDate);
 
   const sum = (rows) => round2(rows.reduce((s, r) => s + r.amount, 0));
 
@@ -27,13 +30,14 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate }
   const operatingProfit = round2(grossProfit - totalExpenses);
   const net = round2(operatingProfit + sum(otherIncome) - sum(otherExpenses));
 
-  const document={title:'Income statement',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals']],sections:[
+  const document={title:'Income statement',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals'],['Unposted recurring charges',recurring.error?'Review unavailable':formatXAF(recurring.total)]],sections:[
     ...[['Revenue',revenue,totalRevenue],['Cost of goods sold',cogs,totalCogs],['Operating expenses',expenses,totalExpenses],['Other income',otherIncome,sum(otherIncome)],['Other expenses',otherExpenses,sum(otherExpenses)]].map(([title,rows,total])=>({title,columns:['Account','Name',{label:'Amount',type:'money'}],rows:rows.map(r=>[r.account_number,r.name,r.amount]),totals:[['','Total',total]]})),
     {title:'Profit and loss',columns:['Measure',{label:'Amount',type:'money'}],rows:[['Gross profit',grossProfit],['Operating profit',operatingProfit],['Net profit / loss',net]]},
   ]};
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-6 max-w-3xl">
-      <div className="mb-5"><ReportExport report={document}/></div>
+    <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-6 max-w-3xl">
+      {(recurring.loading||recurring.error||recurring.count>0)&&<div role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{ui(recurring.loading?'Checking recurring expenses...':recurring.error?'Recurring expense review is unavailable. Refresh before finalizing this report.':'Recurring charges awaiting recognition: {0}. These are not yet deducted from the reported profit.',formatXAF(recurring.total))}{!recurring.loading&&recurring.canReview&&<Link className="mt-2 block font-medium underline" to="/accounting/recurring-expenses">{ui('Review recurring expenses')}</Link>}</div>}
+      <div className="mb-5"><ReportExport report={document} disabled={recurring.loading||!!recurring.error}/></div>
       <StatementSection title={ui("Revenue")} rows={revenue} total={totalRevenue} />
       <StatementSection title={ui("Cost of Goods Sold")} rows={cogs} total={totalCogs} />
       <div className="flex justify-between py-2 mb-6 font-bold text-sm bg-slate-50 px-3 rounded">

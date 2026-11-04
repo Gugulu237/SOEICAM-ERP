@@ -1,5 +1,6 @@
 import {countedQuantity,roundMoney,roundQuantity} from './inventory-audit.js';
 import {warehouseCountState,warehouseCountVariance} from './warehouse-count.js';
+import {isPackagingItem} from './inventory-packaging.js';
 
 // An item total is not evidence of which perishable batch changed. Ask for the
 // affected batches only when a nonzero total cannot resolve that unambiguously.
@@ -14,10 +15,11 @@ export function physicalItemCount(item,stockRows,value,batchCounts={},found={}) 
     if(state.count_issue||state.requires_reconciliation)throw Error('Recorded stock needs an accounting correction before counting.');
   }
   if(!stockRows.length){
-    if(!found.lot_number?.trim())return {...base,needs_lot:true};
+    const packaging=item.count_group==='packaging'||isPackagingItem(item);
+    if(!packaging&&!found.lot_number?.trim())return {...base,needs_lot:true};
     const cost=Number(item.unit_cost);
     if(!(cost>0)||!Number.isFinite(cost))throw Error('Establish the item carrying cost before recording newly counted stock.');
-    const row={product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:0,book_value:0,unit_cost:cost,lot_number:found.lot_number.trim(),expiry_date:found.expiry_date||'',qc_status:'quarantine'};
+    const row={product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:0,book_value:0,unit_cost:cost,lot_number:found.lot_number?.trim()||'',expiry_date:packaging?'':found.expiry_date||'',qc_status:'quarantine'};
     const variance=warehouseCountVariance(row,quantity);
     return {...base,rows:[{...row,...variance}],value_difference:variance.value_difference};
   }
