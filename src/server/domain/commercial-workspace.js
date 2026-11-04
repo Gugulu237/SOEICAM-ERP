@@ -12,14 +12,17 @@ import { registrationFingerprint } from './commercial-request.js';
 export async function readRecords(entity, query = {}) {
   const rows = [];
   const seen = new Set();
-  for (let skip = 0; ; skip += 200) {
-    const page = await entity.filter(query, 'id', 200, skip);
+  // Native SQL stores support bounded larger pages. Do not assume that an
+  // older SDK honours them: a capped response would silently truncate records.
+  const limit = entity.readRecordsPageSize === 1000 ? 1000 : 200;
+  for (let skip = 0; ; skip += limit) {
+    const page = await entity.filter(query, 'id', limit, skip);
     if (!Array.isArray(page)) throw new Error('Could not read all records');
     for (const row of page) {
       if (seen.has(row.id)) throw new Error('Records changed while loading; please retry');
       seen.add(row.id); rows.push(row);
     }
-    if (page.length < 200) return rows;
+    if (page.length < limit) return rows;
   }
 }
 

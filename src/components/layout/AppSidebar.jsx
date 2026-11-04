@@ -86,7 +86,7 @@ export default function AppSidebar() {
     <div className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ${mobile ? "w-full" : compact ? "w-16" : "w-60"}`}>
       <div className={`flex min-h-20 items-center gap-2 border-b border-sidebar-border bg-sidebar ${compact ? 'justify-center px-2 py-4' : 'justify-between px-3 py-3'}`}>
         {compact ? <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-lg font-extrabold text-[#245719]">S</Link> :
-          <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="block min-w-0 rounded-xl p-1.5"><img src="/brand/soeicam-logo.png" alt={ui("SOEICAM")} className="block h-auto w-[162px]" /></Link>}
+          <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="block min-w-0 rounded-xl p-1.5"><img src="/brand/soeicam-logo.png" alt={ui("SOEICAM")} loading="lazy" decoding="async" width={347} height={150} className="block h-auto w-[162px]" /></Link>}
         <button aria-label={compact ? ui("Expand navigation") : ui("Collapse navigation")} onClick={() => setCollapsed(!compact)} className="hidden rounded p-1 text-[#245719] hover:bg-sidebar-accent xl:block">
           {compact ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>

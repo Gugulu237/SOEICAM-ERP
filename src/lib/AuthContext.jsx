@@ -43,12 +43,17 @@ function useERPProfile() {
     } finally { if(pendingAuth.current?.sequence===sequence)pendingAuth.current=null;if (sequence === current.current) setLoading(false); }
   },[]);
   useEffect(()=>{
+    let lastEventRefresh=0;
     const refresh=()=>{if(document.visibilityState==='visible')checkUserAuth({background:true});};
+    // Mobile browsers can emit focus and visibility separately for one return.
+    // Coalesce that event burst without delaying polling, explicit retries or
+    // permission-change refreshes, which remain authoritative server reads.
+    const resumed=()=>{if(document.visibilityState!=='visible'||Date.now()-lastEventRefresh<2000)return;lastEventRefresh=Date.now();refresh();};
     const changed=()=>checkUserAuth({background:true,force:true});
     const unsubscribe=subscribeRoleChanges(changed);
-    document.addEventListener('visibilitychange',refresh);window.addEventListener('focus',refresh);
+    document.addEventListener('visibilitychange',resumed);window.addEventListener('focus',resumed);
     const timer=window.setInterval(refresh,30000);
-    return()=>{unsubscribe();document.removeEventListener('visibilitychange',refresh);window.removeEventListener('focus',refresh);window.clearInterval(timer);};
+    return()=>{unsubscribe();document.removeEventListener('visibilitychange',resumed);window.removeEventListener('focus',resumed);window.clearInterval(timer);};
   },[checkUserAuth]);
   const clear=useCallback(() => { current.current++; verifiedProfile.current=null; setProfileRefreshError(''); setItemLookupIdentity(null); configureLanguage(); invalidateERPReads(); setUser(null); setEmployee(null); setError(null); setLoading(false); },[]);
   const invalidate=useCallback(() => { current.current++; invalidateERPReads(); },[]);

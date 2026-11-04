@@ -1,4 +1,70 @@
-# Mobile performance pass — 3 November 2026
+# Mobile performance
+
+## Comprehensive pass - 4 November 2026
+
+This pass covers the shared application shell, employee role dashboards, task
+navigation, inventory/catalogue rendering, images, installation startup, profile
+refreshes and scoped database reads.
+
+- Eight frequently used route entries include their initial screen directly,
+  removing a separate screen-import waterfall. Optional role dashboards, task
+  forms, customer dialogs, distribution boards, reports, accounting tabs and HR
+  tools load only when selected. Loading feedback remains localized.
+- Clerk account styling and the selected language load only on login,
+  registration and profile. Authentication providers stay mounted. The header
+  opens the local profile; the profile retains the account/security menu.
+  Optional display-asset failures leave account access available with retry.
+- ProductCatalog renders 24 products per page. Warehouse lists, stock alerts and
+  expanded lot histories render 25 rows per page. Search, selections, quantities,
+  exports and totals still use the complete authorized dataset. Reusable search
+  and sorting indexes avoid repeating work on unrelated renders.
+- Product images remain lazy unless explicitly marked as priority. The hidden
+  desktop logo is lazy, with dimensions reserved. Service-worker registration
+  waits for page load and an idle opportunity; installation/offline listeners
+  remain active immediately. No stock or financial cache policy changes.
+- Focus and visibility events from one mobile resume share a profile refresh.
+  Explicit retries, role changes and regular fresh permission checks remain.
+  Single-role employees no longer request the optional shared-duty switcher.
+- Existing Clerk and Supabase profiles read the company-language scalar in their
+  existing identity query, eliminating a second settings query. No settings
+  document is exposed and no cross-request identity cache is introduced.
+- Native SQL readers use bounded 1,000-record pages; older adapters retain their
+  200-record contract. Compact inventory excludes proven exhausted stock in SQL,
+  retaining NULL, negative and residual-value records and the complete history
+  in authoritative stock workflows.
+
+### Verified fixture results
+
+| Workload | Before | After |
+| --- | ---: | ---: |
+| Mounted catalogue cards for 2,500 products | 2,500 | 24 |
+| Mounted warehouse rows for 101 products | 101 | 25 |
+| Mounted expanded lot rows for 60 records | 60 | 25 |
+| Native SQL reads for 1,001 records | 6 | 2 |
+| Native SQL reads for 2,500 records | 13 | 3 |
+| Compact SQL reads for 2,500 exhausted + 7 remaining/uncertain layers | 13 | 1 |
+| Existing-session auth/profile database round trips | 2 | 1 |
+
+These are isolated regression fixtures, not measurements on a user's phone.
+Focused tests verify complete search/export results, selection persistence,
+deferred callbacks, permissions, fresh reads, SQL equivalence, locale switching,
+retry behavior and PWA lifecycle cleanup. Source lint passes.
+
+Full regression and production-build attempts were stopped by automatic approval
+review after it detected an external Visual Studio telemetry connection. A retry
+using the existing network-denial preload was also stopped. No completed new
+production build, authenticated browser review or improved phone timing is claimed.
+
+`node scripts/measure-mobile-bundles.mjs report.json` records the assets referenced
+by the current completed Next.js build. It excludes obsolete Windows build chunks
+and reports deduplicated raw and per-file gzip bytes for each route's initial
+screen. Nested role/task chunks, external authentication scripts, API responses,
+CSS and images are excluded. Run it after a successful production build, then
+repeat cold and warm signed-in workflows on a low-end phone with the same network
+profile. The French dictionary remains synchronous: static pruning could remove
+dynamic error messages or alter language switching, so it was deliberately retained.
+
+## Earlier pass - 3 November 2026
 
 The reported mobile run was LCP 7.0 s, Speed Index 5.9 s, FCP 2.0 s, CLS 0.086 and TBT 150 ms. These are the user's baseline results, not a measurement made in this workspace. The test URL, device, cache state and throttling profile were not supplied.
 

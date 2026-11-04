@@ -39,3 +39,14 @@ test('large catalogues page without listing every batch and navigation returns t
  const paint=()=>{r.beforeRender();return render({products:many,balances:many.map(p=>({...balances[0],id:'balance-'+p.id,product_id:p.id})),warehouses});};
  try{let html=paint();assert.match(html,/Item 00/);assert.doesNotMatch(html,/Item 24/);r.buttons.find(b=>b.label==='Next').onClick();html=paint();assert.match(html,/Item 24/);assert.doesNotMatch(html,/Item 00/);r.buttons.find(b=>b.label==='Previous').onClick();assert.match(paint(),/Item 00/);}finally{r.cleanup();delete globalThis.__stockUI;}
 });
+
+test('a large lot history is paged inside its stock popup while item quantity keeps the complete total',async()=>{
+ const render=await renderer(),r=hookRuntime();globalThis.__stockUI=r;
+ const many=Array.from({length:61},(_,i)=>({...balances[0],id:'batch-'+i,lot_number:'LOT-'+String(i).padStart(3,'0'),quantity:1}));
+ const paint=()=>{r.beforeRender();return render({products,balances:many,warehouses});};
+ try{
+  paint();r.buttons.find(b=>b['aria-label']==='Stock details for Fresh milk').onClick();let html=paint();assert.match(html,/LOT-024/);assert.doesNotMatch(html,/LOT-025/);assert.match(html,/61/);assert.equal((html.match(/<article/g)||[]).length,25);
+  r.buttons.find(b=>b.label==='Next').onClick();html=paint();assert.match(html,/LOT-025/);assert.doesNotMatch(html,/LOT-024/);assert.equal((html.match(/<article/g)||[]).length,25);
+  r.buttons.find(b=>b.label==='Next').onClick();html=paint();assert.match(html,/LOT-060/);assert.equal((html.match(/<article/g)||[]).length,11);assert.equal(r.buttons.find(b=>b.label==='Next').disabled,true);
+ }finally{r.cleanup();delete globalThis.__stockUI;}
+});

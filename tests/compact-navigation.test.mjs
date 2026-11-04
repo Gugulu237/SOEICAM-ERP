@@ -64,3 +64,7 @@ test('restricted roles cannot use recent pages to reach management sections',()=
   const html=f.render('history');assert.doesNotMatch(html,/href="\/admin|href="\/distribution/);assert.match(html,/href="\/customers\?view=list"/);
  }finally{f.cleanup();}
 });
+
+test('the mobile header opens the local profile without mounting an external account widget',()=>{
+ const f=setup();try{const html=f.render('layout',{title:'Inventory'});assert.equal((html.match(/href="\/profile"/g)||[]).length,1);assert.match(html,/aria-label="My profile"[^>]*>FU<\/a>/);assert.doesNotMatch(html,/cl-userButton|clerk-user-button/);}finally{f.cleanup();}
+});

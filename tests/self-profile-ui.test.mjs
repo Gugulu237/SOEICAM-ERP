@@ -15,7 +15,7 @@ async function renderer(authProvider=false){
       '@/lib/supabase/browser':"export const supabaseBrowser=async()=>({auth:{onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}});",
       '@/lib/auth-provider':"export const usesClerk=()=>false;",
       '@/lib/item-lookup-cache':"export const setItemLookupIdentity=()=>{};",
-      '@clerk/nextjs':"export const useAuth=()=>({}),useClerk=()=>({});",
+      '@clerk/nextjs':"export const useAuth=()=>({}),useClerk=()=>({}),UserButton=()=>null;",
       '@/components/shared/PageLoading':"import React from 'react';export default ()=>React.createElement('p',null,'Loading');",
       '@/components/ui/input':"import React from 'react';export const Input=p=>{globalThis.__profileUI.capture('input',p,[]);return React.createElement('input',p);};",
       '@/components/ui/button':"import React from 'react';export const Button=({children,variant,size,...p})=>{globalThis.__profileUI.capture('button',p,children);return React.createElement('button',p,children);};",

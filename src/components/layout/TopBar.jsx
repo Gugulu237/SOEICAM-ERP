@@ -7,14 +7,11 @@ import ProductionNotifications from "./ProductionNotifications";
 import QuickActions from "@/components/layout/QuickActions";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { ROLE_LABELS } from "@/lib/permissions";
-import { UserButton } from '@clerk/nextjs';
-import { usesClerk } from '@/lib/auth-provider';
 import NavigationHistory from './NavigationHistory';
 import StaffRoleSwitcher from '@/components/employees/StaffRoleSwitcher';
 import LanguageSelector from './LanguageSelector';
 import { ui } from '@/lib/i18n';
 import { Link } from '@/lib/router';
-import { UserRound } from 'lucide-react';
 
 // App-wide top bar: global search, quick actions, current user.
 export default function TopBar() {
@@ -34,11 +31,10 @@ export default function TopBar() {
         <ProductionNotifications />
         <QuickActions />
         <NavigationHistory />
-        <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-green-100 text-slate-600 hover:bg-green-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-700 md:flex"><UserRound size={18}/></Link>
-        <div className={`${usesClerk() ? 'hidden min-[360px]:flex' : 'hidden sm:flex'} shrink-0 items-center gap-2 sm:border-l sm:border-green-100 sm:pl-2`}>
-          {usesClerk() ? <UserButton /> : <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">
+        <div className="hidden min-[360px]:flex shrink-0 items-center gap-2 sm:border-l sm:border-green-100 sm:pl-2">
+          <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-700">
             {initials}
-          </div>}
+          </Link>
           <div className="hidden max-w-36 leading-tight lg:block">
             <p className="truncate text-xs font-semibold text-slate-800">{user?.full_name || user?.email}</p>
             <p className="truncate text-[10px] text-slate-400 uppercase tracking-wide">{ui(roleLabel || ROLE_LABELS[role] || "")}</p>

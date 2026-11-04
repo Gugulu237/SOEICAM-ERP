@@ -14,7 +14,17 @@ export async function inventoryOverview(context, stores, {compact=false,includeR
   }
   // Apply the same per-table scopes as the entity API before reading anything.
   const scopes = await Promise.all(names.map(name => recordScope(context, name, 'filter', stores)));
-  const records = await Promise.all(names.map(async (name, index) => (await readRecords(stores[name], scopes[index])).map(row => visibleRecord(context, name, row))));
+  const records = await Promise.all(names.map(async (name, index) => {
+    const store=stores[name];
+    // Native numeric columns can exclude exhausted layers before transporting
+    // years of stock history from SQL. IS DISTINCT FROM also retains NULL,
+    // negative quantities and any nonzero residual carrying value. Unknown
+    // adapters keep the conservative JavaScript projection below.
+    const query=compact&&name==='StockBalance'&&store.readRecordsPageSize===1000
+      ? {$and:[scopes[index],{$or:[{quantity:{$ne:0}},{total_value:{$ne:0}}]}]}
+      : scopes[index];
+    return (await readRecords(store,query)).map(row => visibleRecord(context, name, row));
+  }));
   let canManageItems=false;
   try{assertModule(context,'inventory');assertEntityAccess(context,'Product','update');canManageItems=true;}catch(error){if(error.status!==403)throw error;}
   return { products:pricedAssemblyProducts(records[0]).filter(p=>!p.item_removed_at), removedProducts:canManageItems&&includeRemoved?records[0].filter(p=>p.item_removed_at):[], balances:compact?compactStockBalances(records[1]):records[1], warehouses:records[2], vehicles:records[3]||[] };

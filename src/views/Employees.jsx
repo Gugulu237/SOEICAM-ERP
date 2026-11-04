@@ -9,13 +9,15 @@ import { readAll } from '@/lib/field-pos';
 import { ROLE_CATEGORIES, ROLE_DEFINITIONS } from '@/lib/permissions';
 import PageHeader from '@/components/shared/PageHeader';
 import EmployeeRoleDirectory from '@/components/employees/EmployeeRoleDirectory';
-import EmployeeRoleDrawer from '@/components/employees/EmployeeRoleDrawer';
-import RoleEditorSheet from '@/components/employees/RoleEditorSheet';
+import dynamic from 'next/dynamic';
+import WorkspaceLoading from '@/components/home/WorkspaceLoading';
+const EmployeeRoleDrawer=dynamic(()=>import('@/components/employees/EmployeeRoleDrawer'),{loading:WorkspaceLoading});
+const RoleEditorSheet=dynamic(()=>import('@/components/employees/RoleEditorSheet'),{loading:WorkspaceLoading});
 import { roleDefinitions,occupiesRole } from '@/lib/staff-role-assignments';
 import { businessDate } from '@/lib/business-date';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import RoleAccessReference from '@/components/employees/RoleAccessReference';
-import EmployeeFormDialog from '@/components/employees/EmployeeFormDialog';
+const RoleAccessReference=dynamic(()=>import('@/components/employees/RoleAccessReference'),{loading:WorkspaceLoading});
+const EmployeeFormDialog=dynamic(()=>import('@/components/employees/EmployeeFormDialog'),{loading:WorkspaceLoading});
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, ShieldCheck } from 'lucide-react';
@@ -59,7 +61,7 @@ export default function Employees({ embedded=false, section='people', initialRol
   }
   if(loading&&!roleCatalogue)return <p role="status" className="py-12 text-sm text-slate-500">{ui('Loading employees...')}</p>;
   const error=loadError&&<p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>;
-  const form=<EmployeeFormDialog open={showForm} onOpenChange={setShowForm} employee={editing} employees={employees} roleDefinitions={definitions} onSaved={load}/>;
+  const form=showForm&&<EmployeeFormDialog open onOpenChange={setShowForm} employee={editing} employees={employees} roleDefinitions={definitions} onSaved={load}/>;
   const visibleEmployees=employees.filter(person=>!employeeRemoved(person)),removedEmployees=employees.filter(employeeRemoved);
   const shared={employees:visibleEmployees,onEditEmployee:canManage?editEmployee:undefined,onInvite:canManage&&usesClerk()?invite:undefined,inviting};
   if(embedded&&section==='roles')return <div className="min-w-0">{error}{roleCatalogue&&<RoleAccessReference embedded open catalogue={roleCatalogue} initialRole={initialRole} onSaved={load} {...shared}/>} {form}</div>;
@@ -71,7 +73,7 @@ export default function Employees({ embedded=false, section='people', initialRol
     {!loadError&&<EmployeeRoleDirectory employees={visibleEmployees} definitions={definitions} category={category} roleFilter={roleFilter} onOpen={openRole}/>}
     {form}
     {canManage&&removedEmployees.length>0&&<details className="mt-5 rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{ui('Removed employees')} ({removedEmployees.length})</summary><ul className="mt-3 divide-y">{removedEmployees.map(person=><li key={person.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm">{person.full_name}</span><EmployeeRemovalAction employee={person} onSaved={load}/></li>)}</ul></details>}
-    <RoleAccessReference open={showRoles} onOpenChange={setShowRoles} catalogue={roleCatalogue} initialRole={roleToOpen} onSaved={load} {...shared}/>
+    {showRoles&&<RoleAccessReference open onOpenChange={setShowRoles} catalogue={roleCatalogue} initialRole={roleToOpen} onSaved={load} {...shared}/>}
     {selectedRole&&definitions.some(r=>r.key===selectedRole)&&<EmployeeRoleDrawer key={selectedRole} open onOpenChange={value=>{if(!value)setSelectedRole('');}} role={definitions.find(r=>r.key===selectedRole)} definitions={definitions} catalogue={roleCatalogue} onSaved={load} canManage={canManage} onEditRole={canManageRoles?profile=>setRoleDraft(profile):undefined} {...shared}/>}
     {roleDraft&&<RoleEditorSheet key={roleDraft.key} profile={roleDraft} catalogue={roleCatalogue} definitions={definitions} onClose={()=>setRoleDraft(null)} onSaved={load}/>}
 

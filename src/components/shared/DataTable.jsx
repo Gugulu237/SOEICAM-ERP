@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
+const textOrder=new Intl.Collator();
+
 export default function DataTable({ columns, data, searchFields = [], pageSize = 15, onRowClick, emptyMessage = ui("No records found"), stateKey, exportTitle, exportColumns, exportMetadata = [], exportNotes = [], exportDisabled = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const phone = usePhoneLayout();
@@ -18,22 +20,26 @@ export default function DataTable({ columns, data, searchFields = [], pageSize =
   const [view, setView] = usePageState('table:' + (stateKey || columns.map(column => column.key).join('|')), { search: '', page: 0, sortCol: null, sortDir: 'asc' });
   const { search, page, sortCol, sortDir } = view;
   const setSearch = search => setView(previous => ({ ...previous, search, page: 0 }));
+  // Callers commonly pass a fresh field array on each render. Index its contents
+  // once per data change so paging and selection do not rescan every record.
+  const searchFieldKey=JSON.stringify(searchFields);
+  const searchIndex=useMemo(()=>{const fields=JSON.parse(searchFieldKey);return fields.length?(data||[]).map(row=>fields.map(field=>String(row[field]??'').toLowerCase())):null;},[data,searchFieldKey]);
 
   const filtered = useMemo(() => {
     let result = data || [];
-    if (search && searchFields.length) {
+    if (search && searchIndex) {
       const lower = search.toLowerCase();
-      result = result.filter(row => searchFields.some(f => String(row[f] || "").toLowerCase().includes(lower)));
+      result = result.filter((_row,index) => searchIndex[index].some(value=>value.includes(lower)));
     }
     if (sortCol) {
       result = [...result].sort((a, b) => {
         const av = a[sortCol] ?? "", bv = b[sortCol] ?? "";
-        const cmp = typeof av === "number" ? av - bv : String(av).localeCompare(String(bv));
+        const cmp = typeof av === "number" ? av - bv : textOrder.compare(String(av),String(bv));
         return sortDir === "asc" ? cmp : -cmp;
       });
     }
     return result;
-  }, [data, search, sortCol, sortDir, searchFields]);
+  }, [data, search, sortCol, sortDir, searchIndex]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const currentPage = Math.min(Math.max(0, page), Math.max(0, totalPages - 1));

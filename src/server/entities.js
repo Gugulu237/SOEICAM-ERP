@@ -141,6 +141,9 @@ export function entityStore(name) {
     return { rows, ...(groups.length ? {} : rows[0]), total:rows.reduce((n,row) => n+row.count,0) };
   };
   return {
+    // Internal service-store capability only. The checked HTTP entity API does
+    // not expose it; older adapters retain their conservative 200-row pages.
+    readRecordsPageSize:1000,
     filter, list:(...args) => filter({},...args), get, create,
     update:async (id,value) => (await updateMany({ id:String(id) },value)).records[0] || null,
     updateMany, delete:id => remove({ id:String(id) }), deleteMany:remove,

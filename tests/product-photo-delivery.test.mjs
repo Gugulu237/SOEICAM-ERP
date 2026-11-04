@@ -79,6 +79,13 @@ test('known packshots use ready-to-display WebP sizes without a browser mask', a
   }
 });
 
+test('explicit above-the-fold priority is honored for optimized and uploaded photos while default photos stay lazy',async()=>{
+ for(const source of ['/products/soeicam/yola-125g.png','https://storage.example.test/product.png']){
+  const eager=await renderPhoto(source,undefined,true);assert.match(eager,/loading="eager"/);assert.match(eager,/fetchPriority="high"/);
+  const lazy=await renderPhoto(source);assert.match(lazy,/loading="lazy"/);assert.doesNotMatch(lazy,/fetchPriority="high"/);
+ }
+});
+
 test('prepared photos exist at their advertised dimensions and card payload is below 10% of originals', async () => {
   const { readFile, stat } = await import('node:fs/promises');
   const sharp = (await import('sharp')).default;

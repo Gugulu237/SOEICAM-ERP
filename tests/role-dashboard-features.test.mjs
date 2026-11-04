@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
@@ -27,7 +28,7 @@ test('template dashboards include newly selected modules once and preserve exist
 });
 let compiled;
 async function renderer(){
- compiled ||= build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Dashboard from './src/views/EmployeeDashboard.jsx';import Reports from './src/views/SalesReports.jsx';import Sidebar from './src/components/layout/AppSidebar.jsx';export const render=kind=>renderToStaticMarkup(React.createElement(kind==='reports'?Reports:kind==='sidebar'?Sidebar:Dashboard));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'role-dashboard-fixture',setup(b){
+ compiled ||= build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Dashboard from './src/views/EmployeeDashboard.jsx';import Reports from './src/views/SalesReports.jsx';import Sidebar from './src/components/layout/AppSidebar.jsx';export const render=kind=>renderToStaticMarkup(React.createElement(kind==='reports'?Reports:kind==='sidebar'?Sidebar:Dashboard));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[loadedMobileTasks(),{name:'role-dashboard-fixture',setup(b){
   b.onResolve({filter:/^react$/},args=>/(EmployeeDashboard|AppSidebar)\.jsx$/.test(args.importer)?{path:args.importer.endsWith('AppSidebar.jsx')?'sidebar':'dashboard',namespace:'hooks'}:undefined);
   b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default React;export const useState=v=>globalThis.__roleUI.state("+JSON.stringify(key)+",v),useRef=v=>globalThis.__roleUI.ref("+JSON.stringify(key)+",v),useEffect=(f,d)=>globalThis.__roleUI.effect("+JSON.stringify(key)+",f,d);",resolveDir:process.cwd()}));
   const mocks={

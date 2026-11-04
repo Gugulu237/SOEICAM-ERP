@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -15,7 +16,7 @@ async function buildScreens(){
  const Icon=()=>React.createElement('svg',{'data-icon':'metric'});
  export const renderCard=props=>renderToStaticMarkup(React.createElement(Card,{icon:Icon,...props}));
  export const renderEmployee=()=>renderToStaticMarkup(React.createElement(Employee));
- export const renderSidebar=()=>renderToStaticMarkup(React.createElement(Sidebar));export {PayrollPage};`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'dashboard-fixtures',setup(b){
+ export const renderSidebar=()=>renderToStaticMarkup(React.createElement(Sidebar));export {PayrollPage};`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[loadedMobileTasks(),{name:'dashboard-fixtures',setup(b){
    const mocks={
     '@/lib/router':`import React from 'react';export const useLocation=()=>({pathname:'/team-workspaces',search:'?'+globalThis.__dashboardParams});export const useSearchParams=()=>[new URLSearchParams(globalThis.__dashboardParams),()=>{}];export const useNavigate=()=>()=>{};export const Navigate=()=>null;export const Link=({to,resume,children,...props})=>React.createElement('a',{href:to,...props},children);`,
     '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__dashboardSession;`,

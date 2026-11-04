@@ -20,7 +20,8 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
 
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import CompanySalesRegister from '@/components/sales/CompanySalesRegister';
+import WorkspaceLoading from '@/components/home/WorkspaceLoading';
+const CompanySalesRegister=dynamic(()=>import('@/components/sales/CompanySalesRegister'),{loading:WorkspaceLoading});
 import { Plus,RefreshCw,ReceiptText,ClipboardList,FileText,Truck,Store } from 'lucide-react';
 const InvoiceWorkspace=dynamic(()=>import('@/components/sales/InvoiceWorkspace'));
 const FieldSalesPanel=dynamic(()=>import('@/components/sales/FieldSalesPanel'));

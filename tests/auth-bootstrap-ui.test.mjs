@@ -106,3 +106,22 @@ test('another device changing a role is picked up by profile polling without sig
   win.dispatchEvent(new Event('focus'));await runtime.flush();assert.deepEqual(draw().employee.allowed_modules,[]);assert.equal(draw().isAuthenticated,true);
  }finally{runtime.cleanup();delete globalThis.__authUI;globalThis.window=previous.window;globalThis.document=previous.document;}
 });
+
+test('one mobile resume burst reads the profile once while retries, permission changes and polling stay fresh',async()=>{
+ const render=await renderer(),runtime=hookRuntime(),previous={window:globalThis.window,document:globalThis.document,now:Date.now};let calls=0,poll,now=10000;
+ runtime.sdk={isLoaded:false};runtime.invalidations=0;
+ runtime.me=async()=>{calls++;return{id:'test-user',staff_access:true,employee_profile:{id:'staff',status:'active',role:'commercial'}};};
+ const win=new EventTarget(),doc=new EventTarget();win.setInterval=fn=>{poll=fn;return 1;};win.clearInterval=()=>{};doc.visibilityState='visible';
+ globalThis.window=win;globalThis.document=doc;globalThis.__authUI=runtime;Date.now=()=>now;
+ const draw=()=>{runtime.beforeRender();render();return runtime.value;};
+ try{
+  draw();await runtime.flush();draw();assert.equal(calls,1);
+  win.dispatchEvent(new Event('focus'));await runtime.flush();doc.dispatchEvent(new Event('visibilitychange'));await runtime.flush();assert.equal(calls,2);
+  await runtime.value.checkUserAuth({background:true});assert.equal(calls,3,'an explicit retry is never cooled down');
+  win.dispatchEvent(new Event('soeicam:roles-changed'));await runtime.flush();assert.equal(calls,4,'permission changes bypass resume coalescing');
+  poll();await runtime.flush();assert.equal(calls,5,'the regular server check remains independent');
+  doc.visibilityState='hidden';now+=3000;doc.dispatchEvent(new Event('visibilitychange'));poll();await runtime.flush();assert.equal(calls,5);
+  doc.visibilityState='visible';doc.dispatchEvent(new Event('visibilitychange'));await runtime.flush();assert.equal(calls,6);
+  runtime.me=async()=>{calls++;throw Object.assign(Error('Session expired'),{status:401});};now+=3000;win.dispatchEvent(new Event('focus'));await runtime.flush();assert.equal(draw().isAuthenticated,false);
+ }finally{runtime.cleanup();delete globalThis.__authUI;globalThis.window=previous.window;globalThis.document=previous.document;Date.now=previous.now;}
+});
