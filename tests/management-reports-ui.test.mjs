@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
@@ -10,7 +11,7 @@ async function uiBundle() {
     import Driver from './src/components/home/DriverDashboard.jsx';import Hotesse from './src/components/outlets/HotesseWorkspace.jsx';
     import Manager from './src/components/home/ManagerHome.jsx';import Reports from './src/components/home/ManagementQuickReports.jsx';
     import Form from './src/views/FieldSaleForm.jsx';import {modulesForRole} from './src/lib/appModules.js';import Notice from './src/components/home/ReadOnlyWorkspaceNotice.jsx';
-    export {modulesForRole};export const render=(kind,props={})=>renderToStaticMarkup(React.createElement({driver:Driver,hotesse:Hotesse,manager:Manager,reports:Reports,form:Form,notice:Notice}[kind],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'management-fixtures',setup(b){
+    export {modulesForRole};export const render=(kind,props={})=>renderToStaticMarkup(React.createElement({driver:Driver,hotesse:Hotesse,manager:Manager,reports:Reports,form:Form,notice:Notice}[kind],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[loadedMobileTasks(),{name:'management-fixtures',setup(b){
       const mocks={
         '@/api/erpClient':`export const erp={};`,
         '@/lib/router':`import React from 'react';export const Navigate=()=>null;export const useNavigate=()=>()=>{};export const useParams=()=>({});export const useSearchParams=()=>[new URLSearchParams(globalThis.__reportParams||''),()=>{}];export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);`,

@@ -1,15 +1,16 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
-const output=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Sales from './src/views/Sales.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Sales));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'sales-menu',setup(b){
+const output=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Sales from './src/views/Sales.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Sales));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[loadedMobileTasks(),{name:'sales-menu',setup(b){
   b.onResolve({filter:/^react$/},a=>a.importer.endsWith('Sales.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
   b.onLoad({filter:/.*/,namespace:'fixture'},()=>({resolveDir:process.cwd(),contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__salesMenu.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__salesMenu.state('orders',v),useEffect=(fn,deps)=>globalThis.__salesMenu.effect('orders',fn,deps);"}));
   const mocks={
     '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__salesMenu.session;",
-    '@/lib/router':"export const Link=()=>null;export const useNavigate=()=>path=>{globalThis.__salesMenu.navigation.push(path);globalThis.__salesMenu.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__salesMenu.query||''),value=>{globalThis.__salesMenu.query=new URLSearchParams(value).toString();}];",
+    '@/lib/router':"export const Link=()=>null;export const useLocation=()=>({pathname:'/sales',search:globalThis.__salesMenu.query?'?'+globalThis.__salesMenu.query:''});export const useNavigate=()=>path=>{globalThis.__salesMenu.navigation.push(path);globalThis.__salesMenu.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__salesMenu.query||''),value=>{const current=new URLSearchParams(globalThis.__salesMenu.query||'');globalThis.__salesMenu.query=new URLSearchParams(typeof value==='function'?value(current):value).toString();}];",
     '@/api/erpClient':"export const erp={entities:{SalesOrder:'orders'}};",
     '@/lib/field-pos':"export const readAll=async()=>{globalThis.__salesMenu.reads++;return [];};",
     '@/components/sales/CompanySalesRegister':"import React from 'react';export default props=>{globalThis.__salesMenu.register=props;return React.createElement('p',null,'Company register');};",

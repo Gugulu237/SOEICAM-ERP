@@ -5,19 +5,22 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import { MobileDashboardIdentity, useDashboardIdentity } from './DashboardIdentity';
 import DashboardTaskGrid from '@/components/shared/DashboardTaskGrid';
 import PageHeader from '@/components/shared/PageHeader';
-import DriverReceiveInventory from './DriverReceiveInventory';
+import dynamic from 'next/dynamic';
+import WorkspaceLoading from './WorkspaceLoading';
+const DriverReceiveInventory=dynamic(()=>import('./DriverReceiveInventory'),{loading:WorkspaceLoading});
 import React, { useState } from 'react';
 import { Truck, MapPin, Package, Phone, Play, Flag, AlertTriangle, ClipboardCheck, RefreshCw, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProductThumb from '@/components/shared/ProductThumb';
 import CustomerMapLinks from '@/components/customers/CustomerMapLinks';
-import DriverActivityForm from './DriverActivityForm';
+const DriverActivityForm=dynamic(()=>import('./DriverActivityForm'),{loading:WorkspaceLoading});
 import { DRIVER_ACTIVITY_LABELS, latestDeliveryReports } from '@/lib/employee-dashboard';
 import { driverRunStock } from '@/lib/driver-stock';
 import { deliveryPointKey, latestDriverPlan } from '@/lib/driver-deliveries';
-import CommercialReturns from '@/components/field/CommercialReturns';
-import FieldInventoryCards from '@/components/field/FieldInventoryCards';
-import DriverDeliveryPlanner, { DriverLoadReceipt } from './DriverDeliveryPlanner';
+const CommercialReturns=dynamic(()=>import('@/components/field/CommercialReturns'),{loading:WorkspaceLoading});
+const FieldInventoryCards=dynamic(()=>import('@/components/field/FieldInventoryCards'),{loading:WorkspaceLoading});
+const DriverDeliveryPlanner=dynamic(()=>import('./DriverDeliveryPlanner'),{loading:WorkspaceLoading});
+const DriverLoadReceipt=dynamic(()=>import('./DriverDeliveryPlanner').then(module=>module.DriverLoadReceipt),{loading:WorkspaceLoading});
 
 const formatQuantity = value => value == null ? '-' : new Intl.NumberFormat('en-CM', { maximumFractionDigits: 3 }).format(value);
 

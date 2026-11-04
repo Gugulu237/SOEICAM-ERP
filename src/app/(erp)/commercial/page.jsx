@@ -1,4 +1,3 @@
 'use client';
-import dynamic from 'next/dynamic';
-const Screen = dynamic(() => import('@/views/CommercialWorkspace'), { ssr: false });
+import Screen from '@/views/CommercialWorkspace';
 export default function Page() { return <Screen />; }

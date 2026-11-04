@@ -7,13 +7,14 @@ import {stockOnHandGroups} from '@/lib/stock-on-hand';
 import {stockUnit} from '@/lib/item-units';
 import {businessDate} from '@/lib/business-date';
 import {formatDate, formatNumber} from '@/lib/formatters';
-import {ui} from '@/lib/i18n';
+import {ui,getLocale} from '@/lib/i18n';
 import ProductThumb from '@/components/shared/ProductThumb';
 import {Button} from '@/components/ui/button';
 
 const PAGE_SIZE = 20;
 function BatchDetails({group}) {
   const unit = stockUnit(group.product);
+  const [page,setPage]=useState(0),pages=Math.max(1,Math.ceil(group.rows.length/25)),currentPage=Math.min(page,pages-1);
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
       <span>{ui('On hand')}: <strong>{formatNumber(group.quantity, 3)} {unit}</strong></span>
@@ -22,7 +23,7 @@ function BatchDetails({group}) {
     {group.issues && <p role="alert" className="text-sm text-red-700">{ui('Some stock records need reconciliation. Ask a top administrator to review the count.')}</p>}
     {group.rows.some(row => row.expiryMissing && row.available > 0) && <p className="text-xs text-amber-800">{ui('Some available stock has no verified expiry. Check it before supply.')}</p>}
     <div className="space-y-2" aria-label={ui('Remaining batches for {0}', group.product.name)}>
-      {group.rows.map(row => <article key={row.id} className="rounded-lg border bg-white p-2 text-xs">
+      {group.rows.slice(currentPage*25,currentPage*25+25).map(row => <article key={row.id} className="rounded-lg border bg-white p-2 text-xs">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0 flex-1 break-words"><p className="font-semibold">{ui('Lot')}: {row.lot_number || ui('Not recorded')}</p><p className="text-xs text-slate-600">{ui('Production batch')}: {row.batch_number || ui('Not recorded')}</p>{!row.batch_number && row.production_order_id && <p className="text-xs text-slate-500">{ui('Production record')}: {row.production_order_id}</p>}</div>
           <strong className="text-right">{row.quantity === null ? ui('Invalid quantity') : formatNumber(row.quantity, 3)} {unit}</strong>
@@ -38,6 +39,7 @@ function BatchDetails({group}) {
         </div>
       </article>)}
     </div>
+    {pages>1&&<nav aria-label={ui('Stock record pages')} className="flex items-center justify-between gap-2 text-xs"><Button type="button" variant="outline" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>{ui('Previous')}</Button><span>{ui('Page {0} of {1}',currentPage+1,pages)}</span><Button type="button" variant="outline" disabled={currentPage>=pages-1} onClick={()=>setPage(currentPage+1)}>{ui('Next')}</Button></nav>}
   </div>;
 }
 
@@ -47,7 +49,8 @@ export default function StockOnHand({products, balances, warehouses, warehouseId
   const anchor=useRef(null);
   const date = businessDate();
   const matching = useMemo(() => stockOnHandGroups(products, balances, warehouses, {warehouseId, search, expiry, date}), [products, balances, warehouses, warehouseId, search, expiry, date]);
-  const groups=sortProductRows(matching,sort,row=>row.product);
+  const locale=getLocale();
+  const groups=useMemo(()=>sortProductRows(matching,sort,row=>row.product),[matching,sort,locale]);
   const selected=groups.find(group=>group.product.id===expanded);
   const pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE)), currentPage = Math.min(page, pages);
   const filtered = search.trim() || expiry !== 'all';
@@ -71,7 +74,7 @@ export default function StockOnHand({products, balances, warehouses, warehouseId
         </button>
       </section>;
     })}</div>
-    {selected&&<ProductQuickView title={selected.product.name} focusRef={anchor} onClose={()=>setExpanded(null)}><BatchDetails group={selected}/></ProductQuickView>}
+    {selected&&<ProductQuickView title={selected.product.name} focusRef={anchor} onClose={()=>setExpanded(null)}><BatchDetails key={selected.product.id} group={selected}/></ProductQuickView>}
     {groups.length > PAGE_SIZE && <div className="flex items-center justify-between gap-2 text-sm"><Button variant="outline" disabled={currentPage <= 1} onClick={() => {setPage(currentPage - 1); setExpanded(null);}}>{ui('Previous')}</Button><span>{ui('Page {0} of {1}', currentPage, pages)}</span><Button variant="outline" disabled={currentPage >= pages} onClick={() => {setPage(currentPage + 1); setExpanded(null);}}>{ui('Next')}</Button></div>}
   </div>;
 }

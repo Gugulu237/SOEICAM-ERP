@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './mobile-task-fixtures.mjs';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(import.meta.url);
@@ -6,7 +7,7 @@ const require = createRequire(import.meta.url);
 // Only platform hooks, session/transport and leaf input widgets are fixtures.
 export async function commercialUI() {
   const output = await build({ stdin: { contents: `import React from 'react'; import {renderToStaticMarkup} from 'react-dom/server'; import Dashboard from './src/components/home/CommercialDashboard.jsx'; import Hotesse from './src/components/outlets/HotesseWorkspace.jsx'; export const render = (props,kind='dashboard') => renderToStaticMarkup(React.createElement(kind==='hotesse'?Hotesse:Dashboard, props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false,
-    plugins: [{ name: 'commercial-flow', setup(b) {
+    plugins:[loadedMobileTasks(),{ name: 'commercial-flow', setup(b) {
       b.onResolve({ filter: /^react$/ }, args => /(?:CommercialDashboard|FieldSaleForm|HotesseWorkspace|CommercialQuickActions|SaleReplacements)\.jsx$/.test(args.importer) ? { path: args.importer.endsWith('CommercialQuickActions.jsx') ? 'quick' : args.importer.endsWith('SaleReplacements.jsx') ? 'replacements' : args.importer.endsWith('FieldSaleForm.jsx') ? 'form' : args.importer.endsWith('HotesseWorkspace.jsx') ? 'hotesse' : 'dashboard', namespace: 'flow-hooks' } : undefined);
       b.onLoad({ filter: /.*/, namespace: 'flow-hooks' }, ({ path: key }) => ({ contents: `
         import React from ${JSON.stringify(require.resolve('react'))};

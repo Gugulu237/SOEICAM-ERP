@@ -10,14 +10,16 @@ import PageHeader from "@/components/shared/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown } from "lucide-react";
-import PeriodsManager from "@/components/accounting/PeriodsManager";
-import PostingRulesManager from "@/components/accounting/PostingRulesManager";
+import dynamic from 'next/dynamic';
+import WorkspaceLoading from '@/components/home/WorkspaceLoading';
+const PeriodsManager=dynamic(()=>import('@/components/accounting/PeriodsManager'),{loading:WorkspaceLoading});
+const PostingRulesManager=dynamic(()=>import('@/components/accounting/PostingRulesManager'),{loading:WorkspaceLoading});
 import ChartOfAccountsManager from "@/components/accounting/ChartOfAccountsManager";
 import AccountingPanelBoundary from '@/components/accounting/AccountingPanelBoundary';
-import JournalRegister from "@/components/accounting/JournalRegister";
-import PaymentRegister from "@/components/accounting/PaymentRegister";
+const JournalRegister=dynamic(()=>import('@/components/accounting/JournalRegister'),{loading:WorkspaceLoading});
+const PaymentRegister=dynamic(()=>import('@/components/accounting/PaymentRegister'),{loading:WorkspaceLoading});
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import ManagementAccounting from '@/components/accounting/ManagementAccounting';
+const ManagementAccounting=dynamic(()=>import('@/components/accounting/ManagementAccounting'),{loading:WorkspaceLoading});
 
 export default function Accounting() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

@@ -21,7 +21,8 @@ export async function linkedClerkContext(tx, subject) {
       coalesce((SELECT jsonb_agg(to_jsonb(staff)) FROM (
         SELECT * FROM public.employee WHERE user_id=profile.id ORDER BY id LIMIT 2
       ) staff), '[]'::jsonb) AS employees,
-      (SELECT extra_data->'staff_role_catalogue' FROM public.company_settings ORDER BY created_date LIMIT 1) AS role_catalogue
+      (SELECT extra_data->'staff_role_catalogue' FROM public.company_settings ORDER BY created_date LIMIT 1) AS role_catalogue,
+      (SELECT default_language FROM public.company_settings ORDER BY id LIMIT 1) AS company_language
     FROM erp_private.auth_identities binding
     LEFT JOIN public."user" profile ON profile.id=binding.erp_user_id
     WHERE binding.provider='clerk' AND binding.subject=$1`, [subject]);
@@ -30,7 +31,7 @@ export async function linkedClerkContext(tx, subject) {
   if (!user) throw denied('The linked ERP account is missing. Contact the General Manager.', 409);
   const employees = linked.employees || [];
   if (employees.length > 1) throw denied('This login is linked to more than one employee. Ask the General Manager to correct the assignment.', 409);
-  return { user, employee:flattenRecord(employees[0]), roleCatalogue:catalogueFromStored(linked.role_catalogue) };
+  return { user, employee:flattenRecord(employees[0]), roleCatalogue:catalogueFromStored(linked.role_catalogue), companyLanguage:linked.company_language || 'fr' };
 }
 
 // auth() validates the Clerk session on every request. Existing bindings do not

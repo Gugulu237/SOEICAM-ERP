@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
@@ -6,7 +7,7 @@ import { dashboardPreview } from '../src/lib/dashboard-preview.js';
 const require = createRequire(import.meta.url);
 
 test('Operations dashboard and sidebar expose the requested features, and sales stays a read-only register', async () => {
-  const output = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Home from './src/components/home/ProductionHome.jsx';import Sidebar from './src/components/layout/AppSidebar.jsx';import Sales from './src/views/Sales.jsx';import {modulesForRole} from './src/lib/appModules.js';export const modules=modulesForRole('production_manager');export const render=(name,props)=>renderToStaticMarkup(React.createElement({home:Home,sidebar:Sidebar,sales:Sales}[name],props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, format: 'cjs', platform: 'node', write: false, plugins: [{ name: 'operations-ui', setup(b) {
+  const output = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Home from './src/components/home/ProductionHome.jsx';import Sidebar from './src/components/layout/AppSidebar.jsx';import Sales from './src/views/Sales.jsx';import {modulesForRole} from './src/lib/appModules.js';export const modules=modulesForRole('production_manager');export const render=(name,props)=>renderToStaticMarkup(React.createElement({home:Home,sidebar:Sidebar,sales:Sales}[name],props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, format: 'cjs', platform: 'node', write: false, plugins: [loadedMobileTasks(),{ name: 'operations-ui', setup(b) {
     b.onResolve({ filter: /^react$/ }, args => args.importer.endsWith('CompanySalesRegister.jsx') ? { path: 'hooks', namespace: 'fixture' } : undefined);
     b.onLoad({ filter: /^hooks$/, namespace: 'fixture' }, () => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};export default React;export const useState=initial=>[initial===null?globalThis.__operationsUI.sales:typeof initial==='function'?initial():initial,()=>{}];export const useEffect=()=>{};`, resolveDir: process.cwd() }));
     const mocks = {

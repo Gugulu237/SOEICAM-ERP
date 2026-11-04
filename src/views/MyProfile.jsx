@@ -1,5 +1,6 @@
 'use client';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
+import dynamic from 'next/dynamic';
 import {UserRound,Save,RefreshCw} from 'lucide-react';
 import {useAuth} from '@/lib/AuthContext';
 import {useLocaleRender} from '@/lib/localization';
@@ -11,6 +12,9 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import DeviceNotificationSettings from '@/components/pwa/DeviceNotificationSettings';
+import {usesClerk} from '@/lib/auth-provider';
+
+const ClerkAccountControl=dynamic(()=>import('@/components/ClerkAccountControl'),{loading:()=> <p role="status" className="p-5 text-sm text-slate-500">{ui('Loading...')}</p>});
 
 async function profileRequest(options={}){
   const response=await fetch('/api/profile',{credentials:'same-origin',cache:'no-store',...options});
@@ -66,6 +70,7 @@ export default function MyProfile(){
           <div className="flex flex-wrap gap-2"><Button type="submit" disabled={saving}><Save size={16} className="mr-2"/>{saving?ui('Saving...'):ui('Save changes')}</Button><Button type="button" variant="outline" disabled={saving} onClick={()=>load()}>{ui('Reload profile')}</Button></div>
         </form>
         <div className="space-y-6">
+          {usesClerk()&&<ClerkAccountControl/>}
           <DeviceNotificationSettings/>
           <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><h2 className="font-semibold text-slate-900">{ui('Language preferences')}</h2><p className="text-sm leading-6 text-slate-500">{ui('Choose French, English or the company default. Your choice is saved automatically for your account.')}</p><LanguageSelector id="profile-language"/></section>
           {profile.employee_id && <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><h2 className="font-semibold text-slate-900">{ui('Employment details')}</h2><dl className="space-y-3 text-sm">{[[ui('Employee name'),profile.employee_name],[ui('Employee number'),profile.employee_number],[ui('Job title'),profile.job_title],[ui('Role'),profile.role_label]].filter(([,value])=>value).map(([label,value])=><div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-slate-800">{value}</dd></div>)}</dl><p className="text-xs leading-5 text-slate-500">{ui('Contact the General Manager to update your employment details.')}</p></section>}

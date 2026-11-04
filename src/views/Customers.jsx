@@ -17,16 +17,17 @@ import PageHeader from "@/components/shared/PageHeader";
 
 
 import CustomerGroupedList from "@/components/customers/CustomerGroupedList";
-import CustomerCollectionDialog from "@/components/customers/CustomerCollectionDialog";
-import CustomerGpsDialog from "@/components/customers/CustomerGpsDialog";
+import WorkspaceLoading from '@/components/home/WorkspaceLoading';
+const CustomerCollectionDialog=dynamic(()=>import('@/components/customers/CustomerCollectionDialog'),{loading:WorkspaceLoading});
+const CustomerGpsDialog=dynamic(()=>import('@/components/customers/CustomerGpsDialog'),{loading:WorkspaceLoading});
 import { canCaptureCustomerGps } from "@/components/customers/CustomerGpsButton";
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import useCustomerPaymentStatus from '@/components/customers/useCustomerPaymentStatus';
 import CustomerPaymentSummary from '@/components/customers/CustomerPaymentSummary';
-import CustomerOpeningBalance from '@/components/customers/CustomerOpeningBalance';
-import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
+const CustomerOpeningBalance=dynamic(()=>import('@/components/customers/CustomerOpeningBalance'),{loading:WorkspaceLoading});
+const CustomerReceivePayment=dynamic(()=>import('@/components/customers/CustomerReceivePayment'),{loading:WorkspaceLoading});
 import CustomerInfo from '@/components/customers/CustomerInfo';
-import PartnerDetail from "@/components/customers/PartnerDetail";
+const PartnerDetail=dynamic(()=>import('@/components/customers/PartnerDetail'),{loading:WorkspaceLoading});
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

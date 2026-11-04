@@ -55,10 +55,10 @@ export async function authenticateRequest(feature) {
     const employee = decorateEmployee(context.user,context.employee,roleCatalogue);
     return featureContext({ ...context, employee, roleCatalogue, role:effectiveRole(context.user,employee) },feature);
   }
-  const { user, authUserId, employee: linkedEmployee, roleCatalogue } = await authenticateSupabase();
+  const { user, authUserId, employee: linkedEmployee, roleCatalogue, companyLanguage } = await authenticateSupabase();
   assertEmployeeNotRemoved(linkedEmployee);
   const employee = decorateEmployee(user,linkedEmployee,roleCatalogue);
-  return featureContext({ user, employee, authUserId, roleCatalogue, role:effectiveRole(user,employee) },feature);
+  return featureContext({ user, employee, authUserId, roleCatalogue, companyLanguage, role:effectiveRole(user,employee) },feature);
 }
 
 export function checkOrigin(request) {

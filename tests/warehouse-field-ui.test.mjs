@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
@@ -7,7 +8,7 @@ const require = createRequire(import.meta.url);
 let compiled;
 async function renderer() {
   if (compiled) return compiled;
-  const output = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Driver from './src/components/home/DriverDashboard.jsx';import Returns from './src/components/field/CommercialReturns.jsx';import FieldInventoryCards,{InventoryProductCard} from './src/components/field/FieldInventoryCards.jsx';export const render=(name,props)=>renderToStaticMarkup(React.createElement({Driver,Returns,InventoryProductCard,FieldInventoryCards}[name],props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false, plugins: [{ name: 'warehouse-field-ui', setup(b) {
+  const output = await build({ stdin: { contents: `import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Driver from './src/components/home/DriverDashboard.jsx';import Returns from './src/components/field/CommercialReturns.jsx';import FieldInventoryCards,{InventoryProductCard} from './src/components/field/FieldInventoryCards.jsx';export const render=(name,props)=>renderToStaticMarkup(React.createElement({Driver,Returns,InventoryProductCard,FieldInventoryCards}[name],props));`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false, plugins:[loadedMobileTasks(),{ name: 'warehouse-field-ui', setup(b) {
     b.onResolve({ filter: /^react$/ }, a => /(?:CommercialReturns|FieldInventoryCards)\.jsx$/.test(a.importer) ? { path: 'hooks', namespace: 'fixture' } : undefined);
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__warehouseUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__warehouseUI.state('return',v),useRef=v=>globalThis.__warehouseUI.ref('return',v),useEffect=(fn,deps)=>globalThis.__warehouseUI.effect('return',fn,deps),useMemo=fn=>fn();`, resolveDir: process.cwd() }));
     const mocks = {

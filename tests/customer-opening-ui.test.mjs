@@ -1,10 +1,11 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
-const bundle=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Action,{OpeningDialog} from './src/components/customers/CustomerOpeningBalance.jsx';export const render=(props,action=false)=>renderToStaticMarkup(React.createElement(action?Action:OpeningDialog,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'opening-ui',setup(b){
+const bundle=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Action,{OpeningDialog} from './src/components/customers/CustomerOpeningBalance.jsx';export const render=(props,action=false)=>renderToStaticMarkup(React.createElement(action?Action:OpeningDialog,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[loadedMobileTasks(),{name:'opening-ui',setup(b){
  b.onResolve({filter:/^react$/},a=>a.importer.endsWith('CustomerOpeningBalance.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
  b.onLoad({filter:/.*/,namespace:'fixture'},()=>({resolveDir:process.cwd(),contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__openingUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__openingUI.state('opening',v),useRef=v=>globalThis.__openingUI.ref('opening',v),useEffect=(fn,deps)=>globalThis.__openingUI.effect('opening',fn,deps);`}));
  const mocks={

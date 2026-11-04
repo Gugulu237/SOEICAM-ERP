@@ -1,7 +1,9 @@
 import ReportExport from '@/components/shared/ReportExport';
 import { auditDocument, stockDocument } from '@/lib/report-models';
 import { loadReportPages } from '@/lib/report-pages';
-import StockAdjustmentDialog from '@/components/inventory/StockAdjustmentDialog';
+import dynamic from 'next/dynamic';
+import WorkspaceLoading from '@/components/home/WorkspaceLoading';
+const StockAdjustmentDialog=dynamic(()=>import('@/components/inventory/StockAdjustmentDialog'),{loading:WorkspaceLoading});
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { canAdjustInventory } from '@/lib/inventory-adjustment-access';
 

@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -10,7 +11,7 @@ test('own Commercial dashboard exposes entry while management reports remain rea
     import CommercialDashboard from './src/components/home/CommercialDashboard.jsx';
     export const render = props => renderToStaticMarkup(React.createElement(CommercialDashboard, props));
   `, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false,
-    plugins: [{ name: 'commercial-ui', setup(builder) {
+    plugins:[loadedMobileTasks(),{ name: 'commercial-ui', setup(builder) {
       builder.onResolve({ filter: /^@\/lib\/router$/ }, () => ({ path: 'router', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/api\/erpClient$/ }, () => ({ path: 'client', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/components\/ui\/button$/ }, () => ({ path: 'button', namespace: 'commercial-ui' }));

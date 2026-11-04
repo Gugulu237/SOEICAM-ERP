@@ -2,7 +2,7 @@ import {sortProductRows} from '@/lib/product-sorting';
 import ProductSortSelect from '@/components/shared/ProductSortSelect';
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
+import { ui, getLocale } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useMemo, useRef, useState } from 'react';
 import { usePageState } from '@/lib/navigation-context';
@@ -22,50 +22,55 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
 
   const picking = selling || selecting || !!onQuantityChange;
   const [editing,setEditing]=useState(''),[draft,setDraft]=useState(''),anchor=useRef(null);
-  const active=products.find(product=>product.id===editing);
+  const byId=useMemo(()=>new Map(products.map(product=>[product.id,product])),[products]);
+  const selectedLines=useMemo(()=>{const index=new Map();for(const line of lines)if(!index.has(line.product_id))index.set(line.product_id,line);return index;},[lines]);
+  const active=byId.get(editing);
   const limit=product=>quantityLimit?Number(quantityLimit(product)):Number(product.quantity);
   const closeQuantity=()=>setEditing('');
   const [search, setSearch] = usePageState(picking ? 'product-picker:search' : 'catalogue:search', '');
   const [family, setFamily] = usePageState(picking ? 'product-picker:family' : 'catalogue:family', 'All');
   const [flavor, setFlavor] = usePageState(picking ? 'product-picker:flavor' : 'catalogue:flavor', 'All');
   const [sort,setSort]=usePageState('product-picker:sort','name');
-  const decorated = useMemo(() => products.map((product) => ({ product, ...productPresentation(product) })), [products]);
-  const families = [...new Set(decorated.map((p) => p.family))];
-  const flavors = [...new Set(decorated.map((p) => p.flavor).filter(Boolean))];
-  const filtered = sortProductRows(decorated.filter((p) => (family === 'All' || p.family === family) && (flavor === 'All' || p.flavor === flavor)
-    && normalizeProductText([p.product.name, p.product.sku, p.product.category, p.size, p.flavor].join(' ')).includes(normalizeProductText(search))),sort,row=>row.product);
-  const reset = () => { setSearch(''); setFamily('All'); setFlavor('All'); };
+  const [page,setPage]=usePageState(picking?'product-picker:page':'catalogue:page',0);
+  const decorated = useMemo(() => products.map(product=>{const presentation=productPresentation(product);return {product,...presentation,search:normalizeProductText([product.name,product.sku,product.category,presentation.size,presentation.flavor].join(' '))};}), [products]);
+  const families = useMemo(()=>[...new Set(decorated.map(p=>p.family))],[decorated]);
+  const flavors = useMemo(()=>[...new Set(decorated.map(p=>p.flavor).filter(Boolean))],[decorated]);
+  const locale=getLocale();
+  const filtered = useMemo(()=>{const query=normalizeProductText(search);return sortProductRows(decorated.filter(p=>(family==='All'||p.family===family)&&(flavor==='All'||p.flavor===flavor)&&p.search.includes(query)),sort,row=>row.product);},[decorated,family,flavor,search,sort,locale]);
+  const pages=Math.max(1,Math.ceil(filtered.length/24)),currentPage=Math.min(Math.max(0,page),pages-1),visible=filtered.slice(currentPage*24,currentPage*24+24);
+  const update=(setter,value)=>{setter(value);setPage(0);closeQuantity();};
+  const reset = () => { setSearch(''); setFamily('All'); setFlavor('All');setPage(0);closeQuantity(); };
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
-          <Input aria-label={ui("Search products")} placeholder={ui("Find a product, flavor or code…")} value={search} onChange={(e) => setSearch(e.target.value)} className="h-11 bg-white pl-10 pr-10" />
-          {search && <button type="button" aria-label={ui("Clear product search")} onClick={() => setSearch('')} className="absolute right-0 top-0 flex h-11 w-10 items-center justify-center"><X size={16} /></button>}
+          <Input aria-label={ui("Search products")} placeholder={ui("Find a product, flavor or code…")} value={search} onChange={(e) => update(setSearch,e.target.value)} className="h-11 bg-white pl-10 pr-10" />
+          {search && <button type="button" aria-label={ui("Clear product search")} onClick={() => update(setSearch,'')} className="absolute right-0 top-0 flex h-11 w-10 items-center justify-center"><X size={16} /></button>}
         </div>
-        {flavors.length > 1 && <select aria-label={ui("Filter by flavor")} value={flavor} onChange={(e) => setFlavor(e.target.value)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm sm:max-w-40">
+        {flavors.length > 1 && <select aria-label={ui("Filter by flavor")} value={flavor} onChange={(e) => update(setFlavor,e.target.value)} className="h-11 rounded-md border border-slate-200 bg-white px-3 text-sm sm:max-w-40">
           <option value="All">{ui("All flavors")}</option>{flavors.map((f) => <option key={f}>{f}</option>)}
         </select>}
       </div>
       {families.length > 1 && <div className="flex flex-wrap gap-2" aria-label={ui("Product categories")}>
-        {['All', ...families].map((f) => <button type="button" key={f} aria-pressed={family === f} onClick={() => setFamily(f)}
+        {['All', ...families].map((f) => <button type="button" key={f} aria-pressed={family === f} onClick={() => update(setFamily,f)}
           className={`min-h-10 rounded-full border px-4 text-sm font-medium transition-colors ${family === f ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'}`}>{f}</button>)}
       </div>}
-      <ProductSortSelect value={sort} onChange={setSort} className="sm:max-w-xs"/>
+      <ProductSortSelect value={sort} onChange={value=>update(setSort,value)} className="sm:max-w-xs"/>
       <div className="flex items-center justify-between text-xs text-slate-500"><span>{filtered.length}{ui(" product")}{filtered.length !== 1 ? 's' : ''}</span>{picking && <span>{ui(onQuantityChange?'Tap a product to enter quantity':'Tap a photo to add')}</span>}</div>
       {!filtered.length ? <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center">
         <PackageSearch className="mx-auto mb-3 h-9 w-9 text-slate-400" /><p className="text-sm text-slate-600">{products.length ? ui("No products match these filters.") : emptyMessage}</p>
         {products.length > 0 && <Button variant="link" onClick={reset}>{ui("Clear filters")}</Button>}
       </div> : <div className={`grid grid-cols-2 gap-3 ${picking ? 'sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4' : 'sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'}`}>
-        {filtered.map(({ product, size, flavor: productFlavor }) => {
-          const quantity = Number(lines.find((line) => line.product_id === product.id)?.quantity) || 0;
+        {visible.map(({ product, size, flavor: productFlavor }) => {
+          const quantity = Number(selectedLines.get(product.id)?.quantity) || 0;
           const remaining = Math.max(0, Math.round(((product.quantity || 0) - quantity) * 1000) / 1000);
-          const selected=lines.some(line=>line.product_id===product.id);
+          const selected=selectedLines.has(product.id);
           const unavailable = picking && (onQuantityChange
             ? !selected && (!(limit(product)>0) || !Number.isFinite(limit(product)) || (selling && !(Number(product.selling_price)>0)))
             : remaining<=0 || (selling && !(Number(product.selling_price)>0)));
           return <article key={product.id} className={`group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white transition-shadow hover:shadow-md ${quantity ? 'border-slate-400 ring-1 ring-primary' : 'border-slate-200'}`}>
-            <button type="button" disabled={disabled || unavailable} onClick={event=>{if(onQuantityChange){anchor.current=event.currentTarget;setEditing(product.id);setDraft(lines.find(line=>line.product_id===product.id)?.quantity??'');}else onSelect?.(product);}} aria-label={onQuantityChange?ui('Enter quantity for {0}',product.name):picking ? ui("Add {0} to {1}", product.name, selling ? 'sale' : 'selection') : ui("Open {0}", product.name)}
+            <button type="button" disabled={disabled || unavailable} onClick={event=>{if(onQuantityChange){anchor.current=event.currentTarget;setEditing(product.id);setDraft(selectedLines.get(product.id)?.quantity??'');}else onSelect?.(product);}} aria-label={onQuantityChange?ui('Enter quantity for {0}',product.name):picking ? ui("Add {0} to {1}", product.name, selling ? 'sale' : 'selection') : ui("Open {0}", product.name)}
               className="flex flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-default">
               <div className="relative w-full">
                 <ProductPhoto product={product} className="aspect-[4/3] w-full" imageClassName="p-2 transition-transform group-hover:scale-105" />
@@ -91,7 +96,8 @@ export default function ProductCatalog({ products, onSelect, lines = [], selling
           </article>;
         })}
       </div>}
-      {active&&onQuantityChange&&<PickerPopdown anchorRef={anchor} onOpenChange={open=>{if(!open)closeQuantity();}} label={ui('Enter quantity for {0}',active.name)}><ProductQuantityBar product={active} value={draft} onChange={setDraft} maximum={limit(active)} label={quantityLabel} existing={lines.some(line=>line.product_id===active.id)} disabled={disabled} showAvailability={!hideAvailability} onConfirm={quantity=>{if(disabled||!validProductQuantity(quantity,limit(active)))return;onQuantityChange(active,quantity);closeQuantity();}} onCancel={closeQuantity} onRemove={()=>{if(!disabled){onQuantityChange(active,null);closeQuantity();}}}/></PickerPopdown>}
+      {pages>1&&<nav aria-label={ui('Product pages')} className="flex items-center justify-between gap-3 text-xs text-slate-500"><Button type="button" variant="outline" aria-label={ui('Previous product page')} disabled={!currentPage} onClick={()=>{setPage(currentPage-1);closeQuantity();}}>{ui('Previous')}</Button><span>{ui('Page {0} of {1}',currentPage+1,pages)}</span><Button type="button" variant="outline" aria-label={ui('Next product page')} disabled={currentPage>=pages-1} onClick={()=>{setPage(currentPage+1);closeQuantity();}}>{ui('Next')}</Button></nav>}
+      {active&&onQuantityChange&&<PickerPopdown anchorRef={anchor} onOpenChange={open=>{if(!open)closeQuantity();}} label={ui('Enter quantity for {0}',active.name)}><ProductQuantityBar product={active} value={draft} onChange={setDraft} maximum={limit(active)} label={quantityLabel} existing={selectedLines.has(active.id)} disabled={disabled} showAvailability={!hideAvailability} onConfirm={quantity=>{if(disabled||!validProductQuantity(quantity,limit(active)))return;onQuantityChange(active,quantity);closeQuantity();}} onCancel={closeQuantity} onRemove={()=>{if(!disabled){onQuantityChange(active,null);closeQuantity();}}}/></PickerPopdown>}
     </div>
   );
 }

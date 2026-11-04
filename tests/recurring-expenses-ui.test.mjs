@@ -1,3 +1,4 @@
+import {loadedMobileTasks} from './helpers/mobile-task-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
@@ -7,7 +8,7 @@ const require=createRequire(import.meta.url);
 let compiled;
 async function renderer(){
  if(compiled)return compiled;
- const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {ChargeDialog} from './src/views/RecurringExpenses.jsx';import Settings from './src/components/accounting/RecurringExpenseSettings.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='settings'?Settings:ChargeDialog,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',platform:'node',format:'cjs',write:false,plugins:[{name:'recurring-ui',setup(b){
+ const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {ChargeDialog} from './src/views/RecurringExpenses.jsx';import Settings from './src/components/accounting/RecurringExpenseSettings.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='settings'?Settings:ChargeDialog,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',platform:'node',format:'cjs',write:false,plugins:[loadedMobileTasks(),{name:'recurring-ui',setup(b){
   const component=/(RecurringExpenses|RecurringExpenseSettings)\.jsx$/;
   b.onResolve({filter:/^react\/jsx-runtime$/},a=>component.test(a.importer)?{path:'jsx',namespace:'capture'}:undefined);
   b.onLoad({filter:/.*/,namespace:'capture'},()=>({contents:`import {jsx as x,jsxs as xs,Fragment} from ${JSON.stringify(require.resolve('react/jsx-runtime'))};export {Fragment};export const jsx=(tag,props,key)=>{globalThis.__recurringUI.capture(tag,props,props?.children);return x(tag,props,key);};export const jsxs=(tag,props,key)=>{globalThis.__recurringUI.capture(tag,props,props?.children);return xs(tag,props,key);};`,resolveDir:process.cwd()}));

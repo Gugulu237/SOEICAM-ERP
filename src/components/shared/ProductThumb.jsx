@@ -29,9 +29,9 @@ export function ProductPhoto({ product = {}, src, name, className = '', imageCla
   return (
     <div style={style} className={cn('relative flex shrink-0 items-center justify-center overflow-hidden bg-slate-50', className)}>
       {show && prepared ? <img key={resolved} {...prepared} sizes={sizes} alt={name || product.name || product.product_name || ui("Product")} loading={priority?'eager':'lazy'} fetchPriority={priority?'high':'auto'} decoding="async" onError={() => setFailed(resolved)} className={imageClasses}/>
-        : show && optimize ? <Image key={resolved} src={resolved} alt={name || product.name || product.product_name || ui("Product")} fill sizes={sizes}
+        : show && optimize ? <Image key={resolved} src={resolved} alt={name || product.name || product.product_name || ui("Product")} fill sizes={sizes} loading={priority?'eager':'lazy'} fetchPriority={priority?'high':'auto'}
         onError={() => setFailed(resolved)} className={imageClasses} />
-        : show ? <img key={resolved} src={resolved} alt={name || product.name || product.product_name || ui("Product")} loading="lazy" decoding="async"
+        : show ? <img key={resolved} src={resolved} alt={name || product.name || product.product_name || ui("Product")} loading={priority?'eager':'lazy'} fetchPriority={priority?'high':'auto'} decoding="async"
         onError={() => setFailed(resolved)} className={imageClasses} />
         : <Package aria-hidden="true" className="h-1/3 w-1/3 max-h-12 max-w-12 text-slate-400" />}
     </div>

@@ -25,7 +25,11 @@ export function createPwaClient(browser, onChange, {enableWorker = false} = {}) 
 
   // Production only: development/HMR chunks must never enter persistent caches.
   if (enableWorker && state.secure && nav.serviceWorker && browser.top === browser.self) {
-    nav.serviceWorker.register('/sw.js', {scope: '/', updateViaCache: 'none'}).then(registration => {
+    let queued=false,started=false;
+    const register=()=>{
+      if(disposed||started)return;
+      started=true;
+      nav.serviceWorker.register('/sw.js', {scope: '/', updateViaCache: 'none'}).then(registration => {
       if (disposed) return;
       const inspect = () => {
         if (registration.waiting && nav.serviceWorker.controller) publish({updateReady: true});
@@ -41,7 +45,26 @@ export function createPwaClient(browser, onChange, {enableWorker = false} = {}) 
         if (browser.document.visibilityState !== 'visible' || nav.onLine === false || Date.now() - lastUpdateCheck < 3600000) return;
         lastUpdateCheck = Date.now(); registration.update().catch(() => {});
       });
-    }).catch(() => publish({workerError: true}));
+      }).catch(() => publish({workerError: true}));
+    };
+    // Installing the worker also fetches its public shell images. Wait until the
+    // current page has loaded so those downloads do not compete with startup.
+    // Install/offline listeners above remain ready from the first render.
+    const scheduleRegistration=()=>{
+      if(disposed||queued)return;
+      queued=true;
+      if(typeof browser.requestIdleCallback==='function'){
+        const id=browser.requestIdleCallback(register,{timeout:2000});
+        cleanup.push(()=>browser.cancelIdleCallback?.(id));
+      }else{
+        const schedule=browser.setTimeout?.bind(browser)||setTimeout;
+        const cancel=browser.clearTimeout?.bind(browser)||clearTimeout;
+        const id=schedule(register,1000);
+        cleanup.push(()=>cancel(id));
+      }
+    };
+    if(['loading','interactive'].includes(browser.document.readyState))listen(browser,'load',scheduleRegistration);
+    else scheduleRegistration();
   }
   return {
     async install() {
