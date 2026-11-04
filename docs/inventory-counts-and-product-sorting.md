@@ -57,6 +57,15 @@ the posting transaction, so movements between a periodic check and Save are caug
 
 Lot and valuation tools retain the separate detailed correction workflow.
 
+Opening-stock quantities and physical counts use the same three-decimal stock
+precision. A legacy value such as `49.99999999999999` is recognized as `50` only
+when the difference is within machine-level floating-point noise. This prevents
+otherwise valid packaging and raw-material counts from being disabled. Genuine
+extra precision, negative stock, residual values on empty lots and missing
+valuations still require the existing accounting checks. Original stock records
+remain part of the concurrency fingerprint, including unchanged batches; reading
+a count sheet does not rewrite historical balances or their carrying values.
+
 In detailed tools, **Count item** opens existing stock. **Add counted lot** is a separate,
 explicit action for a newly found physical lot; only one unsaved new lot per
 product is offered at a time. The server rejects existing lot and production

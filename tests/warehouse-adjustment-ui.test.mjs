@@ -207,6 +207,59 @@ test('new lots require an explicit action and repeated clicks keep a single draf
 
 
 const simpleWorkspace=()=>({...structuredClone(workspace),date:'2026-11-03',gain_accounts:[{id:'surplus',account_number:'7580',name:'Stock surplus'}],items:workspace.items.map(item=>({...item,inventory_account:{id:'inventory',account_number:'1310',name:'Inventory'}}))});
+for(const [group,name,unit] of [['packaging','Cups','ea'],['ingredients','Milk powder','kg']])test(`${group} shortages with binary-noise stock quantities reach review and posting without batch or expiry entry`,async()=>{
+ const render=await renderer();
+ for(const quantity of ['48','0']){
+  const r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
+  data.item_group=group;
+  data.items[0]={...data.items[0],name,unit,inventory_type:'raw_material',count_group:group,count_fingerprint:'item-proof'};
+  // Historical opening arithmetic can persist this value instead of exact 50.
+  data.rows[0]={...data.rows[0],product_name:name,unit,book_quantity:49.99999999999999,book_value:500,inventory_type:'raw_material',count_group:group,lot_number:group==='packaging'?'':'MILK-01',expiry_date:''};
+  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-NORMALIZED')};};
+  const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
+  try{
+   draw();await r.flush();draw();const count=element(r,'input','Physical quantity for '+name);assert.equal(Boolean(count.disabled),false);
+   count.onChange({target:{value:quantity}});draw();assert.equal(element(r,'input','Physical quantity for '+name)['aria-invalid'],false);assert.equal(button(r,'Review adjustment').disabled,false);
+   button(r,'Review adjustment').onClick();let html=draw();assert.match(html,/Review stock adjustment/);assert.match(html,/Accounting entry/);assert.match(html,/Debit/);assert.match(html,/Credit/);
+   assert.equal(element(r,'input','Lot number for '+name),undefined);assert.equal(element(r,'input','Printed expiry for '+name),undefined);
+   assert.equal(r.elements.some(e=>e.tag==='input'&&String(e.props['aria-label']).startsWith('Batch quantity for ')),false);
+   assert.equal(element(r,'select','Inventory loss account').value,'variance');assert.equal(element(r,'select','Inventory surplus account'),undefined);
+   assert.equal(button(r,'Post adjustment').disabled,true,'a valid shortage still requires its count reference and reason');
+   element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-'+group+'-'+quantity}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified physical shortage'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
+   await button(r,'Post adjustment').onClick();assert.match(draw(),/Stock count posted/);
+   const writes=calls.filter(body=>body.action==='postWarehouseAdjustment');assert.equal(writes.length,1);const posted=writes[0];
+   assert.equal(posted.lossAccountId,'variance');assert.equal(posted.itemGroup,group);
+   assert.deepEqual(posted.item_counts,[{product_id:'milk',item_fingerprint:'item-proof',counted_quantity:Number(quantity),snapshots:[{balance_id:'lot',fingerprint:'server-snapshot'}]}]);
+   assert.deepEqual(posted.rows,[{balance_id:'lot',fingerprint:'server-snapshot',counted_quantity:Number(quantity)}]);
+   assert.equal(data.rows[0].book_quantity,49.99999999999999,'client normalization must not mutate the loaded stock proof');
+  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+ }
+});
+
+test('quantity normalization still blocks invalid physical counts, genuine recorded precision errors and missing inventory mapping',async()=>{
+ const render=await renderer();
+ for(const scenario of ['negative','physical precision','recorded precision','inventory mapping']){
+  const r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
+  data.item_group='ingredients';data.items[0].count_group='ingredients';
+  data.rows[0]={...data.rows[0],book_quantity:scenario==='recorded precision'?49.9999:49.99999999999999,book_value:500};
+  if(scenario==='inventory mapping')delete data.items[0].inventory_account;
+  r.invoke=async body=>{calls.push(body);return {data};};
+  const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
+  try{
+   draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:scenario==='negative'?'-1':scenario==='physical precision'?'48.0001':'48'}});let html=draw();
+   if(scenario==='inventory mapping'){
+    assert.equal(button(r,'Review adjustment').disabled,false);button(r,'Review adjustment').onClick();draw();
+    element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-MISSING-ACCOUNT'}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified physical shortage'}});html=draw();
+    assert.match(html,/Configure the inventory asset account/);assert.equal(button(r,'Post adjustment').disabled,true);await button(r,'Post adjustment').onClick();
+   }else{
+    assert.equal(button(r,'Review adjustment').disabled,true);assert.equal(element(r,'input','Physical quantity for Milk powder')['aria-invalid'],true);
+    assert.match(html,scenario==='recorded precision'?/Recorded stock needs an accounting correction/:/Physical quantities must be non-negative with up to three decimal places/);
+   }
+   assert.equal(calls.some(body=>body.action==='postWarehouseAdjustment'),false,scenario+' must not post');
+  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+ }
+});
+
 test('packaging count review has no batch or expiry inputs and can submit the physical quantity',async()=>{
  const render=await renderer(),r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
  data.items[0]={...data.items[0],count_group:'packaging',inventory_type:'raw_material'};data.rows=[];data.item_group='packaging';

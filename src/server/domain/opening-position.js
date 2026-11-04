@@ -8,6 +8,8 @@ import {companySalesWarehouse} from '../../lib/sales-stock.js';
 import {MANAGED_WAREHOUSE_TYPES} from '../../lib/warehouse-workspace.js';
 import {assetDate,assetMonths,shiftMonth} from '../../lib/asset-schedule.js';
 import {openingPartyLines,isOpeningRecord} from '../../lib/opening-records.js';
+import {normalizeRecordedQuantity} from '../../lib/warehouse-count.js';
+import {roundQuantity} from '../../lib/inventory-audit.js';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
@@ -65,8 +67,8 @@ async function prepare(stores,context,body){
    const p=by('products',row.product_id),w=by('warehouses',row.warehouse_id);
    if(!p||!w)throw fail('Choose a configured inventory item and an active factory warehouse.');
    if(!companySalesWarehouse(w))throw fail('Choose an active company stock location for opening inventory.');
-   const quantity=Number(row.quantity),cost=Number(row.unit_cost);
-   if(!['number','string'].includes(typeof row.quantity)||!String(row.quantity).trim()||!Number.isFinite(quantity)||quantity<=0||quantity>1e9||Math.abs(quantity*1000-Math.round(quantity*1000))>0.00001)throw fail('Enter a positive opening quantity with at most three decimal places.');
+   const quantity=normalizeRecordedQuantity(row.quantity),cost=Number(row.unit_cost);
+   if(!['number','string'].includes(typeof row.quantity)||!String(row.quantity).trim()||!Number.isFinite(quantity)||quantity<=0||quantity>1e9||quantity!==roundQuantity(quantity))throw fail('Enter a positive opening quantity with at most three decimal places.');
    if(!['number','string'].includes(typeof row.unit_cost)||!String(row.unit_cost).trim()||!Number.isFinite(cost)||cost<=0||cost>1e12||Math.abs(cost*1e6-Math.round(cost*1e6))>0.0001)throw fail('Enter a positive opening unit cost with at most six decimal places.');
    const lot=row.lot_number?reference(row.lot_number):'OPEN-'+date,expiry='';
    if(balances.some(b=>b.product_id===p.id&&b.warehouse_id===w.id&&(Number(b.quantity??0)!==0||Number(b.total_value??0)!==0))||movements.some(m=>m.product_id===p.id&&[m.source_warehouse_id,m.destination_warehouse_id,m.warehouse_id].includes(w.id)))throw fail('This item already has stock activity in that warehouse. Reconcile its stock in Inventory instead of importing it again.');

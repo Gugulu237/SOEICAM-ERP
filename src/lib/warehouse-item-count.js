@@ -1,5 +1,5 @@
 import {countedQuantity,roundMoney,roundQuantity} from './inventory-audit.js';
-import {warehouseCountState,warehouseCountVariance} from './warehouse-count.js';
+import {normalizeRecordedQuantity,warehouseCountState,warehouseCountVariance} from './warehouse-count.js';
 import {isPackagingItem} from './inventory-packaging.js';
 
 // A shortage reduces existing valuation layers in the same FEFO order as stock
@@ -7,6 +7,9 @@ import {isPackagingItem} from './inventory-packaging.js';
 // physically counted. Users can replace it with explicit lot counts at review.
 export function physicalItemCount(item,stockRows,value,batchCounts={},found={}) {
   const quantity=countedQuantity(value);
+  // Opening quantities may retain insignificant binary arithmetic noise. Use
+  // the same narrow normalization as the stock snapshot without changing proof.
+  stockRows=stockRows.map(row=>({...row,book_quantity:normalizeRecordedQuantity(row.book_quantity)}));
   if(stockRows.some(row=>!Number.isFinite(Number(row.book_quantity))))throw Error('Recorded stock needs an accounting correction before counting.');
   const book=roundQuantity(stockRows.reduce((sum,row)=>sum+Number(row.book_quantity),0)),difference=roundQuantity(quantity-book);
   const base={product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:book,counted_quantity:quantity,difference,rows:[],value_difference:0};
@@ -93,14 +96,14 @@ export function verifyItemCountTotals(itemCounts,inputs,balances,snapshotFor){
       if(item.snapshots.find(row=>row?.balance_id===balance.id)?.fingerprint!==currentSnapshots.get(balance.id).fingerprint)throw Error('Stock changed since this item count. Reload quantities and count again.');
     }
     if(current.some(row=>!Number.isFinite(Number(row.quantity))))throw Error('Recorded stock needs an accounting correction before counting.');
-    const book=roundQuantity(current.reduce((sum,row)=>sum+Number(row.quantity),0));
+    const book=roundQuantity(current.reduce((sum,row)=>sum+normalizeRecordedQuantity(row.quantity),0));
     let after=book;
     for(const input of inputs){
       const balance=input?.balance_id?balances.find(row=>row.id===input.balance_id):null;
       const productId=balance?.product_id||input?.product_id;
       if(productId!==item.product_id)continue;
       if(input.ready_for_sale||input.ready_for_use||input.use_current_cost||input.confirm_reconciliation)throw Error('Use accounting corrections or quality release separately from a physical item count.');
-      after=roundQuantity(after+countedQuantity(input.counted_quantity)-Number(balance?.quantity||0));
+      after=roundQuantity(after+countedQuantity(input.counted_quantity)-normalizeRecordedQuantity(balance?.quantity||0));
     }
     if(after!==counted)throw Error('Batch quantities must equal the physical item count.');
     if(item.allocation_method==='fefo'){
@@ -113,7 +116,7 @@ export function verifyItemCountTotals(itemCounts,inputs,balances,snapshotFor){
         if(!balance||submitted.has(balance.id))throw Error('Automatic shortage allocation must use each existing stock record only once.');
         submitted.set(balance.id,countedQuantity(input.counted_quantity));
       }
-      if(current.some(balance=>(submitted.has(balance.id)?submitted.get(balance.id):Number(balance.quantity))!==allocation.batch_counts[balance.id]))throw Error('Automatic shortage allocation changed. Reload quantities and review the count again.');
+      if(current.some(balance=>(submitted.has(balance.id)?submitted.get(balance.id):normalizeRecordedQuantity(balance.quantity))!==allocation.batch_counts[balance.id]))throw Error('Automatic shortage allocation changed. Reload quantities and review the count again.');
     }
     summaries.push({product_id:item.product_id,book_quantity:book,counted_quantity:counted,difference:roundQuantity(counted-book),...(item.allocation_method==='fefo'?{allocation_method:'fefo'}:{})});
   }

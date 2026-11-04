@@ -25,6 +25,58 @@ test('multi-lot shortages allocate existing stock FEFO and retain each layer car
  assert.deepEqual(rows,before);
 });
 
+test('packaging and raw material shortages use recorded storage quantities and costs exactly like finished goods without new lot or expiry requirements',()=>{
+ const variants=[
+  {inventory_type:'packaging',count_group:'packaging',unit:'ea'},
+  {inventory_type:'raw_material',material_group:'Packaging',count_group:'packaging',unit:'ea'},
+  {inventory_type:'raw_material',count_group:'ingredients',unit:'kg',purchase_to_storage_factor:25},
+  {inventory_type:'assembly',count_group:'finished',unit:'ea'},
+ ];
+ for(const variant of variants){
+  const product={...item,...variant,unit_cost:999},layers=[
+   {...rows[0],lot_number:'',expiry_date:'',book_quantity:10.125,book_value:25.5,unit_cost:999},
+   {...rows[1],lot_number:'',expiry_date:'',book_quantity:5.125,book_value:51.25,unit_cost:999},
+  ];
+  const plan=physicalItemCount(product,layers,8.125);
+  assert.equal(plan.needs_batches,undefined);assert.equal(plan.needs_lot,undefined);assert.equal(plan.allocation_method,'fefo');
+  assert.deepEqual(plan.batch_counts,{a:3,b:5.125});assert.equal(plan.value_difference,-17.94);
+  assert.equal(plan.rows[0].value_after,7.56);assert.equal(plan.rows[0].lot_number,'');assert.equal(plan.rows[0].expiry_date,'');
+  assert.equal(plan.rows[0].qc_status,'approved');assert.equal(layers[1].qc_status,'quarantine');
+  const journal=itemCountJournal([plan],[product],loss,undefined);
+  assert.equal(journal.find(line=>line.id==='loss').debit,17.94);assert.equal(journal.find(line=>line.id==='stock').credit,17.94);
+  assert.equal(journal.reduce((sum,line)=>sum+line.debit-line.credit,0),0);
+ }
+});
+
+test('imported material quantities with binary noise support shortages without mutating stock evidence or unchanged layers',()=>{
+ for(const fixture of [
+  {inventory_type:'raw_material',count_group:'ingredients',unit:'kg',quantities:[0.3-0.1,49.99999999999999],values:[100,500],count:50.1,after:[0.1,50],loss:50},
+  {inventory_type:'packaging',count_group:'packaging',unit:'ea',quantities:[49.99999999999999,24.999999999999996],values:[1000,250],count:70,after:[45,25],loss:100},
+ ]){
+  const product={...item,...fixture},layers=rows.map((row,index)=>({...row,book_quantity:fixture.quantities[index],book_value:fixture.values[index],lot_number:'',expiry_date:'',unit_cost:999})),before=structuredClone(layers);
+  const plan=physicalItemCount(product,layers,fixture.count);
+  assert.equal(plan.allocation_method,'fefo');assert.equal(plan.needs_batches,undefined);assert.equal(plan.needs_lot,undefined);
+  assert.deepEqual(plan.batch_counts,{a:fixture.after[0],b:fixture.after[1]});assert.equal(plan.rows.length,1);assert.equal(plan.rows[0].fingerprint,'A');
+  assert.equal(plan.rows[0].value_after,fixture.values[0]-fixture.loss);assert.equal(plan.value_difference,-fixture.loss);assert.deepEqual(layers,before);
+  const manual=physicalItemCount(product,layers,fixture.count,{a:fixture.after[0]});
+  assert.deepEqual(manual.batch_counts,plan.batch_counts);assert.equal(manual.value_difference,plan.value_difference);assert.equal(manual.allocation_method,undefined);
+  const balances=layers.map(row=>({id:row.balance_id,product_id:item.id,quantity:row.book_quantity})),saved=structuredClone(balances);
+  const counts=[{product_id:item.id,counted_quantity:fixture.count,allocation_method:'fefo',snapshots:layers.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}],inputs=plan.rows.map(row=>({balance_id:row.balance_id,counted_quantity:row.counted_quantity}));
+  const snapshot=balance=>layers.find(row=>row.balance_id===balance.id);
+  const summary=verifyItemCountTotals(counts,inputs,balances,snapshot)[0];
+  assert.equal(summary.counted_quantity,fixture.count);assert.equal(summary.allocation_method,'fefo');assert.equal(summary.book_quantity,Math.round(fixture.quantities.reduce((sum,q)=>sum+q,0)*1000)/1000);assert.deepEqual(balances,saved);
+  assert.throws(()=>verifyItemCountTotals(counts,inputs,balances,balance=>({...snapshot(balance),fingerprint:balance.id==='b'?'changed':snapshot(balance).fingerprint})),/Stock changed/);
+  const journal=itemCountJournal([plan],[product],loss,undefined);assert.equal(journal.find(line=>line.id==='loss').debit,fixture.loss);assert.equal(journal.find(line=>line.id==='stock').credit,fixture.loss);
+ }
+});
+
+test('binary-noise handling does not accept actual excess precision, negative books or residual values on empty stock',()=>{
+ for(const patch of [{book_quantity:0.2004},{book_quantity:49.9999999},{book_quantity:-Number.EPSILON},{book_quantity:Number.EPSILON},{book_quantity:0,book_value:0.01}]){
+  assert.throws(()=>physicalItemCount({...item,count_group:'ingredients'},[{...rows[0],...patch},rows[1]],1),/accounting correction/);
+ }
+ assert.throws(()=>physicalItemCount(item,rows,13.0004),/three decimal places/);
+});
+
 test('explicit batch counts replace automatic allocation and must reconcile to the physical total',()=>{
  const before=structuredClone(rows);
  const plan=physicalItemCount(item,rows,13,{a:8});

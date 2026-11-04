@@ -4,7 +4,7 @@ import {stockOrigin,isExistingStockOrigin} from '../../lib/stock-origin.js';
 import {EXISTING_STOCK_ACTIONS,existingStockAction} from './existing-stock.js';
 import {isAssemblyInventoryType} from '../../lib/item-types.js';
 import {companySalesWarehouse} from '../../lib/sales-stock.js';
-import { warehouseCountState, warehouseCountVariance } from '../../lib/warehouse-count.js';
+import { warehouseCountState, warehouseCountVariance, normalizeRecordedQuantity } from '../../lib/warehouse-count.js';
 import { verifyItemCountTotals } from '../../lib/warehouse-item-count.js';
 import {COUNT_ITEM_GROUPS,stockCountGroup,warehouseCountGroup,countGroupMatches} from '../../lib/stock-count-scope.js';
 import { adjustmentAccess } from './inventory-adjustment-access.js';
@@ -26,7 +26,7 @@ function stockSnapshot(balance,product,warehouse,rules) {
   if (!configured(product)) throw Error('Choose an active, configured inventory item.');
   const row={balance_id:balance.id,product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,
     configured_unit_cost:itemUnitCost(product),inventory_type:product.inventory_type,count_group:stockCountGroup(product),requires_expiry:stockCountGroup(product)!=='packaging'&&!!balance.production_order_id,opening_batch_id:balance.opening_batch_id || '',lot_number:balance.lot_number || '',batch_number:balance.batch_number || '',expiry_date:balance.expiry_date || '',qc_status:balance.qc_status || 'approved',production_order_id:balance.production_order_id || '',
-    book_quantity:Number(balance.quantity),book_value:Number(balance.total_value),unit_cost:Number(balance.quantity)===0 && Number(balance.unit_cost ?? 0)===0?itemUnitCost(product):Number(balance.unit_cost ?? 0)};
+    book_quantity:normalizeRecordedQuantity(balance.quantity),book_value:Number(balance.total_value),unit_cost:Number(balance.quantity)===0 && Number(balance.unit_cost ?? 0)===0?itemUnitCost(product):Number(balance.unit_cost ?? 0)};
   Object.assign(row,warehouseCountState(row));
   const rule=isAssemblyInventoryType(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
   return {...row,fingerprint:hash([balance,stockUnit(product),product.inventory_account_id || rules.find(r=>r.rule_key===rule)?.account_id || '',product.inventory_type,warehouse.is_active,warehouse.warehouse_type,itemUnitCost(product),product.purchase_to_storage_factor])};

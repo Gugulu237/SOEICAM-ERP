@@ -16,6 +16,8 @@ import {openingPositionTotals} from '../src/lib/opening-position-totals.js';
 import {companySalesRegister} from '../src/lib/company-sales.js';
 import {scheduleThrough} from '../src/lib/asset-schedule.js';
 import {guardMutation} from '../src/server/access.js';
+import {warehouseAdjustmentAction} from '../src/server/domain/warehouse-adjustment.js';
+import {physicalItemCount} from '../src/lib/warehouse-item-count.js';
 const context={user:{id:'gm',role:'admin'},role:'admin',employee:null};
 const previous=new Date(date.slice(0,8)+'01T12:00:00Z');previous.setUTCDate(0);const opening=previous.toISOString().slice(0,10);
 async function setup(db){
@@ -65,6 +67,52 @@ test('opening position posts one balanced batch, fills registers and preserves p
  const totals=openingPositionTotals(f.body.details,f.body.lines,w);assert.equal(totals.debit,180000);assert.equal(totals.credit,180000);
  assert.equal(companySalesRegister({invoices:await s.Invoice.list(),from:opening,to:date}).rows.length,0);
 });
+test('opening packaging and raw-material quantities with arithmetic noise remain countable and shortages preserve their ledger value',async()=>{
+ for(const scenario of [
+  {inventory_type:'packaging',group:'packaging',quantity:49.99999999999999,canonical:50,count:49.5},
+  {inventory_type:'raw_material',group:'ingredients',quantity:0.3-0.1,canonical:0.2,count:0.1},
+ ])for(const legacy of [false,true]){
+  const f=await setup(),s=f.entities;
+  await s.Product.update(f.product.id,{inventory_type:scenario.inventory_type});
+  await s.Employee.update('cashier',{role:'admin'});
+  const value=scenario.canonical*500;
+  const openingBody={...f.body,details:[{kind:'stock',product_id:f.product.id,warehouse_id:'factory',quantity:scenario.quantity,unit_cost:500}],lines:[{account_id:f.equity.id,credit:value}]};
+  const opened=await saveOpeningPosition(s,context,openingBody),balanceId=opened.stock[0];
+  assert.equal((await s.StockBalance.get(balanceId)).quantity,scenario.canonical);
+  assert.equal((await s.StockBalance.get(balanceId)).total_value,value);
+  // Older opening code accepted the same input but stored its original Number.
+  if(legacy)await s.StockBalance.update(balanceId,{quantity:scenario.quantity});
+  const beforeRead=await s.StockBalance.get(balanceId);
+  const call=body=>warehouseAdjustmentAction(f.client,user,{warehouseId:'factory',...body});
+  const workspace=await call({action:'warehouseAdjustmentWorkspace',itemGroup:scenario.group}),item=workspace.items.find(row=>row.id===f.product.id),rows=workspace.rows.filter(row=>row.product_id===item.id);
+  assert.deepEqual(await s.StockBalance.get(balanceId),beforeRead);assert.equal(rows[0].book_quantity,scenario.canonical);assert.equal(rows[0].count_issue,'');
+  const plan=physicalItemCount(item,rows,scenario.count);
+  const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:scenario.group,lossAccountId:'expense',reference:'OPENING-SHORTAGE',reason:'Signed physical count after opening stock',
+   item_counts:[{product_id:item.id,item_fingerprint:item.count_fingerprint,counted_quantity:scenario.count,snapshots:rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}],
+   rows:plan.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:row.counted_quantity}))};
+  if(legacy){
+   await s.StockBalance.update(balanceId,{quantity:scenario.canonical});
+   await assert.rejects(call(body),/changed since this item count/);assert.equal((await s.JournalEntry.list()).length,1);
+   await s.StockBalance.update(balanceId,{quantity:scenario.quantity});
+  }
+  const adjusted=await call(body),loss=(scenario.canonical-scenario.count)*500,after=await s.StockBalance.get(balanceId);
+  assert.equal(adjusted.value_difference,-loss);assert.equal(after.quantity,scenario.count);assert.equal(after.total_value,scenario.count*500);
+  assert.equal(after.qc_status,beforeRead.qc_status);assert.equal(after.expiry_date,beforeRead.expiry_date);assert.equal(after.opening_batch_id,beforeRead.opening_batch_id);
+  const lines=await s.JournalLine.filter({journal_id:adjusted.journal_id});
+  assert.equal(lines.find(row=>row.account_id==='expense').debit,loss);assert.equal(lines.find(row=>row.account_id==='inventory').credit,loss);assert.equal(lines.reduce((sum,row)=>sum+row.debit-row.credit,0),0);
+  assert.equal((await s.Bill.list()).length,0);assert.equal((await s.Account.get('payable')).balance,0);
+  assert.equal((await call(body)).reused,true);
+ }
+});
+
+test('opening stock rejects genuine extra quantity precision instead of silently rounding it',async()=>{
+ const f=await setup(),before=structuredClone(f.rows);
+ for(const quantity of [1.0001,1.000000001,0.0004,Number.EPSILON,-Number.EPSILON]){
+  const body={...f.body,details:f.body.details.map(row=>row.kind==='stock'?{...row,quantity}:row)};
+  await assert.rejects(saveOpeningPosition(f.entities,context,body),/opening quantity/);assert.deepEqual(f.rows,before);
+ }
+});
+
 test('legacy GL balances accept exact debt schedules once without a second journal or changed monetary lines',async()=>{
  const f=await setup(),s=f.entities,details=f.body.details.filter(d=>['receivable','payable'].includes(d.kind));
  await postOpeningBalances(s,context,{...f.body,details:undefined,lines:[{account_id:'receivable',debit:25000},{account_id:'payable',credit:10000},{account_id:f.equity.id,credit:15000}],acknowledgeControlBalances:true});

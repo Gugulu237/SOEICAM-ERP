@@ -488,6 +488,35 @@ test('an automatic shortage cannot post its loss to a liability account',async()
  assert.deepEqual(await s.StockBalance.list(),before);assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.StockMovement.list()).length,0);assert.equal((await s.Account.get('payable')).balance,0);
 });
 
+test('packaging and raw-material shortages use their configured stock rule and carrying costs without requiring batch or expiry metadata',async()=>{
+ const categories=[
+  {name:'Packaging cups',inventory_type:'packaging',unit_of_measure:'ea',group:'packaging'},
+  {name:'Packaging stickers',inventory_type:'raw_material',material_group:'Packaging',unit_of_measure:'ea',group:'packaging'},
+  {name:'Raw milk powder',inventory_type:'raw_material',material_group:'Raw materials',unit_of_measure:'g',group:'ingredients'},
+  {name:'Purchased sugar',inventory_type:'inventory_item',material_group:'Ingredients',unit_of_measure:'kg',group:'ingredients'},
+ ];
+ for(const {group,...category} of categories){
+  const f=await setup(),s=f.entities;
+  await s.Product.update(f.product.id,{...category,inventory_account_id:'',purchase_price:50000,purchase_to_storage_factor:1000});
+  await s.PostingRule.create({rule_key:'raw_material_inventory',account_id:f.inventory.id,is_active:true});
+  await s.Account.update(f.inventory.id,{balance:200});
+  for(const [index,lot] of f.lots.entries())await s.StockBalance.update(lot.id,{lot_number:'',batch_number:'',expiry_date:'',production_order_id:'',unit_cost:index?20:10,total_value:100,stock_origin:'purchase'});
+  const workspace=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:group}),item=workspace.items.find(row=>row.id===f.product.id),plan=physicalItemCount(item,workspace.rows,3);
+  assert.equal(item.count_group,group);assert.equal(item.unit_cost,50);assert.equal(item.inventory_account.id,f.inventory.id);
+  assert.equal(plan.needs_batches,undefined);assert.equal(plan.needs_lot,undefined);assert.equal(plan.value_difference,-140);
+  const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:group,lossAccountId:'expense',reference:'MATERIAL-COUNT',reason:'Verified non-finished stock shortage',
+   item_counts:[{product_id:item.id,item_fingerprint:item.count_fingerprint,counted_quantity:3,allocation_method:plan.allocation_method,snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}],
+   rows:plan.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:row.counted_quantity}))};
+  const result=await f.call(body),remaining=await s.StockBalance.filter({product_id:item.id});
+  assert.equal(result.item_group,group);assert.equal(result.value_difference,-140);assert.equal(result.gain_account,null);
+  assert.equal((await s.Account.get('expense')).balance,140);assert.equal((await s.Account.get(f.inventory.id)).balance,60);
+  assert.equal(remaining.reduce((sum,row)=>sum+row.quantity,0),3);assert.equal(remaining.reduce((sum,row)=>sum+row.total_value,0),60);
+  for(const original of workspace.rows){const row=remaining.find(value=>value.id===original.balance_id);assert.equal(row.qc_status,original.qc_status);assert.equal(row.lot_number,'');assert.equal(row.batch_number,'');assert.equal(row.expiry_date,'');assert.equal(row.stock_origin,'purchase');}
+  assert.equal((await s.Bill.list()).length,0);assert.equal((await s.Account.get('payable')).balance,0);
+  assert.equal((await f.call(body)).reused,true);assert.equal((await s.JournalEntry.list()).length,1);
+ }
+});
+
 test('item counts post losses and surpluses to dedicated accounts and retain a balanced immutable item receipt',async()=>{
  const f=await setup(),body=await simpleBody(f),beforeCash=await f.entities.TreasuryAccount.list();
  const result=await f.call(body);
