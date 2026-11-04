@@ -128,7 +128,6 @@
   "Count batches": "Compter les lots",
   "Hide batches": "Masquer les lots",
   "Add another counted lot for {0}": "Ajouter un autre lot compté de {0}",
-
   "Sales menu": "Menu des ventes",
   "Cashier menu": "Menu de caisse",
   "Sales sections": "Rubriques des ventes",
@@ -7476,5 +7475,12 @@
   "Point of sale tasks": "Activités du point de vente",
   "No loaded inventory awaiting receipt.": "Aucun chargement à réceptionner.",
   "Load to receive": "Chargement à réceptionner",
-  "Finish your work, close all SOEICAM windows and reopen the app to activate notifications.": "Terminez votre travail, fermez toutes les fenêtres SOEICAM et rouvrez l’application pour activer les notifications."
+  "Finish your work, close all SOEICAM windows and reopen the app to activate notifications.": "Terminez votre travail, fermez toutes les fenêtres SOEICAM et rouvrez l’application pour activer les notifications.",
+  "The shortage is allocated automatically, earliest expiry first. Review batch quantities only if your count differs.": "Le manque est réparti automatiquement, par date de péremption croissante. Vérifiez les quantités par lot seulement si votre comptage diffère.",
+  "Review batch quantities": "Vérifier les quantités par lot",
+  "Select the inventory loss account to record this shortage as an expense.": "Sélectionnez le compte de pertes de stock pour comptabiliser ce manque en charge.",
+  "Choose a supported stock count allocation method.": "Choisissez une méthode de répartition de comptage prise en charge.",
+  "Automatic shortage allocation requires a lower item count across multiple stock records.": "La répartition automatique du manque exige un comptage inférieur au stock de plusieurs lots.",
+  "Automatic shortage allocation must use each existing stock record only once.": "La répartition automatique du manque ne peut utiliser chaque lot existant qu'une seule fois.",
+  "Automatic shortage allocation changed. Reload quantities and review the count again.": "La répartition automatique du manque a changé. Rechargez les quantités et vérifiez le comptage."
 }

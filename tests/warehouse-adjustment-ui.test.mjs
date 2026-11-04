@@ -234,17 +234,37 @@ test('simple item count shows one input per product and posts the reviewed physi
   assert.equal(Object.hasOwn(body.rows[0],'use_current_cost'),false);assert.equal(Object.hasOwn(body.rows[0],'ready_for_sale'),false);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
-test('multiple batches stay out of the count list; only a changed total needs matching batch quantities',async()=>{
+test('shortage review prefills batch allocation and preserves explicit corrections without hiding invalid counts',async()=>{
  const render=await renderer(),r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
  data.rows.push({...data.rows[0],balance_id:'second',fingerprint:'second-proof',book_quantity:5,book_value:50,lot_number:'MILK-02'});
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-MULTI')};};
  const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{
   draw();await r.flush();let html=draw();assert.equal(r.elements.filter(e=>e.tag==='input'&&e.props['aria-label']==='Physical quantity for Milk powder').length,1);assert.doesNotMatch(html,/MILK-01|MILK-02/);assert.match(html,/15/);
-  element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'13'}});draw();button(r,'Review adjustment').onClick();html=draw();assert.match(html,/Which batches changed/);assert.equal(button(r,'Post adjustment').disabled,true);
+  element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'13'}});draw();button(r,'Review adjustment').onClick();html=draw();assert.match(html,/shortage is allocated automatically/);assert.match(html,/Review batch quantities/);assert.equal(button(r,'Post adjustment').disabled,true);
+  assert.equal(element(r,'input','Batch quantity for Milk powder: MILK-01').value,8);assert.equal(element(r,'input','Batch quantity for Milk powder: MILK-02').value,5);
+  element(r,'input','Count sheet / reference').onChange({target:{value:'BATCH-COUNT'}});element(r,'input','Adjustment reason').onChange({target:{value:'Two units missing from lot one'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
+  element(r,'input','Batch quantity for Milk powder: MILK-02').onChange({target:{value:''}});draw();assert.equal(element(r,'input','Batch quantity for Milk powder: MILK-02').value,'');assert.equal(button(r,'Post adjustment').disabled,true);
+  element(r,'input','Batch quantity for Milk powder: MILK-02').onChange({target:{value:'5'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
   element(r,'input','Batch quantity for Milk powder: MILK-01').onChange({target:{value:'-1'}});draw();assert.ok(element(r,'input','Batch quantity for Milk powder: MILK-01'),'invalid draft must remain editable');
   element(r,'input','Batch quantity for Milk powder: MILK-01').onChange({target:{value:'8'}});draw();element(r,'input','Count sheet / reference').onChange({target:{value:'BATCH-COUNT'}});element(r,'input','Adjustment reason').onChange({target:{value:'Two units missing from lot one'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
-  await button(r,'Post adjustment').onClick();const body=calls.find(call=>call.action==='postWarehouseAdjustment');assert.equal(body.rows.length,1);assert.equal(body.rows[0].balance_id,'lot');assert.equal(body.item_counts[0].counted_quantity,13);assert.equal(body.item_counts[0].snapshots.length,2);
+  await button(r,'Post adjustment').onClick();const body=calls.find(call=>call.action==='postWarehouseAdjustment');assert.equal(body.rows.length,1);assert.equal(body.rows[0].balance_id,'lot');assert.equal(body.item_counts[0].counted_quantity,13);assert.equal(body.item_counts[0].snapshots.length,2);assert.equal(body.item_counts[0].allocation_method,undefined);
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+test('a multi-batch shortage posts from the item total with a loss account and no repeated batch entry',async()=>{
+ const render=await renderer(),r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
+ data.accounts.push({id:'other-expense',account_number:'6250',name:'Other expenses'});
+ data.rows.push({...data.rows[0],balance_id:'second',fingerprint:'second-proof',book_quantity:5,book_value:100,unit_cost:20,lot_number:'MILK-02'});
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-AUTO-LOSS')};};
+ const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try{
+  draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'3'}});draw();assert.equal(button(r,'Review adjustment').disabled,false);button(r,'Review adjustment').onClick();let html=draw();
+  assert.match(html,/Select the inventory loss account to record this shortage as an expense/);assert.equal(element(r,'select','Inventory surplus account'),undefined);
+  element(r,'select','Inventory loss account').onChange({target:{value:'variance'}});element(r,'input','Count sheet / reference').onChange({target:{value:'AUTO-SHORTAGE'}});element(r,'input','Adjustment reason').onChange({target:{value:'Warehouse physical shortage verified'}});html=draw();
+  assert.match(html,/Accounting entry/);assert.match(html,/Debit/);assert.match(html,/Credit/);assert.equal(button(r,'Post adjustment').disabled,false);
+  await button(r,'Post adjustment').onClick();const body=calls.find(call=>call.action==='postWarehouseAdjustment');assert.equal(body.lossAccountId,'variance');assert.equal(body.item_counts[0].allocation_method,'fefo');assert.equal(body.item_counts[0].counted_quantity,3);assert.equal(body.item_counts[0].snapshots.length,2);assert.deepEqual(body.rows.map(row=>[row.balance_id,row.counted_quantity]),[['lot',0],['second',3]]);
+  assert.match(draw(),/Stock count posted/);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 test('blank and matching counts do not post; zero counts all batches empty and surplus uses its own account',async()=>{

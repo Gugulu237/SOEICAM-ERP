@@ -6,6 +6,7 @@ import { fixture, functionRoute, request, user, date } from './helpers/cashier.m
 import { warehouseAdjustmentAction } from '../src/server/domain/warehouse-adjustment.js';
 import { guardMutation } from '../src/server/access.js';
 import {FEATURE_AUTHORITY} from '../src/server/domain/roles.js';
+import {physicalItemCount} from '../src/lib/warehouse-item-count.js';
 
 test('packaging physical counts post without entered lots or expiry and retry without duplicate quantities or journals',async()=>{
  const f=await setup(),s=f.entities;
@@ -426,6 +427,67 @@ async function simpleBody(f,counts=[8,6]){
  const {accountId,...body}=original;void accountId;
  return {...body,lossAccountId:'expense',gainAccountId:surplus.id,item_counts:[{product_id:f.product.id,item_fingerprint:workspace.items.find(p=>p.id===f.product.id).count_fingerprint,counted_quantity:counts.reduce((sum,n)=>sum+n,0),snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}]};
 }
+async function automaticShortageFixture(){
+ const f=await setup(),s=f.entities;
+ await s.StockBalance.update(f.lots[1].id,{unit_cost:20,total_value:100,expiry_date:'2027-02-01'});
+ const untouched=await s.StockBalance.create({product_id:f.product.id,product_name:f.product.name,warehouse_id:f.warehouse.id,lot_number:'LATER-HELD',batch_number:'BATCH-LATER',production_order_id:'production-2',expiry_date:'2027-03-01',quantity:4,unit_cost:30,total_value:120,qc_status:'rejected'});
+ const empty=await s.StockBalance.create({product_id:f.product.id,product_name:f.product.name,warehouse_id:f.warehouse.id,lot_number:'EMPTY-HISTORY',expiry_date:'2026-01-01',quantity:0,unit_cost:10,total_value:0,qc_status:'quarantine'});
+ await s.Account.update(f.inventory.id,{balance:320});
+ await s.Account.update('payable',{account_type:'liability'});
+ const loss=await s.Account.create({name:'Verified stock shortage',account_number:'6590',account_type:'expense',normal_balance:'debit',currency:'XAF',is_active:true,is_posting:true,balance:0});
+ const workspace=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'ingredients'}),item=workspace.items.find(row=>row.id===f.product.id);
+ const plan=physicalItemCount(item,workspace.rows,7);
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:'ingredients',lossAccountId:loss.id,reference:'SHORTAGE-COUNT',reason:'Physical shortage confirmed from item totals',
+  item_counts:[{product_id:item.id,item_fingerprint:item.count_fingerprint,counted_quantity:plan.counted_quantity,allocation_method:plan.allocation_method,snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}],
+  rows:plan.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:row.counted_quantity}))};
+ return {...f,untouched,empty,loss,workspace,plan,shortageBody:body};
+}
+
+test('an automatic multi-lot shortage posts the selected loss expense at individual carrying costs without a surplus account or payable',async()=>{
+ const f=await automaticShortageFixture(),s=f.entities,body=f.shortageBody;
+ assert.equal(f.plan.needs_batches,undefined);assert.equal(f.plan.allocation_method,'fefo');assert.equal(f.plan.value_difference,-140);
+ assert.ok(f.workspace.accounts.some(row=>row.id==='expense'));assert.ok(f.workspace.accounts.some(row=>row.id===f.loss.id));
+ assert.equal(body.gainAccountId,undefined);assert.equal(body.item_counts[0].snapshots.length,4);assert.equal(body.rows.length,2);
+ const beforeStock=await s.StockBalance.list(),beforeAccounts=await s.Account.list();
+ const financialEntities=['Bill','Payment','PaymentAllocation','Supplier','TreasuryAccount','TreasuryTransaction'];
+ const beforeOther=await Promise.all(financialEntities.map(name=>s[name].list()));
+ const result=await f.call(body);
+ assert.equal(result.value_difference,-140);assert.equal(result.loss_account.id,f.loss.id);assert.equal(result.gain_account,null);
+ assert.deepEqual(result.item_counts.map(row=>[row.book_quantity,row.counted_quantity,row.difference,row.allocation_method]),[[19,7,-12,'fefo']]);
+ const posted=await s.JournalLine.filter({journal_id:result.journal_id});
+ assert.deepEqual(posted.map(row=>({account_id:row.account_id,debit:row.debit,credit:row.credit})).sort((a,b)=>a.account_id.localeCompare(b.account_id)),[
+  {account_id:f.inventory.id,debit:0,credit:140},{account_id:f.loss.id,debit:140,credit:0},
+ ].sort((a,b)=>a.account_id.localeCompare(b.account_id)));
+ assert.equal(posted.reduce((sum,row)=>sum+row.debit-row.credit,0),0);
+ const actual=await s.StockBalance.list();
+ assert.deepEqual([f.lots[0],f.lots[1],f.untouched,f.empty].map(lot=>{const row=actual.find(value=>value.id===lot.id);return [row.quantity,row.total_value];}),[[0,0],[3,60],[4,120],[0,0]]);
+ for(const old of beforeStock){const row=actual.find(value=>value.id===old.id);for(const field of ['qc_status','expiry_date','lot_number','batch_number','production_order_id'])assert.equal(row[field],old[field]);}
+ assert.equal((await s.Account.get(f.inventory.id)).balance,180);assert.equal((await s.Account.get(f.loss.id)).balance,140);
+ for(const old of beforeAccounts.filter(row=>![f.inventory.id,f.loss.id].includes(row.id)))assert.deepEqual(await s.Account.get(old.id),old);
+ assert.equal((await s.Account.list()).length,beforeAccounts.length);assert.deepEqual(await Promise.all(financialEntities.map(name=>s[name].list())),beforeOther);
+ const saved=await Promise.all(['StockBalance','StockMovement','JournalEntry','JournalLine','AuditLog'].map(name=>s[name].list()));
+ assert.equal((await f.call(body)).reused,true);assert.deepEqual(await Promise.all(['StockBalance','StockMovement','JournalEntry','JournalLine','AuditLog'].map(name=>s[name].list())),saved);
+ await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/changed since this item count/);
+ assert.deepEqual(await Promise.all(['StockBalance','StockMovement','JournalEntry','JournalLine','AuditLog'].map(name=>s[name].list())),saved);
+});
+
+test('automatic shortages still require unchanged and empty layer snapshots and reject a fresh receipt before posting',async()=>{
+ for(const mode of ['omitted-empty','changed-untouched','new-receipt']){
+  const f=await automaticShortageFixture(),s=f.entities,body=f.shortageBody;
+  if(mode==='omitted-empty')body.item_counts[0].snapshots=body.item_counts[0].snapshots.filter(row=>row.balance_id!==f.empty.id);
+  if(mode==='changed-untouched')await s.StockBalance.update(f.untouched.id,{quantity:5,total_value:150});
+  if(mode==='new-receipt')await s.StockBalance.create({product_id:f.product.id,warehouse_id:f.warehouse.id,lot_number:'ARRIVED-AFTER-COUNT',quantity:2,unit_cost:40,total_value:80,qc_status:'approved'});
+  const before=await s.StockBalance.list();await assert.rejects(f.call(body),/changed since this item count/);
+  assert.deepEqual(await s.StockBalance.list(),before);assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.StockMovement.list()).length,0);
+ }
+});
+
+test('an automatic shortage cannot post its loss to a liability account',async()=>{
+ const f=await automaticShortageFixture(),s=f.entities,before=await s.StockBalance.list();
+ await assert.rejects(f.call({...f.shortageBody,lossAccountId:'payable'}),/inventory loss expense account/);
+ assert.deepEqual(await s.StockBalance.list(),before);assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.StockMovement.list()).length,0);assert.equal((await s.Account.get('payable')).balance,0);
+});
+
 test('item counts post losses and surpluses to dedicated accounts and retain a balanced immutable item receipt',async()=>{
  const f=await setup(),body=await simpleBody(f),beforeCash=await f.entities.TreasuryAccount.list();
  const result=await f.call(body);

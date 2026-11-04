@@ -23,11 +23,21 @@ inventory asset account; surpluses debit inventory and credit a dedicated
 other-income account. Amounts use recorded carrying values. Stock, movements,
 journal and the immutable item/batch receipt save in one transaction.
 
-Only changed totals held in multiple batches ask for the affected batch counts;
-these must add up to the physical item total. A zero total empties all batches.
-The system never guesses which dated batch disappeared. New stock needs its lot
-details and stays on quality hold. Batch expiry, holds and original costs remain
-attached to existing records.
+A shortage can proceed from the physical item total without entering every batch
+again. Existing stock layers are reduced in the same earliest-expiry-first order
+used for stock issues; undated layers come last, and stock-record IDs break ties.
+Each layer retains its own carrying cost. The review identifies this as an
+allocation, rather than an independently observed count of each batch. The server
+recomputes marked allocations and saves the method in the immutable receipt.
+
+**Review batch quantities** allows an explicit correction when counted lots differ
+from the proposed allocation. Editing starts from the displayed quantities; they
+must still add up to the physical item total. Ambiguous surpluses require explicit
+batch quantities. A zero total empties all batches. New stock needs its lot details
+and stays on quality hold; packaging does not require a supplier lot or expiry.
+Existing expiry, quality holds and stock history remain attached to each record.
+Shortages create an expense and reduce inventory; they do not create supplier
+payables or another liability. The existing loss-account selection remains required.
 
 Every stock record and the item's unit, cost and asset mapping are checked
 again on the server, including unchanged lots and concurrent new receipts.
@@ -65,4 +75,4 @@ Flavour aliases use the same canonical labels; equal flavours sort by size.
 Pagination applies after sorting. Batch expiry priority is unchanged.
 
 Validation uses isolated stock/accounting fixtures and real component callbacks.
-No live records, database migrations or external publications are performed.
+It does not change live records or run database migrations.
