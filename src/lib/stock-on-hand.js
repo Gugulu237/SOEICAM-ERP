@@ -28,7 +28,7 @@ export function stockOnHandGroups(products, balances, warehouses, {date = busine
     const expired = daysLeft !== null && daysLeft < 0;
     const qualityHeld = !!balance.qc_status && balance.qc_status !== 'approved';
     const outbound = !!warehouse && (['vehicle', 'commercial_custody'].includes(warehouse.warehouse_type) || !!warehouse.vehicle_id || !!warehouse.custodian_employee_id);
-    const configured = items.has(balance.product_id) && product.is_active !== false && !product.item_removed_at && product.configuration_status !== 'draft';
+    const configured = items.has(balance.product_id) && product.is_active !== false && !product.item_removed_at && (isAssemblyInventoryType(product.inventory_type) || product.configuration_status !== 'draft');
     const countIssue = invalidQuantity || quantity === 0 && Number(balance.total_value) !== 0;
     const available = !countIssue && !expired && !qualityHeld && configured && companySalesWarehouse(warehouse) && (!balance.expiry_date || expiryValid) ? quantity : 0;
     // Undated perishable stock is visible but is never recommended for dispatch.

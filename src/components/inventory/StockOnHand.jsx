@@ -8,7 +8,8 @@ import {stockUnit} from '@/lib/item-units';
 import {businessDate} from '@/lib/business-date';
 import {formatDate, formatNumber} from '@/lib/formatters';
 import {ui} from '@/lib/i18n';
-import ProductThumb from '@/components/shared/ProductThumb';
+import {ProductPhoto} from '@/components/shared/ProductThumb';
+import {inventoryDisplayName, inventoryVariants} from '@/lib/inventory-groups';
 import {Button} from '@/components/ui/button';
 
 const PAGE_SIZE = 20;
@@ -62,12 +63,16 @@ export default function StockOnHand({products, balances, warehouses, warehouseId
     <p className="sr-only">{ui('Open an item to see remaining quantities by lot, expiry and location. Earliest available expiry appears first.')}</p>
     {filtered && <p role="status" className="text-xs text-slate-600">{ui('Quantities below include only matching lots.')}</p>}
     {!groups.length && <p role="status" className="rounded-xl border bg-white p-6 text-sm text-slate-500">{ui('No remaining stock matches these filters.')}</p>}
-    <div className="space-y-2">{groups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(group => {
-      const open = expanded === group.product.id;
+    <div className="grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 xl:grid-cols-4">{groups.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(group => {
+      const open = expanded === group.product.id, variant = inventoryVariants(group.product);
       return <section key={group.product.id} className="min-w-0 overflow-hidden rounded-2xl border bg-white">
-        <button type="button" aria-label={ui('Stock details for {0}', group.product.name)} aria-haspopup="dialog" aria-expanded={open} onClick={event=>{anchor.current=event?.currentTarget;setExpanded(group.product.id);}} className="flex min-h-16 w-full min-w-0 items-center gap-2 p-2.5 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
-          <ProductThumb product={group.product} size={36}/><span className="min-w-0 flex-1 break-words text-sm font-semibold text-slate-900">{group.product.name}</span>
-          <span className="max-w-[35%] shrink-0 break-words text-right text-sm font-semibold text-primary">{formatNumber(group.quantity, 3)} <span className="text-xs font-normal">{stockUnit(group.product)}</span></span>
+        <button type="button" aria-label={ui('Stock details for {0}', group.product.name)} aria-haspopup="dialog" aria-expanded={open} onClick={event=>{anchor.current=event?.currentTarget;setExpanded(group.product.id);}} className="flex h-full w-full min-w-0 flex-col text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
+          <ProductPhoto product={group.product} className="h-28 w-full bg-slate-50 sm:h-36" imageClassName="p-3" sizes="(min-width: 1280px) 22vw, (min-width: 768px) 30vw, 45vw"/>
+          <span className="flex w-full min-w-0 flex-1 flex-col gap-3 p-3">
+            <span className="line-clamp-2 min-h-10 break-words text-sm font-semibold leading-5 text-slate-900 sm:text-base">{inventoryDisplayName(group.product,{includeSize:false})}</span>
+            {variant.size&&<span className="self-start rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{variant.size}</span>}
+            <span className="mt-auto block min-w-0"><span className="block text-xs text-slate-500">{ui('On hand')}</span><span className="block break-words text-lg font-bold leading-6 tabular-nums text-primary">{formatNumber(group.quantity, 3)} <span className="text-xs font-normal text-slate-500">{stockUnit(group.product)}</span></span></span>
+          </span>
         </button>
       </section>;
     })}</div>

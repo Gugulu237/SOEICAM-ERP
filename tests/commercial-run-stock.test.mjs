@@ -75,6 +75,9 @@ test('the real load manifest and active finished-product definition limit every 
   rows.DispatchLine[0].loaded_quantity = 1;
   await assert.rejects(assertRunSupplyStock(svc, context, [{ product_id: 'finished', quantity: 2 }]), /quantities loaded/);
   rows.DispatchLine[0].loaded_quantity = 10; rows.Product[0].configuration_status = 'draft';
+  await assertRunSupplyStock(svc, context, [{ product_id: 'finished', quantity: 1 }]);
+  assert.ok((await commercialRunInventory(svc, 'agent', date)).balances.some(row => row.product_id === 'finished'));
+  rows.Product[0].is_active = false;
   await assert.rejects(assertRunSupplyStock(svc, context, [{ product_id: 'finished', quantity: 1 }]), /active finished products/);
 });
 

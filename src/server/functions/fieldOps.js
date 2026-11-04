@@ -279,7 +279,7 @@ export default async function (req) {
       const products = await loadProducts(svc, combinedLines.map(l => l.product_id));
       for (const row of replacements) {
         const product = products[row.product_id];
-        if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw Error('Choose an active finished product for each replacement');
+        if (!finishedProduct(product) || product.is_active === false) throw Error('Choose an active finished product for each replacement');
       }
 
       const lines = [];
@@ -291,7 +291,7 @@ export default async function (req) {
         const product = products[l.product_id];
         if (!product) throw new Error('A selected product no longer exists');
         if (!finishedProduct(product)) throw new Error('Field sales accept only finished products and assemblies');
-        if (product.is_active === false || product.configuration_status === 'draft') throw new Error(`${product.name} is not ready for sale`);
+        if (product.is_active === false) throw new Error(`${product.name} is not ready for sale`);
         const qty = round3(l.quantity);
         if (typeof l.unit_price === 'boolean' || (l.unit_price != null && l.unit_price !== '' && !Number.isFinite(Number(l.unit_price)))) throw new Error('Enter a valid selling price');
         const listPrice = round2(product.selling_price);

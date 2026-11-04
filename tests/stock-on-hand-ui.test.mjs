@@ -26,7 +26,7 @@ test('stock quick view retains batch reports and closes independently; filters r
  const paint=()=>{r.beforeRender();return render({products,balances,warehouses});};
  const item=()=>r.buttons.find(b=>b['aria-label']==='Stock details for Fresh milk');
  try{
-  let html=paint();assert.match(html,/Fresh milk/);assert.doesNotMatch(html,/LOT-001|PROD-1|Send first/);assert.equal(item()['aria-expanded'],false);
+  let html=paint();assert.match(html,/grid-cols-2[^"]*md:grid-cols-3[^"]*xl:grid-cols-4/);assert.match(html,/Fresh milk/);assert.doesNotMatch(html,/LOT-001|PROD-1|Send first/);assert.equal(item()['aria-expanded'],false);
   item().onClick();html=paint();assert.match(html,/LOT-001/);assert.match(html,/PROD-1/);assert.match(html,/Send first/);assert.match(html,/Cold room/);assert.equal(item()['aria-expanded'],true);assert.match(html,/overflow-y-auto/);assert.match(html,/role="dialog"/);assert.equal(item()['aria-haspopup'],'dialog');
   r.closePopup();assert.doesNotMatch(paint(),/LOT-001/);
   r.controls.find(c=>c['aria-label']==='Search items, lots or batches').onChange({target:{value:'PROD-2'}});paint();item().onClick();html=paint();assert.match(html,/LOT-002/);assert.doesNotMatch(html,/LOT-001|Send first/);assert.match(html,/only matching lots/);

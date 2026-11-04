@@ -149,7 +149,7 @@ export async function invoiceAction(client,user,body) {
     const products=new Map((await recordsByIds(s.Product,sourceLines.map(l=>l.product_id))).map(p=>[p.id,p]));
     lines=[];
     for(const line of sourceLines){
-      const p=products.get(line.product_id);if(!p || p.is_active===false || !finishedProduct(p) || p.configuration_status==='draft')throw Error('Choose configured, active finished products.');
+      const p=products.get(line.product_id);if(!p || p.is_active===false || !finishedProduct(p))throw Error('Choose active finished products.');
       const quantity=round3(safeNumber(line.quantity,'quantity',true)),unitPrice=safeNumber(line.unit_price,'unit price'),discount=round2(safeNumber(line.discount_amount || 0,'discount')),taxRate=safeNumber(line.tax_rate || 0,'tax rate');
       if(quantity!==Number(line.quantity))throw Error('Use quantities with at most three decimal places.');
       if(taxRate>100 || discount>round2(quantity*unitPrice))throw Error('Review line discounts and tax rates.');

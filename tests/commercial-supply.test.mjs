@@ -73,7 +73,7 @@ test('field supplies are confined to their active assigned crew, loaded manifest
     ['vehicle stock not released', tables => { tables.StockBalance[0].qc_status = 'quarantined'; }],
     ['raw material is not a finished product', tables => { tables.Product[0].inventory_type = 'raw_material'; }],
     ['inactive product', tables => { tables.Product[0].is_active = false; }],
-    ['unfinished assembly draft', tables => { tables.Product[0].configuration_status = 'draft'; }],
+    ['inactive assembly draft', tables => { Object.assign(tables.Product[0], {configuration_status: 'draft', is_active: false}); }],
   ];
   try {
     for (const [label, change, args] of cases) await t.test(label, async () => {

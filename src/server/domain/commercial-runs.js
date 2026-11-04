@@ -136,7 +136,7 @@ export async function assertRunSupplyStock(svc, context, lines, date = businessD
   const availableDate = date > businessDate() ? date : businessDate();
   for (const line of lines) {
     const product = products.find(row => row.id === line.product_id), quantity = round3(line.quantity);
-    if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw new Error('Only active finished products loaded for this run can be supplied');
+    if (!finishedProduct(product) || product.is_active === false) throw new Error('Only active finished products loaded for this run can be supplied');
     if (!(manifest.get(product.id) > 0) || quantity > manifest.get(product.id)) throw new Error(`${product.name} exceeds the quantities loaded for this run`);
     const available = round3(balances.filter(balance => balance.product_id === product.id && Number(balance.quantity) > 0
       && (balance.qc_status || 'approved') === 'approved' && (!balance.expiry_date || balance.expiry_date >= availableDate))
@@ -169,7 +169,7 @@ export async function commercialRunInventory(svc, commercialId, date, {includeCa
     } catch (error) { return { ...run, can_supply: false, stock_error: error.message }; }
   }));
   const allProducts = includeCatalogue ? await readRecords(svc.entities.Product, {inventory_type:{$in:['assembly','finished_product']},is_active:{$ne:false}}) : productIds.size ? await readRecords(svc.entities.Product, { id: { $in: [...productIds] } }) : [];
-  const products = allProducts.filter(product => finishedProduct(product) && product.is_active !== false && (includeCatalogue || product.configuration_status !== 'draft'));
-  const allowed = new Set(products.filter(product => product.configuration_status !== 'draft').map(product => product.id));
+  const products = allProducts.filter(product => finishedProduct(product) && product.is_active !== false);
+  const allowed = new Set(products.map(product => product.id));
   return { runs: views, balances: balances.filter(row => allowed.has(row.product_id)), products: products.map(product => pick(product, productFields)) };
 }

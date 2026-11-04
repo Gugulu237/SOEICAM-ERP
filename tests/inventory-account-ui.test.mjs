@@ -64,7 +64,7 @@ test('legacy adjustment links route native admins to Accounting and removed stoc
  const ui=await renderer();
  for(const principalRole of ['admin','warehouse_manager']){
   const r=runtime();r.session={role:'admin',principalRole,allowedModules:['inventory','accounting','inventory_adjustments']};r.search='section=adjustments';const paint=painter(r,ui,'Inventory');
-  try{paint();await r.flush();let html=paint();if(principalRole==='admin')assert.equal(r.navigation.at(-1),'/accounting/inventory?view=adjustments');else{assert.deepEqual(r.navigation,[]);assert.match(html,/Stock adjustments are managed in Accounting/);}r.search='correct=existing';html=paint();assert.doesNotMatch(html,/Correct existing stock|Adjust quantity/);}finally{r.cleanup();delete globalThis.__iaUI;}
+  try{paint();await r.flush();let html=paint();if(principalRole==='admin')assert.equal(r.navigation.at(-1),'/accounting/inventory?view=adjustments&filter=finished');else{assert.deepEqual(r.navigation,[]);assert.match(html,/Stock adjustments are managed in Accounting/);}r.search='correct=existing';html=paint();assert.doesNotMatch(html,/Correct existing stock|Adjust quantity/);}finally{r.cleanup();delete globalThis.__iaUI;}
  }
 });
 

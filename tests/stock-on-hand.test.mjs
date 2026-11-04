@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {finishedStockForSale} from '../src/lib/sales-stock.js';
 import {stockOnHandGroups} from '../src/lib/stock-on-hand.js';
 import {canAdjustInventory} from '../src/lib/inventory-adjustment-access.js';
 import {adjustmentAccess} from '../src/server/domain/inventory-adjustment-access.js';
@@ -57,4 +58,14 @@ test('only native active top administrators with adjustment access may adjust qu
  assert.equal(canAdjustInventory('admin',employee,['inventory']),false);
  await assert.rejects(adjustmentAccess(client,'admin',{...employee,access_template:'warehouse_manager'},{user}),/top administrators/);
  await assert.rejects(adjustmentAccess(client,'admin',employee),/top administrators/,'missing authenticated user must fail closed');
+});
+
+test('finished stock on hand and new-sale availability agree even when assembly setup is incomplete',()=>{
+ const items=products.map(p=>({...p,is_active:true,configuration_status:'draft',components:[]}));
+ const balances=[lot('one',{quantity:12}),lot('two',{quantity:8})],date='2026-11-01';
+ const [inventory]=stockOnHandGroups(items,balances,warehouses,{date});
+ const [sale]=finishedStockForSale(items,balances,'cold',date);
+ assert.equal(inventory.quantity,20);assert.equal(inventory.available,inventory.quantity);assert.equal(sale.available,inventory.quantity);
+ const held=[...balances,lot('damaged',{quantity:3,qc_status:'quarantine'}),lot('expired',{quantity:4,expiry_date:'2026-10-31'})];
+ assert.equal(stockOnHandGroups(items,held,warehouses,{date})[0].available,20);assert.equal(finishedStockForSale(items,held,'cold',date)[0].available,20);
 });

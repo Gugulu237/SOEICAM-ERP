@@ -117,3 +117,12 @@ test('exchange-only drafts do not move stock; cash, empty replacements, malforme
   const {client,tables}=fixture();const draft=await submit(client,{...args,submit:false});assert.equal(draft.status,200,draft.error);assert.equal(draft.sale.supply_kind,'exchange');assert.equal(tables.StockBalance[0].quantity,10);assert.equal(tables.JournalEntry.length,0);
   const posted=await submit(client,{...args,saleId:draft.sale.id});assert.equal(posted.status,200,posted.error);assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.JournalEntry.length,1);
 });
+
+for(const exchangeOnly of [false,true])test('Commercial can supply existing finished stock with incomplete assembly setup, including exchanges: '+exchangeOnly,async()=>{
+ const {client,tables}=fixture();Object.assign(tables.Product[0],{configuration_status:'draft',components:[]});
+ const args=validSupply({stockReplacements:[exchange({reason:'damaged',expiry_date:''})],...(exchangeOnly?{lines:[],paymentType:'exchange',amountCollected:0}:{amountCollected:1000})});
+ const result=await submit(client,args);assert.equal(result.status,200,result.error);
+ assert.equal(result.sale.total,exchangeOnly?0:1000);assert.equal(tables.StockBalance[0].quantity,exchangeOnly?7:5);assert.equal(tables.SpoilageRecord[0].replacement_cost,600);
+ assert.equal(tables.StockBalance.find(row=>row.qc_status==='quarantine').quantity,3);
+ const snapshot=structuredClone(tables);assert.equal((await submit(client,args)).reused,true);assert.deepEqual(tables,snapshot);
+});

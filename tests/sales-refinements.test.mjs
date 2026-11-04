@@ -38,7 +38,7 @@ test('Field reports separate drafts and accounting-review items from recognized 
   assert.deepEqual(invoices.sections[0].rows,[['draft',1,500,0],['posted',1,200,25]]);
 });
 
-test('factory sale options offer only configured finished goods in usable locations, excluding raw, packaging, expired, held and vehicle stock',()=>{
+test('factory sale options offer active finished stock regardless of assembly setup in usable locations, excluding raw, packaging, expired, held and vehicle stock',()=>{
   const products=[{id:'y',inventory_type:'assembly',is_active:true},{id:'milk',inventory_type:'raw_material'},{id:'cup',inventory_type:'packaging'},{id:'draft',inventory_type:'assembly',configuration_status:'draft'}];
   const warehouses=['cold_room','raw_material','packaging','wip','vehicle','quarantine','general'].map(type=>({id:type,warehouse_type:type,is_active:true}));
   const balances=[
@@ -53,6 +53,6 @@ test('factory sale options offer only configured finished goods in usable locati
     {warehouse_id:'general',product_id:'cup',quantity:10},
   ];
   assert.deepEqual(factorySalesLocations(warehouses,products,balances,'2026-10-25').map(w=>w.id),['cold_room']);
-  assert.deepEqual(finishedStockForSale(products,balances,'cold_room','2026-10-25').map(p=>[p.id,p.available]),[['y',4]]);
+  assert.deepEqual(finishedStockForSale(products,balances,'cold_room','2026-10-25').map(p=>[p.id,p.available]),[['y',4],['draft',5]]);
   assert.deepEqual(finishedStockForSale(products,balances,'','2026-10-25'),[]);
 });

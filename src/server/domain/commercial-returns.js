@@ -83,7 +83,7 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
   }
   for (const row of replacements) {
     const product = await stores.Product.get(row.product_id);
-    if (!finishedProduct(product) || product.is_active === false || product.configuration_status === 'draft') throw Error('Choose an active finished product for each replacement');
+    if (!finishedProduct(product) || product.is_active === false) throw Error('Choose an active finished product for each replacement');
     const record = await stores.SpoilageRecord.create({ record_type: kind, record_number: 'ER-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
       source_sale_id: sale.source_order_id?'':sale.id, source_order_id:sale.source_order_id||'', source_sale_number: sale.sale_number, posting_basis: sale.source_order_id?'sales_order_exchange':'sale_exchange', request_type: 'collection', replace_now: true,
       customer_id: customer.id, customer_name: customer.business_name, location_id: location.id, location_name: location.name,
