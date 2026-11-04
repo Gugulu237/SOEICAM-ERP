@@ -9,7 +9,12 @@ export async function POST(request) {
     checkOrigin(request);const context=await authenticateRequest('accounting'),text=await request.text();
     if(text.length>20000)throw Error('Account details are too large.');
     const body=JSON.parse(text);
-    const result=await transaction(async()=>{await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['chart-of-accounts']);if(body.action && !['save','delete'].includes(body.action))throw Error('Unknown account action.');return body.action==='delete'?deleteUnusedAccount(serviceEntities,context,body):saveAccountDefinition(serviceEntities,context,body);});
+    const result=await transaction(async()=>{
+      await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['chart-of-accounts']);
+      if(body.opening!==undefined)await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['opening-balances']);
+      if(body.action && !['save','delete'].includes(body.action))throw Error('Unknown account action.');
+      return body.action==='delete'?deleteUnusedAccount(serviceEntities,context,body):saveAccountDefinition(serviceEntities,context,body);
+    });
     return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});
   } catch(e){return apiError(e);}
 }

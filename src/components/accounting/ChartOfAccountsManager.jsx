@@ -183,6 +183,7 @@ export default function ChartOfAccountsManager() {
       {dialog && (
         <AccountFormDialog
           account={dialog.account || null}
+          canSetOpening={isAdmin}
           accounts={accounts}
           balances={balances}
           defaultParentId={dialog.parentId || ""}

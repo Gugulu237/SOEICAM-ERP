@@ -16,6 +16,7 @@ export async function deleteUnusedAccount(stores,context,body) {
   const account=await stores.Account.get(body.accountId);
   if(!account)throw Error('Account no longer exists. Refresh the account list.');
   if(account.recurring_expense)throw Error('Keep accounts with recurring expense history. Pause the recurring schedule instead.');
+  if(account.opening_balance_recorded)throw Error('Keep accounts with recorded opening balances. Hide this account instead.');
   if((await readRecords(stores.Account)).some(a=>a.recurring_expense?.versions?.some(v=>v.payable_account_id===account.id)))throw Error('This account is linked to a recurring payable. Preserve its history.');
   if(body.updatedDate!==account.updated_date)throw Object.assign(Error('This account changed in another window. Reload before deleting.'),{status:409});
   if(account.is_system || account.is_control_account || account.is_treasury || ['1050','1315','1320','4010'].includes(account.account_number))throw Error('System, control and cash accounts are protected. Hide this account instead.');

@@ -44,6 +44,7 @@ async function state(stores,context,id){
   let mode='post',reason='',available=null,target=null;
   if(customer.customer_removed_at||customer.is_active===false)reason='Choose an active customer for opening balance entry.';
   else if(!active(account)||account.account_type!=='asset'||account.normal_balance!=='debit'||account.treasury_names.length)reason='Configure an active customer receivable posting account in Accounting.';
+  else if(account.opening_recorded&&!lines.some(l=>l.account_id===account.id))reason='The recorded receivable opening balance is fully allocated. Review corrections in Accounting.';
   else {
     const accountLines=lines.filter(l=>l.account_id===account.id),byJournal=new Map(journals.map(j=>[j.id,j]));
     if(accountLines.some(l=>byJournal.get(l.journal_id)?.status!=='posted'))reason='Reconcile the receivable opening journal in Accounting before continuing.';
@@ -69,7 +70,7 @@ function publicState(s){
   return {customer_id:s.customer.id,recorded:s.recorded,entries:s.entries,
     amount:s.event?.opening_customer_amount??(s.entries.length?s.entries.reduce((n,d)=>n+Number(d.amount),0):s.customer.opening_balance_amount??null),
     date:s.event?.opening_customer_date||s.customer.opening_balance_date||s.setup.date,
-    date_locked:s.setup.history.length>0,max_date:s.setup.first_transaction_date||businessDate(),
+    date_locked:s.setup.date_locked,max_date:s.setup.first_transaction_date||businessDate(),
     mode:s.mode,account_id:s.account?.id||'',available:s.available,
     can_enter:!s.recorded&&!s.reason,reason:s.reason,
     offsets:s.setup.accounts.filter(a=>active(a)&&a.account_type==='equity'&&a.normal_balance==='credit'&&!a.is_control_account&&!a.treasury_names.length).map(a=>({id:a.id,name:a.name,number:a.account_number})),
@@ -109,7 +110,7 @@ export async function saveCustomerOpening(stores,context,id,body){
   if(s.recorded)throw fail('An opening balance is already recorded for this customer.',409);
   if(s.reason)throw fail(s.reason,409);
   if(body.mode!==s.mode||body.account_id!==s.account.id)throw fail('Opening balance setup changed. Reload before posting.',409);
-  if(s.setup.history.length&&date!==s.setup.date)throw fail('Use the same opening date as the existing migration balances.');
+  if(s.setup.date_locked&&date!==s.setup.date)throw fail('Use the same opening date as the existing migration balances.');
   if(s.setup.first_transaction_date&&date>s.setup.first_transaction_date)throw fail('Opening balances must be dated on or before the first recorded transaction.');
   if(s.invoices.some(d=>[d.invoice_number,d.opening_document_reference].some(v=>String(v||'').trim().toUpperCase()===reference.toUpperCase())))throw fail('This original customer balance reference is already recorded.');
   const batchId=marker(id),allocation={party_type:'customer',party_id:id,debit:amount/100,credit:0};

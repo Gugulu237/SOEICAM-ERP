@@ -5,6 +5,8 @@ import { readRecords } from './commercial-workspace.js';
 import { audit } from './field-ops.js';
 import {prepareRecurringExpense} from './recurring-expenses.js';
 import {recurringExpenseAccount} from '../../lib/recurring-expense-schedule.js';
+import {createHash} from 'node:crypto';
+import {requireOpeningAccess,saveAccountOpening} from './opening-balances.js';
 
 const fields = ['account_number','name','account_type','normal_balance','parent_id','is_posting','is_control_account','allow_manual_journal','is_active','is_hidden','description','financial_statement','cash_flow_category','is_treasury'];
 export function requireAccountant(context) {
@@ -27,7 +29,7 @@ export async function prepareAccountDefinition(stores, input, existing = null) {
   if (existing) {
     // All historical lines count, including net-zero, reversed and draft entries.
     const lines = await stores.JournalLine.filter({account_id:existing.id},'id',1);
-    if (lines.length || Number(existing.balance || 0)!==0) balances[existing.id] = {entries:1};
+    if (lines.length || existing.opening_balance_recorded || Number(existing.balance || 0)!==0) balances[existing.id] = {entries:1};
   }
   const errors = validateAccount(form,accounts,balances);
   if (errors.length) throw Error(errors[0]);
@@ -35,7 +37,12 @@ export async function prepareAccountDefinition(stores, input, existing = null) {
 }
 export async function saveAccountDefinition(stores, context, body) {
   requireAccountant(context);
-  const fingerprint=JSON.stringify({account:body.account,newParent:body.newParent||null,...(body.recurring!==undefined?{recurring:body.recurring}:{})});
+  const hasOpening=body.opening!==undefined;
+  if(hasOpening){requireOpeningAccess(context);if(!/^[\w-]{16,80}$/.test(body.requestKey||''))throw Error('A valid account save reference is required.');}
+  const fingerprint=JSON.stringify({account:body.account,newParent:body.newParent||null,...(body.recurring!==undefined?{recurring:body.recurring}:{}),...(hasOpening?{opening:body.opening,accountId:body.accountId||null,userId:context.user.id}:{})});
+  const eventId=hasOpening?'AOB-'+createHash('sha256').update(context.user.id+':'+body.requestKey).digest('hex'):null;
+  const openingEvent=eventId?await stores.AuditLog.get(eventId):null;
+  if(openingEvent){if(openingEvent.opening_account_payload!==fingerprint)throw Object.assign(Error('This save reference belongs to different account details. Reload before creating another account.'),{status:409});return stores.Account.get(openingEvent.opening_account_id);}
   if(body.requestKey){
     if(!/^[\w-]{16,80}$/.test(body.requestKey))throw Error('A valid account save reference is required.');
     const previous=(await stores.Account.filter({account_request_key:body.requestKey},'id',1))[0];
@@ -57,7 +64,11 @@ export async function saveAccountDefinition(stores, context, body) {
   const recurrence=body.recurring!==undefined?await prepareRecurringExpense(stores,context,body.recurring,definition,existing?.recurring_expense):undefined;
   const metadata=body.requestKey?{account_request_key:body.requestKey,account_request_payload:fingerprint}:{};
   if(recurrence!==undefined)metadata.recurring_expense=recurrence;
-  const saved = existing ? await stores.Account.update(existing.id,{...definition,...metadata}) : await stores.Account.create({...definition,...metadata,created_by:context.user.email});
+  let saved = existing ? await stores.Account.update(existing.id,{...definition,...metadata}) : await stores.Account.create({...definition,...metadata,created_by:context.user.email});
+  if(hasOpening){
+    saved=await saveAccountOpening(stores,context,saved,body.opening,body.requestKey);
+    await stores.AuditLog.create({id:eventId,action:'import_account_opening_balance',module:'accounting',entity_type:'Account',entity_id:saved.id,user_id:context.user.id,description:'Recorded one-time opening balance for '+saved.name,opening_account_payload:fingerprint,opening_account_id:saved.id});
+  }
   if(recurrence!==undefined)await stores.AuditLog.create({action:'configure_recurring_expense',module:'accounting',entity_type:'Account',entity_id:saved.id,user_id:context.user.id,description:'Updated monthly schedule for '+saved.name,recurring_account_id:saved.id,recurring_before:existing?.recurring_expense||null,recurring_after:recurrence});
   await audit({entities:stores},{action:existing?'update_account':'create_account',module:'accounting',entityType:'Account',entityId:saved.id,userId:context.user.id,description:`${existing?'Updated':'Created'} account ${saved.account_number}: ${saved.name}`});
   return saved;

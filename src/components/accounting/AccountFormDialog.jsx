@@ -16,10 +16,11 @@ import { ACCOUNT_TYPES, typeMeta, suggestAccountNumber, validateAccount, eligibl
 import { Lock } from "lucide-react";
 import RecurringExpenseSettings,{initialRecurringSettings} from './RecurringExpenseSettings';
 import {recurringExpenseAccount} from '@/lib/recurring-expense-schedule';
+import AccountOpeningFields,{useAccountOpening,accountOpeningPayload} from './AccountOpeningFields';
 
 const NO_PARENT = "__none__";
 
-export default function AccountFormDialog({ account, accounts, balances, defaultParentId, onClose, onDone }) {
+export default function AccountFormDialog({ account, accounts, balances, defaultParentId, canSetOpening = false, onClose, onDone }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { toast } = useToast();
@@ -28,6 +29,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
   const requestKey = useRef(crypto.randomUUID());
   const [recurring,setRecurring]=useState(()=>initialRecurringSettings(account?.recurring_expense));
   const [recurringChanged,setRecurringChanged]=useState(false);
+  const opening = useAccountOpening(canSetOpening);
   const defaultParent = accounts.find(a => a.id === defaultParentId);
   const initialType = account?.account_type || defaultParent?.account_type || "asset";
   const [newParent, setNewParent] = useState(null);
@@ -103,7 +105,8 @@ export default function AccountFormDialog({ account, accounts, balances, default
         cash_flow_category: form.cash_flow_category,
         is_treasury: form.is_treasury,
       };
-      await erp.accounting.saveAccount({requestKey:requestKey.current, accountId: account?.id || null, updatedDate: account?.updated_date, account: payload, newParent,...(recurringChanged?{recurring}:{})});
+      const openingPayload = canSetOpening ? accountOpeningPayload(opening, form) : undefined;
+      await erp.accounting.saveAccount({requestKey:requestKey.current, accountId: account?.id || null, updatedDate: account?.updated_date, account: payload, newParent,...(recurringChanged?{recurring}:{}),...(openingPayload ? {opening:openingPayload} : {})});
       toast({ title: isEdit ? ui("Account updated") : ui("Account created"), description: `${payload.account_number} — ${payload.name}` });
       onDone();
     } catch (e) {
@@ -134,16 +137,17 @@ export default function AccountFormDialog({ account, accounts, balances, default
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <Label>{ui("Account Number")}</Label>
+            <Label htmlFor="account-number">{ui("Account Number")}</Label>
             <Input
+              id="account-number"
               value={form.account_number}
               disabled={locked}
               onChange={(e) => { setNumberTouched(true); set("account_number", e.target.value); }}
             />
           </div>
           <div>
-            <Label>{ui("Account Name")}</Label>
-            <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+            <Label htmlFor="account-name">{ui("Account Name")}</Label>
+            <Input id="account-name" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </div>
           <div>
             <Label>{ui("Type")}</Label>
@@ -236,6 +240,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
           <Textarea rows={2} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder={ui("What this account is used for")} />
         </div>
 
+        {canSetOpening && <AccountOpeningFields opening={opening} form={form} disabled={saving}/>}
         {(recurringExpenseAccount(form)||account?.recurring_expense)&&<RecurringExpenseSettings value={recurring} existing={account?.recurring_expense} disabled={saving} onChange={value=>{setRecurring(value);setRecurringChanged(true);}}/>}
         {saveError && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
         <DialogFooter>
