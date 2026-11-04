@@ -174,7 +174,7 @@ test('quantity prompt is a nested dialog; dismissal preserves the catalogue and 
  }finally{r.cleanup();delete globalThis.__picker;}
 });
 
-test('sale and replacement tiles show the title and photo without price, repeated size or availability',async()=>{
+test('sale and replacement tiles show live availability beside the title and photo',async()=>{
  const render=await bundle();
  for(const purpose of ['sale','replacement']){
   const r=hookRuntime();globalThis.__picker=r;
@@ -184,7 +184,7 @@ test('sale and replacement tiles show the title and photo without price, repeate
   try {
    const html=draw(),card=html.match(/<article[\s\S]*?<\/article>/)?.[0];
    assert.ok(card);assert.match(card,/<img/);assert.match(card,/YOLA Vanilla 500 g/);
-   assert.doesNotMatch(card,/>500 g<|2345|789|XAF|UNIQUE-UNIT|available/i);
+   assert.match(card,/2,345.000 available/);assert.doesNotMatch(card,/>500 g<|789|XAF|UNIQUE-UNIT/i);
    r.buttons.find(b=>b['aria-label']==='Select '+product.name).onClick({currentTarget:{}});const opened=draw();
    assert.match(r.dialog.className,/max-w-xs/);assert.doesNotMatch(opened,/Available:|UNIQUE-UNIT|XAF/);
    const input=r.controls.find(c=>c.type==='number');assert.equal(input.max,2345);assert.equal(input.autoFocus,true);assert.match(input.className,/w-full/);
@@ -229,4 +229,17 @@ test('quantity popup follows the keyboard viewport, restores product focus and r
   r.buttons.find(b=>b['aria-label']==='Select Cream').onClick({currentTarget:anchor});draw();assert.equal(r.dialog['aria-label'],'Enter quantity for Cream');assert.equal(r.controls.find(c=>c.type==='number').value,'');
  }finally{r.cleanup();globalThis.window=previousWindow;delete globalThis.__picker;}
  assert.deepEqual(removed.sort(),['resize','scroll']);
+});
+
+test('full catalogue pagination and search keep all 420 products reachable, including unavailable stock',async()=>{
+ const render=await bundle(),r=hookRuntime(),previousWindow=globalThis.window;globalThis.window={};globalThis.__picker=r;
+ const products=Array.from({length:420},(_,i)=>({id:'p'+i,name:'YOLA '+String(i).padStart(3,'0'),available:i===419?0:10,selling_price:500}));
+ const props={open:true,products,lines:[],onOpenChange:value=>props.open=value,onQuantityChange(){throw Error('Browsing must not change quantities');}};
+ const draw=()=>{r.beforeRender();return render('product',props);},tiles=()=>r.buttons.filter(b=>b['aria-label']?.startsWith('Select '));
+ const settle=async()=>{for(let i=0;i<3;i++){draw();await r.flush();}return draw();};
+ try{
+  await settle();assert.equal(tiles().length,36);r.buttons.find(b=>b.label.startsWith('Show more products')).onClick();draw();assert.equal(tiles().length,72);
+  r.controls.find(c=>c['aria-label']==='Search sale products').onChange({target:{value:'YOLA 419'}});await settle();assert.equal(tiles().length,1);assert.equal(tiles()[0].disabled,true);assert.match(draw(),/0.000 available/);
+  props.open=false;await settle();props.open=true;await settle();assert.equal(r.controls.find(c=>c['aria-label']==='Search sale products').value,'');assert.equal(tiles().length,36);
+ }finally{r.cleanup();globalThis.window=previousWindow;delete globalThis.__picker;}
 });

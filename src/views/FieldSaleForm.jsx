@@ -129,10 +129,10 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
     let active = true, pending = false;
     setRuns([]); setRunProducts([]); setRunBalances([]);
     const refresh = async () => {
-      if (pending || !active) return;
+      if (pending || !active || saving.current) return;
       pending = true; setRunLoading(true); setRunError('');
       try {
-        const res = await invokeFieldOps({ action: 'commercialDailySupplies', commercialId, date: form.transaction_date });
+        const res = await invokeFieldOps({ action: 'commercialDailySupplies', commercialId, date: form.transaction_date, includeCatalogue:true });
         if (res.data.error) throw new Error(res.data.error);
         if (!active) return;
         const assigned = res.data.runs || [];
@@ -155,7 +155,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
     return () => window.removeEventListener('beforeunload', warn);
   }, []);
 
-  const set = (patch) => { if (disabled) return; dirty.current = true; setSaveError(''); setForm((previous) => ({ ...previous, ...patch })); };
+  const set = (patch) => { if (disabled) return; dirty.current = true; setSaveError(''); setForm((previous) => ({ ...previous, ...patch, ...(patch.lines?.length===0 || !previous.lines.length&&patch.stock_replacements?.length ? {payment_type:'',amount_collected:'',payment_terms_days:''} : {}) })); };
   const selectedRun = runs.find((run) => run.id === form.dispatch_id);
   const trackedOutlet = outlets.some(location => location.assigned_hotesse_ids?.length);
   const stock = useMemo(() => {
@@ -168,7 +168,8 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
   const totals = locked && sale ? { subtotal: sale.subtotal || 0, tax: sale.tax_total || 0, total: sale.total || 0 } : calculated;
   const collected = form.payment_type === 'cash' ? roundMoney(form.amount_collected) : 0;
   const due = locked && sale ? roundMoney(sale.amount_due) : roundMoney(totals.total - collected);
-  const availableProducts = stock.filter((p) => p.is_active !== false && isFinishedProduct(p) && p.quantity > 0);
+  const availableProducts = stock.filter((p) => p.is_active !== false && isFinishedProduct(p));
+  const exchangeOnly=!form.lines.length&&form.stock_replacements.length>0;
   const validation = validateSale(form, stock, { isAdmin }) || validateSaleReplacements(form, stock);
   const goTo = next => {setStep(next);setSaveError('');if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'smooth'});};
   const customerProblem = () => !form.customer_id||!customers.some(c=>c.id===form.customer_id) ? ui('Choose a customer for this sale.')
@@ -189,8 +190,8 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
     dirty.current=true;setSaveError('');
     setForm(previous=>{
       const line=previous.lines.find(row=>row.product_id===product.id);
-      if(value===null)return {...previous,lines:previous.lines.filter(row=>row.product_id!==product.id)};
-      if(!line&&(!(Number(product.selling_price)>0)||previous.lines.length>=50))return previous;
+      if(value===null){const remaining=previous.lines.filter(row=>row.product_id!==product.id);return {...previous,lines:remaining,...(!remaining.length?{payment_type:'',amount_collected:'',payment_terms_days:''}:{})};}
+      if(!line&&(!(Number(product.quantity)>0)||!(Number(product.selling_price)>0)||previous.lines.length>=50))return previous;
       return {...previous,lines:line?previous.lines.map(row=>row.product_id===product.id?{...row,quantity:value}:row):[...previous.lines,{product_id:product.id,product_name:product.name,quantity:value,unit_price:product.selling_price}]};
     });
   };
@@ -216,7 +217,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
         commercialId,
         dispatchId: form.dispatch_id || undefined,
         customerId: form.customer_id, locationId: form.location_id || undefined, transactionDate: form.transaction_date,
-        paymentType: form.payment_type, amountCollected: form.amount_collected, collectionDate: form.transaction_date,
+        paymentType: exchangeOnly?'exchange':form.payment_type, amountCollected: exchangeOnly?0:form.amount_collected, collectionDate: form.transaction_date,
         paymentTermsDays: form.payment_terms_days, notes: form.notes, receiptReference: form.receipt_reference.trim(),
         receiptFileUris: form.receipt_file_uris,
         stockReplacements: form.stock_replacements,
@@ -227,7 +228,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
       if (res.data.error) throw new Error(res.data.error);
       dirty.current = false;
       toast({ title: submit ? `${res.data.sale.sale_number} recorded` : ui("{0} saved as a draft", res.data.sale.sale_number),
-        description: submit ? ui("Posted to company Sales. Customer balance and vehicle stock have been updated.") : ui("Stock and sales are unchanged until you record this supply.") });
+        description: submit ? ui(exchangeOnly?'Exchange recorded and stock deducted':"Posted to company Sales. Customer balance and vehicle stock have been updated.") : ui("Stock and sales are unchanged until you record this supply.") });
       if (embedded) onDone?.({ sale: res.data.sale, submitted: submit });
       else navigate(returnPath);
     } catch (error) {
@@ -276,9 +277,9 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
             <MobileInfo title={ui("Delivery stock")} desktopClassName="text-[11px] leading-5 text-slate-500"><p>{ui("Sales automatically deduct from the current stock on your paired vehicle. Only approved, unexpired finished products are available. Quantities refresh while this page is open and are checked again when you record the supply.")}</p></MobileInfo>
           </div>
         <div className="mb-4 flex items-center justify-between gap-2"><div><h2 className="font-semibold text-slate-900">{ui("Your products")}</h2><p className="mt-1 text-xs text-slate-500">{ui("Approved, unexpired finished products on your selected driver run")}</p></div></div>
-        <Button type="button" className="min-h-12 w-full" disabled={disabled||runLoading||Boolean(runError)||!availableProducts.length} onClick={()=>setPickerOpen(true)}>{ui('Choose products')}</Button>
+        <Button type="button" className="min-h-12 w-full" disabled={disabled||runLoading||Boolean(runError)||!availableProducts.length} onClick={()=>{setRunReload(n=>n+1);setPickerOpen(true);}}>{ui('Choose products')}</Button>
         {!availableProducts.length&&<p className="mt-3 text-sm text-slate-500">{ui('Choose a loaded driver run to see its finished products. The warehouse loads stock before departure.')}</p>}
-        {wizard&&step==='products'&&<div className="mt-5 space-y-4 rounded-2xl border bg-white p-4"><FieldSaleLines lines={form.lines} stock={stock} disabled={disabled} isAdmin={isAdmin} onChange={lines=>set({lines})}/><SaleReplacements declared={form.replacements_declared} onDeclare={value=>set({replacements_declared:value})} rows={form.stock_replacements} stock={stock} lines={form.lines} date={form.transaction_date} disabled={disabled} onChange={rows=>set({stock_replacements:rows})}/><p className="flex justify-between font-semibold"><span>{ui('Total')}</span>{formatXAF(totals.total)}</p></div>}
+        {wizard&&step==='products'&&<div className="mt-5 space-y-4 rounded-2xl border bg-white p-4"><FieldSaleLines lines={form.lines} stock={stock} disabled={disabled} isAdmin={isAdmin} onChange={lines=>set({lines})}/><SaleReplacements declared={form.replacements_declared} onDeclare={value=>set({replacements_declared:value})} rows={form.stock_replacements} stock={stock} lines={form.lines} date={form.transaction_date} disabled={disabled||runLoading||!!runError} onRefresh={()=>setRunReload(n=>n+1)} onChange={rows=>set({stock_replacements:rows})}/><p className="flex justify-between font-semibold"><span>{ui('Total')}</span>{formatXAF(totals.total)}</p></div>}
 
       </section>
       <section ref={checkoutRef} aria-label={ui("Sale checkout")} className={`min-w-0 scroll-mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm ${!wizard || step !== 'products' ? '' : 'hidden'}`}>
@@ -296,18 +297,18 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
           {(!wizard||step==='checkout')&&<>
           {wizard&&<div className="rounded-xl bg-green-50 p-3"><p className="font-semibold">{customers.find(c=>c.id===form.customer_id)?.business_name}</p><p className="mt-1 text-xs text-slate-600">{[outlets.find(o=>o.id===form.location_id)?.name,form.transaction_date,employee?.full_name].filter(Boolean).join(' / ')}</p><Button type="button" variant="ghost" disabled={busy} onClick={()=>goTo('customer')}>{ui('Edit customer')}</Button></div>}
           <FieldSaleLines lines={form.lines} stock={stock} disabled={disabled} isAdmin={isAdmin} onChange={(lines) => set({ lines })} />
-          <SaleReplacements declared={form.replacements_declared} onDeclare={value=>set({replacements_declared:value})} key={sale?.id || "new"} rows={form.stock_replacements} stock={stock} lines={form.lines} date={form.transaction_date} disabled={disabled} onChange={rows => set({ stock_replacements: rows })} />
+          <SaleReplacements declared={form.replacements_declared} onDeclare={value=>set({replacements_declared:value})} key={sale?.id || "new"} rows={form.stock_replacements} stock={stock} lines={form.lines} date={form.transaction_date} disabled={disabled||runLoading||!!runError} onRefresh={()=>setRunReload(n=>n+1)} onChange={rows => set({ stock_replacements: rows })} />
           <div className="space-y-2 border-t border-slate-100 pt-4 text-sm">{!locked&&<p className="text-xs text-slate-500">{ui('Selling prices already include VAT. The total will not have VAT added on top.')}</p>}<div className="flex justify-between text-slate-500"><span>{ui("Subtotal")}</span><span>{formatXAF(totals.subtotal)}</span></div>{totals.tax !== 0 && <div className="flex justify-between text-slate-500"><span>{ui(!locked||sale?.price_includes_vat?"VAT included":"Tax")}</span><span>{formatXAF(totals.tax)}</span></div>}<div className="flex items-center justify-between text-lg font-bold text-slate-900"><span>{ui("Total")}</span><span aria-live="polite">{formatXAF(totals.total)}</span></div></div>
-          <div><h3 className="mb-2 text-sm font-semibold">{ui("Did the customer pay cash or receive credit? *")}</h3><div className="grid grid-cols-2 gap-2">
+          {exchangeOnly?<p className="rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{ui('Exchange only — no customer charge')}</p>:<div><h3 className="mb-2 text-sm font-semibold">{ui("Did the customer pay cash or receive credit? *")}</h3><div className="grid grid-cols-2 gap-2">
             {[{ value: 'cash', label: ui("Cash collected"), Icon: Banknote }, { value: 'credit', label: ui("On credit"), Icon: CreditCard }].map(({ value, label, Icon }) => <button type="button" key={value} disabled={disabled} aria-pressed={form.payment_type === value} onClick={() => set({ payment_type: value, amount_collected: '', payment_terms_days: '' })} className={`flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-semibold ${form.payment_type === value ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 text-slate-500'}`}><Icon size={18} />{label}{form.payment_type === value && <Check size={14} />}</button>)}
-          </div></div>
-          {form.payment_type === 'cash' && <div><div className="mb-1 flex items-center justify-between"><Label htmlFor="pos-cash" className="text-xs">{ui("Exact cash collected (XAF) *")}</Label><button type="button" disabled={disabled} onClick={() => set({ amount_collected: String(totals.total) })} className="min-h-8 text-xs font-semibold text-slate-700">{ui("Full amount")}</button></div><Input id="pos-cash" type="number" min="0.01" max={totals.total} step="0.01" inputMode="decimal" disabled={disabled} value={form.amount_collected} placeholder={ui("Enter cash received")} onChange={(e) => set({ amount_collected: e.target.value })} /><p className="mt-1 text-[11px] leading-5 text-slate-500">{ui("Enter the amount actually received. Any unpaid balance stays on the customer's account. If no cash was collected, choose On credit.")}</p></div>}
-          {form.payment_type === 'credit' && <div><Label htmlFor="pos-terms" className="text-xs">{ui("Payment terms (days)")}</Label><Input id="pos-terms" type="number" min="0" step="1" inputMode="numeric" disabled={disabled} value={form.payment_terms_days} onChange={(e) => set({ payment_terms_days: e.target.value })} placeholder={ui("Customer's agreed terms")} /><p className="mt-1 text-[11px] text-slate-500">{ui("No cash collected. The full supply total is recorded as customer credit.")}</p></div>}
+          </div></div>}
+          {!exchangeOnly&&form.payment_type === 'cash' && <div><div className="mb-1 flex items-center justify-between"><Label htmlFor="pos-cash" className="text-xs">{ui("Exact cash collected (XAF) *")}</Label><button type="button" disabled={disabled} onClick={() => set({ amount_collected: String(totals.total) })} className="min-h-8 text-xs font-semibold text-slate-700">{ui("Full amount")}</button></div><Input id="pos-cash" type="number" min="0.01" max={totals.total} step="0.01" inputMode="decimal" disabled={disabled} value={form.amount_collected} placeholder={ui("Enter cash received")} onChange={(e) => set({ amount_collected: e.target.value })} /><p className="mt-1 text-[11px] leading-5 text-slate-500">{ui("Enter the amount actually received. Any unpaid balance stays on the customer's account. If no cash was collected, choose On credit.")}</p></div>}
+          {!exchangeOnly&&form.payment_type === 'credit' && <div><Label htmlFor="pos-terms" className="text-xs">{ui("Payment terms (days)")}</Label><Input id="pos-terms" type="number" min="0" step="1" inputMode="numeric" disabled={disabled} value={form.payment_terms_days} onChange={(e) => set({ payment_terms_days: e.target.value })} placeholder={ui("Customer's agreed terms")} /><p className="mt-1 text-[11px] text-slate-500">{ui("No cash collected. The full supply total is recorded as customer credit.")}</p></div>}
           {form.payment_type && due !== 0 && <div className={`flex justify-between rounded-lg p-3 text-sm ${due > 0 ? 'bg-slate-50 text-slate-800' : 'bg-red-50 text-red-700'}`}><span>{ui("Customer balance due")}</span><strong>{formatXAF(due)}</strong></div>}
           <details className="rounded-xl border border-slate-200 p-3" open><summary className="min-h-8 cursor-pointer text-sm font-semibold">{ui("Receipt & notes ")}{form.receipt_file_uris.length > 0 && `(${form.receipt_file_uris.length} attached)`}</summary><div className="mt-3 space-y-4"><ReceiptUploader fileUris={form.receipt_file_uris} onChange={(uris) => set({ receipt_file_uris: uris })} reference={form.receipt_reference} onReferenceChange={(value) => set({ receipt_reference: value })} disabled={disabled} onBusyChange={setUploading} /><div><Label htmlFor="pos-notes" className="text-xs">{ui("Notes")}</Label><Textarea id="pos-notes" rows={2} disabled={disabled} value={form.notes} onChange={(e) => set({ notes: e.target.value })} placeholder={ui("Delivery instructions or comments")} /></div></div></details>
           {!locked && <><MobileInfo title={ui("Recording this sale")} desktopClassName="text-xs leading-relaxed text-slate-500"><p>{ui("Recording this supply posts the sale and reduces your delivery stock immediately. Exact quantities, a cash or credit declaration and a receipt photo are required.")}</p></MobileInfo>
             {(saveError || (form.lines.length > 0 && validation)) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError || validation)}</p>}
-            <div className="grid grid-cols-1 gap-2"><Button variant="outline" className="h-12" disabled={busy || uploading || Boolean(validation)} onClick={() => save(false)}>{ui("Save draft")}</Button><Button className="order-first h-12 w-full bg-primary font-semibold text-primary-foreground hover:bg-primary/90" disabled={busy || uploading || runLoading || Boolean(validation)} onClick={() => save(true)}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{uploading ? ui("Uploading…") : busy ? ui("Saving…") : ui("Record supply")}{!busy && !uploading && <ArrowRight size={16} className="ml-2" />}</Button></div></>}
+            <div className="grid grid-cols-1 gap-2"><Button variant="outline" className="h-12" disabled={busy || uploading || Boolean(validation)} onClick={() => save(false)}>{ui("Save draft")}</Button><Button className="order-first h-12 w-full bg-primary font-semibold text-primary-foreground hover:bg-primary/90" disabled={busy || uploading || runLoading || Boolean(validation)} onClick={() => save(true)}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{uploading ? ui("Uploading…") : busy ? ui("Saving…") : ui(exchangeOnly?'Record exchange':'Record supply')}{!busy && !uploading && <ArrowRight size={16} className="ml-2" />}</Button></div></>}
           </>}
         </div>
       </section>

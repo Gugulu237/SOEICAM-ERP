@@ -91,7 +91,7 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
       ...pick(sale, ['dispatch_id', 'driver_id', 'driver_name', 'vehicle_id', 'vehicle_name', 'commercial_id', 'commercial_name', 'recorded_by']),
       returned_expiry_date: row.expiry_date, returned_lot_number: row.lot_number, reason: row.reason === 'damaged' ? 'damaged_at_store' : 'expired', status: 'reported',
       collection_warehouse_id: bin.id, unit_cost: 0, total_value: 0, receipt_reference: sale.receipt_reference,
-      receipt_file_uris: sale.receipt_file_uris||[], ...(!vehicle?{return_received_at:new Date().toISOString(),return_received_by:user.id,return_received_warehouse_id:bin.id}:{}), notes: 'Stock exchange recorded with sale ' + sale.sale_number });
+      receipt_file_uris: sale.receipt_file_uris||[], ...(!vehicle?{return_received_at:new Date().toISOString(),return_received_by:user.id,return_received_warehouse_id:bin.id}:{}), notes: (sale.supply_kind==='exchange'?'Exchange-only receipt ':'Stock exchange recorded with sale ') + sale.sale_number });
     await stockReceive(svc, { productId: product.id, productName: product.name, warehouseId: bin.id, warehouseName: bin.name,
       quantity: row.quantity, unitCost: 0, qcStatus: 'quarantine', lotNumber: 'ER-' + record.id, expiryDate: row.expiry_date || undefined,
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,

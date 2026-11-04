@@ -30,14 +30,14 @@ export function salesStatusDocument(kind,rows,period){
   const groups=new Map();
   for(const row of rows){
     const verified=kind==='orders' || row.status!=='approved_posted' && field || row.accounting_verified!==false;
-    const status=verified?row.status:'Accounting review',g=groups.get(status)||{count:0,value:0,balance:0};
+    const status=row.supply_kind==='exchange'?'Exchange':verified?row.status:'Accounting review',g=groups.get(status)||{count:0,value:0,balance:0};
     g.count++;g.value+=n(row.total);
     if(invoices && verified && !['draft','cancelled','credited'].includes(row.status))g.balance+=n(row.customer_balance);
     groups.set(status,g);
   }
   const sections=[{title:'Status summary',columns:['Status','Documents',money('Document value'),...(invoices?[money('Current amount due')]:[])],rows:[...groups].map(([status,g])=>[status,g.count,roundMoney(g.value),...(invoices?[roundMoney(g.balance)]:[])])}];
   if(field){
-    const posted=rows.filter(r=>r.status==='approved_posted' && r.accounting_verified!==false).map(r=>({...r,date:r.transaction_date,subtotal:r.subtotal,tax:r.tax_total,collected:r.amount_collected}));
+    const posted=rows.filter(r=>r.supply_kind!=='exchange' && r.status==='approved_posted' && r.accounting_verified!==false).map(r=>({...r,date:r.transaction_date,subtotal:r.subtotal,tax:r.tax_total,collected:r.amount_collected}));
     sections.push({title:'Posted sales by commercial',columns:['Commercial','Sales count',money('Net sales'),money('Tax'),money('Total sales'),money('Cash at sale'),money('Credit at sale')],rows:salesGroups(posted,'commercials')});
   }
   return {title,metadata:[...(period?[['From',period.from],['To',period.to]]:[]),['Documents',rows.length]],notes:[field?'Only approved and posted supplies appear in commercial sales totals. Other statuses are shown separately.':invoices?'Document values are grouped by status. Draft, cancelled and accounting-review documents are not recognized sales. Amounts due are current customer balances.':'Saved order values are grouped by status. Orders do not recognize revenue until invoicing.','This report summarizes the complete permitted set for this view; table pagination and search do not alter it.'],sections};

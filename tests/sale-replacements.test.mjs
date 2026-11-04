@@ -1,4 +1,6 @@
 import test from 'node:test';
+import {companySalesRegister} from '../src/lib/company-sales.js';
+import {salesStatusDocument} from '../src/lib/sales-report-documents.js';
 import assert from 'node:assert/strict';
 import { fixture, fieldHandler, request, validSupply, date } from './helpers/commercial-supply.mjs';
 import { combinedSupplyQuantities, normalizeSaleReplacements, validateSaleReplacements } from '../src/lib/sale-replacements.js';
@@ -89,4 +91,29 @@ test('checkout combines paid and free quantities while leaving invoice lines int
   assert.match(validateSaleReplacements(form, [{ id: 'p', quantity: 6 }]), /exceed/);
   assert.equal(validateSaleReplacements(form, [{ id: 'p', quantity: 7 }]), '');
   assert.throws(() => normalizeSaleReplacements('invalid', date), /Choose at most/);
+});
+
+test('replacement-only Commercial receipt posts an exchange cost without revenue, cash or new customer debt, exactly once', async () => {
+  const {client,tables}=fixture();tables.Customer[0].balance=900;tables.Customer[0].credit_limit=100;tables.Customer[0].credit_status='blocked';
+  const args=validSupply({lines:[],paymentType:'exchange',amountCollected:0,stockReplacements:[exchange({reason:'damaged',expiry_date:''})]});
+  const result=await submit(client,args);assert.equal(result.status,200,result.error);
+  assert.equal(result.sale.supply_kind,'exchange');assert.equal(result.sale.status,'approved_posted');assert.equal(result.sale.total,0);assert.equal(result.sale.amount_due,0);assert.equal(result.sale.journal_id,'');
+  assert.equal(companySalesRegister({invoices:[],fieldSales:tables.FieldSale,from:date,to:date}).totals.count,0);
+  const report=salesStatusDocument('field',tables.FieldSale,{from:date,to:date});assert.equal(report.sections[0].rows[0][0],'Exchange');assert.equal(report.sections[1].rows.length,0);
+  assert.equal(tables.FieldSaleLine.length,0);assert.equal(tables.CashCollection.length,0);assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.Customer[0].balance,900);
+  assert.equal(tables.Account.find(a=>a.id==='revenue').balance||0,0);assert.equal(tables.Account.find(a=>a.id==='cogs').balance,600);
+  assert.equal(tables.SpoilageRecord.length,1);assert.equal(tables.JournalEntry.length,1);assert.equal(tables.JournalEntry[0].source_document_type,'SpoilageRecord');
+  const returned=tables.StockBalance.find(b=>b.qc_status==='quarantine');assert.equal(returned.quantity,3);assert.equal(returned.total_value,0);
+  const before=structuredClone(tables),retry=await submit(client,args);assert.equal(retry.reused,true);assert.deepEqual(tables,before);
+  const preview=await submit(client,{action:'proposedJournal',saleId:result.sale.id});assert.equal(preview.status,200,preview.error);assert.equal(preview.posts,true);assert.equal(preview.lines.reduce((n,l)=>n+Number(l.debit||0),0),600);
+  const changed=await submit(client,{...args,stockReplacements:[exchange({quantity:4,reason:'damaged',expiry_date:''})]});assert.equal(changed.status,400);assert.deepEqual(tables,before);
+});
+
+test('exchange-only drafts do not move stock; cash, empty replacements, malformed lines and shortages reject before writes', async () => {
+  const args=validSupply({lines:[],paymentType:'exchange',amountCollected:0,stockReplacements:[exchange()]});
+  for(const patch of [{amountCollected:5},{stockReplacements:[]},{lines:'invalid'},{stockReplacements:[exchange({quantity:11})]}]){
+    const {client,tables}=fixture(),before=structuredClone(tables);const result=await submit(client,{...args,...patch});assert.equal(result.status,400,result.error);assert.deepEqual(tables,before);
+  }
+  const {client,tables}=fixture();const draft=await submit(client,{...args,submit:false});assert.equal(draft.status,200,draft.error);assert.equal(draft.sale.supply_kind,'exchange');assert.equal(tables.StockBalance[0].quantity,10);assert.equal(tables.JournalEntry.length,0);
+  const posted=await submit(client,{...args,saleId:draft.sale.id});assert.equal(posted.status,200,posted.error);assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.JournalEntry.length,1);
 });

@@ -16,7 +16,7 @@ export function companySalesRegister({ invoices = [], fieldSales = [], from, to 
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
       collected: row.payment_type==='cash'?Number(row.total) || 0:0, balance: row.payment_type==='cash'?0:Number(row.balance) || 0, sales_order_id: row.sales_order_id || '', receipt_count: 0,
     })),
-    ...fieldSales.filter(row => row.status === 'approved_posted' && posted(row) && inPeriod(row.transaction_date)).map(row => ({
+    ...fieldSales.filter(row => row.supply_kind !== 'exchange' && row.status === 'approved_posted' && posted(row) && inPeriod(row.transaction_date)).map(row => ({
       id: 'field:' + row.id, document_id: row.id, document_number: row.sale_number || row.id, source: 'Commercial supply', date: row.transaction_date,
       customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.commercial_id,commercial_name: row.commercial_name, payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,

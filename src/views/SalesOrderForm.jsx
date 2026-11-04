@@ -1,3 +1,4 @@
+import {watchSalesStock} from '@/lib/sales-stock-refresh';
 import SaleReplacements from '@/components/field/SaleReplacements';
 import {validateSaleReplacements,validateReplacementDeclaration} from '@/lib/sale-replacements';
 import {inclusiveSaleLine} from '@/lib/sale-vat';
@@ -48,10 +49,18 @@ export default function SalesOrderForm(){
     return()=>{active=false;};
   },[id,retry]);
   useEffect(()=>{
-    let active=true;setSourceData(null);setSourceError('');setSourceLoading(false);
+    let active=true,pending=false;setSourceData(null);setSourceError('');setSourceLoading(false);
     if(!source||locked||!form.date)return()=>{active=false;};
-    setSourceLoading(true);call({action:'salesOrderStock',date:form.date,...sourceInput(source)}).then(data=>{if(active){setSourceData(data);setLines(previous=>previous.map(line=>{const p=data.products.find(p=>p.id===line.product_id);return p?{...line,tax_rate:p.tax_rate??0}:line;}));}}).catch(e=>{if(active)setSourceError(e.message);}).finally(()=>{if(active)setSourceLoading(false);});
-    return()=>{active=false;};
+    const refresh=async()=>{
+      if(!active||pending||busy.current)return;
+      pending=true;setSourceLoading(true);
+      try{
+        const data=await call({action:'salesOrderStock',date:form.date,...sourceInput(source)});
+        if(active){setSourceError('');setSourceData(data);setLines(previous=>previous.map(line=>{const p=data.products.find(p=>p.id===line.product_id);return p?{...line,tax_rate:p.tax_rate??0}:line;}));}
+      }catch(e){if(active)setSourceError(e.message);}finally{pending=false;if(active)setSourceLoading(false);}
+    };
+    refresh();const stop=watchSalesStock(refresh);
+    return()=>{active=false;stop();};
   },[source,locked,stockRetry,form.date]);
   useEffect(()=>{
     let active=true;setPoints([]);setPointsError('');setPointsLoading(false);
@@ -67,6 +76,7 @@ export default function SalesOrderForm(){
     let amounts;try{amounts=inclusiveSaleLine(Number(line.quantity)||0,Number(line.unit_price)||0,Number(line.tax_rate)||0,Number(line.discount_pct)||0);}catch(e){return {...line,pricing_error:e.message,discount_amount:0,tax_amount:0,total:0};}
     return {...line,pricing_error:null,price_includes_vat:true,discount_amount:amounts.discount,tax_amount:amounts.tax,total:amounts.total};
   }),[lines,locked]);
+  const exchangeOnly=!lines.length&&replacements.length>0;
   const totals=calculated.reduce((r,l)=>({net:roundMoney(r.net+l.total-l.tax_amount),tax:roundMoney(r.tax+l.tax_amount),total:roundMoney(r.total+l.total)}),{net:0,tax:0,total:0});
   function changeLine(index,key,value){
     setLines(previous=>previous.map((line,i)=>{
@@ -92,12 +102,12 @@ export default function SalesOrderForm(){
     if(points.length&&!form.location_id)return 'Choose the customer branch that received this supply.';
     if(index===0)return '';
     if(sourceLoading||sourceError||!sourceData)return 'Choose a stock source and wait for available products.';
-    if(!calculated.length)return 'Add at least one product before continuing.';
+    if(!calculated.length&&!exchangeOnly)return 'Add at least one product to sell or replace before continuing.';
     const ids=new Set();
     for(const line of calculated){const p=products.find(p=>p.id===line.product_id),qty=Number(line.quantity);if(line.pricing_error||!p||!(qty>0)||!Number.isFinite(qty)||qty>p.available||ids.has(line.product_id))return 'Review product quantities and available stock.';ids.add(line.product_id);}
     const exchangeError=validateReplacementDeclaration(form.replacements_declared,replacements)||validateSaleReplacements({lines:calculated,stock_replacements:replacements,transaction_date:form.date},products.map(p=>({...p,quantity:p.available})));
     if(exchangeError)return exchangeError;
-    if(totals.total<=0)return 'Enter a positive sale total.';
+    if(!exchangeOnly&&totals.total<=0)return 'Enter a positive sale total.';
     if(index>=2&&!form.receipt_reference.trim())return 'Enter the reference number of the receipt issued before recording this sale.';
     return '';
   }
@@ -110,9 +120,9 @@ export default function SalesOrderForm(){
     for(const line of calculated){const p=products.find(p=>p.id===line.product_id),q=Number(line.quantity);if(!p||!Number.isFinite(q)||q<=0||q>p.available||ids.has(line.product_id)){setSaveError(ui('Choose distinct finished products and quantities available at this source.'));return;}ids.add(line.product_id);}
     busy.current=true;setSaving(true);setSaveError('');
     try{
-      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),customerId:form.customer_id,locationId:form.location_id,date:form.date,sellerId:id?form.seller_id:undefined,receiptReference:form.receipt_reference.trim(),paymentType:form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
-      toast({title:ui('Sale recorded and stock deducted')});
-      navigate('/sales/invoices/'+result.invoiceId);
+      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),customerId:form.customer_id,locationId:form.location_id,date:form.date,sellerId:id?form.seller_id:undefined,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
+      toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted')});
+      navigate(result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
     }catch(e){setSaveError(e.message);}finally{busy.current=false;setSaving(false);}
   }
   if(loading)return <p role="status" className="p-8 text-sm text-slate-500">{ui('Loading sale options...')}</p>;
@@ -127,7 +137,7 @@ export default function SalesOrderForm(){
   ];
   const sourceLabel=sourceOptions.find(option=>option.id===source)?.label||order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location');
   return <div className="min-w-0 space-y-4">
-    <PageHeader back={{onClick:back,label:ui('Back'),disabled:saving}} title={order?ui('Sales Order {0}',order.order_number):ui('Record a sale')} subtitle={order?<StatusBadge status={order.status}/>:undefined} actions={order?.invoice_id&&<Button onClick={()=>navigate('/sales/invoices/'+order.invoice_id)}><FileText size={16} className="mr-1"/>{ui('Open invoice')}</Button>}/>
+    <PageHeader back={{onClick:back,label:ui('Back'),disabled:saving}} title={order?ui('Sales Order {0}',order.order_number):ui('Record a sale or exchange')} subtitle={order?<StatusBadge status={order.status}/>:undefined} actions={order?.invoice_id&&<Button onClick={()=>navigate('/sales/invoices/'+order.invoice_id)}><FileText size={16} className="mr-1"/>{ui('Open invoice')}</Button>}/>
     <div className="mx-auto w-full min-w-0 max-w-3xl rounded-xl border bg-white p-4 sm:p-6">
       {wizard&&<div className="mb-6"><p className="mb-3 text-xs font-semibold uppercase tracking-wide text-green-700">{ui('Step {0} of 3',step+1)}</p><nav aria-label={ui('Sale steps')} className="grid grid-cols-3 gap-2">{['Customer','Products','Review'].map((label,index)=><button type="button" key={label} disabled={saving||index>step} aria-current={step===index?'step':undefined} onClick={()=>goTo(index)} className={'rounded-xl border px-2 py-3 text-xs font-semibold '+(step===index?'border-green-700 bg-green-700 text-white':index<step?'border-green-200 bg-green-50 text-green-800':'text-slate-400')}><span className="mb-1 flex justify-center">{index<step?<Check size={16}/>:index+1}</span>{ui(label)}</button>)}</nav><h2 className="mt-5 text-xl font-bold">{ui(['Who are you selling to?','Build your sale','Review and record'][step])}</h2></div>}
       <fieldset disabled={saving||locked} className="min-w-0 space-y-5">
@@ -135,13 +145,13 @@ export default function SalesOrderForm(){
         <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2"><CustomerPicker customers={catalogue?.customers.filter(c=>!c.parent_id||c.id===form.customer_id)||[]} value={form.customer_id} disabled={saving||locked} fallbackName={order?.customer_name} onChange={id=>{const c=catalogue.customers.find(c=>c.id===id);setReplacements([]);setForm(f=>({...f,replacements_declared:null,customer_id:id,location_id:'',payment_type:Number(c?.payment_terms_days)>0?'credit':'cash'}));}}/></div>
           {(points.length>0||locked&&order?.location_id)&&<label className="space-y-1 text-sm">{ui('Delivered To (Branch)')}<select aria-label={ui('Delivered To (Branch)')} className={selectClass} value={form.location_id} onChange={e=>setForm(f=>({...f,location_id:e.target.value}))}><option value="">{ui('Choose delivery point')}</option>{points.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}{locked&&<option value={order.location_id}>{order.location_name}</option>}</select></label>}
-          <label className="space-y-1 text-sm">{ui('Payment Type')}<select aria-label={ui('Payment Type')} className={selectClass} value={form.payment_type} onChange={e=>setForm(f=>({...f,payment_type:e.target.value}))}><option value="cash">{ui('Cash')}</option><option value="credit">{ui('Credit')}</option></select></label>
+          {!exchangeOnly&&<label className="space-y-1 text-sm">{ui('Payment Type')}<select aria-label={ui('Payment Type')} className={selectClass} value={form.payment_type} onChange={e=>setForm(f=>({...f,payment_type:e.target.value}))}><option value="cash">{ui('Cash')}</option><option value="credit">{ui('Credit')}</option></select></label>}
           <label className="space-y-1 text-sm">{ui('Sale date *')}<Input required aria-label={ui('Sale date')} type="date" max={today} value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></label>
           <label className="min-w-0 space-y-1 text-sm">{ui('Person making the sale')}<Input aria-label={ui('Person making the sale')} readOnly value={sellerName} className="w-full min-w-0 bg-slate-50"/>{!order&&<span className="block text-xs text-slate-500">{ui('Automatically assigned to your signed-in account.')}</span>}</label>
         </div>
         {pointsLoading&&<p role="status" className="text-xs text-slate-500">{ui('Loading delivery points...')}</p>}
         {pointsError&&<p role="alert" className="text-xs text-red-700">{uiMessage(pointsError)}</p>}
-        {form.payment_type==='credit'&&Number(customer?.credit_limit)>0&&Number(customer.balance||0)+totals.total>Number(customer.credit_limit)&&<p role="alert" className="text-sm text-red-700">{ui('This supply exceeds the customer credit limit.')}</p>}
+        {!exchangeOnly&&form.payment_type==='credit'&&Number(customer?.credit_limit)>0&&Number(customer.balance||0)+totals.total>Number(customer.credit_limit)&&<p role="alert" className="text-sm text-red-700">{ui('This supply exceeds the customer credit limit.')}</p>}
         </>}
         {(!wizard||step===1)&&<>
         <section className="space-y-2">
@@ -154,7 +164,7 @@ export default function SalesOrderForm(){
         </section>
         {!locked&&<p className="text-xs text-slate-600">{ui('Selling prices already include VAT. The total will not have VAT added on top.')}</p>}
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold">{ui('Products supplied')}</h2>
+          <h2 className="text-sm font-semibold">{ui('Products sold (optional for an exchange)')}</h2>
           <div className="space-y-3">{calculated.map((line,index)=>{
             const product=products.find(p=>p.id===line.product_id);
             return <article key={index} className="min-w-0 space-y-3 rounded-xl border p-3">{line.pricing_error&&<p role="alert" className="text-xs text-red-700">{uiMessage(line.pricing_error)}</p>}
@@ -162,14 +172,14 @@ export default function SalesOrderForm(){
               <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4">{[['quantity','Qty','0.001'],['unit_price','Unit price','0.01'],['discount_pct','Disc %','0.01']].map(([key,label,step])=><label key={key} className="min-w-0 space-y-1 text-xs">{ui(label)}<Input aria-label={ui(label)+' '+(index+1)} type="number" min={key==='quantity'?'0.001':'0'} max={key==='quantity'?product?.available:key==='discount_pct'?100:undefined} step={step} value={line[key]} onChange={e=>changeLine(index,key,e.target.value)}/></label>)}<div className="min-w-0 text-right"><p className="text-xs text-slate-500">{ui('Total')}</p><p className="mt-3 break-words text-sm font-semibold">{formatXAF(line.total)}</p></div></div>
             </article>;
           })}</div>
-          {!locked&&<button type="button" disabled={!products.length||sourceLoading||!!sourceError} onClick={()=>setPickerOpen(true)} className="flex min-h-16 w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-dashed border-green-300 bg-green-50/40 px-4 py-5 text-sm font-semibold text-green-800 disabled:opacity-50"><Plus size={22} className="shrink-0"/>{ui(lines.length?'Add or edit products':'Choose products')}</button>}
+          {!locked&&<button type="button" disabled={!products.length||sourceLoading||!!sourceError} onClick={()=>{setStockRetry(n=>n+1);setPickerOpen(true);}} className="flex min-h-16 w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-dashed border-green-300 bg-green-50/40 px-4 py-5 text-sm font-semibold text-green-800 disabled:opacity-50"><Plus size={22} className="shrink-0"/>{ui(lines.length?'Add or edit products':'Choose products')}</button>}
         </section>
-        <SaleReplacements rows={replacements} stock={products.map(p=>({...p,quantity:p.available}))} lines={calculated} date={form.date} disabled={saving||locked||sourceLoading||!!sourceError} declared={form.replacements_declared} onDeclare={value=>setForm(f=>({...f,replacements_declared:value}))} onChange={setReplacements}/>
+        <SaleReplacements rows={replacements} stock={products.map(p=>({...p,quantity:p.available}))} lines={calculated} date={form.date} disabled={saving||locked||sourceLoading||!!sourceError} declared={form.replacements_declared} onDeclare={value=>setForm(f=>({...f,replacements_declared:value}))} onChange={setReplacements} onRefresh={()=>setStockRetry(n=>n+1)}/>
         </>}
         {wizard&&step===2&&<section className="space-y-4"><div className="rounded-xl bg-green-50 p-4"><p className="text-xs text-green-700">{ui('Customer')}</p><p className="mt-1 font-semibold">{customer?.business_name}</p>{form.location_id&&<p className="text-sm">{points.find(p=>p.id===form.location_id)?.label}</p>}<p className="mt-3 text-xs text-slate-600">{ui('Person making the sale')}: {sellerName}</p><p className="mt-1 text-xs text-slate-600">{form.date} · {sourceLabel}</p></div>
           <div className="divide-y">{calculated.map(line=><div key={line.product_id} className="flex items-center gap-3 py-3"><ProductThumb product={products.find(p=>p.id===line.product_id)} size={40}/><div className="min-w-0 flex-1"><p className="text-sm font-medium">{line.product_name}</p><p className="text-xs text-slate-500">{formatNumber(line.quantity,3)} {line.unit} × {formatXAF(line.unit_price)}</p></div><strong className="text-sm">{formatXAF(line.total)}</strong></div>)}</div>
 <div className="rounded-lg border border-emerald-200 p-3 text-sm"><strong>{ui('Free spoilage replacements')}</strong>{replacements.length?replacements.map((r,i)=><p key={i}>{products.find(p=>p.id===r.product_id)?.name} - {formatNumber(r.quantity,3)} {ui('units')} ({ui(r.reason==='expired'?'Expired':'Damaged')})</p>):<p>{ui('No replacements')}</p>}</div>
-          <p className="text-sm">{ui('Payment Type')}: <strong>{ui(form.payment_type==='cash'?'Cash':'Credit')}</strong></p><p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">{ui('Check the customer, products and amount. Stock is deducted only when you confirm this sale.')}</p>
+          <p className="text-sm">{exchangeOnly?ui('Exchange only — no customer charge'):<>{ui('Payment Type')}: <strong>{ui(form.payment_type==='cash'?'Cash':'Credit')}</strong></>}</p><p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">{ui('Check the customer, products and amount. Stock is deducted only when you confirm this sale.')}</p>
         </section>}
         {(!wizard||step===2)&&<>
         <label className="block min-w-0 space-y-1 text-sm">{ui('Receipt reference number *')}<Input required aria-label={ui('Receipt reference number')} autoComplete="off" maxLength={200} value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/></label>
@@ -180,7 +190,7 @@ export default function SalesOrderForm(){
       {saveError&&<p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
       {wizard&&step<2&&<div className="sticky bottom-0 mt-5 flex gap-3 border-t bg-white py-4">{step>0&&<Button type="button" variant="outline" disabled={saving} onClick={()=>goTo(step-1)}><ArrowLeft size={17}/>{ui('Back')}</Button>}<Button type="button" className="min-h-12 flex-1" disabled={saving} onClick={advance}>{ui(step===0?'Continue to products':'Review sale')}<ArrowRight size={17} className="ml-2"/></Button></div>}
       {wizard&&step===2&&<Button type="button" variant="outline" className="mt-4 w-full" disabled={saving} onClick={()=>goTo(1)}>{ui('Edit products')}</Button>}
-      {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsLoading||!!pointsError||!lines.length||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui('Record sale & deduct stock')}</Button>}
+      {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsLoading||!!pointsError||(!lines.length&&!replacements.length)||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui(exchangeOnly?'Record exchange & deduct stock':'Record sale & deduct stock')}</Button>}
     </div>
     <SaleProductPicker open={pickerOpen&&!locked} onOpenChange={setPickerOpen} products={products.map(p=>({...p,available:quantityAfterReplacements(p,replacements)}))} lines={lines} onQuantityChange={setProductQuantity} disabled={saving||sourceLoading||!!sourceError}/>
   </div>;

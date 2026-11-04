@@ -32,7 +32,7 @@ export const HANDOVER_STATUS = {
   disputed: { get label(){return ui("Disputed");}, tone: "bg-red-50 text-red-700 border-red-200" },
 };
 
-export const PAYMENT_LABEL = { cash: "Cash", credit: "Credit" };
+export const PAYMENT_LABEL = { cash: "Cash", credit: "Credit", exchange: "Exchange" };
 
 export async function uploadReceipt(file) {
   const { file_uri } = await erp.integrations.Core.UploadPrivateFile({ file });

@@ -42,7 +42,8 @@ export function saleTotals(lines, stock) {
 export function validateSale(form, stock, { isAdmin = false, submit = false } = {}) {
   if (!form.customer_id) return 'Choose a customer for this sale.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(form.transaction_date || '')) return 'Choose a transaction date.';
-  if (!form.lines.length) return 'Tap a product to add it to your sale.';
+  const exchangeOnly = !form.lines.length && form.stock_replacements?.length > 0;
+  if (!form.lines.length && !exchangeOnly) return 'Add products to sell, replace, or both.';
   const seen = new Set();
   for (const line of form.lines) {
     const product = stock.find((s) => s.product_id === line.product_id);
@@ -56,6 +57,12 @@ export function validateSale(form, stock, { isAdmin = false, submit = false } = 
     if (!isAdmin && roundMoney(line.unit_price) < roundMoney(product.selling_price)) return `The price for ${product.name} is below its authorized selling price.`;
   }
   const { total } = saleTotals(form.lines, stock);
+  if (exchangeOnly) {
+    if (Number(form.amount_collected || 0) !== 0) return 'An exchange cannot collect cash. Add sold products to record a payment.';
+    if (submit && !form.receipt_reference.trim()) return 'Add the receipt reference before submitting.';
+    if (submit && !form.receipt_file_uris.length) return 'Attach a clear supply receipt photo before recording the sale.';
+    return '';
+  }
   if (submit && !['cash', 'credit'].includes(form.payment_type)) return 'Choose whether cash was collected or this supply is on credit.';
   if (submit && form.payment_type === 'cash' && (form.amount_collected === '' || form.amount_collected == null)) return 'Enter the exact cash collected.';
   if (form.payment_type === 'cash' && form.amount_collected !== '') {

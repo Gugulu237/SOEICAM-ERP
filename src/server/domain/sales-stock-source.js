@@ -29,13 +29,11 @@ export async function salesStockSource(svc,input,date=businessDate()){
 
 export async function salesSourceProducts(svc,context,date=businessDate()){
   const balances=await readRecords(svc.entities.StockBalance,{warehouse_id:context.source_type==='company'?{$in:context.stock_warehouse_ids}:context.stock_warehouse_id});
-  const ids=[...new Set(balances.filter(b=>Number(b.quantity)>0).map(b=>b.product_id))];
-  const products=[];
-  for(let offset=0;offset<ids.length;offset+=100)products.push(...await readRecords(svc.entities.Product,{id:{$in:ids.slice(offset,offset+100)}}));
-  let available=finishedStockForSale(products,balances,context.source_type==='company'?context.stock_warehouse_ids:context.stock_warehouse_id,date>businessDate()?date:businessDate());
+  const products=await readRecords(svc.entities.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:{$ne:false}});
+  let available=finishedStockForSale(products,balances,context.source_type==='company'?context.stock_warehouse_ids:context.stock_warehouse_id,date>businessDate()?date:businessDate(),{includeUnavailable:true});
   if(context.dispatch_id){
     const manifest=await runManifest(svc,context.dispatch_id,context.stock_warehouse_id);
-    available=available.map(p=>({...p,available:Math.min(p.available,Math.max(0,manifest.get(p.id)||0))})).filter(p=>p.available>0);
+    available=available.map(p=>({...p,available:Math.min(p.available,Math.max(0,manifest.get(p.id)||0)),unavailable_reason:p.unavailable_reason||(!(manifest.get(p.id)>0)?'No saleable stock at this source':'')}));
   }
-  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:p.tax_rate,available:p.available}));
+  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:p.tax_rate,available:p.available,unavailable_reason:p.unavailable_reason}));
 }

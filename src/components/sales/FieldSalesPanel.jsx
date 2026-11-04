@@ -39,7 +39,7 @@ export default function FieldSalesPanel(){
   ];
   const columns=[
     {key:'sale_number',label:ui('Sale #')},{key:'customer_name',label:ui('Customer')},{key:'commercial_name',label:ui('Commercial')},
-    {key:'transaction_date',label:ui('Date'),render:formatDate},{key:'payment_type',label:ui('Payment'),render:value=>ui(value==='cash'?'Cash':'Credit')},
+    {key:'transaction_date',label:ui('Date'),render:formatDate},{key:'payment_type',label:ui('Payment'),render:value=>ui(value==='exchange'?'Exchange':value==='cash'?'Cash':'Credit')},
     {key:'total',label:ui('Total'),render:formatXAF,className:'text-right'},{key:'status',label:ui('Status'),render:value=><StatusPill map={SALE_STATUS} value={value}/>},
   ];
   return <section className="min-w-0 space-y-4">

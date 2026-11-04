@@ -122,3 +122,27 @@ test('replacement question is required, product picker preserves free quantities
   }finally{f.close();}
 });
 
+
+test('Sales records replacements only as an exchange and opens its receipt without an invoice',async()=>{
+  const {render}=await bundle(),f=setup(render),original=f.r.invoke;
+  f.r.invoke=async body=>body.action==='recordSuppliedOrder'?(f.calls.push(body),{data:{order:{id:'exchange'},invoiceId:'',exchangeOnly:true}}):original(body);
+  try{
+    await f.ready();await productsStep(f);f.button('Yes, goods replaced').onClick();f.paint();f.button('Choose replacement products').onClick();for(let i=0;i<3;i++){f.paint();await f.r.flush();}f.paint();
+    f.r.replacementPicker.onQuantityChange(f.r.replacementPicker.products[0],3);f.r.replacementPicker.onOpenChange(false);f.paint();f.r.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});f.paint();
+    f.button('Review sale').onClick();assert.match(f.paint(),/Exchange only — no customer charge/);f.control('Receipt reference number').onChange({target:{value:'EXCHANGE-1'}});f.paint();assert.equal(f.button('Record exchange & deduct stock').disabled,false);await f.button('Record exchange & deduct stock').onClick();
+    const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.deepEqual(body.lines,[]);assert.equal(body.paymentType,'exchange');assert.equal(body.expectedTotal,0);assert.equal(body.stockReplacements[0].quantity,3);assert.deepEqual(f.r.navigation,['/sales/exchange']);
+  }finally{f.close();}
+});
+
+test('Sales refreshes source availability and new products on focus without discarding entered quantities',async()=>{
+  const {render}=await bundle(),current=structuredClone(stock),events=new Map(),previous={window:globalThis.window,document:globalThis.document};let tick;
+  globalThis.window={location:{search:''},setInterval(fn){tick=fn;return 1;},clearInterval(){},addEventListener:(name,fn)=>events.set(name,fn),removeEventListener:name=>events.delete(name)};
+  globalThis.document={hidden:false,addEventListener(){},removeEventListener(){}};
+  const f=setup(render,options,current);
+  try{
+    await f.ready();await productsStep(f);quantity(f,4);current.products[0].available=2;current.products.push({id:'new',name:'New finished product',inventory_type:'assembly',available:9,selling_price:500});
+    events.get('focus')();for(let i=0;i<3;i++){f.paint();await f.r.flush();}f.paint();assert.equal(f.control('Qty 1').value,4);assert.equal(f.r.productPicker.products[0].available,2);assert.equal(f.r.productPicker.products.find(p=>p.id==='new').available,9);
+    f.button('No replacements').onClick();f.paint();f.button('Review sale').onClick();assert.match(f.paint(),/Review product quantities/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+    const before=f.calls.length;tick();for(let i=0;i<3;i++){f.paint();await f.r.flush();}assert.ok(f.calls.length>before);
+  }finally{f.close();globalThis.window=previous.window;globalThis.document=previous.document;}
+});

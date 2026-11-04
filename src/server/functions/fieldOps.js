@@ -234,9 +234,12 @@ export default async function (req) {
       const submit = !!body.submit;
       if (!body.saleId && (typeof body.idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(body.idempotencyKey))) throw new Error('A valid supply request reference is required. Reopen the sale form.');
       const transactionDate = body.transactionDate || today();
-      if (submit && !['cash', 'credit'].includes(body.paymentType)) throw new Error('Choose whether cash was collected or this supply is on credit');
-      if (body.paymentType != null && body.paymentType !== '' && !['cash', 'credit'].includes(body.paymentType)) throw new Error('Choose cash or credit for this supply');
-      const paymentType = ['cash', 'credit'].includes(body.paymentType) ? body.paymentType : null;
+      const replacements = normalizeSaleReplacements(body.stockReplacements, transactionDate);
+      const exchangeOnly = Array.isArray(body.lines) && body.lines.length === 0 && replacements.length > 0;
+      if (exchangeOnly && Number(body.amountCollected || 0) !== 0) throw new Error('An exchange cannot collect cash. Add sold products to record a payment.');
+      if (!exchangeOnly && submit && !['cash', 'credit'].includes(body.paymentType)) throw new Error('Choose whether cash was collected or this supply is on credit');
+      if (!exchangeOnly && body.paymentType != null && body.paymentType !== '' && !['cash', 'credit'].includes(body.paymentType)) throw new Error('Choose cash or credit for this supply');
+      const paymentType = exchangeOnly ? 'exchange' : ['cash', 'credit'].includes(body.paymentType) ? body.paymentType : null;
       periodDates(transactionDate, transactionDate);
       if (submit && transactionDate > today()) throw new Error('A supply cannot be recorded in the future');
       if (!body.customerId) throw new Error('Select the customer being supplied');
@@ -267,8 +270,7 @@ export default async function (req) {
       const run = await currentSupplyRun(svc, employee.id, body.dispatchId, transactionDate, submit);
 
       const inputLines = Array.isArray(body.lines) ? body.lines : [];
-      if (!inputLines.length || inputLines.length > 50 || inputLines.some(l => !l || typeof l.product_id !== 'string' || typeof l.quantity === 'boolean' || !Number.isFinite(Number(l.quantity)) || round3(l.quantity) <= 0) || new Set(inputLines.map(l => l.product_id)).size !== inputLines.length) throw new Error('Add valid positive quantities for distinct products');
-      const replacements = normalizeSaleReplacements(body.stockReplacements, transactionDate);
+      if (!Array.isArray(body.lines) || !inputLines.length && !exchangeOnly || inputLines.length > 50 || inputLines.some(l => !l || typeof l.product_id !== 'string' || typeof l.quantity === 'boolean' || !Number.isFinite(Number(l.quantity)) || round3(l.quantity) <= 0) || new Set(inputLines.map(l => l.product_id)).size !== inputLines.length) throw new Error('Add valid positive quantities for distinct products');
       const replacementError=validateReplacementDeclaration(body.replacementsDeclared,replacements,submit&&body.replacementsDeclared!==undefined);
       if(replacementError)throw Error(replacementError);
       if (replacements.length && transactionDate > today()) throw Error('Stock replacements cannot be recorded in the future');
@@ -368,6 +370,7 @@ export default async function (req) {
         location_name: location?.name || '',
         transaction_date: transactionDate,
         payment_type: paymentType,
+        supply_kind: exchangeOnly ? 'exchange' : replacements.length ? 'sale_exchange' : 'sale',
         price_includes_vat:true,
         subtotal,
         discount_total: discountTotal,
@@ -511,8 +514,9 @@ export default async function (req) {
         });
         const recorded = await svc.entities.FieldSale.get(sale.id);
         const recordedLines = await svc.entities.FieldSaleLine.filter({ field_sale_id: sale.id });
-        await recordSaleAccounting(svc, recorded, recordedLines, { id: user.id, name: employee.full_name || user.full_name }, true);
+        if (!exchangeOnly) await recordSaleAccounting(svc, recorded, recordedLines, { id: user.id, name: employee.full_name || user.full_name }, true);
         await postSaleReplacements(svc, user, recorded, replacements);
+        if (exchangeOnly) await svc.entities.FieldSale.update(sale.id, {status:'approved_posted',exchange_completed_at:new Date().toISOString(),journal_id:'',inventory_effect:'exchange'});
       }
 
       return Response.json({ sale: await svc.entities.FieldSale.get(sale.id) });
@@ -524,6 +528,17 @@ export default async function (req) {
       if (!sale) throw new Error('Sale not found');
       if (role !== 'admin' && sale.commercial_id !== employee?.id) throw new Error('This sale belongs to another Commercial');
       const lines = await svc.entities.FieldSaleLine.filter({ field_sale_id: sale.id });
+      if (sale.supply_kind === 'exchange') {
+        const records = await readRecords(svc.entities.SpoilageRecord, {source_sale_id:sale.id,status:'replaced'});
+        const replacementLines = [];
+        for (const record of records) {
+          if (!record.journal_id) continue;
+          const journal = await svc.entities.JournalEntry.get(record.journal_id);
+          if (journal?.status !== 'posted' || journal.source_document_type !== 'SpoilageRecord' || journal.source_document_id !== record.id) throw Error('The replacement accounting needs reconciliation.');
+          replacementLines.push(...await readRecords(svc.entities.JournalLine, {journal_id:journal.id}));
+        }
+        return Response.json({lines:replacementLines,posts:sale.status==='approved_posted'});
+      }
       const plan = await buildSaleJournal(svc, sale, lines);
       return Response.json({ lines: plan, posts: sale.status === 'approved_posted' });
     }

@@ -312,3 +312,41 @@ test('a late replacement failure rolls back the sale, invoice, stock, quarantine
   }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 
+
+for(const sourceType of ['company','warehouse','issued'])test(sourceType+' replacement-only receipt creates an accounted exchange without an invoice or customer debt',async()=>{
+  const f=await setup();await f.s.Customer.update('customer-a',{balance:400,credit_limit:100,credit_status:'blocked'});
+  const cashBefore=await f.s.CashCollection.list(),args={...f.body,sourceType,dispatchId:sourceType==='issued'?'run-a':'',warehouseId:sourceType==='warehouse'?'factory':'',lines:[],paymentType:'exchange',expectedTotal:0,replacementsDeclared:true,stockReplacements:[{product_id:'product-a',quantity:3,reason:'damaged',expiry_date:''}]};
+  const result=await f.call(args);assert.equal(result.exchangeOnly,true);assert.equal(result.invoiceId,'');assert.equal(result.order.supply_kind,'exchange');assert.equal(result.order.status,'delivered');assert.equal(result.order.total,0);
+  assert.equal((await f.s.Invoice.list()).length,0);assert.equal((await f.s.SalesOrderLine.list()).length,0);assert.deepEqual(await f.s.CashCollection.list(),cashBefore);assert.equal((await f.s.Customer.get('customer-a')).balance,400);
+  assert.equal((await f.s.StockBalance.get(sourceType==='issued'?'stock':f.factory.id)).quantity,sourceType==='issued'?7:17);
+  const records=await f.s.SpoilageRecord.list();assert.equal(records.length,1);assert.equal(records[0].replacement_cost,sourceType==='issued'?600:900);
+  const returned=(await f.s.StockBalance.list()).find(b=>b.qc_status==='quarantine');assert.equal(returned.quantity,3);assert.equal(returned.total_value,0);
+  const journals=await f.s.JournalEntry.list(),lines=await f.s.JournalLine.list();assert.equal(journals.length,1);assert.equal(journals[0].source_document_type,'SpoilageRecord');assert.equal(lines.reduce((n,l)=>n+Number(l.debit||0)-Number(l.credit||0),0),0);assert.ok(lines.every(l=>!['revenue','receivable','clearing'].includes(l.account_id)));
+  const before=structuredClone(f.rows);assert.equal((await f.call(args)).reused,true);assert.deepEqual(f.rows,before);
+  const workspace=await invoiceAction(f.client,admin,{action:'invoiceWorkspace'});assert.ok(!workspace.sources.some(s=>s.id===result.order.id));
+  await assert.rejects(invoiceAction(f.client,admin,{action:'createSalesInvoice',sourceType:'order',sourceId:result.order.id,invoiceDate:date,dueDate:date,options:invoiceDefaults({business_name:'Customer A'})}),/exchange has no sales invoice/);
+});
+
+test('Sales stock loads every active finished product across pages and reflects changed stock, holds and setup state',async()=>{
+  const f=await setup();let last;
+  for(let i=0;i<420;i++)last=await f.s.Product.create({name:'Finished '+i,inventory_type:'assembly',is_active:true,selling_price:500});
+  const draft=await f.s.Product.create({name:'Draft assembly',inventory_type:'assembly',is_active:true,configuration_status:'draft'});
+  await f.s.Product.create({name:'Packaging',inventory_type:'packaging',is_active:true});await f.s.Product.create({name:'Inactive',inventory_type:'assembly',is_active:false});
+  const balance=await f.s.StockBalance.create({warehouse_id:'factory',product_id:last.id,quantity:7,qc_status:'approved'});
+  await f.s.StockBalance.create({warehouse_id:'factory',product_id:draft.id,quantity:99,qc_status:'approved'});
+  const get=()=>f.call({action:'salesOrderStock',sourceType:'company'});let data=await get();assert.equal(data.products.length,422);assert.equal(data.products.find(p=>p.id===last.id).available,7);assert.equal(data.products.find(p=>p.id===draft.id).available,0);assert.match(data.products.find(p=>p.id===draft.id).unavailable_reason,/setup/i);
+  await f.s.StockBalance.update(balance.id,{quantity:5});data=await get();assert.equal(data.products.find(p=>p.id===last.id).available,5);
+  await f.s.StockBalance.update(balance.id,{qc_status:'quarantine'});data=await get();assert.equal(data.products.length,422);assert.equal(data.products.find(p=>p.id===last.id).available,0);
+  const before=structuredClone(f.rows);await assert.rejects(f.call({...f.body,sourceType:'company',dispatchId:'',lines:[{product_id:last.id,quantity:1,unit_price:500}],expectedTotal:500}),/quantity/);assert.deepEqual(f.rows,before);
+});
+
+test('a late exchange-only audit failure rolls back replacement stock and accounting, then an identical retry commits once',async()=>{
+  const db=new PGlite();try{
+    const f=await setup(db),route=await functionRoute(),create=f.s.AuditLog.create;
+    globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+    const body={...f.body,lines:[],expectedTotal:0,paymentType:'exchange',stockReplacements:[{product_id:'product-a',quantity:3,reason:'damaged'}]},before=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows;
+    f.s.AuditLog.create=async value=>{if(value.action==='record_supplied_order')throw Error('Late exchange audit failure');return create(value);};
+    const call=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});const failed=await call();assert.equal(failed.status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
+    f.s.AuditLog.create=create;const ok=await call();assert.equal(ok.status,200,JSON.stringify(await ok.clone().json()));const retry=await call();assert.equal((await retry.json()).reused,true);assert.equal((await f.s.StockBalance.get('stock')).quantity,7);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.Invoice.list()).length,0);
+  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+});

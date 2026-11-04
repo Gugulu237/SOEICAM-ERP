@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import SaleProductPicker from '@/components/sales/SaleProductPicker';
 import MobileInfo from '@/components/shared/MobileInfo';
 
-export default function SaleReplacements({ rows = [], stock, lines, date, disabled, onChange, declared, onDeclare }) {
+export default function SaleReplacements({ rows = [], stock, lines, date, disabled, onChange, declared, onDeclare, onRefresh }) {
   const [localAnswer,setLocalAnswer]=useState(rows.length?true:null),[picker,setPicker]=useState(false);
   const answer=declared===undefined?localAnswer:declared;
   const choose=value=>{setLocalAnswer(value);onDeclare?.(value);if(!value)onChange([]);};
@@ -16,7 +16,7 @@ export default function SaleReplacements({ rows = [], stock, lines, date, disabl
   const quantity=(p,value)=>{const at=rows.findIndex(row=>row.product_id===p.id);if(value===null){onChange(rows.filter((_,i)=>i!==at));return;}if(at>=0)update(at,{quantity:value});else onChange([...rows,{product_id:p.id,quantity:value,reason:'expired',expiry_date:'',lot_number:''}]);};
   const update = (index, patch) => onChange(rows.map((row, i) => i === index ? { ...row, ...patch } : row));
   return <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3" aria-label={ui('Stock replacements')}>
-<h3 className="flex items-center gap-2 text-sm font-semibold"><RotateCcw size={17} aria-hidden="true"/>{ui('Were any spoiled goods replaced during this supply?')}</h3><div role="group" aria-label={ui('Spoilage replacement answer')} className="mt-3 grid grid-cols-2 gap-3">{[[false,'No replacements'],[true,'Yes, goods replaced']].map(([value,label])=><Button key={label} type="button" variant={answer===value?'default':'outline'} className="min-h-11 whitespace-normal" aria-pressed={answer===value} disabled={disabled} onClick={()=>choose(value)}>{ui(label)}</Button>)}</div>
+<h3 className="flex items-center gap-2 text-sm font-semibold"><RotateCcw size={17} aria-hidden="true"/>{ui('Replace damaged or expired products')}</h3><p className="mt-2 text-xs leading-5 text-slate-600">{ui('Add products to sell, replace, or both. With replacements only, this record is an exchange with no customer charge.')}</p><div role="group" aria-label={ui('Spoilage replacement answer')} className="mt-3 grid grid-cols-2 gap-3">{[[false,'No replacements'],[true,'Yes, goods replaced']].map(([value,label])=><Button key={label} type="button" variant={answer===value?'default':'outline'} className="min-h-11 whitespace-normal" aria-pressed={answer===value} disabled={disabled} onClick={()=>choose(value)}>{ui(label)}</Button>)}</div>
     {answer===true && <div className="mt-2 space-y-3">
       <MobileInfo title={ui('Stock replacements')} desktopClassName="text-xs leading-5 text-slate-600"><p>{ui('Free like-for-like replacements reduce the selected stock and do not increase the customer bill. Collected goods are quarantined. Include these exchanges on this supply receipt; do not enter replacements already recorded separately.')}</p></MobileInfo>
       {rows.map((row, index) => {
@@ -29,7 +29,7 @@ export default function SaleReplacements({ rows = [], stock, lines, date, disabl
           <div className="grid grid-cols-1 gap-3"><div><Label htmlFor={'exchange-expiry-' + index} className="text-xs">{ui(row.reason === 'expired' ? 'Printed expiry date *' : 'Printed expiry date')}</Label><Input id={'exchange-expiry-' + index} className="mt-1 h-11 min-w-0" type="date" max={row.reason === 'expired' ? date : undefined} disabled={disabled} value={row.expiry_date} onChange={event => update(index, { expiry_date: event.target.value })} /></div><div><Label htmlFor={'exchange-lot-' + index} className="text-xs">{ui('Batch / lot (optional)')}</Label><Input id={'exchange-lot-' + index} className="mt-1 h-11" disabled={disabled} maxLength={200} value={row.lot_number} onChange={event => update(index, { lot_number: event.target.value })} /></div></div>
         </fieldset>;
       })}
-      <Button type="button" variant="outline" className="h-11 w-full border-primary/30 text-primary" disabled={disabled || rows.length >= 50} onClick={() => setPicker(true)}><Plus size={16} className="mr-2" />{ui(rows.length?'Add or edit replacements':'Choose replacement products')}</Button>
+      <Button type="button" variant="outline" className="h-11 w-full border-primary/30 text-primary" disabled={disabled || rows.length >= 50} onClick={() => {onRefresh?.();setPicker(true);}}><Plus size={16} className="mr-2" />{ui(rows.length?'Add or edit replacements':'Choose replacement products')}</Button>
     </div>}
     {picker&&<SaleProductPicker open purpose="replacement" onOpenChange={setPicker} products={products} lines={pickerLines} onQuantityChange={quantity} disabled={disabled}/>}
   </section>;

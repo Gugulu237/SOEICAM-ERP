@@ -19,7 +19,7 @@ export async function companySalesAction(base44, user, body) {
   const stores = base44.asServiceRole.entities;
   const [invoices, fieldSales] = await Promise.all([
     readRecords(stores.Invoice, { status: { $in: postedInvoiceStatuses }, $or:[{invoice_date: { $gte: from, $lte: to }},{payment_type:{$ne:'cash'},balance:{$gt:0}}] }),
-    readRecords(stores.FieldSale, { status: 'approved_posted', $or:[{transaction_date: { $gte: from, $lte: to }},{amount_due:{$gt:0}}] }),
+    readRecords(stores.FieldSale, { status: 'approved_posted', supply_kind:{$ne:'exchange'}, $or:[{transaction_date: { $gte: from, $lte: to }},{amount_due:{$gt:0}}] }),
   ]);
   const ids=[...new Set([...invoices,...fieldSales].map(row=>row.journal_id).filter(Boolean))],journals=new Map();
   for(let i=0;i<ids.length;i+=100)for(const row of await readRecords(stores.JournalEntry,{id:{$in:ids.slice(i,i+100)}}))journals.set(row.id,row);

@@ -15,7 +15,9 @@ import {validProductQuantity} from '@/lib/product-quantity';
 
 export default function SaleProductPicker({open,onOpenChange,products,lines,onQuantityChange,disabled=false,purpose='sale'}) {
   const [search,setSearch]=useState(''),[family,setFamily]=useState('All'),[size,setSize]=useState('');
-  const [sort,setSort]=useState('size'),[filters,setFilters]=useState(false);
+  const [sort,setSort]=useState('size'),[filters,setFilters]=useState(false),[shown,setShown]=useState(36);
+  useEffect(()=>{if(open){setSearch('');setFamily('All');setSize('');}},[open]);
+  useEffect(()=>{setShown(36);},[open,search,family,size,sort]);
   const [editing,setEditing]=useState(''),[draft,setDraft]=useState(''),anchor=useRef(null),heading=useRef(null),entry=useRef(null),latest=useRef(null);
   latest.current={products,lines,disabled,onQuantityChange,purpose};
   const [viewport,setViewport]=useState(null);
@@ -42,6 +44,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
   const sizes=[...new Set(decorated.filter(row=>family==='All'||row.family===family).map(row=>row.size).filter(Boolean))].sort(compareProductSizes);
   const matching=useMemo(()=>{const terms=normalizeProductText(search).trim().split(/\s+/).filter(Boolean);return decorated.filter(row=>(family==='All'||row.family===family)&&(!size||row.size===size)&&terms.every(term=>row.search.includes(term)));},[decorated,family,size,search]);
   const sections=useMemo(()=>catalogueSections(matching,sort),[matching,sort]);
+  const visibleSections=useMemo(()=>{let remaining=shown;return sections.map(section=>{const rows=section.rows.slice(0,remaining);remaining-=rows.length;return {...section,rows};}).filter(section=>section.rows.length);},[sections,shown]);
   const invalid=lines.some(line=>{const product=productById.get(line.product_id);return !product||!validProductQuantity(line.quantity,availableFor(product));});
   const choose=useCallback((product,line,event)=>{
     if(disabled||entry.current)return;
@@ -78,7 +81,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
         <ProductSortSelect value={sort} onChange={setSort} disabled={!!active} className="flex-col !items-stretch !gap-1"/>
       </div>}
     </div>
-    <ProductGrid sections={sections} lines={lines} disabled={disabled} editing={!!active} purpose={purpose} onChoose={choose}/>
+    <ProductGrid sections={visibleSections} total={matching.length} shown={shown} onMore={()=>setShown(n=>n+36)} lines={lines} disabled={disabled} editing={!!active} purpose={purpose} onChoose={choose}/>
     {!active&&<div className="shrink-0 border-t bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-5">
       <div className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-1.5 text-xs"><ShoppingBag size={16} className="shrink-0"/>{ui('{0} products selected',lines.length)}</span><Button type="button" className="min-h-11" disabled={disabled||invalid} onClick={()=>closePicker(false)}>{ui('Done selecting')}</Button></div>
     </div>}
@@ -97,7 +100,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
 }
 
 // Keep the image grid stable while the user types a quantity.
-const ProductGrid=React.memo(function ProductGrid({sections,lines,disabled,editing,purpose,onChoose}){
+const ProductGrid=React.memo(function ProductGrid({sections,total,shown,onMore,lines,disabled,editing,purpose,onChoose}){
   const replacement=purpose==='replacement',spoilage=purpose==='spoilage';
   const selectedLines=new Map(lines.map(line=>[line.product_id,line]));
   return (
@@ -114,12 +117,16 @@ const ProductGrid=React.memo(function ProductGrid({sections,lines,disabled,editi
               {selected&&<span className="absolute right-1 top-1 flex max-w-[90%] items-center gap-0.5 rounded-md bg-primary px-1 py-0.5 text-[11px] font-semibold text-primary-foreground"><Check size={11} className="shrink-0"/><span className="truncate">{formatNumber(Number(line.quantity)||0,3)}</span></span>}
               <span className="flex w-full min-w-0 flex-1 flex-col gap-0.5 p-2">
                 <span title={product.name} className="line-clamp-2 min-h-8 break-words text-xs font-semibold leading-4">{product.name}</span>
+                {!spoilage&&<span className="text-[11px] text-slate-600">{ui('{0} available',formatNumber(Math.max(0,available)||0,3))}</span>}
+                {!spoilage&&!(available>0)&&<span className="text-[11px] text-slate-500">{ui(product.unavailable_reason||'No saleable stock at this source')}</span>}
+                {!replacement&&!spoilage&&!(Number(product.selling_price)>0)&&<span className="text-[11px] text-amber-700">{ui('Set a selling price')}</span>}
                 {bad&&<span role="alert" className="text-[11px] text-red-700">{ui('Check quantity')}</span>}
               </span>
             </button>
           </article>;
         })}</div>
       </section>)}
+      {total>shown&&<Button type="button" variant="outline" className="min-h-11 w-full" disabled={disabled||editing} onClick={onMore}>{ui('Show more products')} ({shown}/{total})</Button>}
       {!sections.length&&<p className="py-8 text-center text-sm text-slate-500">{ui('No products match your search.')}</p>}
     </div>
   );

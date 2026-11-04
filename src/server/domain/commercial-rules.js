@@ -74,7 +74,7 @@ export function periodDates(from, to) {
 
 export function commercialReport({ agents, customers, sales, lines, from, to }) {
   const inPeriod = (date) => date && date.slice(0, 10) >= from && date.slice(0, 10) <= to;
-  const approved = sales.filter((s) => s.status === 'approved_posted' && inPeriod(s.transaction_date));
+  const approved = sales.filter((s) => s.supply_kind !== 'exchange' && s.status === 'approved_posted' && inPeriod(s.transaction_date));
   const saleMap = new Map(approved.map((s) => [s.id, s]));
   const registered = customers.filter((c) => c.acquired_by_id && inPeriod(c.acquisition_date || c.registered_at));
   const customerMap = new Map(customers.map((c) => [c.id, c]));

@@ -37,7 +37,8 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
     assert.match(html, /Record sale \/ supply/); assert.match(html, /Agent A/); assert.match(html, /CE 123 AB/);
     assert.deepEqual(ui.navigation, [], 'entry stays in the Commercial section');
     assert.equal(ui.catalog.products[0].quantity, 10);
-    assert.deepEqual(ui.catalog.products.map(product => product.id), ['product-a'], 'factory stock and other vehicles never enter this agent catalogue');
+    assert.deepEqual(ui.catalog.products.map(product => product.id), ['product-a','not-loaded'], 'the full finished catalogue is visible without exposing factory stock');
+    assert.equal(ui.catalog.products.find(p=>p.id==='not-loaded').available,0);
     if (photo) { assert.equal(ui.catalog.lines.length, 1); assert.equal(ui.catalog.lines[0].quantity, 4); for (let i=0;i<3;i++) { draw(); await ui.flush(); } assert.equal(ui.catalog.lines[0].quantity, 4); }
 
     {
@@ -47,12 +48,12 @@ async function inlineSupply(role, photo = false, dashboardPending = false, withE
     ui.customer.onChange('customer-a');draw();await ui.flush();draw();
     {
       ui.buttons.find(b=>b.label==='Continue to products').onClick();assert.match(draw(),/Step 2 of 3/);
-      ui.buttons.find(b=>b.label==='Choose products').onClick();draw();assert.equal(ui.catalog.open,true);
+      ui.buttons.find(b=>b.label==='Choose products').onClick();for(let i=0;i<3;i++){draw();await ui.flush();}draw();assert.equal(ui.catalog.open,true);
       if(!photo)ui.catalog.onQuantityChange(ui.catalog.products[0],'1');draw();ui.catalog.onOpenChange(false);draw();
       assert.equal(ui.buttons.some(b=>b.label==='Record supply'),false);assert.equal(tables.FieldSale.length,0);
       ui.buttons.find(b=>b.label==='Review sale').onClick();assert.match(draw(),/Please answer whether spoiled goods/);
       ui.buttons.find(b=>b.label===(withExchange?'Yes, goods replaced':'No replacements')).onClick();draw();
-      if(withExchange){ui.buttons.find(b=>b.label==='Choose replacement products').onClick();draw();assert.equal(ui.replacementCatalog.products[0].available,10-(photo?4:1));ui.replacementCatalog.onQuantityChange(ui.replacementCatalog.products[0],2);ui.replacementCatalog.onOpenChange(false);draw();assert.equal(ui.catalog.products[0].available,8,'commercial paid picker reserves replacement stock');ui.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});draw();}
+      if(withExchange){ui.buttons.find(b=>b.label==='Choose replacement products').onClick();for(let i=0;i<3;i++){draw();await ui.flush();}draw();assert.equal(ui.replacementCatalog.products[0].available,10-(photo?4:1));ui.replacementCatalog.onQuantityChange(ui.replacementCatalog.products[0],2);ui.replacementCatalog.onOpenChange(false);draw();assert.equal(ui.catalog.products[0].available,8,'commercial paid picker reserves replacement stock');ui.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});draw();}
       ui.buttons.find(b=>b.label==='Review sale').onClick();const reviewHtml=draw();assert.match(reviewHtml,/Step 3 of 3/);assert.equal((reviewHtml.match(/id="qty-0"/g)||[]).length,1,'the review has one quantity control and no hidden duplicate IDs');
       ui.buttons.find(b=>b.label==='Back').onClick();assert.match(draw(),/Step 2 of 3/);assert.equal(Number(ui.catalog.lines[0].quantity),photo?4:1);
       ui.buttons.find(b=>b.label==='Review sale').onClick();draw();
@@ -147,3 +148,16 @@ test('first dashboard tile starts an own-account sale with cash or credit select
 });
 
 test('mobile agent completes customer, product and review screens with own-account stock and receipt checks',()=>inlineSupply('commercial',false,false,false,true));
+
+test('mobile Commercial records replacement-only exchange with receipt proof and no cash or credit choice',async()=>{
+  const render=await commercialUI(),handler=await fieldHandler(),{client,tables}=fixture(),runtime=hookRuntime(),previous={window:globalThis.window,document:globalThis.document};
+  runtime.phone=true;runtime.session={role:'commercial',isAdmin:false,employee:staff,loading:false};runtime.client={entities:client.asServiceRole.entities,functions:{invoke:async(name,body)=>{const response=await handler(request(body));return {data:await response.json()};}}};
+  globalThis.__commercialUI=runtime;globalThis.__dailySupplyClient=client;globalThis.window={addEventListener(){},removeEventListener(){},setInterval:()=>1,clearInterval(){}};globalThis.document={hidden:false,addEventListener(){},removeEventListener(){}};
+  const draw=()=>{runtime.beforeRender();return render({actorEmployee:staff,loading:true});},button=label=>runtime.buttons.find(b=>b.label===label),settle=async()=>{for(let i=0;i<6;i++){draw();await runtime.flush();}return draw();};
+  try{
+    draw();button('Record sale').onClick();await settle();runtime.customer.onChange('customer-a');await settle();button('Continue to products').onClick();draw();button('Yes, goods replaced').onClick();draw();button('Choose replacement products').onClick();await settle();
+    runtime.replacementCatalog.onQuantityChange(runtime.replacementCatalog.products[0],3);runtime.replacementCatalog.onOpenChange(false);draw();runtime.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});draw();button('Review sale').onClick();assert.match(draw(),/Exchange only — no customer charge/);assert.equal(button('Cash collected'),undefined);assert.equal(button('On credit'),undefined);
+    runtime.receipt.onReferenceChange('EXCHANGE-PROOF');draw();runtime.receipt.onChange(['private/fixture.jpg']);draw();assert.equal(button('Record exchange').disabled,false);await button('Record exchange').onClick();draw();
+    assert.equal(tables.FieldSale.length,1);assert.equal(tables.FieldSale[0].supply_kind,'exchange');assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.Customer[0].balance,0);assert.equal(tables.CashCollection.length,0);assert.equal(tables.SpoilageRecord.length,1);
+  }finally{runtime.cleanup();globalThis.window=previous.window;globalThis.document=previous.document;delete globalThis.__commercialUI;delete globalThis.__dailySupplyClient;}
+});

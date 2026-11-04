@@ -105,9 +105,9 @@ export async function commercialAction(base44, user, body) {
     const { from: date } = periodDates(body.date, body.date);
     const [sales, inventory] = await Promise.all([
       readRecords(svc.entities.FieldSale, { commercial_id: commercialId, transaction_date: date }),
-      commercialRunInventory(svc, commercialId, date),
+      commercialRunInventory(svc, commercialId, date, {includeCatalogue:body.includeCatalogue===true}),
     ]);
-    const fields = ['id', 'sale_number', 'customer_name', 'location_name', 'transaction_date', 'status', 'payment_type', 'total', 'amount_collected', 'amount_due', 'submitted_at', 'driver_name', 'dispatch_id', 'dispatch_number', 'vehicle_name'];
+    const fields = ['id', 'sale_number', 'customer_name', 'location_name', 'transaction_date', 'status', 'payment_type', 'total', 'amount_collected', 'amount_due', 'submitted_at', 'driver_name', 'dispatch_id', 'dispatch_number', 'vehicle_name', 'supply_kind'];
     const lines = await rowsByIds(svc.entities.FieldSaleLine, 'field_sale_id', sales.map(sale => sale.id));
     const products = await rowsByIds(svc.entities.Product, 'id', lines.map(line => line.product_id));
     const view = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
