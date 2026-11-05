@@ -121,7 +121,7 @@ export async function employeeWorkspaceAction(base44, user, body) {
   if (template === 'commercial') {
     const [inventory, sales, pending, customers, cash, handovers] = await Promise.all([
       commercialRunInventory(svc, id, date),
-      readRecords(svc.entities.FieldSale, { commercial_id: id, transaction_date: { $gte: monthStart, $lte: date } }),
+      readRecords(svc.entities.FieldSale, { commercial_id: id, $or:[{transaction_date: { $gte: monthStart, $lte: date }},{sale_reversal_date:{$gte:monthStart,$lte:date}}] }),
       readRecords(svc.entities.FieldSale, { commercial_id: id, status: { $in: ['draft', 'returned', 'submitted', 'under_review', 'posting_failed'] } }),
       readRecords(svc.entities.Customer, { acquired_by_id: id }),
       readRecords(svc.entities.CashCollection, { commercial_id: id, $or: [{ collection_date: { $gte: monthStart, $lte: date } }, { received_at: { $gte: receivedSince } }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
@@ -137,7 +137,7 @@ export async function employeeWorkspaceAction(base44, user, body) {
       for (const sale of await readRecords(svc.entities.FieldSale, { commercial_id: id, transaction_date: { $in: olderDates.slice(offset, offset + 100) }, status: 'approved_posted', payment_type: 'cash' })) completeSales.set(sale.id, sale);
     }
     return { ...shared, runs: inventory.runs, products: inventory.products, balances: inventory.balances,
-      sales: [...new Map([...sales, ...pending].map((s) => [s.id, pick(s, ['id', 'sale_number', 'customer_id', 'customer_name', 'transaction_date', 'status', 'total', 'subtotal', 'amount_collected', 'amount_due', 'payment_type', 'dispatch_id', 'decision_reason', 'created_date'])])).values()],
+      sales: [...new Map([...sales, ...pending].map((s) => [s.id, pick(s, ['id', 'sale_number', 'customer_id', 'customer_name', 'transaction_date', 'status', 'total', 'subtotal', 'amount_collected', 'amount_due', 'payment_type', 'dispatch_id', 'decision_reason', 'created_date', 'sale_reversal'])])).values()],
       customers: customers.map((c) => pick(c, ['id', 'business_name', 'acquisition_date', 'acquisition_verified', 'is_active'])),
       cash: cash.filter(c => c.status !== 'cancelled').map((c) => pick(c, ['id', 'outstanding_amount', 'status'])),
       cashDays: reconcileDailyCash([...completeCash.values()], handovers, [...completeSales.values()]) };

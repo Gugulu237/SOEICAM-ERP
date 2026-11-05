@@ -48,3 +48,9 @@ test('spoilage entry works without legacy delivery points and keeps product quan
   }finally{s.cleanup();delete globalThis.__activityUI;}
 });
 
+
+test('collection opened from an invoice preselects that invoice and its available balance',async()=>{
+ const s=hookRuntime();globalThis.__activityUI=s;s.request=async()=>({collector:{name:'General Manager'},date:'2026-11-05',cash_to_deposit:0,pending:[],invoices:[{id:'other',invoice_number:'INV-OTHER',available_amount:100},{id:'selected',invoice_number:'INV-SELECTED',available_amount:400}]});
+ const draw=()=>{s.beforeRender();return mod.exports.render('collection',{customer,invoiceId:'selected',onClose:()=>{},onDone:()=>{}});};
+ try{draw();await s.flush();draw();assert.equal(s.controls.find(c=>c['aria-label']==='Cash received (XAF)').value,'400');assert.deepEqual(s.controls.filter(c=>c.type==='checkbox').map(c=>c.checked),[false,true]);}finally{s.cleanup();delete globalThis.__activityUI;}
+});

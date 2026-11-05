@@ -38,7 +38,7 @@ async function detail(stores,id) {
   if(invoice.field_sale_id) {
     const field=await stores.FieldSale.get(invoice.field_sale_id);
     if(!field || field.status!=='approved_posted' || field.journal_id!==invoice.journal_id)throw Error('The linked Commercial supply needs reconciliation.');
-    customerBalance=round2(field.amount_due); customerPaid=round2(Number(field.total)-customerBalance);
+    customerBalance=round2(field.amount_due); customerPaid=field.sale_reversal?round2(field.sale_reversal.customer_credit):round2(Number(field.total)-customerBalance);
   } else if(invoice.payment_type==='cash' && postedInvoiceStatuses.includes(invoice.status)) {
     // A cash invoice debits cash in transit. Bank deposit status is not a debt
     // owed by the customer and must never appear as an unpaid customer invoice.
@@ -47,13 +47,13 @@ async function detail(stores,id) {
   const company=invoice.invoice_document?.company || invoiceCompany(settings[0]);
   const options={...invoiceDefaults(customer,company),...invoice.invoice_document?.options};
   const accountingVerified=journal?.status==='posted' && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
-  return {invoice:{...pick(invoice,'id price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
+  return {invoice:{...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
 }
 async function workspace(stores,role) {
   const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),role==='cashier'?[]:readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),role==='cashier'?[]:readRecords(stores.Customer),readRecords(stores.CompanySettings)]);
   const active=invoices.filter(issued),orderIds=new Set(active.map(i=>i.sales_order_id).filter(Boolean)),fieldIds=new Set(active.map(i=>i.field_sale_id).filter(Boolean));
   const journals=new Map((await recordsByIds(stores.JournalEntry,[...fields,...invoices].map(f=>f.journal_id))).map(j=>[j.id,j]));
-  const eligibleFields=fields.filter(f=>{const j=journals.get(f.journal_id);return f.supply_kind!=='exchange'&&!fieldIds.has(f.id)&&j?.status==='posted'&&j.source_document_id===f.id&&j.source_document_type==='FieldSale';});
+  const eligibleFields=fields.filter(f=>{const j=journals.get(f.journal_id);return f.supply_kind!=='exchange'&&!f.sale_reversal&&!fieldIds.has(f.id)&&j?.status==='posted'&&j.source_document_id===f.id&&j.source_document_type==='FieldSale';});
   return {permissions:{can_create:role!=='cashier'},company:invoiceCompany(settings[0]),customers:customers.map(c=>pick(c,'id business_name address town tax_id email is_active payment_terms_days financial_centralization_mode invoice_defaults')),
     invoices:invoices.filter(i=>!isOpeningRecord(i)).map(i=>{const j=journals.get(i.journal_id);return {...pick(i,'id invoice_number customer_id customer_name invoice_date due_date total balance amount_paid status payment_type sales_order_id field_sale_id source_number'),accounting_verified:j?.status==='posted'&&j.source_document_id===(i.field_sale_id || i.id)&&j.source_document_type===(i.field_sale_id?'FieldSale':'Invoice'),customer_balance:i.field_sale_id?round2(fields.find(f=>f.id===i.field_sale_id)?.amount_due ?? i.balance):i.payment_type==='cash'?0:round2(i.balance)};}).sort((a,b)=>String(b.invoice_date).localeCompare(String(a.invoice_date)) || String(b.invoice_number).localeCompare(String(a.invoice_number))),
     sources:role==='cashier'?[]:[...orders.filter(o=>o.supply_kind!=='exchange'&&!orderIds.has(o.id)).map(o=>({...pick(o,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'order',number:o.order_number,date:o.order_date})),...eligibleFields.map(f=>({...pick(f,'id customer_id customer_name total payment_type location_id location_name payment_terms_days'),type:'field',number:f.sale_number,date:f.transaction_date}))]};
@@ -85,7 +85,7 @@ export async function invoiceAction(client,user,body) {
   if(body.action==='invoiceDetail')return detail(s,body.invoiceId);
   if(body.action==='invoiceSource') {
     if(!['order','field'].includes(body.sourceType))throw Error('Choose an invoice source.');
-    const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');
+    const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');
     const [customer,settings,lines]=await Promise.all([s.Customer.get(source.customer_id),readRecords(s.CompanySettings),readRecords(s[body.sourceType==='order'?'SalesOrderLine':'FieldSaleLine'],{[body.sourceType==='order'?'order_id':'field_sale_id']:source.id})]);
     if(!customer)throw Error('The billing customer is missing.');
     const company=invoiceCompany(settings[0]),defaults=invoiceDefaults(customer,company),billTo=await billing(s,source,customer);
@@ -120,9 +120,9 @@ export async function invoiceAction(client,user,body) {
   // The source is the retry key. One legal invoice per source, even after an
   // unknown network outcome or simultaneous clicks from different windows.
   const sourceField=body.sourceType==='order'?'sales_order_id':'field_sale_id';
-  const previous=(await readRecords(s.Invoice,{[sourceField]:body.sourceId})).find(issued);
+  const previous=(await readRecords(s.Invoice,{[sourceField]:body.sourceId})).find(i=>issued(i)||i.sale_reversal);
   if(previous)return {...await detail(s,previous.id),reused:true};
-  const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');
+  const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');
   const customer=await s.Customer.get(source.customer_id);if(!customer)throw Error('The billing customer is missing.');
   const invoiceDate=dateOf(body.invoiceDate),sourceDate=source.order_date || source.transaction_date,due=dateOf(body.dueDate);
   if(invoiceDate>today() || invoiceDate<sourceDate || due<invoiceDate)throw Error('Choose an invoice date from the sale date through today, and a due date on or after it.');

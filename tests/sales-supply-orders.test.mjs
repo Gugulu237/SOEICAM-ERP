@@ -108,7 +108,7 @@ test('invalid quantities, prices, customer branches, source locations and credit
   await assert.rejects(f.call({...f.body,sourceType:'warehouse',dispatchId:'',warehouseId:'van-stock'}),/finished-goods warehouse/);
   await assert.rejects(f.call({...f.body,warehouseId:'factory'}),/does not match/);
   await assert.rejects(f.call({...f.body,date:'2099-01-01'}),/valid sale date/);
-  await assert.rejects(f.call({...f.body,sellerId:'missing'}),/active employee/);
+  await assert.rejects(f.call({...f.body,sellerId:'missing'}),/signed-in account/);
   await assert.rejects(f.call({...f.body,expectedTotal:900}),/sale total changed/);
   assert.deepEqual(f.rows,before);
   await f.s.Customer.update('customer-a',{credit_limit:500});await assert.rejects(f.call({...f.body,paymentType:'credit'}),/credit limit/);
@@ -162,15 +162,15 @@ test('an existing unsupplied draft is posted in place while stale drafts and ord
   await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID(),orderId:other.id}),/already has goods issued/);
 });
 
-test('the sale date and actual seller remain independent of current stock custody and the authenticated recorder',async()=>{
+test('historical sale dates retain the signed-in seller regardless of stock custody',async()=>{
   const f=await setup(),past=new Date(Date.parse(date+'T12:00:00Z')-86400000).toISOString().slice(0,10);
-  const result=await f.call({...f.body,sourceType:'warehouse',dispatchId:'',warehouseId:'factory',date:past,sellerId:f.agent.id,paymentType:'credit'});
+  const result=await f.call({...f.body,sourceType:'warehouse',dispatchId:'',warehouseId:'factory',date:past,sellerId:'cashier',paymentType:'credit'});
   const invoice=await f.s.Invoice.get(result.invoiceId),journal=(await f.s.JournalEntry.list())[0];
   assert.equal(result.order.order_date,past);assert.equal(invoice.invoice_date,past);assert.equal(journal.entry_date,past);
-  assert.equal(result.order.salesperson_id,f.agent.id);assert.equal(result.order.sales_supply_recorded_by,admin.id);
+  assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,admin.id);
   assert.equal(result.order.sales_supply_stockholder_id,'');assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,18);assert.equal((await f.s.StockBalance.get('stock')).quantity,10);
   await f.s.Employee.update('cashier',{status:'inactive'});
-  await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active employee/);
+  await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active employee|signed-in account/);
 });
 
 test('customer branches are selected explicitly and confirmed again when recording the sale',async()=>{
@@ -363,4 +363,9 @@ for(const sourceType of ['company','warehouse','issued'])for(const exchangeOnly 
  assert.equal((await f.s.Invoice.list()).length,exchangeOnly?0:1);
  const lines=await f.s.JournalLine.list();assert.equal(lines.reduce((sum,line)=>sum+Number(line.debit||0)-Number(line.credit||0),0),0);
  const snapshot=structuredClone(f.rows);assert.equal((await f.call(args)).reused,true);assert.deepEqual(f.rows,snapshot);
+});
+
+test('the salesperson catalogue contains only the authenticated seller and rejects another active employee',async()=>{
+ const f=await setup(),workspace=await f.call({action:'salesOrderWorkspace'});assert.equal(workspace.sellers.length,1);assert.equal(workspace.sellers[0].id,workspace.currentSellerId);
+ await assert.rejects(f.call({...f.body,sellerId:f.agent.id}),/signed-in account/);assert.equal((await f.s.SalesOrder.list()).length,0);
 });

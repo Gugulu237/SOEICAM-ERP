@@ -84,12 +84,12 @@ test('source popup displays the vehicle registration, preserves salesperson iden
   }finally{f.close();}
 });
 
-test('company stock remains automatic without individual warehouse choices, while an older draft retains its selected source and seller',async()=>{
+test('company stock remains automatic without individual warehouse choices, while an older draft retains its source and uses the signed-in seller',async()=>{
   const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'});
   try{await f.ready();await productsStep(f);assert.equal(f.r.sourcePicker.value,'company');assert.equal(f.r.sourcePicker.options.some(o=>o.id==='warehouse:main'),false);quantity(f,1);reviewStep(f);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').sourceType,'company');}finally{f.close();}
   const g=setup(render,{...options,defaultSource:'company'});g.r.routeId='old';
   g.r.client.entities.SalesOrder={get:async()=>({id:'old',status:'draft',warehouse_id:'main',warehouse_name:'Main Cold Room',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',receipt_reference:'OLD-REF'})};g.r.client.entities.SalesOrderLine={filter:async()=>[]};
-  try{await g.ready();assert.equal(g.control('Person making the sale').value,'Salesperson B');g.button('Continue to products').onClick();assert.match(g.paint(),/Main Cold Room/);assert.equal(g.r.sourcePicker.value,'warehouse:main');quantity(g,1);reviewStep(g,null);assert.equal(g.control('Receipt reference number').value,'OLD-REF');g.r.fail=false;await g.button('Record sale & deduct stock').onClick();assert.equal(g.calls.find(c=>c.action==='recordSuppliedOrder').sellerId,'other');}finally{g.close();}
+  try{await g.ready();assert.equal(g.control('Person making the sale').value,'Salesperson A');g.button('Continue to products').onClick();assert.match(g.paint(),/Main Cold Room/);assert.equal(g.r.sourcePicker.value,'warehouse:main');quantity(g,1);reviewStep(g,null);assert.equal(g.control('Receipt reference number').value,'OLD-REF');g.r.fail=false;await g.button('Record sale & deduct stock').onClick();assert.equal(g.calls.find(c=>c.action==='recordSuppliedOrder').sellerId,undefined);}finally{g.close();}
 });
 
 test('direct quantity editing merges rows and cannot advance with excessive, blank, zero or invalid amounts',async()=>{

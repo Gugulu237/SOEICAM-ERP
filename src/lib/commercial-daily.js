@@ -10,9 +10,11 @@ export function fieldSupplyPayment(sale) {
 export function dailySupplySummary(sales, date) {
   const rows = sales.filter(sale => sale.transaction_date === date && reportedStates.has(sale.status));
   const sum = (items, key) => money(items.reduce((total, row) => total + Math.max(0, Number(row[key]) || 0), 0));
-  return { count: rows.length, cash: sum(rows.filter(row => row.payment_type === 'cash'), 'total'),
-    credit: sum(rows.filter(row => row.payment_type === 'credit'), 'total'), collected: sum(rows, 'amount_collected'),
-    due: sum(rows, 'amount_due'), approved: sum(rows.filter(row => row.status === 'approved_posted'), 'total'),
+  const corrections=sales.filter(s=>s.sale_reversal?.journal_id&&s.sale_reversal.date===date);
+  const reversed=type=>sum(corrections.filter(s=>!type||s.payment_type===type),'total');
+  return { count: rows.length, cash: money(sum(rows.filter(row => row.payment_type === 'cash'), 'total')-reversed('cash')),
+    credit: money(sum(rows.filter(row => row.payment_type === 'credit'), 'total')-reversed('credit')), collected: sum(rows, 'amount_collected'),
+    due: sum(rows, 'amount_due'), approved: money(sum(rows.filter(row => row.status === 'approved_posted'), 'total')-reversed()),
     pending: rows.filter(row => row.status !== 'approved_posted').length };
 }
 export function commercialGoals(employee, verified, approvedTotal) {

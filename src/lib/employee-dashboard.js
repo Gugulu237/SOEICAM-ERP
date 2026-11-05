@@ -17,12 +17,13 @@ export function latestDeliveryReports(activities = []) {
 }
 export function commercialSnapshot(data) {
   const sales = data?.sales || [], date = data?.date || '', start = data?.monthStart || '';
-  const approved = sales.filter((s) => s.status === 'approved_posted' && s.transaction_date >= start && s.transaction_date <= date);
+  const corrections=sales.filter(s=>s.status==='approved_posted'&&s.sale_reversal?.journal_id&&s.sale_reversal.date>=start&&s.sale_reversal.date<=date).map(s=>({...s,transaction_date:s.sale_reversal.date,total:-Number(s.total||0),subtotal:-Number(s.subtotal||0)}));
+  const approved = [...sales.filter((s) => s.status === 'approved_posted' && s.transaction_date >= start && s.transaction_date <= date),...corrections];
   const customers = data?.customers || [];
   const monthlyCustomers = customers.filter(c => c.acquisition_date >= start && c.acquisition_date <= date);
   const verified = monthlyCustomers.filter(c => c.acquisition_verified === 'verified_unique').length;
   const acquiredIds = new Set(customers.map(c => c.id));
-  const eligibleNet = roundMoney(approved.filter(s => acquiredIds.has(s.customer_id)).reduce((sum, s) => sum + Math.max(0, Number(s.subtotal) || 0), 0));
+  const eligibleNet = roundMoney(approved.filter(s => acquiredIds.has(s.customer_id)).reduce((sum, s) => sum + (Number(s.subtotal) || 0), 0));
   const rate = data?.employee?.commission_rate_percent, bonus = data?.employee?.new_customer_bonus;
   const configured = typeof rate === 'number' || typeof bonus === 'number';
   const validRate = typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 100 ? rate : 0;

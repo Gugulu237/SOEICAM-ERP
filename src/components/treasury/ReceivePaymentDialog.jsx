@@ -47,7 +47,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
         invoice, treasuryAccount: account, amount: Number(form.amount),
         date: form.date, reference: form.reference, userId: user?.id || "", requestKey,
       });
-      toast({ title: ui("Payment receipt recorded"), description: ui("{0} for {1}; {2}", formatXAF(form.amount), invoice.invoice_number, role === 'admin' ? 'another administrator must approve before posting.' : 'awaiting GM approval before posting.') });
+      toast({ title: ui("Payment receipt recorded"), description: ui("{0} for {1}; {2}", formatXAF(form.amount), invoice.invoice_number, 'awaiting GM approval before posting.') });
       onDone();
     } catch (e) {
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });
@@ -59,7 +59,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader><DialogTitle>{customer ? ui("Receive Payment · {0}", customer.business_name) : ui("Receive Payment for an Invoice")}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">{ui("Record a full or partial invoice payment. ")}{role === 'admin' ? ui("Another administrator must approve your receipt before balances and the ledger are updated.") : ui("GM approval is required before balances and the ledger are updated.")}</p>
+        <p className="text-sm text-muted-foreground">{ui("Record a full or partial invoice payment. ")}{ui("GM approval is required before balances and the ledger are updated.")}</p>
 
         <div className="space-y-4">
           <div>

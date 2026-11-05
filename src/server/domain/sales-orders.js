@@ -22,16 +22,15 @@ export async function salesOrderAction(client,user,body){
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active sales staff account is required.');
   client.auth.assertModule?.('sales');
   const svc=client.asServiceRole,s=svc.entities,date=today();
+  const currentSellerId=employee?.id&&employee.status==='active'&&!employee.employee_removed_at?employee.id:'user:'+user.id;
+  const currentSeller={id:currentSellerId,name:(currentSellerId===employee?.id?employee.full_name:'')||user.full_name||user.email||'Current user',user_id:user.id};
   if(body.action==='salesOrderWorkspace'){
     const [runs,warehouses,staff,customers,vehicles]=await Promise.all([
       readRecords(s.Dispatch,{status:{$in:['loaded','in_transit']}}),readRecords(s.Warehouse),readRecords(s.Employee,{status:'active'}),readRecords(s.Customer,{is_active:true}),readRecords(s.Vehicle),
     ]);
     const sources=runs.filter(r=>r.vehicle_warehouse_id && !r.return_date && r.dispatch_date<=date && staff.some(e=>e.id===r.salesperson_id&&e.role==='commercial') && staff.some(e=>e.id===r.driver_id&&e.role==='driver'))
       .map(r=>({id:r.id,dispatch_number:r.dispatch_number,commercial_name:staff.find(e=>e.id===r.salesperson_id)?.full_name,driver_name:staff.find(e=>e.id===r.driver_id)?.full_name,vehicle_name:r.vehicle_name,vehicle_registration:vehicles.find(v=>v.id===r.vehicle_id)?.registration||'',dispatch_date:r.dispatch_date}));
-    const currentSellerId=employee?.id&&employee.status==='active'&&!employee.employee_removed_at?employee.id:'user:'+user.id;
-    const currentSeller={id:currentSellerId,name:(currentSellerId===employee?.id?employee.full_name:'')||user.full_name||user.email||'Current user',user_id:user.id};
-    const sellers=staff.filter(e=>!e.employee_removed_at).map(e=>({id:e.id,name:e.full_name}));
-    const currentIndex=sellers.findIndex(person=>person.id===currentSeller.id);if(currentIndex>=0)sellers[currentIndex]=currentSeller;else sellers.unshift(currentSeller);
+    const sellers=[currentSeller];
     return {sellers,currentSeller,currentSellerId,defaultSource:warehouses.some(companySalesWarehouse)?'company':'',runs:sources,warehouses:warehouses.filter(w=>w.is_active!==false&&!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:customers.filter(c=>!c.customer_removed_at).map(c=>({id:c.id,business_name:c.business_name,customer_number:c.customer_number,phone:c.phone,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
   }
   if(body.action==='salesOrderDeliveryPoints'){
@@ -46,7 +45,8 @@ export async function salesOrderAction(client,user,body){
   }
   if(body.action!=='recordSuppliedOrder')throw Error('Unknown sales order action.');
   if(!/^[a-f0-9-]{36}$/i.test(body.requestKey||''))throw Error('Reopen this sale for a valid save reference.');
-  const input={orderId:text(body.orderId,100),updatedDate:text(body.updatedDate,100),sourceType:body.sourceType,dispatchId:text(body.dispatchId,100),warehouseId:text(body.warehouseId,100),sellerId:text(body.sellerId,100)||(employee?.status==='active'&&!employee.employee_removed_at?employee.id:'user:'+user.id),customerId:text(body.customerId,100),locationId:text(body.locationId,100),date:body.date,paymentType:body.paymentType,expectedTotal:body.expectedTotal,notes:text(body.notes,2000),lines:body.lines};
+  if(body.sellerId && ![currentSellerId,'user:'+user.id].includes(body.sellerId))throw Error('The salesperson must be your signed-in account. Reload this sale to use the current user.');
+  const input={orderId:text(body.orderId,100),updatedDate:text(body.updatedDate,100),sourceType:body.sourceType,dispatchId:text(body.dispatchId,100),warehouseId:text(body.warehouseId,100),sellerId:currentSellerId,customerId:text(body.customerId,100),locationId:text(body.locationId,100),date:body.date,paymentType:body.paymentType,expectedTotal:body.expectedTotal,notes:text(body.notes,2000),lines:body.lines};
   if(body.stockReplacements!=null)input.stockReplacements=body.stockReplacements;
   if(body.replacementsDeclared!=null)input.replacementsDeclared=body.replacementsDeclared;
   if(body.receiptReference!=null){if(typeof body.receiptReference!=='string'||body.receiptReference.length>200||/[\x00-\x1f\x7f]/.test(body.receiptReference))throw Error('Enter a receipt reference of at most 200 characters.');input.receiptReference=body.receiptReference.trim();}
@@ -60,9 +60,7 @@ export async function salesOrderAction(client,user,body){
   const replacements=normalizeSaleReplacements(body.stockReplacements,suppliedOn);
   const replacementError=validateReplacementDeclaration(body.replacementsDeclared,replacements,body.replacementsDeclared!==undefined);
   if(replacementError)throw Error(replacementError);
-  let seller;
-  if(input.sellerId==='user:'+user.id)seller={id:employee?.status==='active'&&!employee.employee_removed_at?employee.id:'',name:employee?.status==='active'&&!employee.employee_removed_at?employee.full_name:user.full_name||user.email};
-  else {const selected=input.sellerId?await s.Employee.get(input.sellerId):null;if(!selected||selected.status!=='active'||selected.employee_removed_at)throw Error('Choose the active employee who made this sale.');seller={id:selected.id,name:selected.full_name||(selected.id===employee?.id?user.full_name||user.email:'')};}
+  const seller={id:currentSellerId.startsWith('user:')?'':currentSellerId,name:currentSeller.name};
   const exchangeOnly=Array.isArray(body.lines)&&body.lines.length===0&&replacements.length>0;
   if(!exchangeOnly&&!['cash','credit'].includes(body.paymentType))throw Error('Choose cash or credit for this sale.');
   const customer=await s.Customer.get(input.customerId);

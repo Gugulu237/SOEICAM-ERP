@@ -104,10 +104,10 @@ export async function commercialAction(base44, user, body) {
     if (!commercialId) throw new Error('Choose a Commercial agent');
     const { from: date } = periodDates(body.date, body.date);
     const [sales, inventory] = await Promise.all([
-      readRecords(svc.entities.FieldSale, { commercial_id: commercialId, transaction_date: date }),
+      readRecords(svc.entities.FieldSale, { commercial_id: commercialId, $or:[{transaction_date:date},{sale_reversal_date:date}] }),
       commercialRunInventory(svc, commercialId, date, {includeCatalogue:body.includeCatalogue===true}),
     ]);
-    const fields = ['id', 'sale_number', 'customer_name', 'location_name', 'transaction_date', 'status', 'payment_type', 'total', 'amount_collected', 'amount_due', 'submitted_at', 'driver_name', 'dispatch_id', 'dispatch_number', 'vehicle_name', 'supply_kind'];
+    const fields = ['id', 'sale_number', 'customer_name', 'location_name', 'transaction_date', 'status', 'payment_type', 'total', 'amount_collected', 'amount_due', 'submitted_at', 'driver_name', 'dispatch_id', 'dispatch_number', 'vehicle_name', 'supply_kind', 'sale_reversal'];
     const lines = await rowsByIds(svc.entities.FieldSaleLine, 'field_sale_id', sales.map(sale => sale.id));
     const products = await rowsByIds(svc.entities.Product, 'id', lines.map(line => line.product_id));
     const view = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
@@ -128,7 +128,7 @@ export async function commercialAction(base44, user, body) {
   if (body.action === 'commercialPerformance') {
     const { from, to } = periodDates(body.from, body.to);
     const sales = await readRecords(svc.entities.FieldSale, { ...(commercialId ? { commercial_id: commercialId } : {}),
-      transaction_date: { $gte: from, $lte: to }, status: 'approved_posted' });
+      $or:[{transaction_date: { $gte: from, $lte: to }},{sale_reversal_date:{$gte:from,$lte:to}}], status: 'approved_posted' });
     const registrations = await readRecords(svc.entities.Customer, { ...(commercialId ? { acquired_by_id: commercialId } : { acquired_by_id: { $exists: true, $ne: '' } }),
       acquisition_date: { $gte: from, $lte: to } });
     const supplied = await rowsByIds(svc.entities.Customer, 'id', sales.map((s) => s.customer_id));

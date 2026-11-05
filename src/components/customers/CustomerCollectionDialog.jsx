@@ -9,12 +9,12 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 async function call(body){const {data}=await invokeFieldOps(body);if(data.error)throw Error(data.error);return data;}
-export default function CustomerCollectionDialog({customer,onClose,onDone}){
+export default function CustomerCollectionDialog({customer,invoiceId,onClose,onDone}){
   useLocaleRender();
   const [data,setData]=useState(null),[loadError,setLoadError]=useState(''),[reload,setReload]=useState(0),[search,setSearch]=useState('');
   const [selected,setSelected]=useState([]),[amount,setAmount]=useState(''),[reference,setReference]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const pending=useRef(false),key=useRef(crypto.randomUUID());
-  useEffect(()=>{let active=true;setLoadError('');setData(null);call({action:'customerCollectionWorkspace',customerId:customer.id}).then(d=>{if(active)setData(d);}).catch(e=>{if(active)setLoadError(errorMessage(e));});return()=>{active=false;};},[customer.id,reload]);
+  useEffect(()=>{let active=true;setLoadError('');setData(null);call({action:'customerCollectionWorkspace',customerId:customer.id}).then(d=>{if(active){setData(d);if(invoiceId){const invoice=d.invoices.find(i=>i.id===invoiceId);setSelected(invoice?[invoice.id]:[]);setAmount(invoice?String(invoice.available_amount):'');}}}).catch(e=>{if(active)setLoadError(errorMessage(e));});return()=>{active=false;};},[customer.id,invoiceId,reload]);
   const invoices=(data?.invoices||[]).filter(i=>selected.includes(i.id)),maximum=invoices.reduce((n,i)=>n+i.available_amount,0);
   const valid=!!data&&invoices.length>0&&Number(amount)>0&&Number(amount)<=maximum&&Math.round(Number(amount)*100)/100===Number(amount)&&reference.trim();
   const choose=invoice=>{const ids=selected.includes(invoice.id)?selected.filter(id=>id!==invoice.id):[...selected,invoice.id];setSelected(ids);setAmount(String((data?.invoices||[]).filter(i=>ids.includes(i.id)).reduce((n,i)=>n+i.available_amount,0)));};

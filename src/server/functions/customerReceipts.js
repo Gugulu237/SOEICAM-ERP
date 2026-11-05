@@ -1,3 +1,4 @@
+import {principalRole} from '../domain/roles.js';
 import {confirmCustomerCollection} from '../domain/customer-activity.js';
 import {assertTreasuryAccess} from '../../lib/treasury-access.js';
 import { createClientFromRequest } from '../request-client.js';
@@ -42,10 +43,10 @@ export default async function(req) {
       await audit(svc, { action: role === 'admin' ? 'admin_confirm_customer_receipt' : 'cashier_confirm_customer_receipt', module: role === 'admin' ? 'customers' : 'cashier', entityType: 'Payment', entityId: payment.id, userId: user.id, description: `${role === 'admin' ? 'Admin' : 'Cashier'} confirmed ${amount} XAF for ${payment.invoice_numbers}; awaiting GM approval, no ledger posting` });
       return Response.json({ payment });
     }
-    await requireStaff(base44, user, ['admin'], 'approving or rejecting customer receipts');
+    const approver = await requireStaff(base44, user, ['admin'], 'approving or rejecting customer receipts');
     const payment = await svc.entities.Payment.get(body.paymentId);
     if (!payment || payment.payment_type !== 'customer_payment') throw new Error('Customer receipt not found');
-    if (body.action === 'approve') return Response.json({ payment: await approveReceipt(svc, payment, user) });
+    if (body.action === 'approve') return Response.json({ payment: await approveReceipt(svc, payment, user, {topAdmin: principalRole(user, approver.employee) === 'admin'}) });
     if (payment.receipt_channel === 'staff_collection') throw new Error('Cash collected from a customer must be reconciled before cancellation. Keep this receipt pending; rejecting it would release the invoice while the cash is still held.');
     if (payment.status !== 'pending_approval' || payment.journal_id || payment.receipt_posting_snapshot?.invoices) throw new Error('Only unposted pending receipts may be rejected');
     if (!String(body.reason || '').trim()) throw new Error('Enter a rejection reason');

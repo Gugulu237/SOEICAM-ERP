@@ -31,6 +31,7 @@ import { isFinishedProduct } from '@/lib/product-images';
 import { formatXAF } from '@/lib/formatters';
 import { useToast } from '@/components/ui/use-toast';
 import { validateSaleReplacements,validateReplacementDeclaration } from '@/lib/sale-replacements';
+import SaleReversalDialog from '@/components/sales/SaleReversalDialog';
 import SaleReplacements from '@/components/field/SaleReplacements';
 import MobileInfo from '@/components/shared/MobileInfo';
 import { businessDate } from '@/lib/business-date';
@@ -66,6 +67,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
   const [saveError, setSaveError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [reversing,setReversing]=useState(false);
   const [reload, setReload] = useState(0);
   const [runReload, setRunReload] = useState(0);
   const [step, setStep] = useState('customer');
@@ -314,6 +316,9 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
       </section>
     </div>
     {wizard&&<div className="mt-5 flex gap-3">{step!=='customer'&&<Button type="button" variant="outline" className="min-h-12 flex-1" disabled={busy} onClick={()=>goTo(step==='checkout'?'products':'customer')}><ArrowLeft size={16} className="mr-2"/>{ui('Back')}</Button>}{step!=='checkout'&&<Button type="button" className="min-h-12 flex-1" disabled={busy||runLoading||outletLoading} onClick={step==='customer'?nextProducts:review}>{ui(step==='customer'?'Continue to products':'Review sale')}<ArrowRight size={16} className="ml-2"/></Button>}</div>}
+    {locked&&sale?.status==='approved_posted'&&sale.supply_kind!=='exchange'&&!sale.sale_reversal&&<Button variant="outline" onClick={()=>setReversing(true)}>{ui('Reverse sale')}</Button>}
+    {sale?.sale_reversal&&<p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm">{ui('Sale reversed')} · {sale.sale_reversal.date} · {sale.sale_reversal.reason} · {ui('Customer credit')}: {formatXAF(sale.sale_reversal.customer_credit)}</p>}
+    {reversing&&<SaleReversalDialog fieldSaleId={sale.id} onClose={()=>setReversing(false)} onDone={()=>{setReversing(false);setReload(n=>n+1);onDone?.();}}/>}
     <SaleProductPicker open={pickerOpen} onOpenChange={setPickerOpen} products={availableProducts.map(p=>({...p,available:quantityAfterReplacements(p,form.stock_replacements),unit:p.unit_of_measure||p.storage_unit}))} lines={form.lines} onQuantityChange={setProductQuantity} disabled={disabled||runLoading||Boolean(runError)}/>
 
   </div>;

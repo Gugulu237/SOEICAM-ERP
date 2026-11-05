@@ -8,9 +8,14 @@ const posted = row => typeof row.journal_id === 'string' && Boolean(row.journal_
 // are never sales; displaying a field supply does not create another invoice.
 export function companySalesRegister({ invoices = [], fieldSales = [], from, to }) {
   const inPeriod = date => date && date >= from && date <= to;
+  const corrections=[];
+  for(const [source,records,dateKey] of [['Invoice',invoices.filter(i=>!i.field_sale_id),'invoice_date'],['Commercial supply',fieldSales,'transaction_date']])for(const record of records){
+    const reversal=record.sale_reversal;if(!reversal?.journal_id||!inPeriod(reversal.date)||!posted(record))continue;
+    corrections.push({id:'reversal:'+record.id,document_id:record.id,document_number:'Reversal · '+(record.invoice_number||record.sale_number||record.id),source,date:reversal.date,original_date:record[dateKey],customer_id:record.customer_id,customer_name:record.customer_name,commercial_id:record.salesperson_id||record.commercial_id||'',commercial_name:record.salesperson_name||record.commercial_name||'',payment_type:record.payment_type,status:'reversed',is_reversal:true,subtotal:-Number(record.subtotal||0),tax:-Number(record.tax_total||0),total:-Number(record.total||0),collected:-(source==='Invoice'?(record.payment_type==='cash'?Number(record.total)||0:0):Number(record.amount_collected)||0),balance:0,receipt_count:0,sales_order_id:record.sales_order_id||'',invoice_id:record.invoice_id||''});
+  }
   const fieldJournals = new Set(fieldSales.filter(row=>row.status==='approved_posted' && posted(row)).map(row=>row.journal_id));
   const rows = [
-    ...invoices.filter(row => !isOpeningRecord(row) && !row.field_sale_id && !fieldJournals.has(row.journal_id) && postedInvoiceStatuses.includes(row.status) && posted(row) && inPeriod(row.invoice_date)).map(row => ({
+    ...invoices.filter(row => !isOpeningRecord(row) && !row.field_sale_id && !fieldJournals.has(row.journal_id) && (postedInvoiceStatuses.includes(row.status)||row.status==='credited'&&row.sale_reversal?.journal_id) && posted(row) && inPeriod(row.invoice_date)).map(row => ({
       id: 'invoice:' + row.id, document_id: row.id, document_number: row.invoice_number || row.id, source: 'Invoice', date: row.invoice_date,
       customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.salesperson_id || '',commercial_name: row.salesperson_name || '', payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
@@ -22,9 +27,10 @@ export function companySalesRegister({ invoices = [], fieldSales = [], from, to 
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
       collected: Number(row.amount_collected) || 0, balance: Number(row.amount_due) || 0, receipt_count: row.receipt_file_uris?.length || 0, invoice_id:row.invoice_id || '',
     })),
+    ...corrections,
   ].sort((a, b) => b.date.localeCompare(a.date) || b.document_number.localeCompare(a.document_number));
   const sum = key => roundMoney(rows.reduce((total, row) => total + row[key], 0));
-  return { rows, totals: { count: rows.length, net: sum('subtotal'), tax: sum('tax'), sales: sum('total') } };
+  return { rows, totals: { count: rows.filter(r=>!r.is_reversal).length, net: sum('subtotal'), tax: sum('tax'), sales: sum('total') } };
 }
 
 export function salesOverview({invoices=[],fieldSales=[],from,to,today}) {

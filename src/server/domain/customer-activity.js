@@ -100,7 +100,7 @@ export async function customerActivityAction(client,user,body) {
   throw Error('Unknown customer activity.');
 }
 
-// Cashier custody confirmation retains the existing independent GM posting step.
+// Cashier custody confirmation retains the separate GM posting step.
 export async function confirmCustomerCollection(client,user,body) {
   const {employee,role}=await requireStaff(client,user,['cashier','admin'],'receiving staff customer collections');
   if(employee?.status&&employee.status!=='active'||employee?.employee_removed_at)throw Error('An active staff account is required.');
@@ -124,7 +124,7 @@ export async function confirmCustomerCollection(client,user,body) {
   const now=new Date().toISOString(),name=employee?.full_name||user.full_name||user.email;
   const saved=await s.Payment.update(payment.id,{status:'pending_approval',payment_date:date,account_id:account.gl_account_id,treasury_account_id:account.id,treasury_account_name:account.name,cashier_confirmed_by:user.id,cashier_confirmed_name:name,cashier_confirmed_at:now,cashier_receipt_reference:reference,collection_receipt_key:key,collection_receipt_fingerprint:signature});
   await s.CashCollection.update(collection.id,{status:'received',received_amount:payment.amount,outstanding_amount:0,received_by:name,received_by_user_id:user.id,received_at:now,treasury_account_id:account.id,treasury_account_name:account.name,acknowledgement_reference:reference});
-  await audit(svc,{action:'receive_customer_collection',module:'cashier',entityType:'Payment',entityId:payment.id,userId:user.id,description:name+' received '+payment.amount+' XAF from '+payment.collector_name+'. Independent GM approval is still required.'});
+  await audit(svc,{action:'receive_customer_collection',module:'cashier',entityType:'Payment',entityId:payment.id,userId:user.id,description:name+' received '+payment.amount+' XAF from '+payment.collector_name+'. GM approval is still required.'});
   return {payment:paymentView(saved),receiptPending:true};
 }
 

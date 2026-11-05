@@ -137,3 +137,26 @@ test('late failures roll back collection documents and multi-product spoilage th
   }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 
+
+
+test('top admin can collect cash, hand it to a cashier, and approve that receipt with audited self-approval',async()=>{
+ const f=await setup(),s=f.entities;f.setActor(gm);
+ const result=await customerActivityAction(f.client,gm,f.body),payment=await s.Payment.get(result.payment.id);
+ assert.equal(payment.collector_user_id,gm.id);assert.equal(payment.status,'awaiting_cashier');
+ await assert.rejects(confirmCustomerCollection(f.client,gm,{paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'SELF',amount:400,treasuryAccountId:'till'}),/cash you collected/);
+ f.setActor(cashier,await s.Employee.get('cashier'));
+ await confirmCustomerCollection(f.client,cashier,{paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'CASHIER-ADMIN',amount:400,treasuryAccountId:'till'});
+ f.setActor(gm);const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
+ try{const res=await route(request({action:'approve',paymentId:payment.id,topAdmin:false}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(res.status,200,JSON.stringify(await res.json()));
+ const posted=await s.Payment.get(payment.id);assert.equal(posted.status,'posted');assert.equal(posted.self_approved,true);assert.equal(posted.approval_by_top_admin,true);assert.equal(posted.approved_by_user_id,gm.id);assert.equal((await s.Customer.get('customer-a')).balance,600);assert.equal((await s.TreasuryAccount.get('till')).balance,100400);
+ }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+});
+
+test('a manager can approve an existing receipt they confirmed; a cashier cannot spoof the top admin exception',async()=>{
+ const f=await setup(),s=f.entities;f.setActor(gm);const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
+ try{const res=await route(request({action:'confirm',customerId:'customer-a',requestKey:crypto.randomUUID(),date,reference:'DIRECT-GM',amount:400,treasuryAccountId:'till',allocations:[{invoice_id:f.invoice.id,amount:400}]}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(res.status,200);const {payment}=await res.json();assert.equal(payment.cashier_confirmed_by,gm.id);
+ f.setActor(cashier,await s.Employee.get('cashier'));const denied=await route(request({action:'approve',paymentId:payment.id,topAdmin:true}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(denied.status,403);assert.equal((await s.Payment.get(payment.id)).status,'pending_approval');
+ f.setActor(gm);for(let i=0;i<2;i++){const approved=await route(request({action:'approve',paymentId:payment.id}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(approved.status,200,JSON.stringify(await approved.json()));}
+ assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.TreasuryAccount.get('till')).balance,100400);assert.equal((await s.Payment.get(payment.id)).self_approved,true);
+ }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+});

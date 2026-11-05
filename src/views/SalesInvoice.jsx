@@ -1,3 +1,5 @@
+import SaleReversalDialog from '@/components/sales/SaleReversalDialog';
+import CustomerCollectionDialog from '@/components/customers/CustomerCollectionDialog';
 import LearnMore from '@/components/shared/LearnMore';
 
 /* localized-messages */
@@ -28,6 +30,7 @@ export default function SalesInvoice() {
   const invoiceList=role==='cashier'?'/cashier?section=invoices':'/sales?tab=invoices',startEditing=params.get('edit')==='1';
   const [data,setData]=useState(null),[options,setOptions]=useState(null),[due,setDue]=useState(''),[defaults,setDefaults]=useState(false),[edit,setEdit]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[reload,setReload]=useState(0);
   useEffect(()=>{let active=true;setData(null);setError('');setEdit(false);invoiceRequest({action:'invoiceDetail',invoiceId:id}).then(result=>{if(active){setData(result);setOptions(result.options);setDue(result.invoice.due_date);setEdit(startEditing&&postedInvoiceStatuses.includes(result.invoice.status)&&result.accounting_verified!==false);}}).catch(e=>{if(active)setError(errorMessage(e));});return()=>{active=false;};},[id,reload,startEditing]);
+  const [collecting,setCollecting]=useState(false),[reversing,setReversing]=useState(false);
   const issued=data&&postedInvoiceStatuses.includes(data.invoice.status)&&data.accounting_verified!==false;
   const preview=useMemo(()=>data?invoiceHtml({...data,options:options || data.options,invoice:{...data.invoice,due_date:due}}).replace(/<div class="toolbar">.*?<\/div>/,''):'',[data, options, due, interfaceLanguage]);
   async function save(){if(busy)return;setBusy(true);setError('');setNotice('');try{const next=await invoiceRequest({action:'customizeSalesInvoice',invoiceId:id,options,dueDate:due,saveCustomerDefaults:defaults,revision:data.revision});setData(next);setOptions(next.options);setDue(next.invoice.due_date);setEdit(false);setDefaults(false);setNotice(sourceMessage("Invoice details saved."));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
@@ -38,6 +41,10 @@ export default function SalesInvoice() {
     {notice&&<p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{uiMessage(notice)}</p>}
     {!data&&!error&&<p role="status" className="py-12 text-sm text-slate-500">{ui("Loading invoice…")}</p>}
     {data&&<>
+      {data.invoice.sale_reversal&&<div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm"><strong>{ui('Sale reversed')} · {data.invoice.sale_reversal.date}</strong><p>{data.invoice.sale_reversal.reason}</p><p>{ui('Customer credit')}: {formatXAF(data.invoice.sale_reversal.customer_credit)} · {data.invoice.sale_reversal.journal_number}</p></div>}
+      {!edit&&issued&&role!=='cashier'&&<div className="flex flex-wrap gap-2">{data.invoice.payment_type==='credit'&&data.invoice.customer_balance>0&&<Button onClick={()=>setCollecting(true)}>{ui('Collect cash for handover')}</Button>}<Button variant="outline" onClick={()=>setReversing(true)}>{ui('Reverse sale')}</Button></div>}
+      {collecting&&<CustomerCollectionDialog customer={{id:data.invoice.customer_id,business_name:data.invoice.customer_name}} invoiceId={id} onClose={()=>setCollecting(false)} onDone={()=>{setCollecting(false);setNotice(sourceMessage('Cash collection recorded. Hand it to the cashier for confirmation and GM approval.'));setReload(n=>n+1);}}/>}
+      {reversing&&<SaleReversalDialog invoiceId={id} onClose={()=>setReversing(false)} onDone={()=>{setReversing(false);setNotice(sourceMessage('Sale reversed. Received money is retained as customer credit.'));setReload(n=>n+1);}}/>}
       <ReportExport formats={['xlsx']} disabled={!issued || edit || busy || !!error} getReport={()=>salesInvoiceDocument(data)}/>
       <div className="flex flex-wrap gap-2 rounded-xl border bg-white p-3"><Button variant="outline" disabled={!issued || edit} onClick={()=>printInvoice(data)}><Printer size={15} className="mr-2"/>{ui("Print / PDF")}</Button><Button variant="outline" disabled={!issued || edit} onClick={()=>downloadInvoice(data)}><Download size={15} className="mr-2"/>{ui("Download invoice")}</Button><Button variant="outline" disabled={!issued || edit} onClick={()=>{window.location.href=invoiceEmail(data);}}><Mail size={15} className="mr-2"/>{ui("Email draft")}</Button><Button variant="outline" disabled={!issued || edit} onClick={share}><Share2 size={15} className="mr-2"/>{ui("Share / copy")}</Button>{!edit&&<Button disabled={!issued} onClick={()=>{setNotice('');setEdit(true);}}><Pencil size={15} className="mr-2"/>{ui("Customize")}</Button>}</div>
       <LearnMore title={ui("Print and share invoice")}><p>{ui("Print / PDF opens a print-ready invoice; choose “Save as PDF” to attach it to an email or messaging app. Download saves an HTML copy. Email draft opens your email app with the invoice details; attach your saved PDF there.")}</p></LearnMore>

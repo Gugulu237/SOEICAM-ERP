@@ -18,12 +18,12 @@ export async function companySalesAction(base44, user, body) {
   if (Date.parse(to) - Date.parse(from) > 366 * 86400000) throw new Error('Choose a sales period of up to one year');
   const stores = base44.asServiceRole.entities;
   const [invoices, fieldSales] = await Promise.all([
-    readRecords(stores.Invoice, { status: { $in: postedInvoiceStatuses }, $or:[{invoice_date: { $gte: from, $lte: to }},{payment_type:{$ne:'cash'},balance:{$gt:0}}] }),
-    readRecords(stores.FieldSale, { status: 'approved_posted', supply_kind:{$ne:'exchange'}, $or:[{transaction_date: { $gte: from, $lte: to }},{amount_due:{$gt:0}}] }),
+    readRecords(stores.Invoice, { status: { $in: [...postedInvoiceStatuses,'credited'] }, $or:[{invoice_date: { $gte: from, $lte: to }},{sale_reversal_date:{$gte:from,$lte:to}},{payment_type:{$ne:'cash'},balance:{$gt:0}}] }),
+    readRecords(stores.FieldSale, { status: 'approved_posted', supply_kind:{$ne:'exchange'}, $or:[{transaction_date: { $gte: from, $lte: to }},{sale_reversal_date:{$gte:from,$lte:to}},{amount_due:{$gt:0}}] }),
   ]);
-  const ids=[...new Set([...invoices,...fieldSales].map(row=>row.journal_id).filter(Boolean))],journals=new Map();
+  const ids=[...new Set([...invoices,...fieldSales].flatMap(row=>[row.journal_id,row.sale_reversal?.journal_id]).filter(Boolean))],journals=new Map();
   for(let i=0;i<ids.length;i+=100)for(const row of await readRecords(stores.JournalEntry,{id:{$in:ids.slice(i,i+100)}}))journals.set(row.id,row);
-  const valid=(row,type)=>{const journal=journals.get(row.journal_id);return journal?.status==='posted' && journal.source_document_type===type && journal.source_document_id===(row.field_sale_id || row.id);};
+  const valid=(row,type)=>{const journal=journals.get(row.journal_id),reversal=row.sale_reversal?journals.get(row.sale_reversal.journal_id):null;return journal?.status==='posted' && journal.source_document_type===type && journal.source_document_id===(row.field_sale_id || row.id)&&(!row.sale_reversal||reversal?.status==='posted'&&reversal.source_document_type==='SaleReversal'&&reversal.source_document_id===journal.id&&reversal.reversal_of===journal.id);};
   const checkedInvoices=invoices.filter(row=>valid(row,row.field_sale_id?'FieldSale':'Invoice')),checkedFields=fieldSales.filter(row=>valid(row,'FieldSale'));
   const warnings=invoices.length+fieldSales.length-checkedInvoices.length-checkedFields.length;
   return { ...companySalesRegister({ invoices:checkedInvoices, fieldSales:checkedFields, from, to }), overview:salesOverview({invoices:checkedInvoices,fieldSales:checkedFields,from,to,today:businessDate()}), unverified_documents:warnings, from, to };

@@ -1,3 +1,4 @@
+import {SALE_REVERSAL_ACTIONS,saleReversalAction} from '../domain/sale-reversals.js';
 import {CUSTOMER_ACTIVITY_ACTIONS,customerActivityAction} from '../domain/customer-activity.js';
 import {ASSEMBLY_BUILD_ACTIONS,assemblyBuildAction} from '../domain/assembly-build.js';
 import {inclusiveSaleLine} from '../../lib/sale-vat.js';
@@ -159,6 +160,7 @@ export default async function (req) {
     if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)){await selectFeature('customers');return Response.json(await customerRegistrationAction(base44, user, body));}
     if (action === 'fieldStockInventory') return Response.json(await fieldInventoryAction(base44, user, body));
     if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)){const review=['expiredReturnReviewQueue','verifyExpiredReturn','rejectExpiredReturn'].includes(action);await selectFeature(review?'quality':action==='driverReturnsWorkspace'?'distribution':'commercial',review?'admin':action==='driverReturnsWorkspace'?'driver':'commercial');return Response.json(await commercialReturnAction(base44, user, body));}
+    if(SALE_REVERSAL_ACTIONS.includes(action)){await selectFeature(body.fieldSaleId?'commercial':'sales');return Response.json(await saleReversalAction(base44,user,body));}
     if(INVOICE_ACTIONS.includes(action)){const staff=await base44.auth.staff?.();const candidates=CASHIER_INVOICE_ACTIONS.includes(action)?['sales','accounting','cashier']:['sales'];await selectFeature(candidates.find(m=>staff?.full_access_modules?.includes(m))||candidates[0]);return Response.json(await invoiceAction(base44,user,body));}
     let module = ASSEMBLY_BUILD_ACTIONS.includes(action)?'manufacturing':action==='releaseYogurtLot' ? 'quality' : YOGURT_ACTIONS.includes(action) ? 'manufacturing' : WAREHOUSE_ADJUSTMENT_ACTIONS.includes(action) ? 'inventory_adjustments' : ASSET_ACTIONS.includes(action) || INVENTORY_AUDIT_ACTIONS.includes(action) ? 'accounting' : (INVOICE_ACTIONS.includes(action) || SALES_ORDER_ACTIONS.includes(action)) ? 'sales'
       : CUSTOMER_ACTIVITY_ACTIONS.includes(action) || CUSTOMER_DELIVERY_ACTIONS.includes(action) || inActions(['registerCustomer','fieldCustomers','verifyFieldCustomer','updateCustomerGps']) ? 'customers'

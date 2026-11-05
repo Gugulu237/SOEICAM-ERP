@@ -74,7 +74,9 @@ export function periodDates(from, to) {
 
 export function commercialReport({ agents, customers, sales, lines, from, to }) {
   const inPeriod = (date) => date && date.slice(0, 10) >= from && date.slice(0, 10) <= to;
-  const approved = sales.filter((s) => s.supply_kind !== 'exchange' && s.status === 'approved_posted' && inPeriod(s.transaction_date));
+  const corrections=sales.filter(s=>s.supply_kind!=='exchange'&&s.status==='approved_posted'&&s.sale_reversal?.journal_id&&inPeriod(s.sale_reversal.date)).map(s=>({...s,id:'reversal:'+s.id,transaction_date:s.sale_reversal.date,subtotal:-Number(s.subtotal||0),total:-Number(s.total||0),is_reversal:true}));
+  const approved = [...sales.filter((s) => s.supply_kind !== 'exchange' && s.status === 'approved_posted' && inPeriod(s.transaction_date)),...corrections];
+  const reportLines=[...lines,...lines.filter(l=>corrections.some(c=>c.id==='reversal:'+l.field_sale_id)).map(l=>({...l,field_sale_id:'reversal:'+l.field_sale_id,quantity:-Number(l.quantity||0)}))];
   const saleMap = new Map(approved.map((s) => [s.id, s]));
   const registered = customers.filter((c) => c.acquired_by_id && inPeriod(c.acquisition_date || c.registered_at));
   const customerMap = new Map(customers.map((c) => [c.id, c]));
@@ -92,7 +94,7 @@ export function commercialReport({ agents, customers, sales, lines, from, to }) 
   }
   for (const sale of approved) {
     const agent = getAgent(sale.commercial_id, sale.commercial_name);
-    agent.deliveries++; agent.net = money(agent.net + Number(sale.subtotal || 0)); agent.total = money(agent.total + Number(sale.total || 0));
+    if(!sale.is_reversal)agent.deliveries++; agent.net = money(agent.net + Number(sale.subtotal || 0)); agent.total = money(agent.total + Number(sale.total || 0));
     const key = `${sale.commercial_id}:${sale.customer_id}`;
     if (!supplies.has(key)) {
       agent.customers_supplied++;
@@ -101,9 +103,9 @@ export function commercialReport({ agents, customers, sales, lines, from, to }) 
         deliveries: 0, net: 0, total: 0, products: [] });
     }
     const row = supplies.get(key);
-    row.deliveries++; row.net = money(row.net + Number(sale.subtotal || 0)); row.total = money(row.total + Number(sale.total || 0));
+    if(!sale.is_reversal)row.deliveries++; row.net = money(row.net + Number(sale.subtotal || 0)); row.total = money(row.total + Number(sale.total || 0));
   }
-  for (const line of lines) {
+  for (const line of reportLines) {
     const sale = saleMap.get(line.field_sale_id);
     if (!sale) continue;
     const row = supplies.get(`${sale.commercial_id}:${sale.customer_id}`);

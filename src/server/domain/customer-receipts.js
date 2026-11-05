@@ -25,10 +25,10 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
   });
 }
 
-export async function approveReceipt(svc, payment, user) {
+export async function approveReceipt(svc, payment, user, {topAdmin = false} = {}) {
   if (payment.status === 'posted') return payment;
   if (!['pending_approval', 'approved'].includes(payment.status) || !payment.cashier_confirmed_by) throw new Error('Receipt confirmation is required before GM approval');
-  if (payment.cashier_confirmed_by === user.id || payment.collector_user_id === user.id) throw new Error('You cannot approve a receipt you recorded; another administrator must approve it');
+  if (!topAdmin && (payment.cashier_confirmed_by === user.id || payment.collector_user_id === user.id)) throw new Error('You cannot approve a receipt you recorded; another administrator must approve it');
   const token = crypto.randomUUID();
   if (!await claimField(svc, 'Payment', payment.id, 'receipt_posting_token', token)) throw new Error('This receipt is already being processed');
   try {
@@ -65,7 +65,7 @@ export async function approveReceipt(svc, payment, user) {
         ar_reduction: arReduction,
         lines: [{ account_id: debit.id, account_number: debit.account_number, account_name: debit.name, debit: payment.amount, credit: 0, description: `Received into ${treasury.name}` }, ...credits],
       };
-      await svc.entities.Payment.update(payment.id, { receipt_posting_snapshot: snapshot, approved_by: user.full_name || user.email, approved_at: new Date().toISOString(), status: 'approved' });
+      await svc.entities.Payment.update(payment.id, { receipt_posting_snapshot: snapshot, approved_by_user_id: user.id, approval_by_top_admin: topAdmin, self_approved: payment.cashier_confirmed_by === user.id || payment.collector_user_id === user.id, approved_by: user.full_name || user.email, approved_at: new Date().toISOString(), status: 'approved' });
     }
     const { journal } = await postJournal(svc, { entryDate: payment.payment_date, description: `Customer receipt ${payment.payment_number}: ${payment.invoice_numbers}`, sourceModule: 'payments', sourceDocumentType: 'Payment', sourceDocumentId: payment.id, userId: user.id, lines: snapshot.lines });
     await svc.entities.Payment.update(payment.id, { journal_id: journal.id });
