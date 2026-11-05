@@ -7609,5 +7609,14 @@
   "Complete the cashier handover of this sale’s collected cash before reversal. The money will remain in company funds as customer credit.": "Finalisez la remise au caissier de l’argent encaissé pour cette vente avant son annulation. L’argent restera dans les fonds de l’entreprise sous forme d’avoir client.",
   "Deposit and approve this cash invoice’s receipt before reversal. The money will remain in company funds as customer credit.": "Déposez l’argent et approuvez le reçu de cette facture au comptant avant son annulation. L’argent restera dans les fonds de l’entreprise sous forme d’avoir client.",
   "This sale or customer balance changed. Reload the reversal preview before confirming.": "La vente ou le solde client a changé. Rechargez l’aperçu de l’annulation avant de confirmer.",
-  "This sale was reversed. Record a new sale for the corrected transaction.": "Cette vente a été annulée. Enregistrez une nouvelle vente pour la transaction corrigée."
+  "This sale was reversed. Record a new sale for the corrected transaction.": "Cette vente a été annulée. Enregistrez une nouvelle vente pour la transaction corrigée.",
+  "Available to build": "Disponible pour fabrication",
+  "On hand after build": "Stock après fabrication",
+  "Stock by location and lot": "Stock par emplacement et lot",
+  "Not available to build: {0}": "Non disponible pour fabrication : {0}",
+  "On hand matches Inventory across all locations. Available to build excludes held, expired and delivery stock. Quantities use each component’s stock unit.": "Le stock physique correspond à l’Inventaire, tous emplacements confondus. Le stock disponible pour fabrication exclut les produits bloqués, périmés ou sortis en livraison. Les quantités utilisent l’unité de stock de chaque composant.",
+  "Components deducted": "Composants déduits",
+  "Inventory updated. Review the refreshed quantities before building.": "Inventaire actualisé. Vérifiez les nouvelles quantités avant de lancer la fabrication.",
+  "Some component stock records need reconciliation. Review the inventory count before building.": "Certains stocks de composants doivent être rapprochés. Vérifiez le comptage d’inventaire avant de lancer la fabrication.",
+  "Some finished stock records need reconciliation. Review the inventory count before building.": "Certains stocks de produits finis doivent être rapprochés. Vérifiez le comptage d’inventaire avant de lancer la fabrication."
 }

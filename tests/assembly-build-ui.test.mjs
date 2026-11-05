@@ -10,7 +10,7 @@ async function renderer(){
   const mocks={
     '@/components/shared/ProductThumb':'import React from "react";export const ProductPhoto=({product})=>React.createElement("img",{src:product.image_url||"/product.png",alt:product.name});',
     '@/lib/field-ops':'export const invokeFieldOps=body=>globalThis.__assemblyUI.invoke(body);',
-    '@/lib/item-catalogue-sync':'export const watchItemCatalogue=refresh=>{globalThis.__assemblyUI.refreshCatalogue=refresh;return ()=>{};};',
+    '@/lib/item-catalogue-sync':'export const watchItemCatalogue=refresh=>{globalThis.__assemblyUI.refreshCatalogue=refresh;return ()=>{};};export const notifyItemCatalogue=()=>{globalThis.__assemblyUI.inventoryNotices=(globalThis.__assemblyUI.inventoryNotices||0)+1;};',
     '@/lib/localization':'export const useLocaleRender=()=>{};',
     '@/lib/router':'import React from "react";export const Link=({to,children,...props})=>React.createElement("a",{href:to,...props},children);',
     '@/components/ui/input':'import React from "react";export const Input=props=>{globalThis.__assemblyUI.capture("input",props,[]);return React.createElement("input",props);};',
@@ -27,7 +27,7 @@ async function renderer(){
   const m={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,m,m.exports);compiled=m.exports.render;return compiled;
 }
 const workspace={inventory_revision:'stock-revision-1',can_build:true,products:[{id:'nature',name:'Nature 500g',unit:'ea',shelf_life_days:14,image_url:'/nature.png'},{id:'strawberry',name:'Strawberry 500g',unit:'ea',shelf_life_days:14,image_url:'/strawberry.png'}],warehouses:[{id:'cold',name:'Cold Room'}],overhead_accounts:[]};
-const preview={inventory_revision:'stock-revision-1',fingerprint:'checked-stock',can_build:true,reasons:[],overhead:0,total_cost:52000,materials:[{product_id:'milk',product_name:'Milk',required:50,available:60,missing:0,unit:'kg'},{product_id:'cups',product_name:'Cups',required:100,available:120,missing:0,unit:'ea'}],outputs:[{product_id:'nature',product_name:'Nature 500g',quantity:100,unit:'ea',expiry_date:'2099-12-31'}]};
+const preview={inventory_revision:'stock-revision-1',fingerprint:'checked-stock',can_build:true,reasons:[],overhead:0,total_cost:52000,materials:[{product_id:'milk',product_name:'Milk',required:50,on_hand:70,available:60,on_hand_after:20,excluded:10,missing:0,unit:'kg',lots:[{id:'milk-main',warehouse_name:'Material store',lot_number:'MILK-A',quantity:60,available:60,status:'Available'},{id:'milk-held',warehouse_name:'Material store',lot_number:'MILK-B',quantity:10,available:0,status:'On quality hold'}]},{product_id:'cups',product_name:'Cups',required:100,on_hand:120,available:120,on_hand_after:20,excluded:0,missing:0,unit:'ea'}],outputs:[{product_id:'nature',product_name:'Nature 500g',quantity:100,unit:'ea',expiry_date:'2099-12-31'}]};
 const result={orders:[{id:'built',product_name:'Nature 500g',quantity:100,unit:'ea',batch_number:'B-001',expiry_date:'2099-12-31',total_cost:52000}],journal_number:'JV-BUILD'};
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.elements=[];const capture=r.capture.bind(r);r.capture=(tag,props,children)=>{r.elements.push({tag,props,children});capture(tag,props,children);};r.beforeRender=()=>{before();r.elements=[];};return r;}
 const field=(r,label)=>r.elements.find(e=>e.props?.['aria-label']===label)?.props;
@@ -67,9 +67,9 @@ test('unchanged inventory on tab focus and periodic refresh keeps the reviewed b
  }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
-test('a real inventory revision blocks the old review until fresh components are checked',async()=>{
+test('a real inventory revision automatically replaces the component review with current quantities',async()=>{
  const render=await renderer(),r=runtime();let revision='stock-revision-1';globalThis.__assemblyUI=r;r.invoke=async body=>({data:body.action==='assemblyBuildWorkspace'?{...workspace,inventory_revision:revision}:{...preview,inventory_revision:revision}});
- try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();revision='stock-revision-2';await r.refreshCatalogue();await r.flush();assert.match(draw(),/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,true);await button(r,'Refresh component check').onClick();assert.doesNotMatch(draw(),/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,false);
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();revision='stock-revision-2';await r.refreshCatalogue();await r.flush();assert.match(draw(),/Inventory updated/);assert.doesNotMatch(draw(),/Your plan or inventory changed/);assert.equal(button(r,'Build and release for sale').disabled,false);
  }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
@@ -123,4 +123,24 @@ test('unfinished assemblies remain visible and become selectable after their set
   available=false;await r.refreshCatalogue();await r.flush();draw();assert.equal(button(r,'Review total components').disabled,true);assert.equal(field(r,'Select Nature 500g').disabled,false);
   field(r,'Select Nature 500g').onClick();draw();assert.equal(field(r,'Quantity for Nature 500g'),undefined);
  }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+
+test('the component review reconciles on-hand, usable and excluded stock using visible location and lot evidence',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;r.invoke=async body=>({data:body.action==='assemblyBuildWorkspace'?workspace:preview});
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();const html=draw();for(const text of ['On hand','Available to build','On hand after build','70 kg','60 kg','50 kg','20 kg','MILK-A','MILK-B','On quality hold','Not available to build: 10 kg'])assert.ok(html.includes(text),text);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('fresh stock automatically replaces a shortage and posting notifies open inventory views',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];let revision='stock-revision-1',available=40;globalThis.__assemblyUI=r;
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='assemblyBuildWorkspace'?{...workspace,inventory_revision:revision}:body.action==='previewAssemblyBuild'?{...preview,inventory_revision:revision,fingerprint:'checked-'+available,can_build:available>=50,reasons:available<50?['Some components are short.']:[],materials:[{...preview.materials[0],on_hand:available,available,missing:Math.max(0,50-available),on_hand_after:available>=50?available-50:null}]}:result};};
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();assert.match(draw(),/40 kg/);assert.equal(button(r,'Build and release for sale').disabled,true);
+ available=80;revision='stock-revision-2';await r.refreshCatalogue({type:'focus'});const html=draw();assert.match(html,/80 kg/);assert.match(html,/30 kg/);assert.equal(button(r,'Build and release for sale').disabled,false);assert.equal(calls.filter(c=>c.action==='previewAssemblyBuild').length,2);
+ await button(r,'Build and release for sale').onClick();assert.equal(calls.find(c=>c.action==='postAssemblyBuild').fingerprint,'checked-80');assert.equal(r.inventoryNotices,1);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('failed background stock refresh disables the old build until an up-to-date component check succeeds',async()=>{
+ const render=await renderer(),r=runtime();let fail=false;globalThis.__assemblyUI=r;r.invoke=async body=>{if(fail)throw Error('Inventory could not refresh');return {data:body.action==='assemblyBuildWorkspace'?workspace:preview};};
+ try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();fail=true;await r.refreshCatalogue();assert.match(draw(),/Inventory could not refresh/);assert.equal(button(r,'Build and release for sale').disabled,true);fail=false;await r.refreshCatalogue();assert.doesNotMatch(draw(),/Inventory could not refresh/);assert.equal(button(r,'Build and release for sale').disabled,false);}finally{r.cleanup();delete globalThis.__assemblyUI;}
 });

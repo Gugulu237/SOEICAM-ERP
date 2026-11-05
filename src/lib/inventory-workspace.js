@@ -1,5 +1,5 @@
 import {businessDate} from './business-date.js';
-import {companySalesWarehouse} from './sales-stock.js';
+import {stockOnHandGroups} from './stock-on-hand.js';
 /* localized-metadata */
 import {ui} from './i18n.js';
 import { isPackagingItem } from './inventory-packaging.js';
@@ -44,17 +44,19 @@ export function inventoryItemCounts(products) {
   }
   return counts;
 }
-export function inventoryStockIndex(balances, warehouses, date=businessDate()) {
+export function inventoryStockIndex(balances, warehouses, date=businessDate(), products) {
   const quantities = new Map(), warehouseTypes = new Map(warehouses.map(value => [value.id, value.warehouse_type]));
-  const availableQuantities=new Map(),locations=new Map(warehouses.map(w=>[w.id,w]));
+  const availableQuantities=new Map();
+  const catalogue=products||[...new Set(balances.map(b=>b.product_id))].map(id=>({id}));
+  const groups=stockOnHandGroups(catalogue,balances,warehouses,{date});
   let totalValue = 0, wipValue = 0, deliveryValue = 0;
   for (const balance of balances) {
     quantities.set(balance.product_id, (quantities.get(balance.product_id) || 0) + Number(balance.quantity || 0));
-    if(companySalesWarehouse(locations.get(balance.warehouse_id)) && (!balance.qc_status || balance.qc_status==='approved') && (!balance.expiry_date || balance.expiry_date>=date))availableQuantities.set(balance.product_id,(availableQuantities.get(balance.product_id)||0)+Math.max(0,Number(balance.quantity)||0));
     const value = Number(balance.total_value || 0);
     totalValue += value;
     if (warehouseTypes.get(balance.warehouse_id) === 'wip') wipValue += value;
     if (warehouseTypes.get(balance.warehouse_id) === 'vehicle') deliveryValue += value;
   }
+  for(const group of groups){quantities.set(group.product.id,group.quantity);availableQuantities.set(group.product.id,group.available);}
   return { quantities, availableQuantities, warehouseTypes, totalValue, wipValue, deliveryValue };
 }

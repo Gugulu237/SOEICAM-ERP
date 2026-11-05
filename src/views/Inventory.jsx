@@ -87,7 +87,7 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
   const pendingLoad = useRef(null), lastLoadAt = useRef(0), overviewTag = useRef(null);
   const catalogue=showRemoved?removedProducts:products;
   const counts = useMemo(() => inventoryItemCounts(catalogue), [catalogue]);
-  const stock = useMemo(() => inventoryStockIndex(balances, warehouses), [balances, warehouses]);
+  const stock = useMemo(() => inventoryStockIndex(balances, warehouses, undefined, products), [balances, warehouses, products]);
   const units = useMemo(() => itemUnits(customUnits, products), [customUnits, products]);
   const filtered = useMemo(() => catalogue.filter(item => matchesItemFilter(item, workspace.filter, workspace.subtype)), [catalogue, workspace.filter, workspace.subtype]);
   const changeWorkspace = changes => setParams(previous => {

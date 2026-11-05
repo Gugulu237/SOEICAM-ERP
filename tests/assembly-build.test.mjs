@@ -7,6 +7,8 @@ import {PGlite} from '@electric-sql/pglite';
 import {fixture,functionRoute,request,user,date} from './helpers/cashier.mjs';
 import {assemblyBuildAction} from '../src/server/domain/assembly-build.js';
 import {salesOrderAction} from '../src/server/domain/sales-orders.js';
+import {stockOnHandGroups} from '../src/lib/stock-on-hand.js';
+import {inventoryStockIndex} from '../src/lib/inventory-workspace.js';
 import {guardMutation} from '../src/server/access.js';
 
 async function setup(db){
@@ -166,4 +168,54 @@ test('assembly workspace includes all active finished products across pages and 
  assert.equal(listed.get(f.product.id).assembly_ready,true);assert.equal(listed.get(created[213].id).assembly_ready,false);assert.equal(listed.get(created[214].id).assembly_ready,false);assert.equal(listed.get(created[214].id).size,'1 kg');
  for(const product of created.slice(213))await assert.rejects(f.call({...f.body,action:'previewAssemblyBuild',rows:[{product_id:product.id,quantity:1}]}),/active finished product with saved assembly/);
  assert.deepEqual(f.rows,before);
+});
+
+
+test('assembly quantities reconcile with Inventory across raw, packaging, held, expired, delivery and unknown locations',async()=>{
+ const f=await setup(),s=f.entities;
+ const wip=await s.Warehouse.create({code:'WIP-ASSEMBLY',name:'In production',warehouse_type:'wip',is_active:true});
+ const pack=await s.Warehouse.create({code:'PACK-ASSEMBLY',name:'Packaging store',warehouse_type:'packaging',is_active:true});
+ for(const [qty,warehouse_id,qc_status,expiry_date] of [[10,f.raw.id,'pending',''],[5,f.raw.id,'approved','2020-01-01'],[7,'van-stock','approved',''],[4,wip.id,'approved',''],[3,'unknown','approved',''],[10,pack.id,'approved','']])await s.StockBalance.create({product_id:f.milk.id,quantity:qty,warehouse_id,qc_status,expiry_date,total_value:qty*1000,unit_cost:1000,lot_number:'EXTRA-'+qty+'-'+warehouse_id});
+ const products=await s.Product.list(),balances=await s.StockBalance.list(),warehouses=await s.Warehouse.list(),p=await f.preview(),m=p.materials.find(m=>m.product_id===f.milk.id);
+ const inventory=stockOnHandGroups(products,balances,warehouses,{date}).find(g=>g.product.id===f.milk.id),index=inventoryStockIndex(balances,warehouses,date,products);
+ assert.equal(m.on_hand,99);assert.equal(m.on_hand,inventory.quantity);assert.equal(m.on_hand,index.quantities.get(f.milk.id));assert.equal(m.available,70);assert.equal(m.available,inventory.available);assert.equal(m.available,index.availableQuantities.get(f.milk.id));assert.equal(m.excluded,29);assert.equal(m.on_hand_after,49);assert.equal(m.required,50);assert.equal(m.unit,'kg');assert.equal(p.can_build,true);
+ assert.equal(m.lots.reduce((n,l)=>n+l.quantity,0),m.on_hand);assert.ok(m.lots.some(l=>l.status==='On quality hold'));assert.ok(m.lots.some(l=>l.status==='Out for delivery'));assert.ok(m.lots.some(l=>l.status==='Location unavailable'));
+ const saved=await f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});
+ const after=stockOnHandGroups(await s.Product.list(),await s.StockBalance.list(),warehouses,{date}).find(g=>g.product.id===f.milk.id);assert.equal(after.quantity,m.on_hand_after);assert.equal(after.available,m.remaining);assert.equal(saved.materials.find(m=>m.product_id===f.milk.id).on_hand_after,after.quantity);
+});
+
+test('all stock pages contribute to the assembly check and the completed deduction matches on-hand exactly',async()=>{
+ const f=await setup(),s=f.entities;
+ for(let i=0;i<225;i++)await s.StockBalance.create({product_id:f.milk.id,warehouse_id:f.raw.id,quantity:0.1,total_value:100,unit_cost:1000,qc_status:'approved',expiry_date:date,lot_number:'SMALL-'+i});
+ const p=await f.preview(),m=p.materials.find(m=>m.product_id===f.milk.id);assert.equal(m.available,82.5);assert.equal(m.on_hand,82.5);assert.equal(m.lots.length,226);
+ await f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});const remaining=(await s.StockBalance.list()).filter(b=>b.product_id===f.milk.id);assert.equal(Math.round(remaining.reduce((n,b)=>n+b.quantity,0)*1000)/1000,32.5);assert.equal(remaining.reduce((n,b)=>n+b.total_value,0),32500);
+});
+
+test('approved on-hand subassembly stock can be consumed even when its future manufacturing setup is incomplete',async()=>{
+ const f=await setup(),s=f.entities;await s.Product.update(f.milk.id,{inventory_type:'assembly',configuration_status:'draft',components:[],shelf_life_days:14});
+ await s.Product.update(f.product.id,{components:[{...f.product.components[0],component_type:'assembly'},f.product.components[1]]});
+ const p=await f.preview();assert.equal(p.can_build,true);assert.equal(p.materials.find(m=>m.product_id===f.milk.id).available,60);await f.call(await f.post());assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,10);
+});
+
+test('invalid expiry dates and count anomalies cannot inflate available assembly stock or be repaired by a build',async()=>{
+ const f=await setup(),s=f.entities;await s.StockBalance.update(f.milkLot.id,{expiry_date:'2099-13-01'});let p=await f.preview(),m=p.materials.find(m=>m.product_id===f.milk.id);assert.equal(m.on_hand,60);assert.equal(m.available,0);assert.equal(p.can_build,false);assert.equal(m.on_hand_after,null);
+ await s.StockBalance.update(f.milkLot.id,{expiry_date:''});await s.StockBalance.create({product_id:f.milk.id,warehouse_id:f.raw.id,quantity:-5,total_value:-5000,unit_cost:1000,qc_status:'approved'});p=await f.preview();assert.equal(p.can_build,false);assert.match(p.reasons.join(' '),/reconciliation/);m=p.materials.find(m=>m.product_id===f.milk.id);assert.equal(m.count_issue,true);assert.equal(m.on_hand,55);assert.equal(m.on_hand_after,null);
+ await assert.rejects(f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint}),/reconciliation/);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,60);assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('new component receipts and finished-product sales invalidate old build quantities and completed totals remain exact',async()=>{
+ const f=await setup(),s=f.entities;
+ const oldFinished=await s.StockBalance.create({product_id:f.product.id,warehouse_id:f.cold.id,quantity:14,total_value:7280,unit_cost:520,qc_status:'approved',expiry_date:'2099-01-01'});
+ const p=await f.preview();assert.equal(p.outputs[0].on_hand_before,14);assert.equal(p.outputs[0].on_hand_after,114);assert.equal((await f.call({action:'assemblyBuildWorkspace'})).products.find(p=>p.id===f.product.id).on_hand,14);
+ await s.StockBalance.update(oldFinished.id,{quantity:10,total_value:5200});await assert.rejects(f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint}),/changed/);
+ await s.StockBalance.update(f.milkLot.id,{quantity:70,total_value:70000});const latest=await f.preview();assert.equal(latest.materials.find(m=>m.product_id===f.milk.id).on_hand,70);assert.equal(latest.outputs[0].on_hand_before,10);
+ const saved=await f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:latest.fingerprint});assert.equal(saved.orders[0].on_hand_after,110);assert.equal((await s.StockBalance.filter({product_id:f.product.id})).reduce((n,b)=>n+b.quantity,0),110);
+});
+
+test('crossing the Cameroon business-date boundary expires stock and invalidates the earlier review even without database edits',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:new Date(date+'T22:59:00Z')});
+ const f=await setup(),s=f.entities;await s.StockBalance.update(f.milkLot.id,{expiry_date:date});await s.StockBalance.create({product_id:f.milk.id,warehouse_id:f.raw.id,quantity:80,total_value:80000,unit_cost:1000,qc_status:'approved',expiry_date:'2099-12-31',lot_number:'FRESH'});
+ const before=await f.preview(),workspace=await f.call({action:'assemblyBuildWorkspace'});assert.equal(before.materials.find(m=>m.product_id===f.milk.id).available,140);
+ t.mock.timers.tick(120000);const after=await f.preview();assert.equal(after.materials.find(m=>m.product_id===f.milk.id).available,80);assert.equal(after.can_build,true);assert.notEqual(after.fingerprint,before.fingerprint);assert.notEqual((await f.call({action:'assemblyBuildWorkspace'})).inventory_revision,workspace.inventory_revision);
+ await assert.rejects(f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:before.fingerprint}),/changed/);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,60);
 });
