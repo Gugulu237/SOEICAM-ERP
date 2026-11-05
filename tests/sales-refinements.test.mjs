@@ -56,3 +56,12 @@ test('factory sale options offer active finished stock regardless of assembly se
   assert.deepEqual(finishedStockForSale(products,balances,'cold_room','2026-10-25').map(p=>[p.id,p.available]),[['y',4],['draft',5]]);
   assert.deepEqual(finishedStockForSale(products,balances,'','2026-10-25'),[]);
 });
+
+test('sale picker explains why existing finished stock is unavailable and updates after quality release',()=>{
+ const products=[{id:'p',inventory_type:'assembly',is_active:true}],lot={product_id:'p',warehouse_id:'cold',quantity:14,qc_status:'quarantine',expiry_date:''};
+ const read=balance=>finishedStockForSale(products,[balance],'cold','2026-11-05',{includeUnavailable:true})[0];
+ assert.equal(read(lot).available,0);assert.equal(read(lot).unavailable_reason,'On quality hold');
+ assert.equal(read({...lot,qc_status:'rejected'}).unavailable_reason,'Rejected');assert.equal(read({...lot,qc_status:'approved',expiry_date:'2026-11-04'}).unavailable_reason,'Expired');
+ assert.equal(read({...lot,qc_status:'approved'}).available,14);assert.equal(read({...lot,qc_status:'approved'}).unavailable_reason,'');
+ assert.equal(read({...lot,warehouse_id:'other'}).unavailable_reason,'No saleable stock at this source');
+});

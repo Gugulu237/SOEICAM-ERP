@@ -7,13 +7,17 @@ export function finishedStockForSale(products,balances,warehouseId,date=business
   const warehouseIds=new Set(Array.isArray(warehouseId)?warehouseId:[warehouseId]);
   warehouseIds.delete(undefined);warehouseIds.delete('');
   if(!warehouseIds.size)return [];
-  const quantities=new Map();
+  const quantities=new Map(),blocked=new Map();
   for(const b of balances){
     const quantity=Number(b.quantity);
+    if(warehouseIds.has(b.warehouse_id)&&Number.isFinite(quantity)&&quantity>0){
+      const reason=b.qc_status&&b.qc_status!=='approved'?(b.qc_status==='rejected'?'Rejected':'On quality hold'):b.expiry_date&&b.expiry_date<date?'Expired':'';
+      if(reason){if(!blocked.has(b.product_id))blocked.set(b.product_id,new Set());blocked.get(b.product_id).add(reason);}
+    }
     if(warehouseIds.has(b.warehouse_id) && Number.isFinite(quantity) && quantity>0 && (!b.qc_status || b.qc_status==='approved') && (!b.expiry_date || b.expiry_date>=date))quantities.set(b.product_id,(quantities.get(b.product_id)||0)+quantity);
   }
   // Assembly setup controls future production, not already received finished stock.
-  return products.filter(p=>p.is_active!==false && isAssemblyInventoryType(p.inventory_type)).map(p=>({...p,available:Math.round((quantities.get(p.id)||0)*1000)/1000,unavailable_reason:!(quantities.get(p.id)>0)?'No saleable stock at this source':''})).filter(p=>includeUnavailable||p.available>0);
+  return products.filter(p=>p.is_active!==false && isAssemblyInventoryType(p.inventory_type)).map(p=>({...p,available:Math.round((quantities.get(p.id)||0)*1000)/1000,unavailable_reason:quantities.get(p.id)>0?'':blocked.get(p.id)?.size>1?'Stock is on quality hold or expired':blocked.get(p.id)?.values().next().value||'No saleable stock at this source'})).filter(p=>includeUnavailable||p.available>0);
 }
 export function factorySalesLocations(warehouses,products,balances,date=businessDate()){
   const finishedIds=new Set(products.filter(p=>p.is_active!==false && isAssemblyInventoryType(p.inventory_type)).map(p=>p.id));

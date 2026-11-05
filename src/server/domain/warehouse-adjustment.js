@@ -149,7 +149,8 @@ export async function warehouseAdjustmentAction(client,user,body) {
     const adjustedStock=!existing || counted(existing);
     const requestedRelease=saleRelease||useRelease;
     if(requestedRelease && (!adjustedStock || variance.counted_quantity<=0))throw Error('Only verified counted stock can be released here. Production batches use their quality-release workflow.');
-    if(requestedRelease && (row.expiry_date && row.expiry_date<businessDate() || finished && !validDate(row.expiry_date)))throw Error('Verify a current printed expiry before releasing counted finished or expired stock. Quantity adjustments cannot remove expiry dates.');
+    if(requestedRelease && row.expiry_date && (!validDate(row.expiry_date) || row.expiry_date<businessDate()))throw Error('Verify a current printed expiry before releasing counted finished or expired stock. Quantity adjustments cannot remove expiry dates.');
+    if(saleRelease && !row.expiry_date && input.confirm_missing_expiry!==true)throw Error('Confirm that no expiry date is available and that this counted stock is fit for sale.');
     const release=requestedRelease && row.qc_status!=='approved';
     if(!variance.difference && !variance.value_difference && !(requestedRelease && release))continue;
     if(variance.difference>0 && !companySalesWarehouse(warehouse))throw Error('Choose an active company stock location for counted inventory.');
@@ -157,7 +158,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
     const rule=['assembly','finished_product'].includes(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
     const inventory=accounts.find(a=>a.id===(product.inventory_account_id || rules.find(r=>r.rule_key===rule)?.account_id));
     if(!validAccount(inventory,true))throw Error('Configure an active inventory asset account for every adjusted item.');
-    rows.push({...row,...variance,adjusted_stock:adjustedStock,previous_expiry_date:row.expiry_date || '',previous_qc_status:row.qc_status,...(release?{qc_status:'approved'}:{}),release_for_sale:saleRelease,release_for_use:useRelease,use_current_cost:input.use_current_cost===true,reconciliation_confirmed:state.requires_reconciliation && input.confirm_reconciliation===true,inventory});
+    rows.push({...row,...variance,adjusted_stock:adjustedStock,previous_expiry_date:row.expiry_date || '',previous_qc_status:row.qc_status,...(release?{qc_status:'approved'}:{}),release_for_sale:saleRelease,release_for_use:useRelease,missing_expiry_confirmed:saleRelease&&!row.expiry_date&&input.confirm_missing_expiry===true,use_current_cost:input.use_current_cost===true,reconciliation_confirmed:state.requires_reconciliation && input.confirm_reconciliation===true,inventory});
   }
   if(!rows.length)throw Error('The physical quantities match the system. There is nothing to adjust.');
   if(itemMode){
@@ -173,7 +174,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
   if(lines.size){const posted=await postJournal({entities:s},{entryDate:date,description:`Warehouse quantity adjustment: ${warehouse.name} / ${reference}`,sourceModule:'inventory_adjustment',sourceDocumentType:'WarehouseAdjustment',sourceDocumentId:eventId,userId:user.id,lines:[...lines.values()]});if(posted.reused)throw Error('Reconcile the existing adjustment journal before retrying.');journal=posted.journal;}
   for(const row of rows) {
     const stock={quantity:row.counted_quantity,total_value:row.value_after,unit_cost:row.counted_quantity>0?row.value_after/row.counted_quantity:Number.isFinite(row.unit_cost) && row.unit_cost>0?row.unit_cost:0};
-    if(row.release_for_sale||row.release_for_use)Object.assign(stock,{qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:'Explicit counted-stock quality verification: '+reference+' - '+reason});
+    if(row.release_for_sale||row.release_for_use)Object.assign(stock,{qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:'Explicit counted-stock quality verification: '+reference+' - '+reason+(row.missing_expiry_confirmed?' — No expiry date available; saleability explicitly confirmed.':'')});
     if(row.balance_id)await s.StockBalance.update(row.balance_id,stock);
     else row.balance_id=(await s.StockBalance.create({...stock,product_id:row.product_id,product_name:row.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:row.lot_number,expiry_date:row.expiry_date,qc_status:row.qc_status,stock_origin:'adjustment'})).id;
     if(row.difference || row.value_difference)await s.StockMovement.create({product_id:row.product_id,product_name:row.product_name,quantity:Math.abs(row.difference),source_warehouse_id:row.difference<0 || !row.difference && row.value_difference<0?warehouse.id:'',destination_warehouse_id:row.difference>0 || !row.difference && row.value_difference>0?warehouse.id:'',movement_type:'stock_count_variance',movement_date:date,status:'approved',lot_number:row.lot_number,batch_number:row.batch_number || '',expiry_date:row.expiry_date || undefined,production_order_id:row.production_order_id || '',unit_cost:row.use_current_cost?row.applied_unit_cost:row.reconciliation_confirmed?Number(row.verified_unit_cost || 0):row.book_quantity>0?row.book_value/row.book_quantity:row.unit_cost,total_value:Math.abs(row.value_difference),document_type:'WarehouseAdjustment',document_id:eventId,journal_id:journal?.id || '',warehouse_adjustment_balance_id:row.balance_id,reason:reference+' — '+reason,created_by:user.id});

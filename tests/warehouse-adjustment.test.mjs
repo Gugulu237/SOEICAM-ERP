@@ -624,3 +624,35 @@ test('reclassifying an item during counting blocks the previous group snapshot',
  assert.equal((await f.entities.JournalEntry.list()).length,0);
  assert.equal((await f.entities.StockBalance.get(f.lots[0].id)).quantity,10);
 });
+
+test('verified undated counted stock releases only with explicit acknowledgement and preserves quantity, value and audit history',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ const first=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-010',reason:'Physical finished stock counted',rows:[{product_id:f.product.id,lot_number:'010',unit_cost:10,counted_quantity:14}]});
+ const id=first.rows[0].balance_id,held=await s.StockBalance.get(id),row=(await f.workspace()).rows.find(r=>r.balance_id===id);
+ const beforeJ=await s.JournalEntry.list(),beforeM=await s.StockMovement.list();
+ const args={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'RELEASE-010',reason:'Owner confirms saleable counted stock; expiry unavailable',rows:[{balance_id:id,fingerprint:row.fingerprint,counted_quantity:14,ready_for_sale:true}]};
+ for(const flag of [undefined,false,'true',1])await assert.rejects(f.call({...args,rows:[{...args.rows[0],confirm_missing_expiry:flag}]}),/Confirm that no expiry/);
+ assert.deepEqual(await s.StockBalance.get(id),held);
+ args.rows[0].confirm_missing_expiry=true;const result=await f.call(args),released=await s.StockBalance.get(id);
+ assert.equal(released.quantity,14);assert.equal(released.total_value,held.total_value);assert.equal(released.expiry_date,held.expiry_date);assert.equal(released.qc_status,'approved');assert.match(released.qc_notes,/No expiry date available/);
+ assert.equal(result.rows[0].missing_expiry_confirmed,true);assert.equal(result.journal_id,'');assert.deepEqual(await s.JournalEntry.list(),beforeJ);assert.deepEqual(await s.StockMovement.list(),beforeM);
+ const admin={id:'gm',role:'admin'};f.client.auth.me=async()=>admin;
+ const stock=await salesOrderAction(f.client,admin,{action:'salesOrderStock',sourceType:'company',date});assert.equal(stock.products.find(p=>p.id===f.product.id).available,19);
+ const snapshot=structuredClone(f.rows);assert.equal((await f.call(args)).reused,true);assert.deepEqual(f.rows,snapshot);
+});
+
+test('missing-expiry acknowledgement never clears known expiry or releases manufactured, recovered, rejected or expired stock',async()=>{
+ for(const mode of ['production','recovery','rejected','expired','invalid']){
+ const f=await finishedFixture(),s=f.entities;
+ const balance=await s.StockBalance.create({product_id:f.product.id,warehouse_id:f.warehouse.id,quantity:14,total_value:140,unit_cost:10,lot_number:'HOLD',stock_origin:'adjustment',qc_status:mode==='rejected'?'rejected':'quarantine',expiry_date:mode==='expired'?'2020-01-01':mode==='invalid'?'2026-02-31':'',...(mode==='production'?{production_order_id:'production-1'}:{}),...(mode==='recovery'?{inventory_recovery_id:'return-1'}:{})});
+ const row=(await f.workspace()).rows.find(r=>r.balance_id===balance.id);
+ await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'BAD-RELEASE',reason:'Attempt to reuse acknowledgement',rows:[{balance_id:balance.id,fingerprint:row.fingerprint,counted_quantity:14,ready_for_sale:true,confirm_missing_expiry:true}]}),/verified counted stock|expiry/);
+ assert.deepEqual(await s.StockBalance.get(balance.id),balance);assert.equal((await s.JournalEntry.list()).length,0);
+ }
+});
+
+test('a new counted finished lot can be explicitly approved with its missing expiry recorded',async()=>{
+ const f=await finishedFixture(),s=f.entities;
+ const result=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'NEW-VERIFIED',reason:'Verified finished goods counted',rows:[{product_id:f.product.id,lot_number:'NEW',unit_cost:10,counted_quantity:14,ready_for_sale:true,confirm_missing_expiry:true}]});
+ const lot=await s.StockBalance.get(result.rows[0].balance_id);assert.equal(lot.qc_status,'approved');assert.equal(lot.expiry_date,'');assert.equal(lot.quantity,14);assert.equal(lot.total_value,140);assert.equal(result.rows[0].missing_expiry_confirmed,true);assert.equal((await s.JournalEntry.list()).length,1);
+});

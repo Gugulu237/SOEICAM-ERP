@@ -414,3 +414,26 @@ test('an interrupted save preserves its proof and retry key instead of replacing
   const writes=f.calls.filter(c=>c.action==='postWarehouseAdjustment');assert.equal(writes.length,2);assert.deepEqual(writes[0],writes[1]);assert.match(draw(),/Stock count posted/);
  }finally{f.close();}
 });
+
+test('held counted finished stock requires missing-expiry acknowledgement before release without a quantity change',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
+ const data={...workspace,rows:[{...workspace.rows[0],product_name:'YOLA 1KG Non Sucre',inventory_type:'assembly',adjusted_stock:true,production_order_id:'',expiry_date:'',book_quantity:14,book_value:140}]};
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'')};};
+ const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try{draw();await r.flush();draw();element(r,'input','Ready for sale: YOLA 1KG Non Sucre').onChange({target:{checked:true}});element(r,'input','Count sheet / reference').onChange({target:{value:'RELEASE-010'}});element(r,'input','Adjustment reason').onChange({target:{value:'Owner confirms counted stock fit for sale'}});
+ assert.match(draw(),/No expiry date is available/);assert.equal(button(r,'Save quantity adjustment').disabled,true);
+ element(r,'input','Confirm missing expiry for YOLA 1KG Non Sucre').onChange({target:{checked:true}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();
+ const body=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(body.rows[0].counted_quantity,14);assert.equal(body.rows[0].ready_for_sale,true);assert.equal(body.rows[0].confirm_missing_expiry,true);assert.equal(body.rows[0].expiry_date,undefined);assert.equal(body.rows[0].use_current_cost,undefined);
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
+
+test('new finished count exposes ready-for-sale choice and sends explicit undated approval only after acknowledgement',async()=>{
+ const render=await renderer(),r=runtime(),data=simpleWorkspace(),calls=[];globalThis.__adjustmentUI=r;
+ data.item_group='finished';data.items[0]={...data.items[0],name:'YOLA',inventory_type:'assembly',count_group:'finished',count_fingerprint:'item-proof'};data.rows=[];
+ r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-COUNT')};};
+ const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
+ try{draw();await r.flush();draw();element(r,'input','Physical quantity for YOLA').onChange({target:{value:'14'}});draw();button(r,'Review adjustment').onClick();draw();element(r,'input','Lot number for YOLA').onChange({target:{value:'010'}});element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-010'}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified finished stock'}});draw();element(r,'select','Inventory surplus account').onChange({target:{value:'surplus'}});draw();
+ assert.equal(element(r,'input','Ready for sale: YOLA').checked,false);element(r,'input','Ready for sale: YOLA').onChange({target:{checked:true}});draw();assert.equal(button(r,'Post adjustment').disabled,true);element(r,'input','Confirm missing expiry for YOLA').onChange({target:{checked:true}});draw();assert.equal(button(r,'Post adjustment').disabled,false);await button(r,'Post adjustment').onClick();
+ const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(saved.rows[0].ready_for_sale,true);assert.equal(saved.rows[0].confirm_missing_expiry,true);assert.equal(saved.rows[0].counted_quantity,14);
+ }finally{r.cleanup();delete globalThis.__adjustmentUI;}
+});
