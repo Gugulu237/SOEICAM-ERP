@@ -85,3 +85,42 @@ test('posting failures are shown beside the build action',async()=>{
  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();await button(r,'Build and release for sale').onClick();const html=draw();assert.ok(html.indexOf('Accounting period was closed')>html.indexOf('Build and release for sale'));assert.equal(button(r,'Build and release for sale').disabled,true);assert.equal(button(r,'Refresh component check').disabled,false);
  }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
+
+
+test('build catalogue groups every product by yogurt type then ascending comparable size',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;
+ const products=[
+  {id:'large',name:'YOLA Brassé Nature 2.5KG',product_family:'Yaourt brasse',size:'2,5 kg'},
+  {id:'drink500',name:'YOLA À boire Fraise 500 g',size:'500 g'},
+  {id:'kilo',name:'YOLA Brassé Vanille 1KG',product_family:'Stirred yogurt',size:'1 kg'},
+  {id:'drink250',name:'YOLA à boire Nature 250 g'},
+  {id:'small',name:'YOLA Brassé Nature 250 g',product_family:'Yaourt brassé',size:'250 g'},
+  {id:'half',name:'YOLA Brassé Fraise 500 g',size:'500 g'},
+  {id:'drink330',name:'YOLA drinkable Vanille 330 g',product_family:'Drinkable yogurt',size:'330 g'},
+  {id:'unset',name:'Custom finished product'},
+ ].map(p=>({...p,unit:'ea',shelf_life_days:14,assembly_ready:true}));
+ r.invoke=async()=>({data:{...workspace,products}});
+ const draw=()=>{r.beforeRender();return render();};
+ try{draw();await r.flush();var html=draw();
+  const shown=html=>[...html.matchAll(/aria-label="Select ([^"]+)"/g)].map(m=>m[1]);
+  assert.deepEqual(shown(html),['YOLA Brassé Nature 250 g','YOLA Brassé Fraise 500 g','YOLA Brassé Vanille 1KG','YOLA Brassé Nature 2.5KG','YOLA à boire Nature 250 g','YOLA drinkable Vanille 330 g','YOLA À boire Fraise 500 g','Custom finished product']);
+  assert.ok(html.includes('>Yaourt brassé</h3>'));assert.ok(html.includes('>Yaourt à boire</h3>'));assert.ok(html.includes('>1000 g</h4>'));assert.ok(html.includes('>2500 g</h4>'));assert.match(html,/Size not assigned/);
+  field(r,'Select YOLA Brassé Nature 250 g').onClick();draw();field(r,'Quantity for YOLA Brassé Nature 250 g').onChange({target:{value:'12'}});draw();
+  field(r,'Product family').onChange({target:{value:'boire'}});html=draw();assert.equal(shown(html).length,3);
+  field(r,'Search assembly products').onChange({target:{value:'a boire'}});assert.equal(shown(draw()).length,3);
+  field(r,'Search assembly products').onChange({target:{value:''}});field(r,'Product family').onChange({target:{value:''}});draw();assert.equal(field(r,'Quantity for YOLA Brassé Nature 250 g').value,'12');
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('unfinished assemblies remain visible and become selectable after their setup is saved',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;let available=false;
+ r.invoke=async()=>({data:{...workspace,products:[{...workspace.products[0],assembly_ready:available}]}});
+ const draw=()=>{r.beforeRender();return render();};
+ try{draw();await r.flush();assert.match(draw(),/Complete assembly setup in Inventory before building/);assert.equal(field(r,'Select Nature 500g').disabled,true);
+  field(r,'Select Nature 500g').onClick();draw();assert.equal(field(r,'Quantity for Nature 500g'),undefined);
+  available=true;await r.refreshCatalogue();await r.flush();draw();assert.equal(field(r,'Select Nature 500g').disabled,false);
+  field(r,'Select Nature 500g').onClick();draw();assert.ok(field(r,'Quantity for Nature 500g'));
+  available=false;await r.refreshCatalogue();await r.flush();draw();assert.equal(button(r,'Review total components').disabled,true);assert.equal(field(r,'Select Nature 500g').disabled,false);
+  field(r,'Select Nature 500g').onClick();draw();assert.equal(field(r,'Quantity for Nature 500g'),undefined);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});

@@ -154,3 +154,16 @@ test('the real HTTP transaction rolls back components, finished stock, orders, s
 test('a positive-cost component with a missing carrying value must be reconciled before building',async()=>{
  const f=await setup();await f.entities.StockBalance.update(f.milkLot.id,{total_value:0});await assert.rejects(f.preview(),/Reconcile invalid lot/);assert.equal((await f.entities.JournalEntry.list()).length,0);assert.equal((await f.entities.ProductionOrder.list()).length,0);
 });
+
+
+test('assembly workspace includes all active finished products across pages and flags unfinished setup without permitting builds',async()=>{
+ const f=await setup(),s=f.entities,created=[];
+ for(let i=0;i<215;i++)created.push(await s.Product.create({...f.product,id:undefined,sku:'CAT-'+i,name:'YOLA Brassé '+i,product_family:'Yaourt brassé',size:i%2?'500 g':'1 kg',configuration_status:i===214?'draft':'ready',components:i===213?[]:f.product.components}));
+ const inactive=await s.Product.create({...f.product,id:undefined,is_active:false}),removed=await s.Product.create({...f.product,id:undefined,item_removed_at:'2026-11-05'});
+ const before=structuredClone(f.rows),workspace=await f.call({action:'assemblyBuildWorkspace'}),listed=new Map(workspace.products.map(p=>[p.id,p]));
+ for(const product of [f.product,...created])assert.ok(listed.has(product.id),product.name);
+ assert.equal(listed.has(inactive.id),false);assert.equal(listed.has(removed.id),false);assert.equal(listed.has(f.milk.id),false);assert.equal(listed.has(f.cup.id),false);
+ assert.equal(listed.get(f.product.id).assembly_ready,true);assert.equal(listed.get(created[213].id).assembly_ready,false);assert.equal(listed.get(created[214].id).assembly_ready,false);assert.equal(listed.get(created[214].id).size,'1 kg');
+ for(const product of created.slice(213))await assert.rejects(f.call({...f.body,action:'previewAssemblyBuild',rows:[{product_id:product.id,quantity:1}]}),/active finished product with saved assembly/);
+ assert.deepEqual(f.rows,before);
+});

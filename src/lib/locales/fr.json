@@ -7575,5 +7575,9 @@
   "No expiry date is available; I confirm this counted stock is fit for sale.": "Aucune date de péremption n’est disponible ; je confirme que ce stock compté est propre à la vente.",
   "Confirm that no expiry date is available and that this counted stock is fit for sale.": "Confirmez qu’aucune date de péremption n’est disponible et que ce stock compté est propre à la vente.",
   "Review sale availability": "Vérifier la disponibilité à la vente",
-  "Stock is on quality hold or expired": "Stock bloqué pour contrôle qualité ou périmé"
+  "Stock is on quality hold or expired": "Stock bloqué pour contrôle qualité ou périmé",
+  "Yaourt brassé": "Yaourt brassé",
+  "Yaourt à boire": "Yaourt à boire",
+  "Complete assembly setup in Inventory before building.": "Complétez la composition du produit dans l’Inventaire avant de lancer sa fabrication.",
+  "No active finished products are available.": "Aucun produit fini actif n’est disponible."
 }

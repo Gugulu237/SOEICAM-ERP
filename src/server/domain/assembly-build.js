@@ -153,7 +153,7 @@ export async function assemblyBuildAction(client,user,body){
   }
   const data=await load(stores),inventory_revision=body.action==='postAssemblyBuild'?undefined:inventoryRevision(data);
   if(body.action==='assemblyBuildWorkspace')return {inventory_revision,can_build:canBuild,date:businessDate(),
-    products:data.products.filter(p=>configured(p)&&isAssemblyInventoryType(p.inventory_type)&&p.components?.length).map(p=>({id:p.id,name:p.name,unit:stockUnit(p),shelf_life_days:p.shelf_life_days||0,image_url:p.image_url||'',sku:p.sku||'',size:p.size||'',flavor:p.flavor||'',product_family:p.product_family||'',category:p.category||''})),
+    products:data.products.filter(p=>p.is_active!==false&&!p.item_removed_at&&isAssemblyInventoryType(p.inventory_type)).map(p=>({assembly_ready:configured(p)&&!!p.components?.length,id:p.id,name:p.name,unit:stockUnit(p),shelf_life_days:p.shelf_life_days||0,image_url:p.image_url||'',sku:p.sku||'',size:p.size||'',flavor:p.flavor||'',product_family:p.product_family||'',category:p.category||''})),
     warehouses:data.warehouses.filter(w=>companySalesWarehouse(w)&&w.warehouse_type==='cold_room').map(w=>({id:w.id,name:w.name})),
     overhead_accounts:overheadAccounts(data).map(a=>({id:a.id,name:a.name,account_number:a.account_number})),default_overhead_account_id:data.rules.find(r=>r.rule_key==='manufacturing_overhead')?.account_id||''};
   if(!['previewAssemblyBuild','postAssemblyBuild'].includes(body.action))throw Error('Unknown assembly build action.');
