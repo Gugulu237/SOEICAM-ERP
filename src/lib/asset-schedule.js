@@ -27,6 +27,24 @@ export function monthEnd(month) {
   monthIndex(month);
   return new Date(Date.UTC(Number(month.slice(0,4)), Number(month.slice(5)), 0)).toISOString().slice(0,10);
 }
+// An explicit annual percentage is applied to a fixed depreciable basis, never
+// to the declining monthly book value. Lifespan schedules retain their math.
+export function flatDepreciationTerms({ basis, months, annualRate, mode = 'life' }) {
+  basis = assetMoney(basis, 'depreciable value');
+  if (!['life', 'rate'].includes(mode)) throw Error('Choose useful life or annual flat rate');
+  if (mode === 'life') {
+    months = assetMonths(months);
+    return { months, monthly_amount:money(basis / months), rate_mode:'life', annual_rate:1200 / months };
+  }
+  if (!['number', 'string'].includes(typeof annualRate) || String(annualRate).trim() === '' || !Number.isFinite(Number(annualRate)) || Number(annualRate) < 1 || Number(annualRate) > 1200) throw Error('Enter an annual flat rate from 1% to 1,200%');
+  const rate = Number(annualRate);
+  return { months:Math.ceil(1200 / rate), monthly_amount:money(basis * rate / 1200), rate_mode:'rate', annual_rate:rate };
+}
+export function completedDepreciationMonth(date) {
+  assetDate(date);
+  const month = date.slice(0,7);
+  return monthEnd(month) <= date ? month : shiftMonth(month,-1);
+}
 export function depreciationPlan(asset) {
   const cost = assetMoney(asset.acquisition_cost, 'cost'), salvage = assetMoney(asset.salvage_value ?? 0, 'residual value');
   const accumulated = assetMoney(asset.accumulated_depreciation ?? 0, 'accumulated depreciation');
@@ -36,7 +54,10 @@ export function depreciationPlan(asset) {
   if (asset.depreciation_plan) {
     const plan = asset.depreciation_plan;
     monthIndex(plan.start);
-    return { ...plan, months: assetMonths(plan.months), basis: assetMoney(plan.basis), opening: assetMoney(plan.opening), nextMonth };
+    const result = { ...plan, months: assetMonths(plan.months), basis: assetMoney(plan.basis), opening: assetMoney(plan.opening), nextMonth };
+    if (plan.monthly_amount !== undefined) result.monthly_amount = assetMoney(plan.monthly_amount, 'monthly depreciation');
+    if (money(result.opening + result.basis) !== money(cost - salvage)) throw Error('The depreciation plan does not match the asset value; review its settings');
+    return result;
   }
   // Adopt an imported schedule prospectively; never backfill or rewrite its
   // recorded opening depreciation. Remaining historic months are retained.
@@ -45,7 +66,7 @@ export function depreciationPlan(asset) {
 }
 export function monthlyDepreciation(asset) {
   if (asset.depreciation_method !== 'straight_line' || ['fully_depreciated','disposed','written_off'].includes(asset.status)) return 0;
-  try { const plan = depreciationPlan(asset); return money(plan.basis / plan.months); } catch { return 0; }
+  try { const plan = depreciationPlan(asset); return plan.monthly_amount ?? money(plan.basis / plan.months); } catch { return 0; }
 }
 export const remainingDepreciable = asset => Math.max(0,money(Number(asset.acquisition_cost)-Number(asset.salvage_value || 0)-Number(asset.accumulated_depreciation || 0)));
 export function scheduleThrough(asset, throughMonth) {
@@ -58,7 +79,7 @@ export function scheduleThrough(asset, throughMonth) {
   const rows = [];
   for (let index = from; index <= end; index++) {
     const elapsed = index-start+1;
-    const chargeToDate = elapsed === plan.months ? plan.basis : Math.min(plan.basis,money(money(plan.basis/plan.months)*elapsed));
+    const chargeToDate = elapsed === plan.months ? plan.basis : Math.min(plan.basis,money((plan.monthly_amount ?? money(plan.basis/plan.months))*elapsed));
     const target = money(plan.opening + chargeToDate);
     const amount = money(target-accumulated), month = shiftMonth(plan.start,index-start);
     if (amount < 0) throw Error('The recorded depreciation is ahead of this schedule; review the asset settings');

@@ -6,7 +6,8 @@ import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { postgresAdapter } from './helpers/postgres-adapter.mjs';
 import { functionRoute, request } from './helpers/cashier.mjs';
-import { assetMonths, assetDate, monthEnd, scheduleThrough, depreciationPlan } from '../src/lib/asset-schedule.js';
+import { flatDepreciationTerms, completedDepreciationMonth, monthlyDepreciation, assetMonths, assetDate, monthEnd, scheduleThrough, depreciationPlan } from '../src/lib/asset-schedule.js';
+import {syncAutomaticDepreciation,automaticDepreciationStatus} from '../src/server/domain/automatic-depreciation.js';
 import { fixedAssetAction } from '../src/server/domain/fixed-assets.js';
 import { guardMutation } from '../src/server/access.js';
 
@@ -53,7 +54,7 @@ async function environment(){
   const ok=async body=>{const result=await call(body);assert.equal(result.status,200,result.error);return result};
   const register=async overrides=>(await ok({action:'assetRegister',requestKey:crypto.randomUUID(),data:{...data,...overrides}})).asset;
   const run=async month=>{const preview=await ok({action:'assetDepreciationPreview',month});return ok({action:'assetRunDepreciation',month,previewToken:preview.token,requestKey:crypto.randomUUID()})};
-  return {db,entities,client,call,ok,register,run,close:async()=>{delete globalThis.__assetDB;delete globalThis.__assetTransaction;delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close()}};
+  return {db,entities,client,call,ok,register,run,transaction,close:async()=>{delete globalThis.__assetDB;delete globalThis.__assetTransaction;delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close()}};
 }
 
 test('real database route posts once, catches up missed months and keeps cash unchanged',async()=>{
@@ -142,5 +143,98 @@ test('asset acquisition and disposal keep linked treasury and ledger balances to
     assert.equal((await env.entities.TreasuryTransaction.list()).length,2);
     assert.equal((await env.call({...disposal,proceeds:100})).status,400);
     assert.equal((await env.entities.FixedAsset.get(a.id)).status,'disposed');
+  }finally{await env.close()}
+});
+
+
+test('annual rates use a fixed basis with monthly charges, exact residual cap and fractional final month',()=>{
+  const terms=flatDepreciationTerms({basis:1200000,annualRate:20,mode:'rate'});
+  assert.equal(terms.monthly_amount,20000);assert.equal(terms.months,60);
+  const a={...asset,acquisition_cost:1300000,salvage_value:100000,depreciation_plan:{...terms,start:'2020-01',basis:1200000,opening:0}};
+  const rows=scheduleThrough(a,'2025-12');assert.equal(rows.length,60);assert.ok(rows.every(r=>r.amount===20000));assert.equal(rows.at(-1).net_book_value_after,100000);
+  const irregular={...asset,acquisition_cost:110,salvage_value:10,depreciation_plan:{...flatDepreciationTerms({basis:100,annualRate:17,mode:'rate'}),start:'2020-01',basis:100,opening:0}};
+  const fraction=scheduleThrough(irregular,'2029-12');assert.equal(fraction.length,71);assert.equal(Math.round(fraction.reduce((n,r)=>n+r.amount,0)*100),10000);assert.equal(fraction.at(-1).net_book_value_after,10);assert.equal(monthlyDepreciation(irregular),1.42);
+  for(const rate of [0,-1,0.9,1201,'',true,NaN,Infinity])assert.throws(()=>flatDepreciationTerms({basis:100,annualRate:rate,mode:'rate'}));
+  assert.equal(completedDepreciationMonth('2020-02-28'),'2020-01');assert.equal(completedDepreciationMonth('2020-02-29'),'2020-02');assert.equal(completedDepreciationMonth('2021-01-01'),'2020-12');
+});
+
+test('automatic monthly charges persist rate settings, reach P&L and never move treasury cash',async()=>{
+  const env=await environment();try{
+    const a=await env.register({acquisition_cost:1300000,salvage_value:100000,depreciation_rate_mode:'rate',annual_depreciation_rate:20,automatic_depreciation_enabled:true});
+    const reload=await env.entities.FixedAsset.get(a.id);assert.equal(reload.depreciation_plan.annual_rate,20);assert.equal(reload.automatic_depreciation.authorized_by,user.id);
+    const sync=()=>syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-03-01'});
+    const stale=await env.ok({action:'assetDepreciationPreview',month:'2020-02'});
+    const result=await sync();assert.equal(result.posted,2);assert.equal(result.total,40000);assert.equal(result.pending_count,0);assert.equal((await sync()).posted,0);
+    assert.equal((await env.call({action:'assetRunDepreciation',month:'2020-02',previewToken:stale.token,requestKey:crypto.randomUUID()})).status,400);
+    assert.equal((await env.run('2020-02')).posted,0);
+    const entries=await env.entities.DepreciationEntry.list();assert.deepEqual(entries.map(e=>e.amount),[20000,20000]);assert.ok(entries.every(e=>e.posting_mode==='automatic'&&e.schedule_authorized_by===user.id));
+    assert.equal((await env.entities.Account.get('expense')).balance,40000);assert.equal((await env.entities.Account.get('accum')).balance,40000);assert.equal((await env.entities.FixedAsset.get(a.id)).net_book_value,1260000);
+    assert.equal((await env.entities.TreasuryTransaction.list()).length,0);assert.equal((await env.entities.TreasuryAccount.get('t-operating')).balance,10000);
+    const output=await build({stdin:{contents:"export {computeActivity,netProfit,sectionRows} from './src/lib/statements.js';",resolveDir:process.cwd()},bundle:true,platform:'node',format:'esm',write:false,plugins:[{name:'statement-math',setup(b){b.onResolve({filter:/^@\/lib\/posting$/},()=>({path:'math',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const round2=n=>Math.round(Number(n||0)*100)/100;'}));}}]});
+    const statements=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+    const journals=await env.entities.JournalEntry.list(),lines=await env.entities.JournalLine.list(),accounts=await env.entities.Account.list();
+    const activity=statements.computeActivity({journalsById:Object.fromEntries(journals.map(j=>[j.id,j])),lines,fromDate:'2020-02-01',toDate:'2020-02-29'});
+    assert.equal(statements.netProfit(accounts,activity),-20000);assert.equal(statements.sectionRows(accounts,activity,['expense'],1)[0].amount,20000);
+  }finally{await env.close()}
+});
+
+test('existing schedules require explicit opt-in, and toggling automation retains the exact flat charge',async()=>{
+  const env=await environment();try{
+    const a=await env.register({depreciation_rate_mode:'rate',annual_depreciation_rate:20});
+    const sync=()=>syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-03-01'});
+    assert.equal((await sync()).posted,0);assert.equal((await automaticDepreciationStatus(env.entities,{date:'2020-03-01'})).manual_count,2);
+    await env.run('2020-01');const before=await env.entities.FixedAsset.get(a.id),oldCharge=monthlyDepreciation(before);
+    await env.ok({action:'assetUpdatePlan',assetId:a.id,revision:before.asset_revision,changeSchedule:false,automaticDepreciationEnabled:true});
+    const after=await env.entities.FixedAsset.get(a.id);assert.equal(monthlyDepreciation(after),oldCharge);assert.deepEqual({...after.depreciation_plan,nextMonth:undefined},{...before.depreciation_plan,nextMonth:undefined});
+    assert.equal((await sync()).total,oldCharge);
+    const saved=await env.entities.FixedAsset.get(a.id);
+    await env.ok({action:'assetUpdatePlan',assetId:a.id,revision:saved.asset_revision,changeSchedule:false,automaticDepreciationEnabled:false});
+    assert.equal((await syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-04-01'})).posted,0);
+  }finally{await env.close()}
+});
+
+test('automatic catch-up respects closed months and continues unaffected assets',async()=>{
+  const env=await environment();try{
+    const a=await env.register({automatic_depreciation_enabled:true});
+    await env.register({name:'New freezer',acquisition_date:'2020-03-01',in_service_date:'2020-03-01',automatic_depreciation_enabled:true});
+    await env.entities.AccountingPeriod.create({name:'Closed February',fiscal_year:2020,period_number:2,start_date:'2020-02-01',end_date:'2020-02-29',status:'locked'});
+    const r=await syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-04-01'});
+    assert.equal(r.posted,2);assert.equal(r.issues.length,1);assert.match(r.issues[0].message,/locked/);assert.equal(r.pending_count,2);
+    const entries=await env.entities.DepreciationEntry.list();assert.deepEqual(entries.filter(e=>e.asset_id===a.id).map(e=>e.period_label),['2020-01']);
+    assert.equal((await env.entities.FixedAsset.get(a.id)).last_depreciation_date,'2020-01-31');
+    assert.equal((await env.entities.Account.get('expense')).balance,600);
+  }finally{await env.close()}
+});
+
+test('late failures roll back automatic source entries and journals; retries post exactly once',async()=>{
+  const env=await environment();try{
+    const a=await env.register({automatic_depreciation_enabled:true}),update=env.entities.FixedAsset.update;
+    env.entities.FixedAsset.update=async()=>{throw Error('Asset update failed')};
+    const sync=()=>syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-02-01'});
+    const failed=await sync();assert.equal(failed.posted,0);assert.equal(failed.issues.length,1);
+    assert.equal((await env.entities.JournalEntry.list()).length,0);assert.equal((await env.entities.DepreciationEntry.list()).length,0);assert.equal((await env.entities.Account.get('expense')).balance,0);
+    env.entities.FixedAsset.update=update;assert.equal((await sync()).posted,1);assert.equal((await sync()).posted,0);assert.equal((await env.entities.FixedAsset.get(a.id)).net_book_value,700);
+  }finally{await env.close()}
+});
+
+test('bounded catch-up resumes, caps residual value and ignores disposed or future assets',async()=>{
+  const env=await environment();try{
+    await env.register({automatic_depreciation_enabled:true});
+    const disposed=await env.register({automatic_depreciation_enabled:true});await env.entities.FixedAsset.update(disposed.id,{status:'disposed'});
+    await env.register({automatic_depreciation_enabled:true,in_service_date:'2099-01-01'});
+    const sync=()=>syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-04-01',limit:1});
+    assert.equal((await sync()).pending_count,2);assert.equal((await sync()).pending_count,1);assert.equal((await sync()).pending_count,0);assert.equal((await sync()).posted,0);
+    assert.equal((await env.entities.Account.get('expense')).balance,900);assert.equal((await env.entities.DepreciationEntry.list()).length,3);
+  }finally{await env.close()}
+});
+
+test('rate changes apply to remaining value and keep previously posted charges immutable',async()=>{
+  const env=await environment();try{
+    const a=await env.register();await env.run('2020-01');const saved=await env.entities.FixedAsset.get(a.id);
+    await env.ok({action:'assetUpdatePlan',assetId:a.id,revision:saved.asset_revision,changeSchedule:true,rateMode:'rate',annualRate:100,salvageValue:100,automaticDepreciationEnabled:true});
+    const result=await syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-03-01'});assert.equal(result.total,50);
+    assert.deepEqual((await env.entities.DepreciationEntry.list('depreciation_date')).map(e=>e.amount),[300,50]);
+    assert.equal((await env.entities.FixedAsset.get(a.id)).depreciation_plan.annual_rate,100);
+    const invalid=await env.call({action:'assetRegister',data:{...data,depreciation_rate_mode:'rate',annual_depreciation_rate:0},requestKey:crypto.randomUUID()});assert.equal(invalid.status,400);
   }finally{await env.close()}
 });

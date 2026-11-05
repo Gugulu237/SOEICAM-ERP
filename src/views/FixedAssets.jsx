@@ -7,6 +7,8 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useCallback } from "react";
 import { assetAction } from "@/lib/assets";
+import {syncAssetDepreciation} from '@/lib/asset-depreciation-client';
+import DepreciationStatus from '@/components/assets/DepreciationStatus';
 import AssetPlanDialog from "@/components/assets/AssetPlanDialog";
 import AssetFundingDialog from "@/components/assets/AssetFundingDialog";
 import { useNavigate } from "@/lib/router";
@@ -31,6 +33,7 @@ export default function FixedAssets() {
   const navigate = useNavigate();
   const { isAdmin, isCashier, allowedModules } = useCurrentUser();
   const [assets, setAssets] = useState([]);
+  const [depreciation,setDepreciation]=useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState(null);
@@ -39,7 +42,7 @@ export default function FixedAssets() {
 
   const load = useCallback(async () => {
     setLoading(true);setError('');
-    try { const data=await assetAction({action:'assetWorkspace'});setAssets(data.assets);setEntries(data.entries);setAccounts(data.accounts);setTreasuryAccounts(data.treasuryAccounts);setTransfers(data.transfers); }
+    try { setDepreciation(await syncAssetDepreciation());const data=await assetAction({action:'assetWorkspace'});setAssets(data.assets);setEntries(data.entries);setAccounts(data.accounts);setTreasuryAccounts(data.treasuryAccounts);setTransfers(data.transfers); }
     catch(e){setError(e.message)} finally {setLoading(false)}
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -57,7 +60,8 @@ export default function FixedAssets() {
     { key: "asset_number", label: ui("Asset #"), render: (v) => <span className="font-medium">{v}</span> },
     { key: "name", label: ui("Name") },
     { key: "category", label: ui("Category"), render: (v) => <span className="capitalize">{(v || "").replace("_", " ")}</span> },
-    { key: "useful_life_months", label: ui("Schedule"), render: (v,a) => <span>{v}{ui(" months")}<span className="block text-xs text-slate-500">{formatXAF(monthlyDepreciation(a))}{ui(" / month")}</span></span> },
+    { key: "useful_life_months", label: ui("Schedule"), render: (v,a) => <span>{v}{ui(" months")}{Number(v)>0&&<span className="block text-xs text-slate-500">{ui('{0}% per year',Number(Number(a.depreciation_plan?.annual_rate??1200/Number(v)).toFixed(4)))}</span>}<span className="block text-xs text-slate-500">{formatXAF(monthlyDepreciation(a))}{ui(" / month")}</span></span> },
+    { key:'automatic_depreciation',label:ui('Monthly posting'),exportValue:a=>ui(a.automatic_depreciation?.enabled?'Automatic':'Manual'),render:v=>ui(v?.enabled?'Automatic':'Manual') },
     { key: "acquisition_date", label: ui("Acquired"), render: (v) => formatDate(v) },
     { key: "acquisition_cost", label: ui("Cost"), render: (v) => formatXAF(v) },
     { key: "accumulated_depreciation", label: ui("Accum. Dep."), render: (v) => formatXAF(v) },
@@ -97,6 +101,7 @@ export default function FixedAssets() {
       />
 
       {error&&<p role="alert" className="mb-4 rounded bg-red-50 p-3 text-red-700">{uiMessage(error)}</p>}
+      <DepreciationStatus status={depreciation} />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KPICard title={ui("Assets in Register")} value={live.length} icon={Building2} />
         <KPICard title={ui("Total Cost")} value={formatXAF(totalCost)} />

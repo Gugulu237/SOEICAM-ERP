@@ -4,5 +4,7 @@ export async function register() {
     startFermentationWorker();
     const {startDevicePushWorker}=await import('./server/device-push.js');
     startDevicePushWorker();
+    const {startAssetDepreciationWorker}=await import('./server/asset-depreciation-worker.js');
+    startAssetDepreciationWorker();
   }
 }

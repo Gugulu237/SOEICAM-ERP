@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { requireStaff, postJournal, round2, today, audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
-import { assetDate, assetMoney, assetMonths, depreciationPlan, monthEnd, monthIndex, shiftMonth, scheduleThrough } from '../../lib/asset-schedule.js';
+import { assetDate, assetMoney, flatDepreciationTerms, depreciationPlan, monthEnd, monthIndex, shiftMonth, scheduleThrough } from '../../lib/asset-schedule.js';
 
 export const ASSET_ACTIONS = ['assetWorkspace','assetDepreciationPreview','assetRegister','assetUpdatePlan','assetRunDepreciation','assetFundReplacement','assetDispose'];
 const idFor = (type, value) => type + '-' + createHash('sha256').update(value).digest('hex').slice(0,40);
@@ -55,6 +55,32 @@ async function preview(svc, month) {
   return { rows, issues, total:round2(rows.reduce((n,r)=>n+r.amount,0)), token:idFor('preview',JSON.stringify({assets,month,rows})), month };
 }
 
+// Caller must hold a serializable transaction. Manual and automatic runs share
+// source identities, period locks, journals and asset balance updates.
+export async function postDepreciationRows(svc, rows, userId, automatic = false) {
+  let postedCount=0,total=0;
+  const loaded=new Map();
+  for(const row of rows) {
+    if(!loaded.has(row.asset_id)){const asset=await svc.entities.FixedAsset.get(row.asset_id);loaded.set(row.asset_id,{asset,accounts:await assetAccounts(svc,asset)});}
+    const {asset,accounts}=loaded.get(row.asset_id),id=idFor('DEP',`${asset.id}:${row.month}`);
+    const existing=await readRecords(svc.entities.DepreciationEntry,{asset_id:asset.id,period_label:row.month});
+    if(existing.length)throw Error(`A depreciation entry already exists for ${asset.name} / ${row.month}; reconcile the register before continuing`);
+    if(row.amount>0) {
+      const entry=await svc.entities.DepreciationEntry.create({id,asset_id:asset.id,asset_number:asset.asset_number,asset_name:asset.name,period_label:row.month,depreciation_date:row.date,amount:row.amount,accumulated_after:row.accumulated_after,net_book_value_after:row.net_book_value_after,replacement_target:row.replacement_target,created_by:userId,posting_mode:automatic?'automatic':'reviewed',schedule_authorized_by:asset.automatic_depreciation?.authorized_by||''});
+      const {journal}=await postJournal(svc,{entryDate:row.date,description:`Depreciation ${row.month}: ${asset.name}`,sourceModule:'assets',sourceDocumentType:'DepreciationEntry',sourceDocumentId:entry.id,userId,lines:[line(accounts.expense,row.amount,0),line(accounts.accum,0,row.amount)]});
+      await svc.entities.DepreciationEntry.update(id,{journal_id:journal.id});postedCount++;total=round2(total+row.amount);
+    }
+    const changes={depreciation_plan:asset.depreciation_plan||depreciationPlan(asset),accumulated_depreciation:row.accumulated_after,net_book_value:row.net_book_value_after,last_depreciation_date:row.date,status:row.net_book_value_after<=Number(asset.salvage_value)?'fully_depreciated':'active',asset_revision:Number(asset.asset_revision||0)+1};
+    await svc.entities.FixedAsset.update(asset.id,changes);Object.assign(asset,changes);
+  }
+  return {posted:postedCount,total};
+}
+function automaticSettings(enabled, previous, user) {
+  if (enabled === undefined) return previous || {enabled:false};
+  if (typeof enabled !== 'boolean') throw Error('Choose whether monthly depreciation is automatic');
+  return {enabled,authorized_by:user.id,authorized_at:new Date().toISOString()};
+}
+
 export async function fixedAssetAction(client, user, body) {
   const { employee, role }=await requireStaff(client,user,['admin'],'fixed asset accounting');
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active accounting staff account is required');
@@ -70,17 +96,19 @@ export async function fixedAssetAction(client, user, body) {
     const id=requestId(body,user),data=body.data||{}, payload={data,fundingAccountId:body.fundingAccountId||''};
     const existing=await svc.entities.FixedAsset.get(id);
     if(existing){sameRequest(existing,payload);return {asset:existing,reused:true};}
-    const cost=assetMoney(data.acquisition_cost,'cost'),salvage=assetMoney(data.salvage_value,'residual value'),months=assetMonths(data.useful_life_months);
+    const cost=assetMoney(data.acquisition_cost,'cost'),salvage=assetMoney(data.salvage_value,'residual value');
     if(cost<=0||salvage>cost)throw Error('Cost must be positive and residual value cannot exceed cost');
     const date=pastDate(data.acquisition_date),inService=assetDate(data.in_service_date||date);
     if(inService<date)throw Error('In-service date cannot precede acquisition');
+    const terms=flatDepreciationTerms({basis:round2(cost-salvage),months:data.useful_life_months,annualRate:data.annual_depreciation_rate,mode:data.depreciation_rate_mode||'life'}),months=terms.months;
+    const automatic=automaticSettings(data.automatic_depreciation_enabled,null,user);
     const accounts=await assetAccounts(svc,data);
     const asset=await svc.entities.FixedAsset.create({id,name:text(data.name,'an asset name'),category:data.category||'equipment',serial_number:String(data.serial_number||'').slice(0,250),location:String(data.location||'').slice(0,250),
       asset_number:'FA-'+id.slice(-10).toUpperCase(),acquisition_date:date,in_service_date:inService,acquisition_cost:cost,salvage_value:salvage,useful_life_months:months,depreciation_method:'straight_line',
       asset_account_id:accounts.cost.id,asset_account_number:accounts.cost.account_number,asset_account_name:accounts.cost.name,accum_dep_account_id:accounts.accum.id,accum_dep_account_number:accounts.accum.account_number,accum_dep_account_name:accounts.accum.name,
       expense_account_id:accounts.expense.id,expense_account_number:accounts.expense.account_number,expense_account_name:accounts.expense.name,
       accumulated_depreciation:0,net_book_value:cost,status:cost===salvage?'fully_depreciated':'active',replacement_fund_enabled:data.replacement_fund_enabled!==false,
-      depreciation_plan:{start:inService.slice(0,7),months,basis:round2(cost-salvage),opening:0},asset_revision:1,created_by:user.id,asset_request_payload:JSON.stringify(payload)});
+      depreciation_plan:{start:inService.slice(0,7),...terms,basis:round2(cost-salvage),opening:0},automatic_depreciation:automatic,asset_revision:1,created_by:user.id,asset_request_payload:JSON.stringify(payload)});
     if(body.fundingAccountId) {
       const credit=await account(svc,body.fundingAccountId,['asset','liability']);
       if([accounts.cost.id,accounts.accum.id].includes(credit.id))throw Error('The acquisition credit account must be separate from the asset accounts');
@@ -104,17 +132,20 @@ export async function fixedAssetAction(client, user, body) {
     const asset=await svc.entities.FixedAsset.get(body.assetId);
     if(!asset||!['active','fully_depreciated'].includes(asset.status))throw Error('Select an active asset');
     if(Number(body.revision||0)!==Number(asset.asset_revision||0))throw Error('This asset changed; refresh before saving');
-    const months=assetMonths(body.months),salvage=assetMoney(body.salvageValue,'residual value'),cost=Number(asset.acquisition_cost),accumulated=Number(asset.accumulated_depreciation||0);
+    const revise=body.changeSchedule!==false,oldPlan=depreciationPlan(asset);
+    const salvage=revise?assetMoney(body.salvageValue,'residual value'):Number(asset.salvage_value||0),cost=Number(asset.acquisition_cost),accumulated=Number(asset.accumulated_depreciation||0);
     if(salvage>round2(cost-accumulated))throw Error('Residual value cannot exceed the current book value');
     const plan={nextMonth:asset.last_depreciation_date?shiftMonth(assetDate(asset.last_depreciation_date).slice(0,7),1):assetDate(asset.in_service_date||asset.acquisition_date).slice(0,7)};
     const {cost:costAccount,accum,expense}=await assetAccounts(svc,{...asset,accum_dep_account_id:body.accumAccountId||asset.accum_dep_account_id,expense_account_id:body.expenseAccountId||asset.expense_account_id});
     const basis=round2(cost-salvage-accumulated);
+    const terms=revise?flatDepreciationTerms({basis,months:body.months,annualRate:body.annualRate,mode:body.rateMode||'life'}):oldPlan,months=terms.months;
+    const automatic=automaticSettings(body.automaticDepreciationEnabled??asset.automatic_depreciation?.enabled,asset.automatic_depreciation,user);
     const changes={useful_life_months:months,salvage_value:salvage,depreciation_method:'straight_line',replacement_fund_enabled:body.replacementFundEnabled!==false,
-      depreciation_plan:{start:plan.nextMonth,months,basis,opening:accumulated},asset_revision:Number(asset.asset_revision||0)+1,status:basis>0?'active':'fully_depreciated',
+      depreciation_plan:revise?{start:plan.nextMonth,...terms,basis,opening:accumulated}:oldPlan,automatic_depreciation:automatic,asset_revision:Number(asset.asset_revision||0)+1,status:basis>0?'active':'fully_depreciated',
       asset_account_id:costAccount.id,accum_dep_account_id:accum.id,accum_dep_account_name:accum.name,accum_dep_account_number:accum.account_number,expense_account_id:expense.id,expense_account_name:expense.name,expense_account_number:expense.account_number};
     if(accumulated>0&&accum.id!==asset.accum_dep_account_id)throw Error('An accumulated depreciation account with a posted balance cannot be reassigned');
     await svc.entities.FixedAsset.update(asset.id,changes);
-    await audit(svc,{action:'revise_asset_plan',module:'assets',entityType:'FixedAsset',entityId:asset.id,userId:user.id,description:`${asset.name}: ${months} remaining months from ${plan.nextMonth}; previous charges retained`});
+    await audit(svc,{action:'revise_asset_plan',module:'assets',entityType:'FixedAsset',entityId:asset.id,userId:user.id,description:`${asset.name}: ${revise?months+' remaining months from '+plan.nextMonth:'existing schedule retained'}; automatic posting ${automatic.enabled?'enabled':'disabled'}; previous charges retained`});
     return {asset:{...asset,...changes}};
   }
   if(action==='assetRunDepreciation') {
@@ -123,23 +154,8 @@ export async function fixedAssetAction(client, user, body) {
     const plan=await preview(svc,body.month);
     if(plan.issues.length)throw Error(plan.issues.join('; '));
     if(body.previewToken!==plan.token)throw Error('The depreciation preview changed. Refresh it before posting');
-    let postedCount=0,total=0;
-    const loaded=new Map();
-    for(const row of plan.rows) {
-      if(!loaded.has(row.asset_id)){const asset=await svc.entities.FixedAsset.get(row.asset_id);loaded.set(row.asset_id,{asset,accounts:await assetAccounts(svc,asset)});}
-      const {asset,accounts}=loaded.get(row.asset_id),id=idFor('DEP',`${asset.id}:${row.month}`);
-      const existing=await readRecords(svc.entities.DepreciationEntry,{asset_id:asset.id,period_label:row.month});
-      if(existing.length)throw Error(`A depreciation entry already exists for ${asset.name} / ${row.month}; reconcile the register before continuing`);
-      if(row.amount>0) {
-        const entry=await svc.entities.DepreciationEntry.create({id,asset_id:asset.id,asset_number:asset.asset_number,asset_name:asset.name,period_label:row.month,depreciation_date:row.date,amount:row.amount,accumulated_after:row.accumulated_after,net_book_value_after:row.net_book_value_after,replacement_target:row.replacement_target,created_by:user.id});
-        const {journal}=await postJournal(svc,{entryDate:row.date,description:`Depreciation ${row.month}: ${asset.name}`,sourceModule:'assets',sourceDocumentType:'DepreciationEntry',sourceDocumentId:entry.id,userId:user.id,lines:[line(accounts.expense,row.amount,0),line(accounts.accum,0,row.amount)]});
-        await svc.entities.DepreciationEntry.update(id,{journal_id:journal.id});postedCount++;total=round2(total+row.amount);
-      }
-      const changes={depreciation_plan:asset.depreciation_plan||depreciationPlan(asset),accumulated_depreciation:row.accumulated_after,net_book_value:row.net_book_value_after,last_depreciation_date:row.date,status:row.net_book_value_after<=Number(asset.salvage_value)?'fully_depreciated':'active',asset_revision:Number(asset.asset_revision||0)+1};
-      await svc.entities.FixedAsset.update(asset.id,changes);Object.assign(asset,changes);
-    }
-    const result={posted:postedCount,total};
-    await svc.entities.AuditLog.create({id,action:'run_depreciation',module:'assets',entity_type:'DepreciationEntry',entity_id:body.month,user_id:user.id,description:`Depreciation ${body.month}: ${postedCount} entries, ${total} XAF`,asset_request_payload:JSON.stringify(payload),asset_result:result});
+    const result=await postDepreciationRows(svc,plan.rows,user.id);
+    await svc.entities.AuditLog.create({id,action:'run_depreciation',module:'assets',entity_type:'DepreciationEntry',entity_id:body.month,user_id:user.id,description:`Depreciation ${body.month}: ${result.posted} entries, ${result.total} XAF`,asset_request_payload:JSON.stringify(payload),asset_result:result});
     return result;
   }
   if(action==='assetFundReplacement') {

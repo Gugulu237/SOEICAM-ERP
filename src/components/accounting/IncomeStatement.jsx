@@ -11,7 +11,7 @@ import StatementSection from "@/components/accounting/StatementSection";
 import {useRecurringExpenseReview} from './useRecurringExpenseReview';
 import {Link} from '@/lib/router';
 
-export default function IncomeStatement({ accounts, activity, fromDate, toDate }) {
+export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const recurring=useRecurringExpenseReview(fromDate,toDate);
 
@@ -30,7 +30,7 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate }
   const operatingProfit = round2(grossProfit - totalExpenses);
   const net = round2(operatingProfit + sum(otherIncome) - sum(otherExpenses));
 
-  const document={title:'Income statement',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals'],['Unposted recurring charges',recurring.error?'Review unavailable':formatXAF(recurring.total)]],sections:[
+  const document={title:'Income statement',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals'],['Depreciation checked through',depreciation?.through||'Not checked'],['Unposted depreciation (all completed months)',formatXAF(depreciation?.pending_total||0)],['Depreciation issues',(depreciation?.issues||[]).map(i=>i.asset_name+': '+i.message).join('; ')],['Unposted recurring charges',recurring.error?'Review unavailable':formatXAF(recurring.total)]],sections:[
     ...[['Revenue',revenue,totalRevenue],['Cost of goods sold',cogs,totalCogs],['Operating expenses',expenses,totalExpenses],['Other income',otherIncome,sum(otherIncome)],['Other expenses',otherExpenses,sum(otherExpenses)]].map(([title,rows,total])=>({title,columns:['Account','Name',{label:'Amount',type:'money'}],rows:rows.map(r=>[r.account_number,r.name,r.amount]),totals:[['','Total',total]]})),
     {title:'Profit and loss',columns:['Measure',{label:'Amount',type:'money'}],rows:[['Gross profit',grossProfit],['Operating profit',operatingProfit],['Net profit / loss',net]]},
   ]};
