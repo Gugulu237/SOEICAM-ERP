@@ -1,3 +1,4 @@
+import {degustationQuantity} from './degustation-stock.js';
 import {stockStaff,eligibleStockRecipient} from './employee-custody.js';
 import {requireStaff,round2,round3,today,audit,stockTransfer} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
@@ -80,7 +81,8 @@ export async function distributionControlAction(client,user,body){
     const rows=body.lines;
     if(!Array.isArray(rows)||!rows.length||rows.length>100||new Set(rows.map(r=>r?.product_id)).size!==rows.length)throw Error('Choose 1 to 100 distinct finished products');
     const products=await byIds(s.Product,'id',rows.map(r=>r?.product_id));
-    const items=rows.map(row=>{const p=products.find(p=>p.id===row?.product_id);if(!finishedProduct(p)||p.is_active===false||p.configuration_status==='draft'||typeof row.quantity==='boolean'||!Number.isFinite(Number(row.quantity))||round3(row.quantity)<=0)throw Error('Choose active finished products and positive loading quantities');return {product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity:round3(row.quantity)};});
+    const items=rows.map(row=>{const p=products.find(p=>p.id===row?.product_id);if(!finishedProduct(p)||p.is_active===false||p.configuration_status==='draft'||typeof row.quantity==='boolean'||!Number.isFinite(Number(row.quantity))||round3(row.quantity)<=0)throw Error('Choose active finished products and positive loading quantities');return {product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity:round3(row.quantity),degustation_quantity:degustationQuantity(row.degustation_quantity??0)};});
+    if(items.some(item=>item.degustation_quantity>item.quantity))throw Error('Dégustation quantity cannot exceed the total issued quantity.');
     const request=await s.DispatchRequest.create({request_number:'DR-'+crypto.randomUUID().slice(0,12).toUpperCase(),request_date:today(),source_warehouse_id:body.warehouseId,vehicle_id:body.vehicleId,driver_id:body.driverId,commercial_id:body.commercialId,salesperson_id:body.commercialId,items,status:'pending_approval',notes:String(body.notes || '').slice(0,2000),distribution_request_key:key,distribution_request_payload:snapshot});
     return dispatchAction(client,user,{action:'approveDispatchRequest',requestId:request.id});
   }

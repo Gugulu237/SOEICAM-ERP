@@ -1,3 +1,4 @@
+import {degustationQuantity,degustationState,degustationHistory} from './degustation-stock.js';
 import {stockStaff,eligibleStockRecipient,ensureEmployeeStockLocation,validEmployeeStockLocation} from './employee-custody.js';
 import { requireStaff, stockTransfer, audit, round2, round3, today } from './field-ops.js';
 import { finishedProduct, periodDates } from './commercial-rules.js';
@@ -92,6 +93,8 @@ async function manifest(svc, lines) {
       if (factor !== 1) throw new Error(`Use the registered stock unit ${unit} for ${product.name}; convert the loading quantity before approval`);
     }
     const quantity = round3(nonnegative(present(line.loaded_quantity) ? line.loaded_quantity : line.requested_quantity, 'loaded quantity'));
+    const giveaway = degustationQuantity(line.degustation_quantity ?? 0);
+    if (giveaway > quantity) throw Error('Dégustation quantity cannot exceed the total loaded quantity.');
     if (quantity > 0) selected.push({ line, product, quantity });
   }
   if (!selected.length) throw new Error('Add at least one positive quantity to load');
@@ -166,7 +169,7 @@ async function approveRequest(svc, user, body) {
     if (!item || typeof item.product_id !== 'string' || !item.product_id) throw new Error('Each requested item needs a finished product');
     const quantity = round3(nonnegative(item.quantity, 'requested quantity'));
     if (quantity <= 0) throw new Error('Each requested item needs a positive quantity');
-    return { product_id: item.product_id, requested_quantity: quantity, loaded_quantity: quantity };
+    return { product_id: item.product_id, requested_quantity: quantity, loaded_quantity: quantity, degustation_quantity: degustationQuantity(item.degustation_quantity ?? 0) };
   });
   const candidate = {
     id: `request:${request.id}`, warehouse_id: request.source_warehouse_id, vehicle_id: request.vehicle_id,
@@ -176,14 +179,14 @@ async function approveRequest(svc, user, body) {
   if (request.dispatch_id || existing.length) throw new Error('This request already has a dispatch. Review the existing dispatch before issuing stock again.');
   // Reuse the exact loading checks before creating even a draft dispatch.
   const prepared = await prepareLoad(svc, candidate, inputLines);
-  const checkedLines = prepared.toLoad.map(({ product, quantity }, index) => {
+  const checkedLines = prepared.toLoad.map(({ line, product, quantity }, index) => {
     const unit = stockUnit(product), requestedUnit = request.items[index].unit;
     if (requestedUnit) {
       let factor;
       try { factor = unitFactor(requestedUnit, unit); } catch { throw new Error(`Use the registered stock unit ${unit} for ${product.name}`); }
       if (factor !== 1) throw new Error(`Use the registered stock unit ${unit} for ${product.name}; convert the requested quantity before approval`);
     }
-    return { product_id: product.id, product_name: product.name, unit, requested_quantity: quantity, loaded_quantity: quantity, unit_price: amount(product.selling_price) };
+    return { product_id: product.id, product_name: product.name, unit, requested_quantity: quantity, loaded_quantity: quantity, degustation_quantity: line.degustation_quantity || 0, unit_price: amount(product.selling_price) };
   });
   const route = request.route_id ? await svc.entities.Route.get(request.route_id) : null;
   if (request.route_id && (!route || route.is_active === false)) throw new Error('Choose an active delivery route before approving the request');
@@ -208,13 +211,15 @@ export async function dispatchReconciliationData(svc, dispatch) {
     const runs = await records(svc.entities.Dispatch, { status: { $in: openStates } });
     if (runs.some(run => run.id !== dispatch.id && ((dispatch.vehicle_id && run.vehicle_id === dispatch.vehicle_id) || (dispatch.vehicle_warehouse_id && run.vehicle_warehouse_id === dispatch.vehicle_warehouse_id)))) throw new Error('Multiple open delivery runs share this vehicle. Reconcile the assignments before proceeding.');
   }
-  const [lines, orders, fieldSales, balances, returnMovements, replacementMovements] = await Promise.all([
+  const [lines, orders, fieldSales, balances, returnMovements, replacementMovements, giveawayMovements] = await Promise.all([
     records(svc.entities.DispatchLine, { dispatch_id: dispatch.id }), records(svc.entities.SalesOrder, { dispatch_id: dispatch.id }),
     records(svc.entities.FieldSale, { dispatch_id: dispatch.id }),
     ownsVehicleStock && dispatch.vehicle_warehouse_id ? records(svc.entities.StockBalance, { warehouse_id: dispatch.vehicle_warehouse_id }) : [],
     dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'Dispatch', document_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'warehouse_transfer', status: 'approved' }) : [],
     dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'SpoilageRecord', dispatch_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'promotional_issue', status: 'approved' }) : [],
+    dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'Degustation', dispatch_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'promotional_issue', status: 'approved' }) : [],
   ]);
+  const giveaways = degustationState(lines, giveawayMovements);
   const delivered = orders.filter(order => ['delivered', 'invoiced'].includes(order.status));
   const approvedFields = fieldSales.filter(sale => sale.status === 'approved_posted');
   const orderIds = new Set(orders.map(order => order.id)), fieldIds = new Set(fieldSales.map(sale => sale.id));
@@ -229,6 +234,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
     consumed.set(movement.product_id, round3((consumed.get(movement.product_id) || 0) + quantity));
     replacements.set(movement.product_id, round3((replacements.get(movement.product_id) || 0) + quantity));
   }
+  for (const movement of giveawayMovements) consumed.set(movement.product_id, round3((consumed.get(movement.product_id) || 0) + amount(movement.quantity)));
   for (const movement of deliveryMovements) {
     const orderIssue = movement.document_type === 'SalesOrder' && movement.movement_type === 'customer_delivery' && orderIds.has(movement.document_id);
     const fieldIssue = movement.document_type === 'FieldSale' && movement.movement_type === 'field_delivery' && fieldIds.has(movement.document_id);
@@ -268,7 +274,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
     const line = lineMap.get(productId), loaded = round3(line?.loaded_quantity || 0), returned = round3(line?.returned_quantity ?? returns.get(productId) ?? 0);
     const confirmedSold = sold.get(productId) || 0, physicalSupplies = consumed.get(productId) || 0;
     const expected = round3(loaded - returned - physicalSupplies), onHand = actual.get(productId) || 0;
-    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
+    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: giveaways.get(productId)?.remaining || 0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
   });
   let cashSales = 0, creditSales = 0, totalSales = 0;
   for (const sale of [...postedFieldSales, ...postedOrders]) {
@@ -277,7 +283,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
     creditSales = round2(creditSales + (present(sale.amount_due) ? amount(sale.amount_due) : Math.max(0, total - collected)));
     totalSales = round2(totalSales + total);
   }
-  return { rows, orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
+  return { rows, degustations: degustationHistory(giveawayMovements), degustationCost: round2(giveawayMovements.reduce((sum,m) => sum + Number(m.total_value || 0),0)), orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
 }
 
 async function returnStock(svc, user, dispatch, body={}) {
@@ -293,6 +299,8 @@ async function returnStock(svc, user, dispatch, body={}) {
     const quantity = nonnegative(balance.quantity, 'vehicle stock quantity');
     if (quantity > 0) quantities.set(balance.product_id, round3((quantities.get(balance.product_id) || 0) + quantity));
   }
+  const beforeReturn = await dispatchReconciliationData(svc, dispatch);
+  if (beforeReturn.rows.some(row => row.degustation_allocated > 0) && beforeReturn.hasVariance) throw Error('Reconcile the sale and Dégustation stock before receiving this run.');
   const products = await byIds(svc.entities.Product, 'id', [...quantities.keys()]);
   if(body.countedLines!==undefined){
     const counted=body.countedLines,ids=new Set([...lines.map(l=>l.product_id),...quantities.keys()]);
@@ -307,7 +315,7 @@ async function returnStock(svc, user, dispatch, body={}) {
     const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}` });
     totalValue = round2(totalValue + result.totalValue);
     const line = lines.find(row => row.product_id === productId);
-    if (line) await svc.entities.DispatchLine.update(line.id, { returned_quantity: round3((line.returned_quantity || 0) + quantity) });
+    if (line) await svc.entities.DispatchLine.update(line.id, { returned_quantity: round3((line.returned_quantity || 0) + quantity), degustation_returned_quantity: round3((line.degustation_returned_quantity || 0) + (beforeReturn.rows.find(row=>row.product_id===productId)?.degustation_remaining || 0)) });
   }
   const expiredReturned = await receiveVehicleExpiredReturns(svc, dispatch, source, user);
   const recon = await dispatchReconciliationData(svc, dispatch);

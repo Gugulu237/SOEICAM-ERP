@@ -6,7 +6,7 @@ const dispatchDraftFields = new Set([
   'driver_id', 'driver_name', 'salesperson_id', 'salesperson_name', 'route_id', 'route_name',
   'warehouse_id', 'warehouse_name', 'notes', 'status',
 ]);
-const lineDraftFields = new Set(['dispatch_id', 'product_id', 'product_name', 'unit', 'requested_quantity', 'loaded_quantity', 'unit_price', 'notes']);
+const lineDraftFields = new Set(['dispatch_id', 'product_id', 'product_name', 'unit', 'requested_quantity', 'loaded_quantity', 'degustation_quantity', 'unit_price', 'notes']);
 const removal = operation => ['delete', 'deleteMany'].includes(operation);
 const creation = operation => ['create', 'bulkCreate'].includes(operation);
 const allowFields = (payload, allowed) => {

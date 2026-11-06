@@ -24,6 +24,8 @@ export function driverRunStock(data, run) {
       loaded: quantity(manifest.reduce((sum, line) => sum + Number(line.loaded_quantity || 0), 0)),
       returned: quantity(manifest.reduce((sum, line) => sum + Number(line.returned_quantity || 0), 0)),
       supplied: supplied ? quantity(supplies.filter(line => line.product_id === id).reduce((sum, line) => sum + Number(line.quantity || 0), 0)) : null,
+      degustationGiven: quantity((data.degustationLines || []).filter(line=>line.dispatch_id===run.id&&line.product_id===id).reduce((sum,line)=>sum+Number(line.quantity||0),0)),
+      degustationReserved: quantity(manifest.reduce((sum,line)=>sum+Number(line.degustation_quantity||0)-Number(line.degustation_returned_quantity||0),0)-(data.degustationLines||[]).filter(line=>line.dispatch_id===run.id&&line.product_id===id).reduce((sum,line)=>sum+Number(line.quantity||0),0)),
       replaced: quantity((data.replacementLines || []).filter(line => line.dispatch_id === run.id && line.product_id === id).reduce((sum, line) => sum + Number(line.quantity || 0), 0)),
       onVehicle: live ? quantity(balances.filter(balance => balance.product_id === id).reduce((sum, balance) => sum + Number(balance.quantity || 0), 0)) : null,
       usable: live ? availableCustody(balances, id, data.date) : null,

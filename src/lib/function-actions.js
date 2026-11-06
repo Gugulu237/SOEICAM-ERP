@@ -8,7 +8,7 @@ const fieldReads = new Set([
   'assetWorkspace', 'assetDepreciationPreview', 'commercialCashiers', 'cashierHandoverHistory', 'cashierWorkspace', 'purchasesWorkspace',
   'distributionControl', 'distributionIssueWorkspace', 'supplierWorkspace', 'employeeDashboard', 'dispatchActivity',
   'dispatchReconciliation', 'fieldCustomers', 'commercialPerformance', 'commercialDailySupplies',
-  'expiredReturnReviewQueue', 'commercialReturns', 'employeeStockWorkspace','employeeSalesWorkspace','employeeSalesStock','employeeSalesDeliveryPoints','approvalHistory', 'outletReports', 'outletRoster', 'previewSale', 'proposedJournal',
+  'expiredReturnReviewQueue', 'commercialReturns', 'degustationWorkspace','employeeStockWorkspace','employeeSalesWorkspace','employeeSalesStock','employeeSalesDeliveryPoints','approvalHistory', 'outletReports', 'outletRoster', 'previewSale', 'proposedJournal',
   'yogurtWorkspace', 'checkProductionMaterials', 'productionPurchaseOptions', 'productionAuditRequests', 'batchCatalogue', 'batchTrace',
   'businessOverview', 'accountPosition', 'cashFlowReport', 'outletShelfOverview', 'companySales', 'invoiceWorkspace', 'invoiceDetail',
   'salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','invoiceSource', 'customerDeliveryWorkspace', 'customerMapWorkspace', 'deliveryZoneOptions',

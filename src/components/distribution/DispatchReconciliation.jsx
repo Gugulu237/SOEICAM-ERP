@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatXAF, formatNumber } from "@/lib/formatters";
 import { Undo2, AlertTriangle, RefreshCw } from "lucide-react";
 import { Input } from '@/components/ui/input';
+import DegustationHistory from './DegustationHistory';
 import ProductThumb from '@/components/shared/ProductThumb';
 
 export default function DispatchReconciliation({ dispatch, userName, onChanged, canManage = false, snapshot, products=[] }) {
@@ -65,6 +66,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
         <Stat label={ui("Cash collected")} value={formatXAF(data.cashSales)} />
         <Stat label={ui("Unpaid / credit balance")} value={formatXAF(data.creditSales)} />
       </div>
+      <Stat label={ui('Marketing expense · Dégustation')} value={formatXAF(data.degustationCost || 0)} />
       {data.hasVariance && (
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
           <AlertTriangle size={16} />{ui(" Physical stock on the vehicle does not match expected quantities - investigate before closing.")}</div>
@@ -77,6 +79,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
               <th className="px-4 py-3 text-right font-semibold">{ui("Loaded")}</th>
               <th className="px-4 py-3 text-right font-semibold">{ui("Supplied")}</th>
               <th className="px-4 py-3 text-right font-semibold">{ui("Replaced free")}</th>
+              <th className="px-4 py-3 text-right font-semibold">{ui('Dégustation')}</th>
               <th className="px-4 py-3 text-right font-semibold">{ui("Returned")}</th>
               <th className="px-4 py-3 text-right font-semibold">{ui("Expected")}</th>
               <th className="px-4 py-3 text-right font-semibold">{ui("On vehicle")}</th>
@@ -92,6 +95,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
                 <td data-label={ui("Loaded")} className="px-4 py-3 text-right">{formatNumber(r.loaded, 3)}</td>
                 <td data-label={ui("Supplied")} className="px-4 py-3 text-right">{formatNumber(r.sold, 3)}</td>
                 <td data-label={ui("Replaced free")} className="px-4 py-3 text-right">{formatNumber(r.replaced || 0, 3)}</td>
+                <td data-label={ui('Dégustation')} className="px-4 py-3 text-right"><p>{ui('Allocated')}: {formatNumber(r.degustation_allocated || 0,3)}</p><p>{ui('Given away')}: {formatNumber(r.degustation_given || 0,3)}</p><p>{ui('Remaining')}: {formatNumber(r.degustation_remaining || 0,3)}</p><p>{ui('Returned')}: {formatNumber(r.degustation_returned || 0,3)}</p></td>
                 <td data-label={ui("Returned")} className="px-4 py-3 text-right">{formatNumber(r.returned, 3)}</td>
                 <td data-label={ui("Expected")} className="px-4 py-3 text-right">{formatNumber(r.expected, 3)}</td>
                 <td data-label={ui("On vehicle")} className="px-4 py-3 text-right">{formatNumber(r.actual, 3)}</td>
@@ -102,7 +106,7 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
                 <td data-label={ui("Sales value")} className="px-4 py-3 text-right">{formatXAF(r.sales_value)}</td>
               </tr>
             ))}
-            {data.rows.length === 0 && <tr><td colSpan={canReturn?10:9} className="px-4 py-6 text-center text-slate-400">{ui("Nothing loaded on this dispatch.")}</td></tr>}
+            {data.rows.length === 0 && <tr><td colSpan={canReturn?12:11} className="px-4 py-6 text-center text-slate-400">{ui("Nothing loaded on this dispatch.")}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -113,7 +117,8 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
           <Undo2 size={16} className="mr-1" /> {busy ? ui("Recording return...") : data.remainingQty > 0 ? ui("Receive unsold stock at warehouse") : ui("Confirm empty vehicle return")}
         </Button>
       )}
-      <p className="text-xs leading-5 text-slate-500">{ui("Expected fresh stock equals loaded minus recorded supplies, free replacements and goods returned to the warehouse. Expired customer collections are received separately into quarantine. Count physical stock and investigate differences before closing.")}</p>
+      <DegustationHistory records={data.degustations} costs />
+      <p className="text-xs leading-5 text-slate-500">{ui("Expected stock equals loaded minus sales, replacements, Dégustation and warehouse returns. Unused Dégustation remains company stock until given away or returned.")}</p>
     </div>
   );
 }

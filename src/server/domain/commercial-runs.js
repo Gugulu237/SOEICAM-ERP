@@ -1,3 +1,4 @@
+import {degustationQuantity,degustationMovements,degustationState} from './degustation-stock.js';
 import {stockStaff,eligibleStockRecipient,validEmployeeStockLocation} from './employee-custody.js';
 import { readRecords } from './commercial-workspace.js';
 import { finishedProduct } from './commercial-rules.js';
@@ -94,7 +95,9 @@ export async function runManifest(svc, dispatchId, warehouseId) {
     const quantity = Number(line.loaded_quantity);
     const returned = Number(line.returned_quantity || 0);
     if (!line.product_id || !Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(returned) || returned < 0 || returned > quantity) throw new Error('This run has an invalid load manifest. Ask dispatch management to check it.');
-    loaded.set(line.product_id, round3((loaded.get(line.product_id) || 0) + quantity - returned));
+    const reserved = degustationQuantity(line.degustation_quantity ?? 0), returnedReserved = degustationQuantity(line.degustation_returned_quantity ?? 0);
+    if (reserved > quantity || returnedReserved > reserved || returnedReserved > returned) throw Error('Reconcile the Dégustation load and return quantities.');
+    loaded.set(line.product_id, round3((loaded.get(line.product_id) || 0) + quantity - returned - reserved + returnedReserved));
   }
   const saleIds = new Set(sales.map(sale => sale.id)), orderIds = new Set(orders.map(order => order.id));
   for (const movement of replacements) {
@@ -151,17 +154,20 @@ export async function commercialRunInventory(svc, commercialId, date, {includeCa
     if (!supplyRunStates.includes(run.status)) return { ...run, can_supply: false, stock_error: '' };
     try {
       const context = await supplyRun(svc, commercialId, run.id, date, true);
-      const [manifest, stock] = await Promise.all([runManifest(svc, run.id, context.stock_warehouse_id), readRecords(svc.entities.StockBalance, { warehouse_id: context.stock_warehouse_id })]);
+      const [manifest, stock, loadLines, given] = await Promise.all([runManifest(svc, run.id, context.stock_warehouse_id), readRecords(svc.entities.StockBalance, { warehouse_id: context.stock_warehouse_id }), readRecords(svc.entities.DispatchLine,{dispatch_id:run.id}), degustationMovements(svc,run.id,context.stock_warehouse_id)]);
+      const giveaway = degustationState(loadLines,given), giveawayRemaining = new Map([...giveaway].map(([id,row])=>[id,row.remaining]));
       const remaining = new Map(manifest), today = businessDate();
-      const runBalances = stock.filter(row => Number(row.quantity) > 0 && (manifest.get(row.product_id) || 0) > 0)
+      const runBalances = stock.filter(row => Number(row.quantity) > 0 && ((manifest.get(row.product_id) || 0) > 0 || (giveawayRemaining.get(row.product_id) || 0) > 0))
         .sort((left, right) => String(left.expiry_date || '9999-12-31').localeCompare(String(right.expiry_date || '9999-12-31')));
       for (const row of runBalances) {
         const saleable = (row.qc_status || 'approved') === 'approved' && (!row.expiry_date || row.expiry_date >= today);
         const usable = saleable ? Math.max(0, Math.min(round3(row.quantity), remaining.get(row.product_id) || 0)) : 0;
         if (saleable) remaining.set(row.product_id, round3((remaining.get(row.product_id) || 0) - usable));
+        const degustation = saleable ? Math.max(0,Math.min(round3(row.quantity)-usable,giveawayRemaining.get(row.product_id)||0)) : 0;
+        giveawayRemaining.set(row.product_id,round3((giveawayRemaining.get(row.product_id)||0)-degustation));
         productIds.add(row.product_id);
         balances.push({ ...pick(row, ['warehouse_id', 'product_id', 'quantity', 'qc_status', 'expiry_date']),
-          usable_quantity: usable, run_remaining_quantity: Math.max(0, manifest.get(row.product_id) || 0), dispatch_id: run.id });
+          usable_quantity: usable, degustation_quantity: degustation, run_remaining_quantity: Math.max(0, manifest.get(row.product_id) || 0), dispatch_id: run.id });
       }
       return { ...run, ...context, can_supply: true, stock_error: '' };
     } catch (error) { return { ...run, can_supply: false, stock_error: error.message }; }

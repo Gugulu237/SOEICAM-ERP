@@ -25,7 +25,7 @@ export default function PostingRulesManager() {
       readAll(erp.entities.PostingRule),
       readAll(erp.entities.Account,{is_active:true},"account_number"),
     ]).then(([r, a]) => {
-      if(!active)return;setRules(r.sort((x, y) => (x.rule_key || "").localeCompare(y.rule_key || "")));
+      if(!active)return;if(!r.some(rule=>rule.rule_key==='marketing_degustation_expense'))r.push({id:'pending-degustation',rule_key:'marketing_degustation_expense',label:'Marketing · Dégustation',description:ui('Inventory cost of products given to customers'),account_id:'',is_active:true,unsaved:true});setRules(r.sort((x, y) => (x.rule_key || "").localeCompare(y.rule_key || "")));
       setAccounts(a.sort((x, y) => x.account_number.localeCompare(y.account_number)));
     }).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};
   }, [revision]);
@@ -33,11 +33,9 @@ export default function PostingRulesManager() {
   async function updateRule(rule, accountId) {
     const acc = accounts.find((a) => a.id === accountId);
     if (!acc) return;
-    try{setError("");await erp.entities.PostingRule.update(rule.id, {
-      account_id: acc.id, account_number: acc.account_number, account_name: acc.name,
-    });
-    setRules((prev) => prev.map((r) => r.id === rule.id
-      ? { ...r, account_id: acc.id, account_number: acc.account_number, account_name: acc.name } : r));
+    try{setError("");const values={account_id:acc.id,account_number:acc.account_number,account_name:acc.name,is_active:true};
+    const saved=rule.unsaved?await erp.entities.PostingRule.create({...values,rule_key:rule.rule_key,label:rule.label,description:rule.description}):await erp.entities.PostingRule.update(rule.id,values);
+    setRules((prev)=>prev.map(r=>r.id===rule.id?{...r,...values,...saved,unsaved:false}:r));
     toast({ title: ui("Posting rule updated"), description: `${rule.label || rule.rule_key} → ${acc.account_number} ${acc.name}` });}catch(e){setError(e.message);}
   }
 

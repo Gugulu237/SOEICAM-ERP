@@ -165,7 +165,7 @@ export async function employeeWorkspaceAction(base44, user, body) {
   const activeDriverRuns = dispatches.filter(run => ['approved', 'loaded', 'in_transit'].includes(run.status) && !activities.some(row => row.dispatch_id === run.id && row.type === 'trip_returned'));
   return { ...shared, deliveryCustomers: await driverDeliveryPoints(svc, activeDriverRuns),
     dispatches: dispatches.map((d) => pick(d, ['id', 'dispatch_number', 'dispatch_date', 'status', 'route_name', 'vehicle_name', 'vehicle_warehouse_id', 'warehouse_name', 'salesperson_id', 'salesperson_name', 'driver_name', 'departure_date', 'notes'])),
-    manifest: manifest.map((l) => pick(l, ['id', 'dispatch_id', 'product_id', 'product_name', 'unit', 'requested_quantity', 'loaded_quantity', 'returned_quantity'])),
+    manifest: manifest.map((l) => pick(l, ['id', 'dispatch_id', 'product_id', 'product_name', 'unit', 'requested_quantity', 'loaded_quantity', 'returned_quantity', 'degustation_quantity', 'degustation_returned_quantity'])),
     stops: stops.map((o) => ({ ...pick(o, ['id', 'dispatch_id', 'order_number', 'customer_id', 'customer_name', 'location_id', 'location_name', 'status', 'delivery_date', 'notes']),
       location: pick(locations.find((l) => l.id === o.location_id && l.customer_id === o.customer_id) || customers.find((c) => c.id === o.customer_id), locationFields) })),
     orderLines: orderLines.map((l) => pick(l, ['id', 'order_id', 'product_id', 'product_name', 'unit', 'quantity'])),
@@ -179,6 +179,7 @@ export async function employeeWorkspaceAction(base44, user, body) {
     }).map(movement => ({ ...pick(movement, ['product_id', 'quantity']),
       dispatch_id: [...postedSales, ...stops].find(row => row.id === movement.document_id)?.dispatch_id })),
     replacementLines: replacementMovements.filter(movement => movement.document_type === 'SpoilageRecord' && movement.movement_type === 'promotional_issue' && movement.status === 'approved' && dispatches.some(run => run.id === movement.dispatch_id && run.vehicle_warehouse_id === movement.source_warehouse_id)).map(movement => pick(movement, ['dispatch_id', 'product_id', 'quantity'])),
+    degustationLines: replacementMovements.filter(m=>m.document_type==='Degustation'&&m.movement_type==='promotional_issue'&&m.status==='approved'&&dispatches.some(run=>run.id===m.dispatch_id&&run.vehicle_warehouse_id===m.source_warehouse_id)).map(m=>pick(m,['dispatch_id','product_id','quantity'])),
     expiredCollections: expiredCollections.filter(record => record.record_type === 'field_expired_return').map(record => pick(record, ['id', 'dispatch_id', 'customer_name', 'product_name', 'quantity', 'unit', 'reported_date', 'status', 'return_received_at'])),
     activities: activities.filter((a) => a.driver_id === id),
   };
