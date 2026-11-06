@@ -86,7 +86,7 @@ test('saved module grants cannot make drivers stock issuers, sellers or unrestri
     assert.throws(() => assertEntityAccess(scoped, entity, 'create'));
   }
   for (const path of ['/distribution/dispatches/new', '/distribution/requests/new', '/sales', '/field-sales/new', '/inventory', '/customers/new', '/customers']) assert.equal(canOpenFieldPath('driver', path, modules), false, path);
-  assert.deepEqual(modulesForRole('driver', modules).map(row => row.path), ['/my-stock','/distribution?tab=deliveries']);
+  assert.deepEqual(modulesForRole('driver', modules).map(row => row.path), ['/distribution?tab=deliveries']);
   assert.equal(normalizeRole('sales agent'), 'commercial'); assert.equal(normalizeRole('commercial agent'), 'commercial');
   assert.equal(catalogueFromStored({ roles: { driver: { template_role: 'warehouse_manager', modules } } }).roles.driver.template_role, 'driver');
   assert.throws(() => validateRoleProfile({ key: 'driver', template_role: 'warehouse_manager' }), /retain the driver/);

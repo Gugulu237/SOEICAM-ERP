@@ -1,7 +1,9 @@
 'use client';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {UserRound,Save,RefreshCw} from 'lucide-react';
+import {UserRound,Save,RefreshCw,Package,History} from 'lucide-react';
 import {useAuth} from '@/lib/AuthContext';
+import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {Link} from '@/lib/router';
 import {useLocaleRender} from '@/lib/localization';
 import {ui,uiMessage} from '@/lib/i18n';
 import PageHeader from '@/components/shared/PageHeader';
@@ -22,6 +24,7 @@ async function profileRequest(options={}){
 export default function MyProfile(){
   useLocaleRender();
   const {applySelfProfile}=useAuth();
+  const {role}=useCurrentUser();
   const [profile,setProfile]=useState(null),[form,setForm]=useState({display_name:'',phone:''});
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
   const sequence=useRef(0),savingRef=useRef(false);
@@ -55,6 +58,10 @@ export default function MyProfile(){
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-green-50 text-green-800"><UserRound size={28}/></div>
         <div className="min-w-0"><h2 className="break-words text-lg font-semibold text-slate-900">{profile.display_name || profile.employee_name}</h2><p className="text-sm text-slate-500">{profile.job_title || profile.role_label}</p></div>
       </section>
+      <nav aria-label={ui('My profile')} className="flex flex-wrap gap-2">
+        {profile.employee_id && role && role!=='hotesse' && <Link to="/my-stock" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2 text-sm font-medium text-green-800 hover:bg-green-50"><Package size={17}/>{ui('My issued stock')}</Link>}
+        <Link to="/approval-history" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><History size={17}/>{ui('Approval history')}</Link>
+      </nav>
       <div className="grid items-start gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <form onSubmit={save} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="text-base font-semibold text-slate-900">{ui('Personal details')}</h2>

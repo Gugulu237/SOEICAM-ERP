@@ -10,6 +10,8 @@ async function renderer(authProvider=false){
     b.onResolve({filter:/^react$/},args=>/(MyProfile|LanguageSelector|AuthContext)\.jsx$/.test(args.importer)?{path:args.importer,namespace:'profile-hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'profile-hooks'},args=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};const key=${JSON.stringify(args.path)};export default {...React,createElement:(tag,props,...children)=>{globalThis.__profileUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const createContext=React.createContext,useContext=React.useContext,useState=v=>globalThis.__profileUI.state(key,v),useRef=v=>globalThis.__profileUI.ref(key,v),useEffect=(fn,deps)=>globalThis.__profileUI.effect(key,fn,deps),useCallback=(fn,deps)=>{const ref=globalThis.__profileUI.ref(key,null);if(!ref.current||deps.some((v,i)=>!Object.is(v,ref.current.deps[i])))ref.current={fn,deps};return ref.current.fn;};`,resolveDir:process.cwd()}));
     const mocks={
+      '@/hooks/useCurrentUser':"export const useCurrentUser=()=>({role:globalThis.__profileUI.role || 'employee'});",
+      '@/lib/router':"import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);",
       '@/lib/localization':"import {configureLanguage} from './src/lib/i18n.js';export const useLocaleRender=()=>{},activateAccountLanguage=p=>configureLanguage({userId:p.id,preferredLanguage:p.preferred_language,defaultLanguage:p.company_language});",
       '@/api/erpClient':"export const erp={auth:{me:async()=>globalThis.__profileUI.account,logout:()=>{},redirectToLogin:()=>{}}},invalidateERPReads=()=>{};",
       '@/lib/supabase/browser':"export const supabaseBrowser=async()=>({auth:{onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}});",
@@ -42,7 +44,8 @@ test('profile keeps unsaved edits through language changes and failed saves, the
     submitted=JSON.parse(options.body);return failed?Response.json({error:'Connection interrupted'},{status:503}):Response.json({profile:{...profile,...submitted}});
   };
   try{
-    ui.setLanguage('en');paint(r,ui,'Profile');await r.flush();paint(r,ui,'Profile');
+    ui.setLanguage('en');paint(r,ui,'Profile');await r.flush();const markup=paint(r,ui,'Profile');assert.match(markup,/href="\/my-stock"/);assert.match(markup,/href="\/approval-history"/);
+    r.role='hotesse';assert.doesNotMatch(paint(r,ui,'Profile'),/href="\/my-stock"/);r.role='employee';paint(r,ui,'Profile');
     r.elements.find(e=>e.tag==='input'&&e.props.id==='profile-display-name').props.onChange({target:{value:'Preferred name'}});
     ui.setLanguage('fr');assert.match(paint(r,ui,'Profile'),/Mon profil/);assert.ok(r.elements.some(e=>e.tag==='input'&&e.props.value==='Preferred name'));
     await r.elements.find(e=>e.tag==='form').props.onSubmit({preventDefault(){}});assert.match(paint(r,ui,'Profile'),/Connection interrupted/);assert.ok(r.elements.some(e=>e.props.value==='Preferred name'));

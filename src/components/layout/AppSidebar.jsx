@@ -21,7 +21,6 @@ import { permitsWorkspace,workspacePath,hasWorkspaceGrant } from '@/lib/workspac
 import {InstallAppButton} from '@/components/pwa/PwaProvider';
 
 const navItems = [
-  {get label(){return ui('My issued stock');},icon:Package,path:'/my-stock',roles:['admin','procurement','warehouse_manager','cashier','production_manager','employee','commercial','driver']},
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
   { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"] },
   { get label(){return ui("Supply Chain Dashboard");}, icon: Truck, path: "/supply-chain", roles: ["warehouse_manager"], assignedRole: "supply_chain_manager" },

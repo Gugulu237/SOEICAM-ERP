@@ -55,7 +55,7 @@ test('GM opens an employee dashboard even when that employees operational module
 test('Payroll stays inside Employee Dashboard without a separate sidebar entry and legacy links retain their selected run',async()=>{
  const ui=await screens();Object.assign(globalThis,{__dashboardSession:{role:'admin',allowedModules:null},__dashboardParams:'section=payroll'});
  try{
-  const markup=ui.renderSidebar();assert.match(markup,/href="\/team-workspaces"/);assert.doesNotMatch(markup,/Payroll|Approval history|href="\/approval-history"|href="\/payroll"/);
+  const markup=ui.renderSidebar();assert.match(markup,/href="\/team-workspaces"/);assert.doesNotMatch(markup,/Payroll|Approval history|My issued stock|href="\/(?:approval-history|payroll|my-stock)"/);
   globalThis.__dashboardState=0;assert.match(ui.renderEmployee(),/href="\/team-workspaces\?section=payroll"[^>]*>Payroll/);
   await assert.rejects(ui.PayrollPage({searchParams:Promise.resolve({run:'run-1'})}),{location:'/team-workspaces?section=payroll&run=run-1'});
  }finally{delete globalThis.__dashboardSession;delete globalThis.__dashboardParams;delete globalThis.__dashboardState;}
