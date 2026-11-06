@@ -11,6 +11,7 @@ import {invoiceCompany,invoiceDefaults} from '../../lib/invoice-documents.js';
 import {finishedProduct,periodDates} from './commercial-rules.js';
 import {FACTORY_SALES_LOCATION_TYPES,companySalesWarehouse} from '../../lib/sales-stock.js';
 import {stockUnit} from '../../lib/item-units.js';
+import {salesDeliveryPoints} from './sales-delivery-points.js';
 
 export const SALES_ORDER_ACTIONS=['salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','recordSuppliedOrder'];
 const hash=value=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v && typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
@@ -43,8 +44,8 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   if(body.action==='salesOrderDeliveryPoints'){
     const customer=typeof body.customerId==='string'?await s.Customer.get(body.customerId):null;
     if(!customer||customer.is_active===false||customer.customer_removed_at)throw Error('Choose an active customer.');
-    const [locations,branches]=await Promise.all([readRecords(s.CustomerLocation,{customer_id:customer.id,is_active:true}),readRecords(s.Customer,{parent_id:customer.id,is_active:true})]);
-    return {points:[...locations.map(p=>({id:p.id,label:p.name,customer_reporting_point:p.customer_reporting_point===true})),...branches.filter(p=>!p.customer_removed_at).map(p=>({id:p.id,label:p.business_name}))]};
+    const points=await salesDeliveryPoints(s,customer.id);
+    return {points:points.map(p=>({id:p.id,label:p.label,customer_reporting_point:p.customer_reporting_point===true}))};
   }
   if(body.action==='salesOrderStock'){
     const suppliedOn=body.date==null?date:saleDate(body.date,date),context=await salesStockSource(svc,body,suppliedOn);
@@ -96,13 +97,13 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   const customerBalance=Number(customer.balance??0),creditLimit=number(customer.credit_limit??0,'customer credit limit',1e12);
   if(!Number.isFinite(customerBalance)||Math.abs(customerBalance)>1e12)throw Error('Reconcile this customer balance before recording a supply.');
   if(!exchangeOnly&&body.paymentType==='credit'&&creditLimit>0&&round2(customerBalance+total)>creditLimit)throw Error('This supply exceeds the customer credit limit.');
-  const locations=await readRecords(s.CustomerLocation,{customer_id:customer.id,is_active:true}),branches=await readRecords(s.Customer,{parent_id:customer.id,is_active:true});
-  const point=locations.find(l=>l.id===input.locationId)||branches.find(b=>b.id===input.locationId);
+  const points=await salesDeliveryPoints(s,customer.id);
+  const point=input.locationId?points.find(p=>p.id===input.locationId):points.length===1?points[0]:null;
   if(input.locationId&&!point)throw Error('Choose a delivery point belonging to this customer.');
-  if((branches.length||locations.some(l=>l.assigned_hotesse_ids?.length)||customer.financial_centralization_mode==='decentralized')&&!point)throw Error('Choose the customer branch that received this supply.');
+  if(points.length>1&&!point)throw Error('Choose the customer branch that received this supply.');
   const terms=number(customer.payment_terms_days??0,'payment terms',3650);if(!Number.isInteger(terms))throw Error('Enter whole days for the customer payment terms.');
   const now=new Date().toISOString();
-  const values={supply_kind:exchangeOnly?'exchange':replacements.length?'sale_exchange':'sale',stock_replacements:replacements.map(row=>({...row,product_name:products.find(p=>p.id===row.product_id)?.name,unit:products.find(p=>p.id===row.product_id)?.unit})),stock_replacements_declared:body.replacementsDeclared??replacements.length>0,price_includes_vat:true,customer_id:customer.id,customer_name:customer.business_name,location_id:input.locationId,location_name:point?.name||point?.business_name||'',warehouse_id:context.stock_warehouse_id,warehouse_name:context.stock_warehouse_name,dispatch_id:context.dispatch_id,vehicle_id:context.vehicle_id,vehicle_name:context.vehicle_name,driver_id:context.driver_id,driver_name:context.driver_name,salesperson_id:seller.id,salesperson_name:seller.name,route_id:context.route_id,order_date:suppliedOn,delivery_date:suppliedOn,payment_type:exchangeOnly?'exchange':body.paymentType,payment_terms_days:exchangeOnly?0:terms,notes:input.notes,receipt_reference:input.receiptReference,subtotal,discount_total:round2(lines.reduce((n,l)=>n+l.discount_amount,0)),tax_total:tax,total,status:'draft',sales_supply_source:context.source_type,sales_supply_seller_id:input.sellerId,sales_supply_stockholder_id:context.salesperson_id||'',sales_supply_stockholder_name:context.salesperson_name||'',sales_supply_recorded_by:user.id,sales_supply_recorded_at:now,sales_supply_request_id:requestId};
+  const values={supply_kind:exchangeOnly?'exchange':replacements.length?'sale_exchange':'sale',stock_replacements:replacements.map(row=>({...row,product_name:products.find(p=>p.id===row.product_id)?.name,unit:products.find(p=>p.id===row.product_id)?.unit})),stock_replacements_declared:body.replacementsDeclared??replacements.length>0,price_includes_vat:true,customer_id:customer.id,customer_name:customer.business_name,location_id:point?.id||'',location_name:point?.name||'',warehouse_id:context.stock_warehouse_id,warehouse_name:context.stock_warehouse_name,dispatch_id:context.dispatch_id,vehicle_id:context.vehicle_id,vehicle_name:context.vehicle_name,driver_id:context.driver_id,driver_name:context.driver_name,salesperson_id:seller.id,salesperson_name:seller.name,route_id:context.route_id,order_date:suppliedOn,delivery_date:suppliedOn,payment_type:exchangeOnly?'exchange':body.paymentType,payment_terms_days:exchangeOnly?0:terms,notes:input.notes,receipt_reference:input.receiptReference,subtotal,discount_total:round2(lines.reduce((n,l)=>n+l.discount_amount,0)),tax_total:tax,total,status:'draft',sales_supply_source:context.source_type,sales_supply_seller_id:input.sellerId,sales_supply_stockholder_id:context.salesperson_id||'',sales_supply_stockholder_name:context.salesperson_name||'',sales_supply_recorded_by:user.id,sales_supply_recorded_at:now,sales_supply_request_id:requestId};
   const order=existing?await s.SalesOrder.update(existing.id,values):await s.SalesOrder.create({...values,order_number:'SO-'+crypto.randomUUID().slice(0,12).toUpperCase(),created_by:user.id});
   if(existing)await s.SalesOrderLine.deleteMany({order_id:order.id});
   await s.SalesOrderLine.bulkCreate(lines.map(l=>({...l,order_id:order.id,sales_supply_order_id:order.id})));

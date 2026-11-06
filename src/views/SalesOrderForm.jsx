@@ -35,6 +35,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const [source,setSource]=useState(''),[sourceData,setSourceData]=useState(null),[sourceLoading,setSourceLoading]=useState(false),[sourceError,setSourceError]=useState(''),[stockRetry,setStockRetry]=useState(0);
   const [form,setForm]=useState({customer_id:'',location_id:'',payment_type:'cash',notes:'',receipt_reference:'',date:today,seller_id:'',replacements_declared:null}),[lines,setLines]=useState([]),[points,setPoints]=useState([]),[pointsError,setPointsError]=useState(''),[pointsLoading,setPointsLoading]=useState(false);
   const [replacements,setReplacements]=useState([]);
+  const [pointsCustomerId,setPointsCustomerId]=useState(''),[pointsRetry,setPointsRetry]=useState(0);
   const [saving,setSaving]=useState(false),[saveError,setSaveError]=useState('');
   const [step,setStep]=useState(0),[pickerOpen,setPickerOpen]=useState(false),[sourcePickerOpen,setSourcePickerOpen]=useState(false);
   const busy=useRef(false),requestKey=useRef(crypto.randomUUID());
@@ -63,13 +64,13 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     return()=>{active=false;stop();};
   },[source,locked,stockRetry,form.date]);
   useEffect(()=>{
-    let active=true;setPoints([]);setPointsError('');setPointsLoading(false);
+    let active=true;setPoints([]);setPointsCustomerId('');setPointsError('');setPointsLoading(false);
     if(!form.customer_id||locked)return()=>{active=false;};
     setPointsLoading(true);
     call({action:'salesOrderDeliveryPoints',customerId:form.customer_id})
-      .then(data=>{if(active){setPoints(data.points);if(data.points.length===1&&data.points[0].customer_reporting_point)setForm(f=>({...f,location_id:f.location_id||data.points[0].id}));}}).catch(e=>{if(active)setPointsError(e.message);}).finally(()=>{if(active)setPointsLoading(false);});
+      .then(data=>{if(active){setPoints(data.points);setPointsCustomerId(form.customer_id);if(data.points.length===1)setForm(f=>f.customer_id===form.customer_id&&!f.location_id?{...f,location_id:data.points[0].id}:f);}}).catch(e=>{if(active)setPointsError(e.message);}).finally(()=>{if(active)setPointsLoading(false);});
     return()=>{active=false;};
-  },[form.customer_id,locked]);
+  },[form.customer_id,locked,pointsRetry]);
   const products=sourceData?.products||[],customer=catalogue?.customers.find(c=>c.id===form.customer_id);
   const calculated=useMemo(()=>lines.map(line=>{
     if(locked)return {...line,tax_amount:Number(line.tax_amount)||0,total:Number(line.total)||0};
@@ -98,7 +99,8 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   function stepError(index){
     if(!form.customer_id||!customer)return 'Choose a customer before continuing.';
     if(!form.seller_id||!form.date||form.date>today)return 'Choose the salesperson and a valid sale date.';
-    if(pointsLoading||pointsError)return 'Wait for the delivery locations to load, or retry.';
+    if(pointsCustomerId!==form.customer_id||pointsLoading||pointsError)return 'Wait for the delivery locations to load, or retry.';
+    if(form.location_id&&!points.some(point=>point.id===form.location_id))return 'Choose a delivery point belonging to this customer.';
     if(points.length&&!form.location_id)return 'Choose the customer branch that received this supply.';
     if(index===0)return '';
     if(sourceLoading||sourceError||!sourceData)return 'Choose a stock source and wait for available products.';
@@ -123,7 +125,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
       const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
       toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted')});
       navigate(ownIssuedStock?'/my-stock':result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
-    }catch(e){setSaveError(e.message);}finally{busy.current=false;setSaving(false);}
+    }catch(e){setSaveError(e.message);const reason=e.data?.error||e.response?.data?.error||e.message;if(['Choose the customer branch that received this supply.','Choose a delivery point belonging to this customer.'].includes(reason)){setStep(0);setPointsRetry(n=>n+1);}}finally{busy.current=false;setSaving(false);}
   }
   if(loading)return <p role="status" className="p-8 text-sm text-slate-500">{ui('Loading sale options...')}</p>;
   if(loadError)return <div role="alert" className="space-y-3 rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(loadError)}<Button variant="outline" onClick={()=>setRetry(n=>n+1)}>{ui('Retry')}</Button></div>;
@@ -144,13 +146,13 @@ export default function SalesOrderForm({ownIssuedStock=false}){
         {(!wizard||step===0)&&<>
         <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2"><CustomerPicker customers={catalogue?.customers.filter(c=>!c.parent_id||c.id===form.customer_id)||[]} value={form.customer_id} disabled={saving||locked} fallbackName={order?.customer_name} onChange={id=>{const c=catalogue.customers.find(c=>c.id===id);setReplacements([]);setForm(f=>({...f,replacements_declared:null,customer_id:id,location_id:'',payment_type:Number(c?.payment_terms_days)>0?'credit':'cash'}));}}/></div>
-          {(points.length>0||locked&&order?.location_id)&&<label className="space-y-1 text-sm">{ui('Delivered To (Branch)')}<select aria-label={ui('Delivered To (Branch)')} className={selectClass} value={form.location_id} onChange={e=>setForm(f=>({...f,location_id:e.target.value}))}><option value="">{ui('Choose delivery point')}</option>{points.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}{locked&&<option value={order.location_id}>{order.location_name}</option>}</select></label>}
+          {(points.length>0||form.location_id)&&<label className="space-y-1 text-sm">{ui('Delivered To (Branch)')}<select aria-label={ui('Delivered To (Branch)')} className={selectClass} value={form.location_id} disabled={saving||locked||pointsLoading||pointsCustomerId!==form.customer_id} onChange={e=>setForm(f=>({...f,location_id:e.target.value}))}><option value="">{points.length?ui('Choose delivery point'):customer?.business_name}</option>{points.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}{form.location_id&&!points.some(p=>p.id===form.location_id)&&<option disabled={!locked} value={form.location_id}>{locked?order?.location_name:ui('Previous delivery point is unavailable. Choose the current destination.')}</option>}</select></label>}
           {!exchangeOnly&&<label className="space-y-1 text-sm">{ui('Payment Type')}<select aria-label={ui('Payment Type')} className={selectClass} value={form.payment_type} onChange={e=>setForm(f=>({...f,payment_type:e.target.value}))}><option value="cash">{ui('Cash')}</option><option value="credit">{ui('Credit')}</option></select></label>}
           <label className="space-y-1 text-sm">{ui('Sale date *')}<Input required aria-label={ui('Sale date')} type="date" max={today} value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></label>
           <label className="min-w-0 space-y-1 text-sm">{ui('Person making the sale')}<Input aria-label={ui('Person making the sale')} readOnly value={sellerName} className="w-full min-w-0 bg-slate-50"/>{!locked&&<span className="block text-xs text-slate-500">{ui('Automatically assigned to your signed-in account.')}</span>}</label>
         </div>
         {pointsLoading&&<p role="status" className="text-xs text-slate-500">{ui('Loading delivery points...')}</p>}
-        {pointsError&&<p role="alert" className="text-xs text-red-700">{uiMessage(pointsError)}</p>}
+        {pointsError&&<div role="alert" className="space-y-2 text-xs text-red-700"><p>{uiMessage(pointsError)}</p><Button type="button" variant="outline" disabled={pointsLoading||saving} onClick={()=>setPointsRetry(n=>n+1)}>{ui('Retry')}</Button></div>}
         {!exchangeOnly&&form.payment_type==='credit'&&Number(customer?.credit_limit)>0&&Number(customer.balance||0)+totals.total>Number(customer.credit_limit)&&<p role="alert" className="text-sm text-red-700">{ui('This supply exceeds the customer credit limit.')}</p>}
         </>}
         {(!wizard||step===1)&&<>
@@ -190,7 +192,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
       {saveError&&<p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
       {wizard&&step<2&&<div className="sticky bottom-0 mt-5 flex gap-3 border-t bg-white py-4">{step>0&&<Button type="button" variant="outline" disabled={saving} onClick={()=>goTo(step-1)}><ArrowLeft size={17}/>{ui('Back')}</Button>}<Button type="button" className="min-h-12 flex-1" disabled={saving} onClick={advance}>{ui(step===0?'Continue to products':'Review sale')}<ArrowRight size={17} className="ml-2"/></Button></div>}
       {wizard&&step===2&&<Button type="button" variant="outline" className="mt-4 w-full" disabled={saving} onClick={()=>goTo(1)}>{ui('Edit products')}</Button>}
-      {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsLoading||!!pointsError||(!lines.length&&!replacements.length)||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui(exchangeOnly?'Record exchange & deduct stock':'Record sale & deduct stock')}</Button>}
+      {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsCustomerId!==form.customer_id||pointsLoading||!!pointsError||(!lines.length&&!replacements.length)||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui(exchangeOnly?'Record exchange & deduct stock':'Record sale & deduct stock')}</Button>}
     </div>
     <SaleProductPicker open={pickerOpen&&!locked} onOpenChange={setPickerOpen} products={products.map(p=>({...p,available:quantityAfterReplacements(p,replacements)}))} lines={lines} onQuantityChange={setProductQuantity} disabled={saving||sourceLoading||!!sourceError}/>
   </div>;

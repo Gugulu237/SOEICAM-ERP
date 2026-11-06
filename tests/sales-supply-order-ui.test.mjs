@@ -152,3 +152,85 @@ test('personal stock sale uses scoped endpoints and returns to the employee stoc
  f.r.invoke=async body=>{f.calls.push(body);if(body.action==='employeeSalesWorkspace')return {data:{...options,warehouses:[]}};if(body.action==='employeeSalesStock')return {data:stock};if(body.action==='employeeSalesDeliveryPoints')return {data:{points:[]}};if(body.action==='employeeRecordSupply')return {data:{order:{id:'own'},invoiceId:'own-invoice'}};throw Error('Unscoped action '+body.action);};
  try{await f.ready();await productsStep(f);quantity(f,2);reviewStep(f);await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.at(-1).action,'employeeRecordSupply');assert.equal(f.calls.at(-1).dispatchId,'run-a');assert.equal(f.calls.at(-1).sourceType,'issued');assert.deepEqual(f.r.navigation,['/my-stock']);assert.equal(f.r.sourcePicker.options.length,1);}finally{f.close();}
 });
+
+for(const kind of ['branch','location'])test('a sole '+kind+' is selected in step one and retained through a failed sale retry',async()=>{
+ const {render}=await bundle(),f=setup(render),invoke=f.r.invoke;
+ const point={id:'sole-'+kind,label:'Customer delivery destination',customer_reporting_point:false};
+ f.r.invoke=async body=>body.action==='salesOrderDeliveryPoints'?(f.calls.push(body),{data:{points:[point]}}):invoke(body);
+ try{
+  await f.ready();await selectCustomer(f);assert.equal(f.control('Delivered To (Branch)').value,point.id);
+  f.button('Continue to products').onClick();f.paint();quantity(f,2);reviewStep(f,'BRANCH-001');
+  assert.match(f.paint(),/Customer delivery destination/);
+  await f.button('Record sale & deduct stock').onClick();assert.match(f.paint(),/Connection interrupted/);
+  f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
+  const writes=f.calls.filter(c=>c.action==='recordSuppliedOrder');assert.equal(writes.length,2);assert.equal(writes[0].requestKey,writes[1].requestKey);
+  for(const body of writes){assert.equal(body.customerId,'customer');assert.equal(body.locationId,point.id);assert.equal(body.lines[0].quantity,2);}
+ }finally{f.close();}
+});
+
+test('a customer without branches can continue, while multiple destinations require a choice in step one',async()=>{
+ const {render}=await bundle();
+ const empty=setup(render,{...options,customers:[{...options.customers[0],financial_centralization_mode:'decentralized'}]});
+ try{await empty.ready();await productsStep(empty);quantity(empty,1);reviewStep(empty);empty.r.fail=false;await empty.button('Record sale & deduct stock').onClick();assert.equal(empty.calls.find(c=>c.action==='recordSuppliedOrder').locationId,'');}finally{empty.close();}
+ const f=setup(render),invoke=f.r.invoke,points=[{id:'north',label:'North branch'},{id:'south',label:'South branch'}];
+ f.r.invoke=async body=>body.action==='salesOrderDeliveryPoints'?(f.calls.push(body),{data:{points}}):invoke(body);
+ try{
+  await f.ready();await selectCustomer(f);assert.equal(f.control('Delivered To (Branch)').value,'');
+  f.button('Continue to products').onClick();assert.match(f.paint(),/Choose the customer branch that received this supply/);assert.match(f.paint(),/Step 1 of 3/);
+  f.control('Delivered To (Branch)').onChange({target:{value:'south'}});f.paint();f.button('Continue to products').onClick();f.paint();quantity(f,1);reviewStep(f);f.r.fail=false;
+  await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').locationId,'south');
+ }finally{f.close();}
+});
+
+test('switching customers waits for the current destinations and ignores an older delayed response',async()=>{
+ const {render}=await bundle(),f=setup(render,{...options,customers:[...options.customers,{id:'second',business_name:'Second customer'}]}),invoke=f.r.invoke,resolvers={};
+ f.r.invoke=body=>body.action==='salesOrderDeliveryPoints'?new Promise(resolve=>{f.calls.push(body);resolvers[body.customerId]=resolve;}):invoke(body);
+ try{
+  await f.ready();await selectCustomer(f);f.button('Continue to products').onClick();assert.match(f.paint(),/Wait for the delivery locations/);
+  f.control('Customer').onChange({target:{value:'second'}});f.paint();f.button('Continue to products').onClick();assert.match(f.paint(),/Step 1 of 3/);
+  await f.r.flush();f.paint();resolvers.customer({data:{points:[{id:'old-branch',label:'Old customer branch'}]}});await f.r.flush();f.paint();
+  assert.equal(f.control('Delivered To (Branch)'),undefined);
+  resolvers.second({data:{points:[{id:'current-branch',label:'Current customer branch'}]}});await f.r.flush();f.paint();assert.equal(f.control('Delivered To (Branch)').value,'current-branch');
+  f.button('Continue to products').onClick();f.paint();quantity(f,1);reviewStep(f);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
+  const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.customerId,'second');assert.equal(body.locationId,'current-branch');
+ }finally{f.close();}
+});
+
+test('delivery lookup errors can be retried without losing the selected customer',async()=>{
+ const {render}=await bundle(),f=setup(render),invoke=f.r.invoke;let failed=true;
+ f.r.invoke=async body=>{if(body.action!=='salesOrderDeliveryPoints')return invoke(body);f.calls.push(body);if(failed)throw Error('Delivery lookup unavailable');return {data:{points:[{id:'recovered',label:'Delivery destination'}]}};};
+ try{
+  await f.ready();await selectCustomer(f);assert.match(f.paint(),/Delivery lookup unavailable/);assert.equal(f.control('Customer').value,'customer');
+  failed=false;f.button('Retry').onClick();f.paint();await f.r.flush();f.paint();await f.r.flush();f.paint();
+  assert.equal(f.control('Customer').value,'customer');assert.equal(f.control('Delivered To (Branch)').value,'recovered');
+  f.button('Continue to products').onClick();assert.match(f.paint(),/Step 2 of 3/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+ }finally{f.close();}
+});
+
+test('an old draft keeps its quantities and requires review of a removed destination instead of silently reassigning it',async()=>{
+ const {render}=await bundle(),f=setup(render);f.r.routeId='draft';
+ f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',warehouse_id:'main',customer_id:'customer',location_id:'removed-point',location_name:'Old branch',order_date:'2026-10-25',receipt_reference:'DRAFT-REF'})};
+ f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'row',product_id:'yola',product_name:'YOLA 500 g',quantity:2,unit_price:500,tax_rate:0,discount_pct:0}]};
+ try{
+  assert.match(await f.ready(),/Previous delivery point is unavailable/);assert.equal(f.control('Delivered To (Branch)').value,'removed-point');
+  f.button('Continue to products').onClick();assert.match(f.paint(),/Choose a delivery point belonging to this customer/);
+  f.control('Delivered To (Branch)').onChange({target:{value:''}});f.paint();f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,2);
+  reviewStep(f,'DRAFT-REF');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.locationId,'');assert.equal(body.lines[0].quantity,2);
+ }finally{f.close();}
+});
+
+for(const language of ['English','French'])test('a changed destination refreshes the customer step without losing sale details in '+language,async()=>{
+ const {render}=await bundle(),f=setup(render),invoke=f.r.invoke;let changed=false;
+ f.r.invoke=async body=>{
+  if(body.action==='salesOrderDeliveryPoints'){f.calls.push(body);return {data:{points:changed?[{id:'new-a',label:'Branch A'},{id:'new-b',label:'Branch B'}]:[]}};}
+  if(body.action==='recordSuppliedOrder'&&!changed){changed=true;f.calls.push(body);const raw='Choose the customer branch that received this supply.';throw Object.assign(Error(language==='French'?'Choisissez l’agence du client qui a reçu cette livraison.':raw),{data:{error:raw},response:{data:{error:raw}}});}
+  return invoke(body);
+ };
+ try{
+  await f.ready();await productsStep(f);quantity(f,2);reviewStep(f,'PRESERVED-RECEIPT');await f.button('Record sale & deduct stock').onClick();
+  assert.match(f.paint(),/Step 1 of 3/);await f.r.flush();f.paint();await f.r.flush();f.paint();assert.equal(f.control('Customer').value,'customer');
+  f.control('Delivered To (Branch)').onChange({target:{value:'new-b'}});f.paint();f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,2);
+  reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'PRESERVED-RECEIPT');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
+  const writes=f.calls.filter(c=>c.action==='recordSuppliedOrder');assert.equal(writes[1].locationId,'new-b');assert.equal(writes[0].requestKey,writes[1].requestKey);
+ }finally{f.close();}
+});

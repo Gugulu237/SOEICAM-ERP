@@ -37,6 +37,34 @@ test('Commercial invoice reuses the source accounting and counts once in sales, 
   const overview=salesOverview(input);assert.equal(overview.cash_sales,400);assert.equal(overview.credit_sales,600);assert.equal(overview.pending_amount,600);assert.equal(overview.pending.length,1);assert.equal(overview.pending[0].invoice_id,doc.invoice.id);
 });
 
+test('delayed decentralized invoices preserve the original archived delivery branch or outlet without redirecting it',async()=>{
+  for(const kind of ['Customer','CustomerLocation']){
+    const f=await setup(),s=f.entities,sale=await field(f);
+    await s.Customer.update('customer-a',{financial_centralization_mode:'decentralized'});
+    const point=await s[kind].create(kind==='Customer'?{business_name:'Original branch',parent_id:'customer-a',address:'Original entrance',is_active:true}:{name:'Original outlet',customer_id:'customer-a',address:'Original entrance',is_active:true});
+    await s.FieldSale.update(sale.id,{location_id:point.id,location_name:'Name at delivery'});
+    await s[kind].update(point.id,{is_active:false,customer_removed_at:new Date().toISOString(),...(kind==='Customer'?{business_name:'Renamed branch'}:{name:'Renamed outlet'})});
+    await s.CustomerLocation.create({customer_id:'customer-a',name:'Different active outlet',address:'New entrance',is_active:true});
+    const preview=await invoiceAction(f.client,admin,{action:'invoiceSource',sourceType:'field',sourceId:sale.id});assert.equal(preview.options.bill_to_address,'Original entrance');
+    const doc=await invoiceAction(f.client,admin,body(sale,'field')),invoice=await s.Invoice.get(doc.invoice.id);
+    assert.equal(invoice.location_id,point.id);assert.equal(invoice.bill_to_location_id,point.id);assert.equal(invoice.bill_to_location_name,'Name at delivery');
+    assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.StockMovement.list()).length,0);assert.equal((await s.Customer.get('customer-a')).balance,600);
+    assert.equal((await invoiceAction(f.client,admin,body(sale,'field'))).reused,true);
+  }
+});
+
+test('historical invoice destinations must still belong to the source customer and never default to another outlet',async()=>{
+  for(const kind of ['Customer','CustomerLocation']){
+    const f=await setup(),s=f.entities,sale=await field(f);
+    await s.Customer.update('customer-a',{financial_centralization_mode:'decentralized',address:'Customer address'});
+    const foreign=await s[kind].create(kind==='Customer'?{business_name:'Foreign branch',parent_id:'customer-b',address:'Foreign address',is_active:false}:{name:'Foreign outlet',customer_id:'customer-b',address:'Foreign address',is_active:false});
+    await s.FieldSale.update(sale.id,{location_id:foreign.id,location_name:'Unverified destination'});
+    await s.CustomerLocation.create({customer_id:'customer-a',name:'Other active outlet',address:'Another address',is_active:true});
+    const preview=await invoiceAction(f.client,admin,{action:'invoiceSource',sourceType:'field',sourceId:sale.id});assert.equal(preview.options.bill_to_address,'Customer address');
+    const doc=await invoiceAction(f.client,admin,body(sale,'field')),invoice=await s.Invoice.get(doc.invoice.id);assert.equal(invoice.bill_to_location_id,'');assert.equal(invoice.bill_to_location_name,'');
+  }
+});
+
 test('cash invoice is money in transit, not a pending customer debt',async()=>{
   const f=await setup(),o=await order(f,{cash:true}),doc=await invoiceAction(f.client,admin,body(o));
   assert.equal(doc.invoice.customer_balance,0);assert.equal(doc.invoice.customer_paid,1000);assert.equal((await f.entities.Customer.get('customer-a')).balance,0);

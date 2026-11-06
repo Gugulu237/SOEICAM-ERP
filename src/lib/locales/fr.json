@@ -6606,6 +6606,7 @@
   "Products supplied": "Produits livrés",
   "Loading delivery points...": "Chargement des points de livraison...",
   "Choose delivery point": "Choisir le point de livraison",
+  "Previous delivery point is unavailable. Choose the current destination.": "L’ancien point de livraison n’est plus disponible. Choisissez la destination actuelle.",
   "Remove product {0}": "Retirer le produit {0}",
   "Choose distinct finished products and quantities available at this source.": "Choisissez des produits finis distincts et des quantités disponibles à cette source.",
   "Choose an issued load for this sale.": "Choisissez un chargement sorti pour cette vente.",

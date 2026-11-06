@@ -173,14 +173,43 @@ test('historical sale dates retain the signed-in seller regardless of stock cust
   await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active employee|signed-in account/);
 });
 
-test('customer branches are selected explicitly and confirmed again when recording the sale',async()=>{
+test('multiple customer delivery points require an explicit current selection before stock moves',async()=>{
   const f=await setup(),branch=await f.s.Customer.create({business_name:'Customer A branch',parent_id:'customer-a',is_active:true});
+  await f.s.CustomerLocation.create({name:'Main outlet',customer_id:'customer-a',is_active:true});
   const points=await f.call({action:'salesOrderDeliveryPoints',customerId:'customer-a'});
   assert.ok(points.points.some(p=>p.id===branch.id));
   await assert.rejects(f.call(f.body),/customer branch/);
   assert.equal((await f.s.StockMovement.list()).length,0);
   const result=await f.call({...f.body,locationId:branch.id});assert.equal(result.order.location_id,branch.id);
   assert.equal((await f.s.StockMovement.list()).length,1);
+});
+
+test('customers without active delivery points can record supplies even when marked decentralized',async()=>{
+  const f=await setup();await f.s.Customer.update('customer-a',{financial_centralization_mode:'decentralized'});
+  const removed=await f.s.Customer.create({business_name:'Removed branch',parent_id:'customer-a',is_active:true,customer_removed_at:new Date().toISOString()});
+  const inactive=await f.s.Customer.create({business_name:'Inactive branch',parent_id:'customer-a',is_active:false});
+  const location=await f.s.CustomerLocation.create({name:'Closed outlet',customer_id:'customer-a',is_active:false});
+  assert.deepEqual((await f.call({action:'salesOrderDeliveryPoints',customerId:'customer-a'})).points,[]);
+  for(const id of [removed.id,inactive.id,location.id])await assert.rejects(f.call({...f.body,locationId:id}),/delivery point belonging/);
+  assert.equal((await f.s.StockMovement.list()).length,0);
+  const result=await f.call(f.body),invoice=await f.s.Invoice.get(result.invoiceId);
+  assert.equal(result.order.customer_id,'customer-a');assert.equal(result.order.location_id,'');assert.equal(invoice.billing_mode,'decentralized');assert.equal(invoice.bill_to_location_id,'');assert.equal(invoice.customer_id,'customer-a');
+  assert.equal((await f.s.StockMovement.list()).length,1);assert.equal((await f.call(f.body)).reused,true);
+});
+
+test('one available branch or outlet resolves automatically and retry retains its original delivery point',async()=>{
+  for(const kind of ['Customer','CustomerLocation']){
+    const f=await setup();await f.s.Customer.update('customer-a',{financial_centralization_mode:'decentralized'});
+    const point=await f.s[kind].create(kind==='Customer'?{business_name:'Only branch',parent_id:'customer-a',is_active:true}:{name:'Only outlet',customer_id:'customer-a',is_active:true});
+    const foreign=await f.s.CustomerLocation.create({name:'Different customer outlet',customer_id:'customer-b',is_active:true});
+    assert.equal((await f.call({action:'salesOrderDeliveryPoints',customerId:'customer-a'})).points.length,1);
+    await assert.rejects(f.call({...f.body,locationId:foreign.id}),/delivery point belonging/);
+    const result=await f.call(f.body),invoice=await f.s.Invoice.get(result.invoiceId);assert.equal(result.order.location_id,point.id);assert.equal(invoice.bill_to_location_id,point.id);
+    await f.s[kind].update(point.id,{is_active:false});
+    await f.s.Customer.create({business_name:'Later branch 1',parent_id:'customer-a',is_active:true});await f.s.Customer.create({business_name:'Later branch 2',parent_id:'customer-a',is_active:true});
+    const retry=await f.call(f.body);assert.equal(retry.reused,true);assert.equal(retry.order.location_id,point.id);assert.equal(retry.invoiceId,result.invoiceId);assert.equal((await f.s.StockMovement.list()).length,1);
+    await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID(),locationId:point.id}),/delivery point belonging/);
+  }
 });
 
 

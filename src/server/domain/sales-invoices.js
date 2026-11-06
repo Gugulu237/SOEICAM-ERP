@@ -11,6 +11,7 @@ import { saleItemPostings } from '../../lib/item-posting.js';
 import { stockUnit } from '../../lib/item-units.js';
 import { INVOICE_COMPANY_FIELDS, invoiceCompany, invoiceDefaults, cleanInvoiceOptions, safeInvoiceLogo } from '../../lib/invoice-documents.js';
 import { postedInvoiceStatuses } from '../../lib/company-sales.js';
+import {salesDeliveryPoints} from './sales-delivery-points.js';
 
 export const CASHIER_INVOICE_ACTIONS=['invoiceWorkspace','invoiceDetail','customizeSalesInvoice'];
 export const INVOICE_ACTIONS = ['invoiceWorkspace','invoiceDetail','invoiceSource','createSalesInvoice','customizeSalesInvoice','saveInvoiceCompany'];
@@ -67,9 +68,12 @@ async function uniqueNumber(svc) {
 }
 async function billing(stores,source,customer,options) {
   const mode=customer.financial_centralization_mode || 'centralized';
-  const [locations,branch]=await Promise.all([readRecords(stores.CustomerLocation,{customer_id:customer.id,is_active:true}),source.location_id?stores.Customer.get(source.location_id):null]);
-  const delivery=locations.find(l=>l.id===source.location_id) || (branch?.parent_id===customer.id?{id:branch.id,name:branch.business_name,address:branch.address,town:branch.town,tax_id:branch.tax_id}:null);
-  const billTo=mode==='decentralized'?delivery:locations.find(l=>l.is_headquarters);
+  const [points,location,branch]=await Promise.all([salesDeliveryPoints(stores,customer.id),source.location_id?stores.CustomerLocation.get(source.location_id):null,source.location_id?stores.Customer.get(source.location_id):null]);
+  // An invoice can follow a posted delivery after its outlet is archived. Keep
+  // that source's destination, with ownership checked, instead of choosing a new one.
+  const original=location?.customer_id===customer.id?location:branch?.parent_id===customer.id?{...branch,name:branch.business_name}:null;
+  const delivery=original?{...original,name:source.location_name||original.name}:null;
+  const billTo=mode==='decentralized'?delivery:points.find(p=>p.kind==='location'&&p.is_headquarters);
   return {billing_mode:mode,bill_to_location_id:billTo?.id || '',bill_to_location_name:billTo?.name || '',options:options || {...invoiceDefaults(customer),...(billTo?{bill_to_address:[billTo.address,billTo.town].filter(Boolean).join(', ') || invoiceDefaults(customer).bill_to_address}: {})}};
 }
 async function saveClientDefaults(stores,customerId,options) {
