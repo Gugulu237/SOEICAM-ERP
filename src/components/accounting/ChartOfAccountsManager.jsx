@@ -40,6 +40,7 @@ export default function ChartOfAccountsManager() {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState(ALL);
   const [statusFilter, setStatusFilter] = useState("visible");
+  const [showUnused, setShowUnused] = useState(false);
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [dialog, setDialog] = useState(null);
   const [deleting,setDeleting]=useState(null),[deleteError,setDeleteError]=useState(''),[busy,setBusy]=useState(false);
@@ -56,7 +57,7 @@ export default function ChartOfAccountsManager() {
     load().catch(e => setError(e.message || sourceMessage("Could not load posted account balances"))).finally(() => setLoading(false));
   }, [load]);
 
-  const visible = useMemo(()=>visibleAccounts(accounts,balances,{type:typeFilter,status:statusFilter,query}),[accounts,balances,typeFilter,statusFilter,query]);
+  const visible = useMemo(()=>visibleAccounts(accounts,balances,{type:typeFilter,status:statusFilter,query,showUnused}),[accounts,balances,typeFilter,statusFilter,query,showUnused]);
   const tree = useMemo(() => {
     const full=buildAccountTree(accounts,balances), filtered=buildAccountTree(visible,balances);
     return {...filtered,rollups:full.rollups,entryCounts:full.entryCounts,sections:filtered.sections.map(s=>({...s,net:s.roots.reduce((sum,a)=>sum+(full.rollups.get(a.id)||0),0)}))};
@@ -155,6 +156,8 @@ export default function ChartOfAccountsManager() {
         </div>
       </div>
 
+      {statusFilter === 'visible' && <label className="mb-3 flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={showUnused} onChange={e=>setShowUnused(e.target.checked)} />{ui('Show unused accounts')}</label>}
+      {statusFilter === 'visible' && !showUnused && <p className="mb-2 text-xs text-slate-500">{ui('Zero accounts without journal entries are hidden. Accounts with past postings stay visible even when their balance is zero.')}</p>}
       <p className="mb-3 text-xs text-slate-500">{ui("Hiding only changes this list. All transactions and financial reports remain complete. Used accounts includes accounts with postings or opening balances.")}</p>
       {tree.sections.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white py-16 text-center text-slate-400">
@@ -184,10 +187,12 @@ export default function ChartOfAccountsManager() {
         <AccountFormDialog
           account={dialog.account || null}
           canSetOpening={isAdmin}
+          canManageAssets={isAdmin}
           accounts={accounts}
           balances={balances}
           defaultParentId={dialog.parentId || ""}
           onClose={() => setDialog(null)}
+          onAssetUpdated={() => load().catch(e => setError(e.message))}
           onDone={() => { setDialog(null); load().catch(e => setError(e.message)); }}
         />
       )}

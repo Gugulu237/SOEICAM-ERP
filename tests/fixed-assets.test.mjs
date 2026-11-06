@@ -10,6 +10,7 @@ import { flatDepreciationTerms, completedDepreciationMonth, monthlyDepreciation,
 import {syncAutomaticDepreciation,automaticDepreciationStatus} from '../src/server/domain/automatic-depreciation.js';
 import { fixedAssetAction } from '../src/server/domain/fixed-assets.js';
 import { guardMutation } from '../src/server/access.js';
+import { journalPayload } from '../src/server/domain/journal-validation.js';
 
 const user={id:'asset-manager',role:'admin'},data={name:'Production machine',category:'machinery',acquisition_date:'2020-01-01',in_service_date:'2020-01-15',acquisition_cost:1000,salvage_value:100,useful_life_months:3,asset_account_id:'fixed',accum_dep_account_id:'accum',expense_account_id:'expense',replacement_fund_enabled:true};
 const asset={...data,id:'asset',depreciation_method:'straight_line',status:'active',accumulated_depreciation:0};
@@ -43,7 +44,7 @@ async function environment(){
     b.onResolve({filter:/^server-only$/},()=>({path:'empty',namespace:'fixture'}));b.onResolve({filter:/(?:^|\/)db\.js$/},()=>({path:'db',namespace:'fixture'}));
     b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='db'?'export const database=()=>globalThis.__assetDB;export const transaction=fn=>globalThis.__assetTransaction(fn);':''}));
   }}]});storeModule=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));}
-  const names=['Account','FixedAsset','DepreciationEntry','JournalEntry','JournalLine','TreasuryAccount','TreasuryTransaction','CompanySettings','AccountingPeriod','AuditLog'];
+  const names=['Account','FixedAsset','DepreciationEntry','JournalEntry','JournalLine','TreasuryAccount','TreasuryTransaction','CompanySettings','AccountingPeriod','AuditLog','PostingRule','Product'];
   const entities=Object.fromEntries(names.map(n=>[n,storeModule.entityStore(n)]));
   await entities.CompanySettings.create({company_name:'Fixture',next_journal_number:1});
   for(const [id,type,normal,balance] of [['fixed','asset','debit',1000],['accum','asset','credit',0],['expense','expense','debit',0],['operating','asset','debit',10000],['reserve','asset','debit',0]])await entities.Account.create({id,account_number:id,name:id,account_type:type,normal_balance:normal,balance,is_active:true,is_posting:true});
@@ -236,5 +237,112 @@ test('rate changes apply to remaining value and keep previously posted charges i
     assert.deepEqual((await env.entities.DepreciationEntry.list('depreciation_date')).map(e=>e.amount),[300,50]);
     assert.equal((await env.entities.FixedAsset.get(a.id)).depreciation_plan.annual_rate,100);
     const invalid=await env.call({action:'assetRegister',data:{...data,depreciation_rate_mode:'rate',annual_depreciation_rate:0},requestKey:crypto.randomUUID()});assert.equal(invalid.status,400);
+  }finally{await env.close()}
+});
+
+async function seedExistingAssetCost(env, amount = 1000) {
+  const e = env.entities;
+  await e.Account.update('fixed', { balance: amount });
+  await e.Account.create({ id:'opening-equity', account_number:'101', name:'Opening equity', account_type:'equity', normal_balance:'credit', balance:amount, is_active:true, is_posting:true });
+  const journal = await e.JournalEntry.create({ id:'existing-cost', journal_number:'OPEN-001', description:'Opening asset cost', entry_date:'2020-01-01', status:'posted', total_debit:amount, total_credit:amount, source_module:'opening_balances' });
+  await e.JournalLine.create({ id:'existing-cost-debit', journal_id:journal.id, account_id:'fixed', debit:amount, credit:0, status:'posted' });
+  await e.JournalLine.create({ id:'existing-cost-credit', journal_id:journal.id, account_id:'opening-equity', debit:0, credit:amount, status:'posted' });
+}
+async function accountLinkBody(env, overrides = {}) {
+  const workspace = await env.ok({ action:'assetAccountWorkspace', accountId:'fixed' });
+  return { action:'assetLinkAccount', accountId:'fixed', workspaceToken:workspace.token, requestKey:crypto.randomUUID(), confirmExistingCost:true, reference:'Opening asset list 001', data:{...data, automatic_depreciation_enabled:true, ...overrides} };
+}
+
+test('linking an existing capitalized balance creates no acquisition and report sync charges each month exactly once',async()=>{
+  const env=await environment();try{
+    await seedExistingAssetCost(env);
+    await env.entities.FixedAsset.create({ ...data, id:'legacy-empty-asset', name:'Legacy empty asset', asset_account_id:'fixed', acquisition_cost:0, accumulated_depreciation:0, status:'fully_depreciated' });
+    const workspace=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});
+    assert.equal(workspace.eligible,true);assert.equal(workspace.ledger_cost,1000);assert.equal(workspace.registered_cost,0);assert.equal(workspace.unassigned_cost,1000);assert.equal(workspace.assets.length,1);
+    const body=await accountLinkBody(env), result=await env.ok(body), e=env.entities;
+    assert.equal(result.asset.registration_source,'existing_account_cost');assert.equal(result.asset.existing_cost_reference,body.reference);assert.equal(result.asset.automatic_depreciation.authorized_by,user.id);
+    assert.equal((await env.ok(body)).reused,true);assert.equal((await e.JournalEntry.list()).length,1);assert.equal((await e.Account.get('fixed')).balance,1000);assert.equal((await e.TreasuryTransaction.list()).length,0);
+    assert.equal((await e.FixedAsset.get('legacy-empty-asset')).acquisition_cost,0);
+    const sync=()=>syncAutomaticDepreciation(e,env.transaction,{date:'2020-03-01'});
+    assert.equal((await sync()).total,600);assert.equal((await sync()).posted,0);assert.equal((await e.Account.get('expense')).balance,600);assert.equal((await e.Account.get('accum')).balance,600);assert.equal((await e.Account.get('fixed')).balance,1000);assert.equal((await e.FixedAsset.get(result.asset.id)).net_book_value,400);
+    assert.equal((await env.ok(body)).reused,true);
+    const filled=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(filled.eligible,false);assert.equal(filled.unassigned_cost,0);
+    const duplicate=await env.call({...body,workspaceToken:filled.token,requestKey:crypto.randomUUID()});assert.equal(duplicate.status,400);assert.match(duplicate.error,/already assigned/);
+    assert.equal((await e.DepreciationEntry.list()).length,2);assert.equal((await e.TreasuryTransaction.list()).length,0);
+  }finally{await env.close()}
+});
+
+test('account linking reserves partial gross cost, checks stale evidence and accepts a reconciled shared contra account',async()=>{
+  const env=await environment();try{
+    await seedExistingAssetCost(env);
+    const first=await accountLinkBody(env,{acquisition_cost:400,salvage_value:100});
+    await env.ok(first);await syncAutomaticDepreciation(env.entities,env.transaction,{date:'2020-02-01'});
+    const stale=await env.call({...first,requestKey:crypto.randomUUID()});assert.equal(stale.status,400);assert.match(stale.error,/changed/);
+    const workspace=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(workspace.registered_cost,400);assert.equal(workspace.unassigned_cost,600);
+    const over=await env.call(await accountLinkBody(env,{acquisition_cost:601}));assert.equal(over.status,400);assert.match(over.error,/unassigned/);
+    await env.ok(await accountLinkBody(env,{name:'Second machine',acquisition_cost:600}));
+    assert.equal((await env.entities.FixedAsset.list()).length,2);assert.equal((await env.entities.Account.get('fixed')).balance,1000);assert.equal((await env.entities.Account.get('accum')).balance,100);
+    assert.equal((await env.entities.JournalEntry.list()).length,2);
+  }finally{await env.close()}
+});
+
+test('existing-cost links refuse missing evidence, prior depreciation, invalid certification and acquisition funding',async()=>{
+  const env=await environment();try{
+    const missing=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(missing.eligible,false);assert.match(missing.blocked_reasons.join(' '),/does not match/);
+    await seedExistingAssetCost(env);const body=await accountLinkBody(env);
+    for(const patch of [{confirmExistingCost:false},{reference:''},{fundingAccountId:'operating'},{data:{...body.data,in_service_date:''}},{data:{...body.data,useful_life_months:''}},{data:{...body.data,salvage_value:undefined}},{data:{...body.data,accumulated_depreciation:100}}])assert.equal((await env.call({...body,...patch})).status,400);
+    await env.entities.Account.update('accum',{balance:100});await env.entities.Account.update('expense',{balance:100});
+    const journal=await env.entities.JournalEntry.create({id:'old-depreciation',journal_number:'DEP-OLD',description:'Historic depreciation',entry_date:'2020-01-31',status:'posted',total_debit:100,total_credit:100});
+    await env.entities.JournalLine.create({journal_id:journal.id,account_id:'expense',debit:100,credit:0,status:'posted'});await env.entities.JournalLine.create({journal_id:journal.id,account_id:'accum',debit:0,credit:100,status:'posted'});
+    const result=await env.call(body);assert.equal(result.status,400);assert.match(result.error,/unassigned or inconsistent balance/);assert.equal((await env.entities.FixedAsset.list()).length,0);assert.equal((await env.entities.DepreciationEntry.list()).length,0);
+    const treasury=await env.ok({action:'assetAccountWorkspace',accountId:'operating'});assert.equal(treasury.eligible,false);assert.match(treasury.blocked_reasons.join(' '),/Treasury/);
+  }finally{await env.close()}
+});
+
+test('asset link evidence includes reversed source journals and refuses unbalanced headers or lines',async()=>{
+  const env=await environment();try{
+    await seedExistingAssetCost(env);const e=env.entities;
+    await e.JournalEntry.update('existing-cost',{status:'reversed'});
+    await e.JournalEntry.create({id:'partial-reversal',journal_number:'REV-001',description:'Asset cost correction',entry_date:'2020-01-02',status:'posted',total_debit:500,total_credit:500});
+    await e.JournalLine.create({journal_id:'partial-reversal',account_id:'fixed',debit:0,credit:500,status:'posted'});await e.JournalLine.create({journal_id:'partial-reversal',account_id:'opening-equity',debit:500,credit:0,status:'posted'});await e.Account.update('fixed',{balance:500});await e.Account.update('opening-equity',{balance:500});
+    const workspace=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(workspace.eligible,true);assert.equal(workspace.ledger_cost,500);
+    await e.JournalEntry.update('existing-cost',{total_credit:999});
+    const badHeader=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(badHeader.eligible,false);assert.match(badHeader.blocked_reasons.join(' '),/unbalanced/);
+    await e.JournalEntry.update('existing-cost',{total_credit:1000});await e.JournalLine.update('existing-cost-credit',{status:'draft'});
+    const badLine=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(badLine.eligible,false);assert.match(badLine.blocked_reasons.join(' '),/inconsistent/);
+  }finally{await env.close()}
+});
+
+test('linked schedules honor closed periods and never post an incomplete or future month',async()=>{
+  const env=await environment();try{
+    await seedExistingAssetCost(env);await env.ok(await accountLinkBody(env));
+    const e=env.entities;await e.AccountingPeriod.create({id:'closed-first',name:'Closed January',fiscal_year:2020,period_number:1,start_date:'2020-01-01',end_date:'2020-01-31',status:'closed'});
+    const blocked=await syncAutomaticDepreciation(e,env.transaction,{date:'2020-02-01'});assert.equal(blocked.posted,0);assert.match(blocked.issues[0].message,/closed/);assert.equal((await e.DepreciationEntry.list()).length,0);
+    await e.AccountingPeriod.update('closed-first',{status:'open'});
+    const run=await syncAutomaticDepreciation(e,env.transaction,{date:'2020-02-15'});assert.equal(run.posted,1);assert.deepEqual((await e.DepreciationEntry.list()).map(row=>row.period_label),['2020-01']);
+    assert.equal((await syncAutomaticDepreciation(e,env.transaction,{date:'2020-02-15'})).posted,0);
+  }finally{await env.close()}
+});
+
+test('account linking excludes mapped circulating assets and foreign currency and verifies original journal payloads',async()=>{
+  const env=await environment();try{
+    await seedExistingAssetCost(env);const e=env.entities;
+    await e.PostingRule.create({id:'stock-rule',rule_key:'inventory_raw_material',account_id:'fixed',is_active:true});
+    let result=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(result.eligible,false);assert.match(result.blocked_reasons.join(' '),/mapped/);
+    await e.PostingRule.delete('stock-rule');await e.Product.create({id:'stock-product',sku:'SKU-TEST',name:'Inventory product',inventory_type:'raw_material',inventory_account_id:'fixed'});
+    result=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(result.eligible,false);assert.match(result.blocked_reasons.join(' '),/mapped/);
+    await e.Product.delete('stock-product');await e.Account.update('fixed',{currency:'USD'});
+    result=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(result.eligible,false);assert.match(result.blocked_reasons.join(' '),/XAF/);
+    await e.Account.update('fixed',{currency:'XAF'});await e.Account.update('accum',{currency:'USD'});
+    let failure=await env.call(await accountLinkBody(env));assert.equal(failure.status,400);assert.match(failure.error,/XAF/);
+    await e.Account.update('accum',{currency:'XAF'});await e.Account.update('expense',{currency:'USD'});
+    failure=await env.call(await accountLinkBody(env));assert.equal(failure.status,400);assert.match(failure.error,/XAF/);
+    await e.Account.update('expense',{currency:'XAF'});
+    const journal=await e.JournalEntry.get('existing-cost'),lines=await e.JournalLine.filter({journal_id:journal.id});
+    await e.JournalEntry.update(journal.id,{posting_payload:journalPayload({entryDate:journal.entry_date,description:journal.description,sourceModule:journal.source_module,sourceDocumentType:journal.source_document_type,lines})});
+    result=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(result.eligible,true);
+    await e.JournalEntry.update(journal.id,{description:'Changed original description'});
+    result=await env.ok({action:'assetAccountWorkspace',accountId:'fixed'});assert.equal(result.eligible,false);assert.match(result.blocked_reasons.join(' '),/original posting/);
+    assert.equal((await e.FixedAsset.list()).length,0);
   }finally{await env.close()}
 });

@@ -162,7 +162,7 @@ test('New product assembly opens the assembly editor directly; a linked BOM copi
 test('account list hides inactive/hidden rows by default, restores hidden accounts, and deletes through the checked endpoint with a stable retry reference',async()=>{
   const r=runtime(),ui=await renderer(),accounts=[{id:'a',account_number:'3990',name:'Working capital',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,updated_date:'v1'},{id:'b',account_number:'3991',name:'Unused investor',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,is_hidden:true,updated_date:'v1'}],calls=[];
   r.client.functions.invoke=async()=>({data:{accounts,balances:{},date:'2026-10-20'}});r.client.accounting={saveAccount:async body=>{calls.push(body);throw Error('Connection interrupted');}};
-  const paint=painter(r,ui,'Accounts');try{paint();await r.flush();let html=paint();assert.match(html,/Working capital/);assert.doesNotMatch(html,/Unused investor/);
+  const paint=painter(r,ui,'Accounts');try{paint();await r.flush();let html=paint();assert.doesNotMatch(html,/Working capital|Unused investor/);r.controls.find(c=>c.type==='checkbox').onChange({target:{checked:true}});assert.match(paint(),/Working capital/);
     r.elements.find(e=>e.props.onValueChange && e.props.value==='visible').props.onValueChange('hidden');assert.match(paint(),/Unused investor/);
     // Icon controls expose accessible labels and use current account revisions.
     const show=r.buttons.find(b=>b['aria-label']==='Show account');assert.ok(show);await show.onClick();assert.equal(calls[0].account.is_hidden,false);

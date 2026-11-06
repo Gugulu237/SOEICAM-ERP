@@ -16,7 +16,7 @@ async function renderer(){
       '@/lib/assets':"export const assetAction=b=>globalThis.__assetUI.request(b);",
       '@/lib/localization':'export const useLocaleRender=()=>{};',
       '@/lib/asset-depreciation-client':'export const syncAssetDepreciation=()=>globalThis.__assetUI.sync();',
-      '@/api/erpClient':'export const erp={entities:{Account:"accounts",JournalEntry:"journals",JournalLine:"lines"}};',
+      '@/api/erpClient':'export const erp={entities:{Account:"accounts",JournalEntry:"journals",JournalLine:"lines"}};export const invalidateERPReads=()=>globalThis.__assetUI.invalidate?.();',
       '@/lib/field-pos':'export const readAll=entity=>globalThis.__assetUI.read(entity);',
       '@/hooks/useCurrentUser':'export const useCurrentUser=()=>({isAdmin:true});',
       '@/lib/router':"import React from 'react';export const useNavigate=()=>()=>{},useSearchParams=()=>[new URLSearchParams(),()=>{}];export const Link=({to,children,...p})=>React.createElement('a',{href:to,...p},children);",
@@ -61,4 +61,27 @@ test('financial statements wait for depreciation posting before reading journal 
 test('unposted depreciation and locked-period failures are visible to report readers',async()=>{
   const render=await renderer(),r=hookRuntime();globalThis.__assetUI=r;
   try{r.beforeRender();const html=render('status',{status:{through:'2020-02',pending_count:1,pending_total:300,manual_count:0,issues:[{asset_id:'machine',asset_name:'Machine',message:'Accounting period February is locked'}]},canManage:false});assert.match(html,/not yet deducted from profit/);assert.match(html,/February is locked/);assert.doesNotMatch(html,/href=/);}finally{r.cleanup();delete globalThis.__assetUI;}
+});
+
+test('export refresh checks saved depreciation again, clears cached reads, and calculates the captured period from the new ledger',async()=>{
+  const render=await renderer(),r=hookRuntime(),calls=[],previousWindow=globalThis.window;globalThis.__assetUI=r;globalThis.window={addEventListener(){},removeEventListener(){}};
+  const data={accounts:[{id:'cost',account_number:'6100',name:'Depreciation',account_type:'expense',normal_balance:'debit'},{id:'accum',account_number:'2800',name:'Accumulated depreciation',account_type:'asset',normal_balance:'credit'}],journals:[],lines:[]};
+  r.sync=async(...args)=>{calls.push(['sync',args]);return {through:'2026-10',pending_total:0,issues:[]};};r.invalidate=()=>calls.push(['invalidate']);r.read=async name=>{calls.push([name]);return structuredClone(data[name]);};
+  const draw=()=>{r.beforeRender();return render('statements',{});};
+  try{
+    draw();await r.flush();draw();calls.length=0;
+    let finish;r.sync=(...args)=>{calls.push(['sync',args]);return new Promise(resolve=>{finish=resolve;});};
+    const loading=r.statement.refreshStatement({fromDate:'2026-10-01',toDate:'2026-10-31'});
+    assert.deepEqual(calls,[['sync',[]]]);
+    data.journals.push({id:'october',entry_date:'2026-10-31',status:'posted',total_debit:30,total_credit:30},{id:'later',entry_date:'2026-11-30',status:'posted',total_debit:90,total_credit:90});
+    for(const [id,amount] of [['october',30],['later',90]])data.lines.push({id:id+'-d',journal_id:id,account_id:'cost',debit:amount},{id:id+'-c',journal_id:id,account_id:'accum',credit:amount});
+    finish({through:'2026-10',pending_total:5,issues:[{asset_name:'Printer',message:'Accounting period September is locked'}]});
+    const snapshot=await loading;
+    assert.deepEqual(calls,[['sync',[]],['invalidate'],['accounts'],['journals'],['lines']]);
+    assert.equal(snapshot.activity.cost.period,30);assert.equal(snapshot.depreciation.pending_total,5);assert.match(snapshot.depreciation.issues[0].message,/locked/);
+    calls.length=0;r.sync=async()=>{calls.push(['sync']);throw Error('Monthly check unavailable');};
+    await assert.rejects(r.statement.refreshStatement({fromDate:'2026-10-01',toDate:'2026-10-31'}),/Monthly check unavailable/);assert.deepEqual(calls,[['sync']]);
+    r.sync=async()=>({through:'2026-10',pending_total:0,issues:[]});data.lines.pop();
+    await assert.rejects(r.statement.refreshStatement({fromDate:'2026-11-01',toDate:'2026-11-30'}),/incomplete or does not balance/);
+  }finally{r.cleanup();globalThis.window=previousWindow;delete globalThis.__assetUI;}
 });

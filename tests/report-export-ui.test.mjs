@@ -11,6 +11,7 @@ async function renderer(kind) {
     b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;export const useState=v=>globalThis.__reportUI.state('export',v),useRef=v=>globalThis.__reportUI.ref('export',v);`,resolveDir:process.cwd()}));
     const mocks={
       '@/lib/report-document':`export const downloadWorkbook=r=>globalThis.__reportUI.download(r);export const showPrintReport=(p,r)=>globalThis.__reportUI.print(p,r);`,
+      '@/lib/recurring-expense-client':`export const recurringExpenseRequest=(...args)=>globalThis.__reportUI.recurringRequest(...args);`,
       '@/lib/navigation-context':`export const usePageState=(key,initial)=>globalThis.__reportUI.state(key,initial);`,
       '@/components/ui/button':`import React from 'react';export const Button=({children,onClick,variant,size,...props})=>{globalThis.__reportUI.capture('button',{...props,onClick},children);return React.createElement('button',props,children);};`,
       '@/components/ui/input':`import React from 'react';export const Input=props=>{globalThis.__reportUI.capture('input',props,[]);return React.createElement('input',props);};`,
@@ -52,4 +53,27 @@ test('income statement export follows posted period activity, preserves account 
   const render=await renderer('income'),r=runtime();globalThis.__reportUI=r;
   try {r.beforeRender();render({fromDate:'2026-10-01',toDate:'2026-10-21',accounts:[{id:'rev',account_number:'7000',name:'Sales',account_type:'revenue'},{id:'cogs',account_number:'6000',name:'COGS',account_type:'cogs'},{id:'expense',account_number:'6100',name:'Expense',account_type:'expense'},{id:'other',account_number:'7100',name:'Other income',account_type:'other_income'}],activity:{rev:{opening:-200,period:-100.5,closing:-300.5},cogs:{period:30.25},expense:{period:15},other:{period:-5}}});const doc=r.exportProps.report;assert.deepEqual(doc.metadata.slice(0,2),[['From','2026-10-01'],['To','2026-10-21']]);assert.deepEqual(doc.sections[0].rows,[['7000','Sales',100.5]]);assert.deepEqual(doc.sections.at(-1).rows.at(-1),['Net profit / loss',60.25]);}
   finally {r.cleanup();delete globalThis.__reportUI;}
+});
+
+test('income export uses refreshed posted totals and warnings for the clicked period, and rejects failed refreshes instead of exporting stale profit',async()=>{
+  const render=await renderer('income'),r=runtime();globalThis.__reportUI=r;
+  const accounts=[{id:'rev',account_number:'7000',name:'Sales',account_type:'revenue'},{id:'expense',account_number:'6100',name:'Depreciation',account_type:'expense'}];
+  const props={fromDate:'2026-10-01',toDate:'2026-10-31',accounts,activity:{rev:{period:-100},expense:{period:10}},depreciation:{through:'2026-09',pending_total:0,issues:[]}};
+  const calls=[];let finish;props.refreshStatement=range=>{calls.push(range);return new Promise(resolve=>{finish=resolve;});};
+  r.recurringRequest=async(body,range)=>{calls.push([body,range]);return {pending_total:75,pending_count:1};};
+  const draw=()=>{r.beforeRender();render(props);};
+  try{
+    draw();assert.equal(r.exportProps.report.sections.at(-1).rows.at(-1)[1],90);
+    const preparing=r.exportProps.getReport();props.fromDate='2026-11-01';props.toDate='2026-11-30';draw();
+    finish({accounts,activity:{rev:{period:-100},expense:{period:30}},depreciation:{through:'2026-10',pending_total:5,issues:[{asset_name:'Printer',message:'Accounting period September is locked'}]}});
+    const doc=await preparing;
+    assert.deepEqual(calls,[{fromDate:'2026-10-01',toDate:'2026-10-31'},[null,{from:'2026-10-01',to:'2026-10-31',summary:'1'}]]);
+    assert.deepEqual(doc.metadata.slice(0,2),[['From','2026-10-01'],['To','2026-10-31']]);assert.equal(doc.sections.at(-1).rows.at(-1)[1],70);
+    assert.ok(doc.metadata.some(([key,value])=>key==='Depreciation checked through'&&value==='2026-10'));
+    assert.ok(doc.metadata.some(([key,value])=>key==='Depreciation issues'&&value.includes('September is locked')));
+    assert.ok(doc.metadata.some(([key,value])=>key==='Unposted depreciation (all completed months)'&&value.includes('5')));
+    assert.ok(doc.metadata.some(([key,value])=>key==='Unposted recurring charges'&&value.includes('75')));
+    props.refreshStatement=async()=>{throw Error('Ledger refresh failed');};draw();await assert.rejects(r.exportProps.getReport(),/Ledger refresh failed/);
+    props.refreshStatement=async()=>({accounts,activity:{},depreciation:{}});r.recurringRequest=async()=>{throw Error('Recurring review failed');};draw();await assert.rejects(r.exportProps.getReport(),/Recurring review failed/);
+  }finally{r.cleanup();delete globalThis.__reportUI;}
 });

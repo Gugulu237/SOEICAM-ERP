@@ -173,19 +173,24 @@ export function eligibleAccountParents(accounts, form) {
   return accounts.filter(a => a.id !== form.id && a.is_active !== false && a.account_type === form.account_type && (!form.id || !isDescendantOf(form.id, a.id, accounts))).sort(byNumber);
 }
 
-export function visibleAccounts(accounts, balances, {type='all', status='visible', query=''}={}) {
+export function visibleAccounts(accounts, balances, {type='all', status='visible', query='', showUnused=false}={}) {
   const byId=new Map(accounts.map(a=>[a.id,a]));
   let list=accounts.filter(a=>type==='all' || a.account_type===type);
-  const used=a=>Number(balances?.[a.id]?.entries)>0 || Number(a.balance || 0)!==0 || Number(a.opening_debit || 0)!==0 || Number(a.opening_credit || 0)!==0;
-  if(status==='visible')list=list.filter(a=>a.is_active!==false && !a.is_hidden);
+  // Gross ledger activity keeps settled or reversed accounts visible even when
+  // their current net balance is zero. Stored opening values also remain visible.
+  const used=a=>Number(balances?.[a.id]?.entries)>0 ||
+    ['debit','credit'].some(key=>Number(balances?.[a.id]?.[key] || 0)!==0) ||
+    ['balance','opening_balance','opening_debit','opening_credit'].some(key=>Number(a[key] || 0)!==0);
+  if(status==='visible')list=list.filter(a=>a.is_active!==false && !a.is_hidden && (showUnused || used(a)));
   if(status==='hidden')list=list.filter(a=>a.is_hidden);
   if(status==='active')list=list.filter(a=>a.is_active!==false);
   if(status==='inactive')list=list.filter(a=>a.is_active===false);
   if(status==='used')list=list.filter(used);
   const q=query.trim().toLowerCase();
   if(q)list=list.filter(a=>`${a.account_number} ${a.name}`.toLowerCase().includes(q));
-  // Keep ancestor context, including hidden grouping rows, for search/used views.
-  if(q || status==='used'){
+  // Keep ancestor context, including unused or hidden grouping rows, when
+  // filtering on use. This affects this list only, never account selectors.
+  if(q || status==='used' || status==='visible'&&!showUnused){
     const keep=new Set(list.map(a=>a.id));
     for(const a of list){let id=a.parent_id;const seen=new Set([a.id]);while(id && byId.has(id) && !seen.has(id)){seen.add(id);keep.add(id);id=byId.get(id).parent_id;}}
     list=accounts.filter(a=>keep.has(a.id));

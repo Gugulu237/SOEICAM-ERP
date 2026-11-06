@@ -9,12 +9,10 @@ import { round2 } from "@/lib/posting";
 import { sectionRows } from "@/lib/statements";
 import StatementSection from "@/components/accounting/StatementSection";
 import {useRecurringExpenseReview} from './useRecurringExpenseReview';
+import {recurringExpenseRequest} from '@/lib/recurring-expense-client';
 import {Link} from '@/lib/router';
 
-export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation }) {
-  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
-  const recurring=useRecurringExpenseReview(fromDate,toDate);
-
+function summarizeIncome(accounts, activity) {
   const sum = (rows) => round2(rows.reduce((s, r) => s + r.amount, 0));
 
   const revenue = sectionRows(accounts, activity, ["revenue"], -1);
@@ -30,14 +28,39 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate, 
   const operatingProfit = round2(grossProfit - totalExpenses);
   const net = round2(operatingProfit + sum(otherIncome) - sum(otherExpenses));
 
-  const document={title:'Income statement',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals'],['Depreciation checked through',depreciation?.through||'Not checked'],['Unposted depreciation (all completed months)',formatXAF(depreciation?.pending_total||0)],['Depreciation issues',(depreciation?.issues||[]).map(i=>i.asset_name+': '+i.message).join('; ')],['Unposted recurring charges',recurring.error?'Review unavailable':formatXAF(recurring.total)]],sections:[
+  return {revenue,otherIncome,cogs,expenses,otherExpenses,totalRevenue,totalCogs,grossProfit,totalExpenses,operatingProfit,net};
+}
+
+function incomeDocument({summary,fromDate,toDate,depreciation,recurring}) {
+  const {revenue,otherIncome,cogs,expenses,otherExpenses,totalRevenue,totalCogs,grossProfit,totalExpenses,operatingProfit,net}=summary;
+  const sum=rows=>round2(rows.reduce((total,row)=>total+row.amount,0));
+  return {title:'Income statement',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals'],['Depreciation checked through',depreciation?.through||'Not checked'],['Unposted depreciation (all completed months)',formatXAF(depreciation?.pending_total||0)],['Depreciation issues',(depreciation?.issues||[]).map(i=>i.asset_name+': '+i.message).join('; ')],['Unposted recurring charges',recurring.error?'Review unavailable':formatXAF(recurring.total)]],sections:[
     ...[['Revenue',revenue,totalRevenue],['Cost of goods sold',cogs,totalCogs],['Operating expenses',expenses,totalExpenses],['Other income',otherIncome,sum(otherIncome)],['Other expenses',otherExpenses,sum(otherExpenses)]].map(([title,rows,total])=>({title,columns:['Account','Name',{label:'Amount',type:'money'}],rows:rows.map(r=>[r.account_number,r.name,r.amount]),totals:[['','Total',total]]})),
     {title:'Profit and loss',columns:['Measure',{label:'Amount',type:'money'}],rows:[['Gross profit',grossProfit],['Operating profit',operatingProfit],['Net profit / loss',net]]},
   ]};
+}
+
+export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation, refreshStatement }) {
+  const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const recurring=useRecurringExpenseReview(fromDate,toDate);
+  const summary=summarizeIncome(accounts,activity);
+  const {revenue,otherIncome,cogs,expenses,otherExpenses,totalRevenue,totalCogs,grossProfit,totalExpenses,operatingProfit,net}=summary;
+  const sum=rows=>round2(rows.reduce((total,row)=>total+row.amount,0));
+  const document=incomeDocument({summary,fromDate,toDate,depreciation,recurring});
+  const getReport=refreshStatement?async()=>{
+    // Capture the chosen report period before any await, even if the person
+    // changes the visible dates while the printable report is being prepared.
+    const range={fromDate,toDate};
+    const [snapshot,charges]=await Promise.all([
+      refreshStatement(range),
+      recurringExpenseRequest(null,{from:range.fromDate,to:range.toDate,summary:'1'}),
+    ]);
+    return incomeDocument({...range,summary:summarizeIncome(snapshot.accounts,snapshot.activity),depreciation:snapshot.depreciation,recurring:{total:charges.pending_total}});
+  }:undefined;
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-6 max-w-3xl">
       {(recurring.loading||recurring.error||recurring.count>0)&&<div role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{ui(recurring.loading?'Checking recurring expenses...':recurring.error?'Recurring expense review is unavailable. Refresh before finalizing this report.':'Recurring charges awaiting recognition: {0}. These are not yet deducted from the reported profit.',formatXAF(recurring.total))}{!recurring.loading&&recurring.canReview&&<Link className="mt-2 block font-medium underline" to="/accounting/recurring-expenses">{ui('Review recurring expenses')}</Link>}</div>}
-      <div className="mb-5"><ReportExport report={document} disabled={recurring.loading||!!recurring.error}/></div>
+      <div className="mb-5"><ReportExport report={document} getReport={getReport} disabled={recurring.loading||!!recurring.error}/></div>
       <StatementSection title={ui("Revenue")} rows={revenue} total={totalRevenue} />
       <StatementSection title={ui("Cost of Goods Sold")} rows={cogs} total={totalCogs} />
       <div className="flex justify-between py-2 mb-6 font-bold text-sm bg-slate-50 px-3 rounded">

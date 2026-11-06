@@ -7,7 +7,7 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import { readAll } from '@/lib/field-pos';
 import React, { useState, useEffect, useMemo } from "react";
-import { erp } from "@/api/erpClient";
+import { erp, invalidateERPReads } from "@/api/erpClient";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { formatDate } from "@/lib/formatters";
 import { computeActivity, validStatementRange } from "@/lib/statements";
@@ -24,6 +24,20 @@ import CashFlowStatement from "@/components/accounting/CashFlowStatement";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+async function loadStatementLedger() {
+  // Saved schedules determine eligible completed months; report dates only
+  // filter the ledger and never authorize a future depreciation posting.
+  const depreciation = await syncAssetDepreciation();
+  invalidateERPReads();
+  const [accounts, journals, lines] = await Promise.all([
+    readAll(erp.entities.Account, {}, "account_number"),
+    readAll(erp.entities.JournalEntry, { status: {$in: ledgerStatuses} }, "-entry_date"),
+    readAll(erp.entities.JournalLine, {}, "-created_date"),
+  ]);
+  accounts.sort((a, b) => String(a.account_number || '').localeCompare(String(b.account_number || ''), undefined, {numeric:true}));
+  return {accounts, journalsById:Object.fromEntries(journals.map(j => [j.id,j])), lines, depreciation};
+}
 
 export default function FinancialStatements() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -46,15 +60,12 @@ export default function FinancialStatements() {
     if (tab === 'cashflow') return;
     let active = true;
     setLoading(true); setError('');
-    syncAssetDepreciation().then(status=>{if(active)setDepreciation(status);return Promise.all([
-      readAll(erp.entities.Account, {}, "account_number"),
-      readAll(erp.entities.JournalEntry, { status: {$in: ledgerStatuses} }, "-entry_date"),
-      readAll(erp.entities.JournalLine, {}, "-created_date"),
-    ]);}).then(([accs, journals, jl]) => {
+    loadStatementLedger().then(snapshot => {
       if (!active) return;
-      setAccounts(accs.sort((a, b) => String(a.account_number || '').localeCompare(String(b.account_number || ''), undefined, {numeric:true})));
-      setJournalsById(Object.fromEntries(journals.map((j) => [j.id, j])));
-      setLines(jl);
+      setAccounts(snapshot.accounts);
+      setJournalsById(snapshot.journalsById);
+      setLines(snapshot.lines);
+      setDepreciation(snapshot.depreciation);
       setLoading(false);
     }).catch(e => { if (active) setError(e.message || sourceMessage("Could not load statements")); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -68,6 +79,12 @@ export default function FinancialStatements() {
     [accounts, journalsById, lines, fromDate, toDate]
   );
   const activity = statement.activity, reportError = error || statement.error;
+  const refreshStatement = async ({fromDate:selectedFrom, toDate:selectedTo}) => {
+    if (!validStatementRange(selectedFrom,selectedTo)) throw Error(sourceMessage('Choose a valid date range.'));
+    const snapshot = await loadStatementLedger();
+    const freshActivity = computeActivity({...snapshot, fromDate:selectedFrom, toDate:selectedTo});
+    return {accounts:snapshot.accounts, activity:freshActivity, depreciation:snapshot.depreciation};
+  };
 
   return (
     <div>
@@ -96,7 +113,7 @@ export default function FinancialStatements() {
           <TabsTrigger value="cashflow">{ui("Cash Flow")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pnl" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} fromDate={fromDate} toDate={toDate} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} />}
         </TabsContent>
         <TabsContent value="balance" className="mt-4">
           {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} />}

@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { requireStaff, postJournal, round2, today, audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { assetDate, assetMoney, flatDepreciationTerms, depreciationPlan, monthEnd, monthIndex, shiftMonth, scheduleThrough } from '../../lib/asset-schedule.js';
+import { assetAccountWorkspace, validateAssetAccountLink } from './asset-account-link.js';
 
-export const ASSET_ACTIONS = ['assetWorkspace','assetDepreciationPreview','assetRegister','assetUpdatePlan','assetRunDepreciation','assetFundReplacement','assetDispose'];
+export const ASSET_ACTIONS = ['assetWorkspace','assetAccountWorkspace','assetLinkAccount','assetDepreciationPreview','assetRegister','assetUpdatePlan','assetRunDepreciation','assetFundReplacement','assetDispose'];
 const idFor = (type, value) => type + '-' + createHash('sha256').update(value).digest('hex').slice(0,40);
 const line = (account, debit, credit) => ({ account_id:account.id, account_number:account.account_number, account_name:account.name, debit, credit });
 function text(value, name) { if (typeof value !== 'string' || !value.trim() || value.length > 500) throw Error(`Enter ${name}`); return value.trim(); }
@@ -11,7 +12,7 @@ function requestId(body, user) { if (!/^[A-Za-z0-9_-]{8,100}$/.test(body.request
 function pastDate(value) { const date = assetDate(value); if (date > today()) throw Error('The date cannot be in the future'); return date; }
 async function account(svc, id, types, normal) {
   const row = id ? await svc.entities.Account.get(id) : null;
-  if (!row || row.is_active !== true || row.is_posting === false || !types.includes(row.account_type) || (normal && row.normal_balance !== normal)) throw Error(`Select an active ${normal || ''} ${types.join('/')} posting account`);
+  if (!row || row.is_active !== true || row.is_posting === false || row.currency && row.currency !== 'XAF' || !types.includes(row.account_type) || (normal && row.normal_balance !== normal)) throw Error(`Select an active ${normal || ''} ${types.join('/')} posting account in XAF`);
   return row;
 }
 async function assetAccounts(svc, asset) {
@@ -90,12 +91,16 @@ export async function fixedAssetAction(client, user, body) {
     const [assets,entries,accounts,treasuryAccounts]=await Promise.all([readRecords(svc.entities.FixedAsset),readRecords(svc.entities.DepreciationEntry),readRecords(svc.entities.Account,{is_active:true}),readRecords(svc.entities.TreasuryAccount,{is_active:true})]);
     return {assets,...await reserveSummary(svc,entries),accounts,treasuryAccounts};
   }
+  if(action==='assetAccountWorkspace')return assetAccountWorkspace(svc.entities,body.accountId);
   if(action==='assetDepreciationPreview')return preview(svc,body.month);
 
-  if(action==='assetRegister') {
-    const id=requestId(body,user),data=body.data||{}, payload={data,fundingAccountId:body.fundingAccountId||''};
+  if(action==='assetRegister'||action==='assetLinkAccount') {
+    const linking=action==='assetLinkAccount';
+    const id=requestId(body,user),data=linking?{...body.data,asset_account_id:body.accountId}:body.data||{}, payload=linking?{data,reference:body.reference,confirmExistingCost:body.confirmExistingCost}:{data,fundingAccountId:body.fundingAccountId||''};
     const existing=await svc.entities.FixedAsset.get(id);
     if(existing){sameRequest(existing,payload);return {asset:existing,reused:true};}
+    let source;
+    if(linking){source=await validateAssetAccountLink(svc.entities,body);text(body.reference,'the asset acquisition or opening balance reference');assetDate(data.in_service_date);}
     const cost=assetMoney(data.acquisition_cost,'cost'),salvage=assetMoney(data.salvage_value,'residual value');
     if(cost<=0||salvage>cost)throw Error('Cost must be positive and residual value cannot exceed cost');
     const date=pastDate(data.acquisition_date),inService=assetDate(data.in_service_date||date);
@@ -108,8 +113,9 @@ export async function fixedAssetAction(client, user, body) {
       asset_account_id:accounts.cost.id,asset_account_number:accounts.cost.account_number,asset_account_name:accounts.cost.name,accum_dep_account_id:accounts.accum.id,accum_dep_account_number:accounts.accum.account_number,accum_dep_account_name:accounts.accum.name,
       expense_account_id:accounts.expense.id,expense_account_number:accounts.expense.account_number,expense_account_name:accounts.expense.name,
       accumulated_depreciation:0,net_book_value:cost,status:cost===salvage?'fully_depreciated':'active',replacement_fund_enabled:data.replacement_fund_enabled!==false,
-      depreciation_plan:{start:inService.slice(0,7),...terms,basis:round2(cost-salvage),opening:0},automatic_depreciation:automatic,asset_revision:1,created_by:user.id,asset_request_payload:JSON.stringify(payload)});
-    if(body.fundingAccountId) {
+      depreciation_plan:{start:inService.slice(0,7),...terms,basis:round2(cost-salvage),opening:0},automatic_depreciation:automatic,asset_revision:1,created_by:user.id,asset_request_payload:JSON.stringify(payload),
+      ...(linking?{registration_source:'existing_account_cost',existing_cost_reference:body.reference.trim(),existing_cost_confirmed_by:user.id,existing_cost_ledger_balance:source.ledger_cost,existing_cost_workspace_token:body.workspaceToken}:{})});
+    if(!linking&&body.fundingAccountId) {
       const credit=await account(svc,body.fundingAccountId,['asset','liability']);
       if([accounts.cost.id,accounts.accum.id].includes(credit.id))throw Error('The acquisition credit account must be separate from the asset accounts');
       let cash;
@@ -125,7 +131,7 @@ export async function fixedAssetAction(client, user, body) {
       asset.journal_id=journal.id;await svc.entities.FixedAsset.update(id,{journal_id:journal.id});
       if(cash){await svc.entities.TreasuryAccount.update(cash.id,{balance:round2(Number(cash.balance)-cost)});await svc.entities.TreasuryTransaction.create({treasury_account_id:cash.id,treasury_account_name:cash.name,transaction_type:'expense',amount:cost,transaction_date:date,source:'asset_acquisition',source_document_id:id,journal_id:journal.id,description:`Asset acquisition: ${asset.name}`,created_by:user.id});}
     }
-    await audit(svc,{action:'create_asset',module:'assets',entityType:'FixedAsset',entityId:id,userId:user.id,description:`Registered ${asset.name}: ${months} months`});
+    await audit(svc,{action:linking?'link_existing_asset_cost':'create_asset',module:'assets',entityType:'FixedAsset',entityId:id,userId:user.id,description:`Registered ${asset.name}: ${months} months${linking?'; existing ledger cost '+cost+' XAF; '+body.reference.trim():''}`});
     return {asset};
   }
   if(action==='assetUpdatePlan') {

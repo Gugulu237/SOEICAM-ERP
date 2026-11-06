@@ -24,8 +24,9 @@ async function renderer(){
       '@/components/ui/select':`import React from 'react';const Box=({children})=>React.createElement('div',null,children);export const Select=Box,SelectContent=Box,SelectItem=Box,SelectTrigger=Box,SelectValue=()=>null;`,
       '@/components/ui/dialog':`import React from 'react';export const Dialog=({children})=>React.createElement('div',null,children),DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogFooter=Dialog;`,
       './RecurringExpenseSettings':'export default ()=>null;export const initialRecurringSettings=()=>({});',
+      './AccountAssetDialog':'export default ()=>null;',
     };
-    b.onResolve({filter:/^(?:@\/|\.\/RecurringExpenseSettings)/},a=>Object.hasOwn(mocks,a.path)?{path:a.path,namespace:'leaf'}:undefined);
+    b.onResolve({filter:/^(?:@\/|\.\/(?:RecurringExpenseSettings|AccountAssetDialog))/},a=>Object.hasOwn(mocks,a.path)?{path:a.path,namespace:'leaf'}:undefined);
     b.onLoad({filter:/.*/,namespace:'leaf'},a=>({contents:mocks[a.path],resolveDir:process.cwd()}));
   }}]});
   const mod={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,mod,mod.exports);compiled=mod.exports.render;return compiled;

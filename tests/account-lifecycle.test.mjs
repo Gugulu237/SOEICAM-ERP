@@ -33,7 +33,8 @@ test('posting parents preserve own balances, prevent descendant cycles, and offe
   assert.deepEqual(validateAccount(rows[1],rows,{}),[]);assert.match(validateAccount({...rows[0],parent_id:'g'},rows,{})[0],/own sub-accounts/);
   const balances={p:{credit:100,entries:1},c:{credit:50,entries:1},g:{credit:20,entries:1}};
   assert.equal(buildAccountTree(rows,balances).rollups.get('p'),-170);
-  assert.deepEqual(visibleAccounts(rows.map(r=>({...r,is_hidden:r.id==='c'})),balances).map(a=>a.id),['p','g','a']);
+  assert.deepEqual(visibleAccounts(rows.map(r=>({...r,is_hidden:r.id==='c'})),balances).map(a=>a.id),['p','c','g']);
+  assert.deepEqual(visibleAccounts(rows.map(r=>({...r,is_hidden:r.id==='c'})),balances,{showUnused:true}).map(a=>a.id),['p','g','a']);
   assert.deepEqual(visibleAccounts(rows,balances,{status:'used'}).map(a=>a.id),['p','c','g']);
 });
 test('hide preserves history and posting controls; only wholly unused accounts can be deleted and retries reuse their audit',async()=>{

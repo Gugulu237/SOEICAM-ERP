@@ -17,10 +17,11 @@ import { Lock } from "lucide-react";
 import RecurringExpenseSettings,{initialRecurringSettings} from './RecurringExpenseSettings';
 import {recurringExpenseAccount} from '@/lib/recurring-expense-schedule';
 import AccountOpeningFields,{useAccountOpening,accountOpeningPayload} from './AccountOpeningFields';
+import AccountAssetDialog from './AccountAssetDialog';
 
 const NO_PARENT = "__none__";
 
-export default function AccountFormDialog({ account, accounts, balances, defaultParentId, canSetOpening = false, onClose, onDone }) {
+export default function AccountFormDialog({ account, accounts, balances, defaultParentId, canSetOpening = false, canManageAssets = false, onClose, onDone, onAssetUpdated }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { toast } = useToast();
@@ -35,6 +36,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
   const [newParent, setNewParent] = useState(null);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [assetSettings, setAssetSettings] = useState(false);
   const [numberTouched, setNumberTouched] = useState(isEdit);
   const [form, setForm] = useState({
     id: account?.id || "",
@@ -241,6 +243,11 @@ export default function AccountFormDialog({ account, accounts, balances, default
         </div>
 
         {canSetOpening && <AccountOpeningFields opening={opening} form={form} disabled={saving}/>}
+        {canManageAssets && account && account.account_type === 'asset' && account.normal_balance === 'debit' && account.is_posting !== false && !account.is_treasury && <section className="rounded-lg border border-slate-200 p-3 space-y-2">
+          <h3 className="font-medium">{ui('Fixed-asset depreciation')}</h3>
+          <p className="text-sm text-slate-600">{ui('Set the lifespan and straight-line monthly expense for assets recorded in this account. Each asset keeps its own schedule.')}</p>
+          <Button type="button" variant="outline" disabled={saving} onClick={()=>setAssetSettings(true)}>{ui('Manage asset depreciation')}</Button>
+        </section>}
         {(recurringExpenseAccount(form)||account?.recurring_expense)&&<RecurringExpenseSettings value={recurring} existing={account?.recurring_expense} disabled={saving} onChange={value=>{setRecurring(value);setRecurringChanged(true);}}/>}
         {saveError && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
         <DialogFooter>
@@ -248,6 +255,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
           <Button disabled={saving} onClick={handleSave}>{isEdit ? ui("Save Changes") : ui("Create Account")}</Button>
         </DialogFooter>
       </DialogContent>
+      {canManageAssets && assetSettings && <AccountAssetDialog account={account} onClose={()=>setAssetSettings(false)} onChanged={onAssetUpdated} />}
     </Dialog>
   );
 }
