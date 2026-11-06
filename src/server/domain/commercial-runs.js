@@ -1,3 +1,4 @@
+import {stockStaff,eligibleStockRecipient,validEmployeeStockLocation} from './employee-custody.js';
 import { readRecords } from './commercial-workspace.js';
 import { finishedProduct } from './commercial-rules.js';
 import { businessDate } from '../../lib/business-date.js';
@@ -15,31 +16,28 @@ const active = employee => employee && employee.status === 'active' && !employee
 // creates a second commercial-custody warehouse or moves the goods again.
 async function runStockSource(svc, run, verifyingReturn = false) {
   if (!supplyRunStates.includes(run.status)) throw new Error('The warehouse must load this run before recording supplies');
-  if (!run.vehicle_id || !run.vehicle_warehouse_id) throw new Error('This run has no loaded vehicle stock location. Ask dispatch management to check the load.');
+  if (!run.vehicle_warehouse_id) throw new Error('This run has no loaded vehicle stock location. Ask dispatch management to check the load.');
   const [vehicle, warehouse, conflicts, activities] = await Promise.all([
-    svc.entities.Vehicle.get(run.vehicle_id),
+    run.vehicle_id ? svc.entities.Vehicle.get(run.vehicle_id) : null,
     svc.entities.Warehouse.get(run.vehicle_warehouse_id),
-    readRecords(svc.entities.Dispatch, { status: { $in: supplyRunStates }, $or: [{ vehicle_id: run.vehicle_id }, { vehicle_warehouse_id: run.vehicle_warehouse_id }, { driver_id: run.driver_id }, { salesperson_id: run.salesperson_id }] }),
+    readRecords(svc.entities.Dispatch, { status: { $in: supplyRunStates }, $or: [...(run.vehicle_id?[{ vehicle_id: run.vehicle_id }]:[]), { vehicle_warehouse_id: run.vehicle_warehouse_id }, ...(run.driver_id?[{ driver_id: run.driver_id }]:[]), { salesperson_id: run.salesperson_id }] }),
     readRecords(svc.entities.DriverActivity, { dispatch_id: run.id, type: 'trip_returned' }),
   ]);
-  if (!vehicle || vehicle.is_active === false || vehicle.warehouse_id !== run.vehicle_warehouse_id
-    || !warehouse || warehouse.is_active === false || warehouse.warehouse_type !== 'vehicle'
-    || (warehouse.vehicle_id && warehouse.vehicle_id !== vehicle.id)
-    || warehouse.id === run.warehouse_id) throw new Error('The assigned vehicle stock location changed. Ask dispatch management to check this run.');
+  if (!warehouse || warehouse.id === run.warehouse_id || (run.vehicle_id ? (!vehicle || vehicle.is_active === false || vehicle.warehouse_id !== run.vehicle_warehouse_id || warehouse.is_active === false || warehouse.warehouse_type !== 'vehicle' || (warehouse.vehicle_id && warehouse.vehicle_id !== vehicle.id)) : !validEmployeeStockLocation(warehouse,run.salesperson_id))) throw new Error('The assigned vehicle stock location changed. Ask dispatch management to check this run.');
   if (conflicts.some(other => other.id !== run.id)) throw new Error('More than one active run uses this vehicle stock or paired team. Dispatch management must reconcile the runs before supplies can be recorded.');
   if (!verifyingReturn && (activities.length || run.return_date)) throw new Error('This run has returned to base. Ask dispatch management before recording more supplies.');
-  return { vehicle_registration:vehicle.registration||'', stock_warehouse_id: warehouse.id, stock_warehouse_name: warehouse.name || vehicle.name || run.vehicle_name || 'Vehicle stock' };
+  return { vehicle_registration:vehicle?.registration||'', stock_warehouse_id: warehouse.id, stock_warehouse_name: warehouse.name || vehicle?.name || run.vehicle_name || 'Vehicle stock' };
 }
 
 async function assignedRun(svc, commercialId, dispatchId, date) {
   const run = await svc.entities.Dispatch.get(dispatchId);
   if (!run?.dispatch_date || run.salesperson_id !== commercialId || run.dispatch_date > date || (!supplyRunStates.includes(run.status) && run.dispatch_date !== date) || !commercialRunStates.includes(run.status)) throw new Error('Choose a run assigned to you for this supply date');
-  const [driver, commercial] = await Promise.all([
+  const [driver, commercial] = await stockStaff(svc.entities,await Promise.all([
     run.driver_id ? svc.entities.Employee.get(run.driver_id) : null,
     svc.entities.Employee.get(commercialId),
-  ]);
-  if (!active(driver) || effectiveRole({role:'user'},driver) !== 'driver') throw new Error('This run needs an active assigned driver');
-  if (!active(commercial) || effectiveRole({role:'user'},commercial) !== 'commercial' || commercial.id === driver.id) throw new Error('This run needs an active assigned Commercial sales agent');
+  ]));
+  if (run.driver_id && (!active(driver) || effectiveRole({role:'user'},driver) !== 'driver')) throw new Error('This run needs an active assigned driver');
+  if (!eligibleStockRecipient(commercial)) throw new Error('This run needs an active employee other than Hotesse.');
   return { run, driver };
 }
 
@@ -53,12 +51,12 @@ export async function commercialRuns(svc, commercialId, date) {
 
 export async function supplyRun(svc, commercialId, dispatchId, date, required, verifyingReturn = false) {
   if (!dispatchId) {
-    if (required) throw new Error('Select your paired driver run. Ask dispatch management to assign you and a driver to a run for this supply date.');
+    if (required) throw new Error('Select goods issued to you for this supply date.');
     return { dispatch_id: '', driver_id: '', driver_name: '', vehicle_id: '', vehicle_name: '', stock_warehouse_id: '', stock_warehouse_name: '' };
   }
   const { run, driver } = await assignedRun(svc, commercialId, dispatchId, date);
   const source = required || supplyRunStates.includes(run.status) ? await runStockSource(svc, run, verifyingReturn) : { stock_warehouse_id: '', stock_warehouse_name: '' };
-  return { dispatch_id: run.id, dispatch_number: run.dispatch_number, driver_id: driver.id, driver_name: driver.full_name,
+  return { dispatch_id: run.id, dispatch_number: run.dispatch_number, driver_id: driver?.id || '', driver_name: driver?.full_name || '',
     vehicle_id: run.vehicle_id || '', vehicle_name: run.vehicle_name || '', route_id: run.route_id || '', ...source };
 }
 
@@ -71,7 +69,7 @@ export async function currentSupplyRun(svc, commercialId, dispatchId, date, requ
       status: { $in: supplyRunStates }, dispatch_date: { $lte: date } });
     if (runs.length !== 1) throw new Error(runs.length
       ? 'More than one active run is assigned to you. Dispatch management must reconcile the pairing before you sell.'
-      : 'No loaded driver run is assigned to you. Ask dispatch management to load and pair your vehicle.');
+      : 'No issued stock is assigned to you. Ask warehouse management to issue goods to you.');
     dispatchId = runs[0].id;
   }
   return supplyRun(svc, commercialId, dispatchId, date, required);

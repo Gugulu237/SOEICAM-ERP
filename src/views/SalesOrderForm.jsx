@@ -25,12 +25,12 @@ import {useToast} from '@/components/ui/use-toast';
 import {ArrowLeft,ArrowRight,Check,Plus,Trash2,Save,FileText} from 'lucide-react';
 
 const selectClass='h-11 w-full min-w-0 rounded-lg border bg-white px-3 text-sm';
-async function call(body){const {data}=await invokeFieldOps(body);if(data.error)throw Error(data.error);return data;}
 const sourceInput=value=>{if(value==='company')return {sourceType:'company'};const at=value.indexOf(':');return at<0?{}:value.slice(0,at)==='issued'?{sourceType:'issued',dispatchId:value.slice(at+1)}:{sourceType:'warehouse',warehouseId:value.slice(at+1)};};
 
-export default function SalesOrderForm(){
+export default function SalesOrderForm({ownIssuedStock=false}){
+  const call=async body=>{const action=ownIssuedStock?({salesOrderWorkspace:'employeeSalesWorkspace',salesOrderStock:'employeeSalesStock',salesOrderDeliveryPoints:'employeeSalesDeliveryPoints',recordSuppliedOrder:'employeeRecordSupply'}[body.action]):body.action;const {data}=await invokeFieldOps({...body,action});if(data.error)throw Error(data.error);return data;};
   useLocaleRender();
-  const {id}=useParams(),navigate=useNavigate(),back=useBack('/sales'),{toast}=useToast(),today=businessDate();
+  const {id}=useParams(),navigate=useNavigate(),back=useBack(ownIssuedStock?'/my-stock':'/sales'),{toast}=useToast(),today=businessDate();
   const [catalogue,setCatalogue]=useState(null),[order,setOrder]=useState(null),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[retry,setRetry]=useState(0);
   const [source,setSource]=useState(''),[sourceData,setSourceData]=useState(null),[sourceLoading,setSourceLoading]=useState(false),[sourceError,setSourceError]=useState(''),[stockRetry,setStockRetry]=useState(0);
   const [form,setForm]=useState({customer_id:'',location_id:'',payment_type:'cash',notes:'',receipt_reference:'',date:today,seller_id:'',replacements_declared:null}),[lines,setLines]=useState([]),[points,setPoints]=useState([]),[pointsError,setPointsError]=useState(''),[pointsLoading,setPointsLoading]=useState(false);
@@ -122,7 +122,7 @@ export default function SalesOrderForm(){
     try{
       const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
       toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted')});
-      navigate(result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
+      navigate(ownIssuedStock?'/my-stock':result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
     }catch(e){setSaveError(e.message);}finally{busy.current=false;setSaving(false);}
   }
   if(loading)return <p role="status" className="p-8 text-sm text-slate-500">{ui('Loading sale options...')}</p>;

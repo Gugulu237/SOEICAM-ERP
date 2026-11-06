@@ -112,7 +112,7 @@ export const ROLE_DEFINITIONS = [
     get summary(){return ui("Controls everything that moves in and out of storage.");},
     duties: [
       'Receives goods and manages stock, transfers and cold room',
-      'Loads finished goods onto paired Commercial delivery vehicles and receives counted returns',
+      'Issues finished goods to employees with optional transport and receives counted returns',
       'Monitors expiry, quarantine and batch traceability',
       'Approves stock corrections and warehouse movements',
     ],
@@ -148,7 +148,7 @@ export const ROLE_DEFINITIONS = [
     get label(){return ui("Driver (Deliveries)");},
     category: 'Operations',
     get summary(){return ui('Receives delivery stock, plans customer visits and tracks goods in their possession.');},
-    duties: ['Confirms receipt of finished goods issued by warehouse staff', 'Views delivery-team customers and plans the stop order', 'Tracks the finished products on their assigned vehicle', 'Records delivery outcomes, incidents and return to base', 'Reports expired collections; commercial agents handle fresh replacements', 'Cannot issue goods, record sales, invoice customers or approve transactions'],
+    duties: ['Confirms receipt of finished goods issued by warehouse staff', 'Views delivery-team customers and plans the stop order', 'Tracks the finished products on their assigned vehicle', 'Records delivery outcomes, incidents and return to base', 'Reports expired collections; commercial agents handle fresh replacements', 'Cannot issue goods or approve transactions; may record sales only from goods issued to their own employee account'],
   },
   {
     key: 'hotesse',
@@ -273,6 +273,8 @@ export function canOpenFieldPath(role, path, allowedModules) {
   role = normalizeRole(role);
   if (!role) return false;
   if (role === 'admin') return true;
+  if(path==='/approval-history')return true;
+  if(path==='/my-stock'||path==='/my-stock/new')return role!=='hotesse';
   if (path === '/profile' || path === '/profile/') return true;
   if (role === 'driver') return ['/', '/driver', '/driver/', '/distribution', '/distribution/', '/sales-reports'].includes(path);
   if (path === '/sales-reports') return true;

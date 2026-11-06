@@ -5,6 +5,7 @@ import { sourceMessage, uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import ApprovalHistory from './ApprovalHistory';
 import React, { useState, useEffect } from "react";
 import { Navigate, useNavigate } from "@/lib/router";
 import { formatDate, formatXAF } from "@/lib/formatters";
@@ -23,6 +24,7 @@ import { loadPendingApprovals, approveItem, rejectItem, canDecide, APPROVAL_TYPE
 export default function Approvals({ embedded = false, preview = false, onDecision }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const [tab,setTab]=useState('pending');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -116,7 +118,8 @@ export default function Approvals({ embedded = false, preview = false, onDecisio
 
   return (
     <div>
-      <PageHeader
+      <div className="mb-4 flex gap-2"><Button variant={tab==='pending'?'default':'outline'} onClick={()=>setTab('pending')}>{ui('Pending approvals')}</Button><Button variant={tab==='history'?'default':'outline'} onClick={()=>setTab('history')}>{ui('Approval history')}</Button></div>
+      {tab==='history'?<ApprovalHistory embedded/>:<><PageHeader
         title={ui("Pending Approvals")}
         subtitle={ui("{0} item{1} awaiting a decision", items.length, items.length === 1 ? "" : "s")}
         actions={
@@ -151,6 +154,7 @@ export default function Approvals({ embedded = false, preview = false, onDecisio
         onRowClick={row => row._link && navigate(row._link)}
       />
 
+      </>}
       <RejectDialog
         key={rejectTarget?.id || "none"}
         open={!!rejectTarget}

@@ -5,6 +5,7 @@ import { sourceMessage, uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import {eligibleStockRecipient} from '@/lib/stock-recipient';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { useBack, useNavigate, useParams } from "@/lib/router";
@@ -61,7 +62,7 @@ export default function DispatchRequestForm() {
       readAll(erp.entities.Product, { is_active: true, inventory_type: { $in: ['finished_product', 'assembly'] } }),
       readAll(erp.entities.Warehouse, { is_active: true }),
       readAll(erp.entities.Vehicle, { is_active: true }),
-      readAll(erp.entities.Employee, { status: 'active', role: { $in: ['driver', 'commercial'] } }, 'full_name'),
+      readAll(erp.entities.Employee, { status: 'active' }, 'full_name'),
       isEdit ? erp.entities.DispatchRequest.get(id) : Promise.resolve(null),
     ]).then(([p, w, v, e, record]) => {
       if (!active) return;
@@ -101,11 +102,11 @@ export default function DispatchRequestForm() {
   const teamEditable = editable || (request?.status === 'pending_approval' && canApprove);
   const sourceWarehouses = warehouses.filter(w => ['finished_goods', 'cold_room', 'general'].includes(w.warehouse_type));
   const drivers = employees.filter(e => e.role === 'driver' && e.status === 'active');
-  const commercials = employees.filter(e => e.role === 'commercial' && e.status === 'active');
+  const commercials = employees.filter(eligibleStockRecipient);
 
   function validateTeam() {
-    if (!drivers.some(e => e.id === form.driver_id)) return ui("Select the active driver who will receive and carry this stock.");
-    if (!commercials.some(e => e.id === form.salesperson_id)) return ui("Select the active Commercial agent who will report supplies and collect customer payments.");
+    if (form.driver_id && !drivers.some(e => e.id === form.driver_id)) return ui("Select the active driver who will receive and carry this stock.");
+    if (!commercials.some(e => e.id === form.salesperson_id)) return ui("Choose an active employee other than Hotesse to receive goods.");
     return '';
   }
 
@@ -125,7 +126,7 @@ export default function DispatchRequestForm() {
   }
 
   async function handleSave(submit) {
-    const problem = !vehicles.some(v => v.id === form.vehicle_id) ? ui("Select an active delivery vehicle.")
+    const problem = form.vehicle_id && !vehicles.some(v => v.id === form.vehicle_id) ? ui("Select an active delivery vehicle.")
       : !sourceWarehouses.some(w => w.id === form.source_warehouse_id) ? ui("Select a finished-goods, cold-room or general warehouse.")
       : submit ? validateTeam() : '';
     if (problem) {
@@ -165,7 +166,7 @@ export default function DispatchRequestForm() {
     setBusy(true);
     try {
       const res = await approveDispatchRequest(request, user?.full_name || user?.email, role, { driverId: form.driver_id, commercialId: form.salesperson_id });
-      toast({ title: ui("Approved & loaded"), description: ui("Stock moved to {0}", request.vehicle_name) });
+      toast({ title: ui("Approved & loaded"), description: ui("Stock moved to {0}", request.vehicle_name||request.salesperson_name) });
       navigate(`/distribution/dispatches/${res.dispatch.id}`);
     } catch (e) {
       toast({ title: ui("Approval failed"), description: e.message, variant: "destructive" });
@@ -186,7 +187,7 @@ export default function DispatchRequestForm() {
   }
 
   if (authLoading || (canReview && loading)) return <p role="status" className="p-8 text-sm text-slate-500">{ui("Loading delivery stock request...")}</p>;
-      if (!canReview) return <div className="mx-auto max-w-lg rounded-xl border bg-white p-6"><h2 className="font-semibold">{ui("Warehouse management prepares delivery stock")}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{ui("Ask a warehouse manager to pair your driver and Commercial agent, then load finished products onto the delivery run.")}</p><Button variant="outline" className="mt-4" onClick={() => navigate(role === 'driver' ? '/distribution?tab=deliveries' : '/commercial')}>{ui("Back to workspace")}</Button></div>;
+      if (!canReview) return <div className="mx-auto max-w-lg rounded-xl border bg-white p-6"><h2 className="font-semibold">{ui("Warehouse management prepares delivery stock")}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{ui("Ask warehouse management to issue goods to your employee account.")}</p><Button variant="outline" className="mt-4" onClick={() => navigate(role === 'driver' ? '/distribution?tab=deliveries' : '/commercial')}>{ui("Back to workspace")}</Button></div>;
   if (loadError) return <div role="alert" className="mx-auto max-w-lg rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">{uiMessage(loadError)}<Button variant="outline" className="mt-4 block" onClick={() => navigate('/distribution')}>{ui("Back to Distribution")}</Button></div>;
 
   return (
@@ -204,28 +205,28 @@ export default function DispatchRequestForm() {
             <Input type="date" value={form.request_date} disabled={!editable || busy} onChange={e => setForm(f => ({ ...f, request_date: e.target.value }))} />
           </div>
           <div>
-            <Label>{ui("Delivery vehicle *")}</Label>
-            <Select value={form.vehicle_id} disabled={!editable || busy} onValueChange={v => setForm(f => ({ ...f, vehicle_id: v }))}>
+            <Label>{ui("Vehicle (optional)")}</Label>
+            <Select value={form.vehicle_id} disabled={!editable || busy} onValueChange={v => setForm(f => ({ ...f, vehicle_id: v==='none'?'':v }))}>
               <SelectTrigger><SelectValue placeholder={ui("Select vehicle")} /></SelectTrigger>
-              <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.name} ({v.registration})</SelectItem>)}</SelectContent>
+              <SelectContent><SelectItem value="none">{ui('None')}</SelectItem>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.name} ({v.registration})</SelectItem>)}</SelectContent>
             </Select>
             {form.vehicle_id && <p className="mt-2 text-xs leading-5 text-slate-500">{ui("Loaded goods are tracked in this vehicle's dedicated stock location. A missing location is prepared during approval. ")}<button type="button" className="font-medium text-blue-700 underline" onClick={() => navigate('/distribution?tab=vehicles')}>{ui("Manage vehicle setup")}</button></p>}
           </div>
           <div>
-            <Label>{ui("Driver receiving the stock *")}</Label>
-            {teamEditable ? <Select value={form.driver_id} disabled={busy} onValueChange={value => setForm(previous => ({ ...previous, driver_id: value }))}>
+            <Label>{ui("Driver (optional)")}</Label>
+            {teamEditable ? <Select value={form.driver_id} disabled={busy} onValueChange={value => setForm(previous => ({ ...previous, driver_id: value==='none'?'':value }))}>
               <SelectTrigger><SelectValue placeholder={ui("Choose an active driver")} /></SelectTrigger>
-              <SelectContent>{drivers.map(driver => <SelectItem key={driver.id} value={driver.id}>{driver.full_name}</SelectItem>)}</SelectContent>
+              <SelectContent><SelectItem value="none">{ui('None')}</SelectItem>{drivers.map(driver => <SelectItem key={driver.id} value={driver.id}>{driver.full_name}</SelectItem>)}</SelectContent>
             </Select> : <p className="mt-2 text-sm">{request?.driver_name || ui("No driver recorded")}</p>}
           </div>
           <div>
-            <Label>{ui("Commercial agent reporting supplies *")}</Label>
+            <Label>{ui("Employee receiving goods")}</Label>
             {teamEditable ? <Select value={form.salesperson_id} disabled={busy} onValueChange={value => setForm(previous => ({ ...previous, salesperson_id: value }))}>
-              <SelectTrigger><SelectValue placeholder={ui("Choose an active Commercial agent")} /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={ui("Choose an employee")} /></SelectTrigger>
               <SelectContent>{commercials.map(commercial => <SelectItem key={commercial.id} value={commercial.id}>{commercial.full_name}</SelectItem>)}</SelectContent>
             </Select> : <p className="mt-2 text-sm">{request?.salesperson_name || request?.commercial_name || ui("No Commercial agent recorded")}</p>}
           </div>
-          {request?.status === 'pending_approval' && <p className="sm:col-span-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-900">{ui("Confirm both staff members before approval. The driver receives the loaded stock; the Commercial agent reports exact customer supplies, receipt photos and cash or credit payments.")}</p>}
+          {request?.status === 'pending_approval' && <p className="sm:col-span-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-900">{ui("Confirm the employee receiving goods. Driver and vehicle are optional.")}</p>}
           <div className="sm:col-span-2">
             <Label>{ui("Collect From *")}</Label>
             <Select value={form.source_warehouse_id} disabled={!editable || busy} onValueChange={v => setForm(f => ({ ...f, source_warehouse_id: v }))}>
@@ -248,7 +249,7 @@ export default function DispatchRequestForm() {
         )}
         {request?.status === "processed" && (
           <div className="flex items-center gap-2 text-sm text-emerald-700">
-            <Truck size={16} />{ui(" Approved — stock has been issued to your vehicle.")}<button className="underline" onClick={() => navigate(`/distribution/dispatches/${request.dispatch_id}`)}>{ui("View dispatch")}</button>
+            <Truck size={16} />{ui(" Approved — goods have been issued to the employee.")}<button className="underline" onClick={() => navigate(`/distribution/dispatches/${request.dispatch_id}`)}>{ui("View dispatch")}</button>
           </div>
         )}
 

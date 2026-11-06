@@ -10,8 +10,9 @@ test('Hotesse UI shows informational shelf stock, delivery batch quantities and 
     import Workspace from './src/components/outlets/HotesseWorkspace.jsx';
     import History from './src/components/outlets/OutletDeliveryHistory.jsx';
     import Daily from './src/components/outlets/OutletDailyReportForm.jsx';
+    import Retail from './src/components/outlets/OutletRetailSaleForm.jsx';
     import Check from './src/components/outlets/OutletShelfCheckForm.jsx';
-    export function render(mode,props) {return renderToStaticMarkup(React.createElement({workspace:Workspace,history:History,daily:Daily,check:Check}[mode],props));}
+    export function render(mode,props) {return renderToStaticMarkup(React.createElement({workspace:Workspace,history:History,daily:Daily,check:Check,retail:Retail}[mode],props));}
   `, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'node', format: 'cjs', write: false,
     plugins: [{ name: 'hotesse-ui', setup(b) {
       b.onResolve({ filter: /^@\/api\/erpClient$/ }, () => ({ path: 'erp', namespace: 'mock' }));
@@ -23,13 +24,15 @@ test('Hotesse UI shows informational shelf stock, delivery batch quantities and 
   const product = { id: 'p', name: 'YOLA', storage_unit: 'ea', inventory_type: 'assembly', opening_quantity: 20, display_quantity: 0, supplied_quantity: 20, cumulative_supplied: 20 };
   const delivery = { key: 'delivery', document_number: 'FS-001', date: '2026-10-18', lines: [{ product_id: 'p', product_name: 'YOLA', unit: 'ea', quantity: 20, lot_number: 'BATCH-20261018', expiry_date: '2026-11-18' }] };
   const data={date:'2026-10-18',locations:[location],outletProducts:{point:[product]},outletDeliveries:{point:[delivery]}};
-  const landing=module.exports.render('workspace',{data});assert.match(landing,/My point of sale/);assert.match(landing,/Performance &amp; rewards/);assert.match(landing,/Point of sale tasks/);assert.doesNotMatch(landing,/Stock-out|Estimated rewards/);
+  const landing=module.exports.render('workspace',{data});assert.match(landing,/My point of sale/);assert.match(landing,/Performance &amp; rewards/);assert.match(landing,/Point of sale tasks/);assert.match(landing,/Stock-out/);assert.match(landing,/grid-cols-2/);assert.doesNotMatch(landing,/Estimated rewards/);
   const markup = module.exports.render('workspace', {data,activeTab:'today'});
-  assert.match(markup, /My point of sale/);assert.doesNotMatch(markup,/Point of sale tasks/);assert.match(markup, /Stock-out/); assert.match(markup, /Record daily report/); assert.match(markup, /Supplies &amp; batches/);
+  assert.match(markup, /My point of sale/);assert.doesNotMatch(markup,/Point of sale tasks/);assert.match(markup, /Stock-out/); assert.match(markup, /Record closing report/); assert.match(markup, /Supplies &amp; batches/);
   const history = module.exports.render('history', { deliveries: [delivery], onCount() {} });
   assert.match(history, /BATCH-20261018/); assert.match(history, /20 ea/); assert.match(history, /Count shelves after delivery/);
   const formProps = { location, products: [product], snapshotKey: 'snapshot', onClose() {}, onDone() {} };
-  const daily = module.exports.render('daily', formProps);
+  const daily = module.exports.render('daily', {...formProps,products:[{...product,today_sold_quantity:5}]});
+  assert.match(daily,/value="5"/);
+  const retail=module.exports.render('retail',{...formProps,product:{...product,display_quantity:15,today_sold_quantity:5}});assert.match(retail,/Report units sold/);assert.match(retail,/Units sold now/);assert.match(retail,/Remaining after this report/);assert.match(retail,/Save sales report/);
   assert.match(daily, /Units sold/); assert.match(daily, /Closing stock count/); assert.match(daily, /Retail price \(optional\)/);
   assert.match(daily, /Quantities only/); assert.match(daily, /no company sale, invoice, warehouse movement or accounting entry/);
   const retailInput = daily.match(/Retail price \(optional\)[\s\S]*?(<input[^>]+>)/)?.[1];

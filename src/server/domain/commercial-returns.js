@@ -70,7 +70,7 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
   const stores = svc.entities;
   const context=suppliedContext||sale;
   const [customer, vehicle] = await Promise.all([stores.Customer.get(sale.customer_id), sale.vehicle_id?stores.Vehicle.get(sale.vehicle_id):null]);
-  if (!customer || customer.is_active === false || context.dispatch_id&&(!vehicle||vehicle.is_active===false)) throw Error('The exchange customer or delivery vehicle is no longer active');
+  if (!customer || customer.is_active === false || sale.vehicle_id&&(!vehicle||vehicle.is_active===false)) throw Error('The exchange customer or delivery vehicle is no longer active');
   let location;
   if(sale.source_order_id){const branch=sale.location_id?await stores.Customer.get(sale.location_id):null;location=branch?.parent_id===customer.id&&branch.is_active!==false?{id:branch.id,name:branch.business_name}:sale.location_id?await customerLocation(stores,customer,sale.location_id):{id:'',name:customer.business_name};}
   else location=await customerLocation(stores,customer,sale.location_id);
@@ -91,7 +91,7 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
       ...pick(sale, ['dispatch_id', 'driver_id', 'driver_name', 'vehicle_id', 'vehicle_name', 'commercial_id', 'commercial_name', 'recorded_by']),
       returned_expiry_date: row.expiry_date, returned_lot_number: row.lot_number, reason: row.reason === 'damaged' ? 'damaged_at_store' : 'expired', status: 'reported',
       collection_warehouse_id: bin.id, unit_cost: 0, total_value: 0, receipt_reference: sale.receipt_reference,
-      receipt_file_uris: sale.receipt_file_uris||[], ...(!vehicle?{return_received_at:new Date().toISOString(),return_received_by:user.id,return_received_warehouse_id:bin.id}:{}), notes: (sale.supply_kind==='exchange'?'Exchange-only receipt ':'Stock exchange recorded with sale ') + sale.sale_number });
+      receipt_file_uris: sale.receipt_file_uris||[], ...(!vehicle&&!context.dispatch_id?{return_received_at:new Date().toISOString(),return_received_by:user.id,return_received_warehouse_id:bin.id}:{}), notes: (sale.supply_kind==='exchange'?'Exchange-only receipt ':'Stock exchange recorded with sale ') + sale.sale_number });
     await stockReceive(svc, { productId: product.id, productName: product.name, warehouseId: bin.id, warehouseName: bin.name,
       quantity: row.quantity, unitCost: 0, qcStatus: 'quarantine', lotNumber: 'ER-' + record.id, expiryDate: row.expiry_date || undefined,
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,
@@ -251,9 +251,9 @@ export async function commercialReturnAction(base44, user, body) {
 // These customer returns never increase the dispatch's original loaded quantity.
 export async function receiveVehicleExpiredReturns(svc, dispatch, source, user) {
   const stores = svc.entities;
-  const pending = await readRecords(stores.SpoilageRecord, { record_type: requestKind, vehicle_id: dispatch.vehicle_id, status: 'pending_verification' });
+  const pending = dispatch.vehicle_id ? await readRecords(stores.SpoilageRecord, { record_type: requestKind, vehicle_id: dispatch.vehicle_id, status: 'pending_verification' }) : [];
   if (pending.length) throw Error('Verify or reject the vehicle expired exchange requests in Distribution before receiving this run');
-  const bins = await readRecords(stores.Warehouse, { vehicle_id: dispatch.vehicle_id, field_return_bin: true, warehouse_type: 'quarantine' });
+  const bins = await readRecords(stores.Warehouse, dispatch.vehicle_id ? { vehicle_id: dispatch.vehicle_id, field_return_bin: true, warehouse_type: 'quarantine' } : {source_warehouse_id:dispatch.vehicle_warehouse_id,customer_supply_return_bin:true,warehouse_type:'quarantine'});
   let received = 0;
   for (const bin of bins) {
     const balances = await readRecords(stores.StockBalance, { warehouse_id: bin.id });

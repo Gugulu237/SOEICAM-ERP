@@ -16,6 +16,7 @@ export function validateOutletDailyReport(body, location, employee, stock) {
     if (!product || seen.has(product.id)) throw new Error('Use each supplied product once; products from other outlets are not permitted');
     seen.add(product.id);
     const sold = numeric(line.sold_quantity, 'sales quantity'), damaged = numeric(line.damaged_quantity, 'damaged quantity'), closing = numeric(line.quantity, 'closing stock count');
+    if (sold < Number(product.today_sold_quantity || 0)) throw new Error('Daily sales cannot be lower than the units already reported today for ' + product.name);
     if (sold + damaged > product.opening_quantity + 0.0005) throw new Error('Sold and damaged quantities exceed the available outlet stock for ' + product.name);
     const expected = Math.round((product.opening_quantity - sold - damaged) * 1000) / 1000;
     const price = line.observed_price === '' || line.observed_price == null ? null : numeric(line.observed_price, 'selling price');

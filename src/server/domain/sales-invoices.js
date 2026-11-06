@@ -1,3 +1,4 @@
+import {eligibleStockRecipient,STOCK_RECIPIENT_ROLES} from './employee-custody.js';
 import {splitIncludedVat} from '../../lib/sale-vat.js';
 import {FEATURE_AUTHORITY} from './roles.js';
 import {isOpeningRecord} from '../../lib/opening-records.js';
@@ -74,12 +75,18 @@ async function billing(stores,source,customer,options) {
 async function saveClientDefaults(stores,customerId,options) {
   await stores.Customer.update(customerId,{invoice_defaults:pick(options,'terms payment_instructions footer layout accent')});
 }
-export async function invoiceAction(client,user,body) {
-  const allowed=body.action==='saveInvoiceCompany'?['admin']:CASHIER_INVOICE_ACTIONS.includes(body.action)?['admin','employee','cashier']:['admin','employee'];
+export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) {
+  const allowed=ownIssuedStock?STOCK_RECIPIENT_ROLES:body.action==='saveInvoiceCompany'?['admin']:CASHIER_INVOICE_ACTIONS.includes(body.action)?['admin','employee','cashier']:['admin','employee'];
   const {role,employee}=await requireStaff(client,user,allowed,'customer invoicing');
   if(role!=='admin' && employee?.status!=='active')throw Error('An active sales staff account is required.');
   const feature=user[FEATURE_AUTHORITY]?.module;
-  client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
+  if(ownIssuedStock){
+    if(!eligibleStockRecipient(employee)||body.action!=='createSalesInvoice'||body.sourceType!=='order')throw Error('Only your issued-stock sale can be invoiced here.');
+    const order=await client.asServiceRole.entities.SalesOrder.get(body.sourceId);
+    const run=order?.dispatch_id?await client.asServiceRole.entities.Dispatch.get(order.dispatch_id):null;
+    if(!order||order.sales_supply_recorded_by!==user.id||order.salesperson_id!==employee.id||run?.salesperson_id!==employee.id)throw Error('Only your issued-stock sale can be invoiced here.');
+  }
+  else client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;
   if(body.action==='invoiceWorkspace')return workspace(s,feature&&feature!=='sales'?'cashier':role);
   if(body.action==='invoiceDetail')return detail(s,body.invoiceId);

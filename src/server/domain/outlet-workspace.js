@@ -1,3 +1,4 @@
+import {recordOutletRetailSale} from './outlet-retail.js';
 import {assignCustomerHotesse} from './customer-hotesse.js';
 import {principalRole} from './roles.js';
 import { requireStaff } from './field-ops.js';
@@ -46,7 +47,8 @@ export async function outletAction(base44, user, body) {
   const { role, employee } = await requireStaff(base44, user, ['admin', 'hotesse'], 'outlet reporting');
   if (role !== 'admin' && (!employee || (employee.status && employee.status !== 'active'))) throw new Error('An active linked Hotesse account is required');
   const svc = base44.asServiceRole;
-  if(principalRole(user,employee)==='hotesse'&&!['submitOutletVisit','submitDeliveryShelfCheck','outletReports'].includes(body.action))throw Error('Only the General Manager can manage outlet reporting');
+  if(principalRole(user,employee)==='hotesse'&&!['recordOutletRetailSale','submitOutletVisit','submitDeliveryShelfCheck','outletReports'].includes(body.action))throw Error('Only the General Manager can manage outlet reporting');
+  if(body.action==='recordOutletRetailSale'){if(principalRole(user,employee)!=='hotesse')throw Error('Only the assigned Hotesse can report retail sales');return recordOutletRetailSale(svc,user,employee,body);}
   if (['submitOutletVisit', 'submitDeliveryShelfCheck'].includes(body.action)) {
     if (role !== 'hotesse') throw new Error('Only the assigned Hotesse can submit a daily outlet report');
     if (!/^[a-f0-9-]{36}$/i.test(body.requestKey || '')) throw new Error('Invalid report reference');
@@ -65,7 +67,7 @@ export async function outletAction(base44, user, body) {
     const deliveryCheck = body.action === 'submitDeliveryShelfCheck';
     const values = (deliveryCheck ? validateDeliveryShelfCheck : validateOutletDailyReport)(body, await svc.entities.CustomerLocation.get(body.locationId), employee, stock);
     const saved = await svc.entities.OutletVisit.upsert([{
-      ...values, request_key: body.requestKey, employee_id: employee.id, employee_name: employee.full_name,
+      ...values, report_sequence: stock.report_sequence+1, request_key: body.requestKey, employee_id: employee.id, employee_name: employee.full_name,
       location_id: location.id, location_name: location.name, customer_id: customer.id, customer_name: customer.business_name,
       visit_date: visitDate, recorded_at: now.toISOString(), recorded_by: user.id, status: 'submitted',
     }], { key: deliveryCheck ? ['location_id', 'report_type', 'delivery_key'] : ['location_id', 'visit_date', 'report_type'], updateExisting: false });

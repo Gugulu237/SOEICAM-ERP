@@ -6,8 +6,8 @@ const finished = product => ['assembly', 'finished_product'].includes(product.in
 const pick = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
 const productFields = ['id', 'name', 'inventory_type', 'unit_of_measure', 'storage_unit', 'size', 'image_url', 'is_active'];
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32);
-const observedTypes = ['daily_sales', 'delivery_shelf_check'];
-const latestFirst = (a, b) => b.visit_date.localeCompare(a.visit_date) || (b.recorded_at || '').localeCompare(a.recorded_at || '') || (b.id || '').localeCompare(a.id || '');
+const observedTypes = ['daily_sales', 'delivery_shelf_check', 'retail_sale'];
+const latestFirst = (a, b) => b.visit_date.localeCompare(a.visit_date) || Number(b.report_sequence||0)-Number(a.report_sequence||0) || (b.recorded_at || '').localeCompare(a.recorded_at || '') || (b.id || '').localeCompare(a.id || '');
 async function byIds(entity, key, ids) {
   const unique = [...new Set(ids)].filter(Boolean), rows = [];
   for (let i = 0; i < unique.length; i += 100) rows.push(...await readRecords(entity, { [key]: { $in: unique.slice(i, i + 100) } }));
@@ -74,19 +74,21 @@ export function outletStockSnapshot(location, date, { orders = [], orderLines = 
     return { ...group, key, shelf_check_id: checked?.id || '', shelf_checked_at: checked?.recorded_at || '', shelf_checked_by: checked?.employee_name || '' };
   }).sort((a, b) => b.date.localeCompare(a.date) || b.recorded_at.localeCompare(a.recorded_at) || a.key.localeCompare(b.key));
   const ids = [...new Set(events.filter(row => row.quantity > 0).map(row => row.id))];
-  return { daily_report_submitted: daily.some(row => row.visit_date === date), deliveries,
+  return { report_sequence: observations.reduce((max,row)=>Math.max(max,Number(row.report_sequence)||0),0), daily_report_submitted: daily.some(row => row.visit_date === date), deliveries,
     snapshot_key: fingerprint([events, observations.map(row => [row.id, row.recorded_at, row.lines])]), products: ids.map(id => {
       const product = supported.get(id), relevant = events.filter(row => row.id === id), supplied = round(relevant.reduce((n, row) => n + row.quantity, 0));
       const previous = observations.find(row => row.visit_date < date && row.lines?.some(line => line.product_id === id));
       const priorLine = previous?.lines.find(line => line.product_id === id);
       const latest = observations.find(row => row.lines?.some(line => line.product_id === id)), latestLine = latest?.lines.find(line => line.product_id === id);
+      const counted=observations.find(row=>row.report_type!=='retail_sale'&&row.lines?.some(line=>line.product_id===id)),countedLine=counted?.lines.find(line=>line.product_id===id);
       const carried = priorLine ? Math.min(Number(priorLine.quantity), Number(priorLine.expected_closing ?? priorLine.quantity)) : 0;
       const opening = round(priorLine ? carried + supplied - Number(priorLine.cumulative_supplied) : supplied);
       if (!Number.isFinite(opening) || opening < 0) throw new Error('Outlet stock history needs management review before a new daily report can be submitted.');
       const displayed = latestLine ? round(Number(latestLine.quantity) + supplied - Number(latestLine.cumulative_supplied)) : opening;
       const latestDaily = daily.find(row => row.lines?.some(line => line.product_id === id))?.lines.find(line => line.product_id === id);
       return { ...pick(product, productFields), cumulative_supplied: supplied, supplied_quantity: round(relevant.filter(row => row.quantity > 0).reduce((n, row) => n + row.quantity, 0)),
-        opening_quantity: opening, display_quantity: Math.max(0, displayed), last_count_quantity: latestLine?.quantity ?? null, last_count_at: latest?.recorded_at || latest?.visit_date || null,
+        today_sold_quantity: round(daily.find(row => row.visit_date === date)?.lines?.find(line => line.product_id === id)?.sold_quantity ?? observations.filter(row => row.report_type === 'retail_sale' && row.visit_date === date).reduce((sum,row) => sum + Number(row.lines?.find(line => line.product_id === id)?.sold_quantity || 0),0)), last_report_type: latest?.report_type || '',
+        opening_quantity: opening, display_quantity: Math.max(0, displayed), last_count_quantity: countedLine?.quantity ?? null, last_count_at: counted?.recorded_at || counted?.visit_date || null,
         stock_report_date: latest?.visit_date || null, last_report_date: previous?.visit_date || null, retail_price: latestDaily?.observed_price ?? null };
     }).sort((a, b) => a.name.localeCompare(b.name)) };
 }

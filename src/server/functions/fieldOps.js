@@ -1,3 +1,5 @@
+import {employeeStockAction,EMPLOYEE_STOCK_ACTIONS} from '../domain/employee-stock.js';
+import {approvalHistory} from '../domain/approval-history.js';
 import {SALE_REVERSAL_ACTIONS,saleReversalAction} from '../domain/sale-reversals.js';
 import {CUSTOMER_ACTIVITY_ACTIONS,customerActivityAction} from '../domain/customer-activity.js';
 import {ASSEMBLY_BUILD_ACTIONS,assemblyBuildAction} from '../domain/assembly-build.js';
@@ -156,6 +158,8 @@ export default async function (req) {
     const selectFeature=async(module,actorRole)=>{if(base44.auth.forFeature){base44=base44.auth.forFeature(module,actorRole,action);user=await base44.auth.me();}};
     // Report-only Supply Chain grants use sales_reports, without opening the
     // agent's operational Commercial module. The report handler checks both.
+    if (EMPLOYEE_STOCK_ACTIONS.includes(action)) return Response.json(await employeeStockAction(base44,user,body));
+    if (action === 'approvalHistory') return Response.json(await approvalHistory(base44,user,body));
     if (action === 'commercialPerformance') return Response.json(await commercialAction(base44,user,body));
     if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)){await selectFeature('customers');return Response.json(await customerRegistrationAction(base44, user, body));}
     if (action === 'fieldStockInventory') return Response.json(await fieldInventoryAction(base44, user, body));
@@ -171,14 +175,14 @@ export default async function (req) {
       : inActions(['batchCatalogue','batchTrace']) ? 'quality'
       : action === 'businessOverview' ? 'reports'
       : ['accountPosition', 'cashFlowReport'].includes(action) ? 'accounting'
-      : inActions(['submitOutletVisit','submitDeliveryShelfCheck','outletShelfOverview','outletReports','outletRoster','assignCustomerHotesse','assignHotesse','createAssignedOutlet','reviewOutletVisit']) ? 'outlets'
+      : inActions(['recordOutletRetailSale','submitOutletVisit','submitDeliveryShelfCheck','outletShelfOverview','outletReports','outletRoster','assignCustomerHotesse','assignHotesse','createAssignedOutlet','reviewOutletVisit']) ? 'outlets'
       : inActions(['commercialDepositCash','commercialCashiers','registerCustomer','fieldCustomers','commercialPerformance','verifyFieldCustomer','commercialDailySupplies','updateCustomerGps','commercialReturns','recordExpiredReturn','replaceExpiredReturn','saveSale','proposedJournal','approveSale','returnSale','rejectSale']) ? 'commercial'
       : null;
     if (!module && !['employeeDashboard','companySales'].includes(action)) throw new Error('Unknown function action.');
     if(approvalActionTargets[action]&&(await base44.auth.staff?.())?.full_access_modules?.includes('approvals'))module='approvals';
     if(module){
       const ownCommercial=['saveSale','commercialDepositCash','commercialCashiers','registerCustomer','updateCustomerGps','commercialDailySupplies','submitHandover'].includes(action);
-      const ownOutlet=['submitOutletVisit','submitDeliveryShelfCheck'].includes(action);
+      const ownOutlet=['recordOutletRetailSale','submitOutletVisit','submitDeliveryShelfCheck'].includes(action);
       await selectFeature(module,ownCommercial?'commercial':ownOutlet?'hotesse':['driverActivity','driverReceiveLoad','driverSaveDeliveryPlan'].includes(action)?'driver':'admin');
       base44.auth.assertModule?.(module);
     }
@@ -208,7 +212,7 @@ export default async function (req) {
       return Response.json(await dispatchAction(base44, user, body));
     }
 
-    if (['submitOutletVisit', 'submitDeliveryShelfCheck', 'outletShelfOverview', 'outletReports', 'outletRoster', 'assignCustomerHotesse','assignHotesse', 'createAssignedOutlet', 'reviewOutletVisit'].includes(action)) {
+    if (['recordOutletRetailSale','submitOutletVisit', 'submitDeliveryShelfCheck', 'outletShelfOverview', 'outletReports', 'outletRoster', 'assignCustomerHotesse','assignHotesse', 'createAssignedOutlet', 'reviewOutletVisit'].includes(action)) {
       return Response.json(await outletAction(base44, user, body));
     }
 

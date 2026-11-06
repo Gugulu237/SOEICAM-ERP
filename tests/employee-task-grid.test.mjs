@@ -76,10 +76,10 @@ test('Hotesse tasks keep stock separate from reporting and preserve the selected
  const location={id:'point',customer_name:'Outlet',name:'Main',stock_snapshot_key:'snapshot'},product={id:'p',name:'YOLA',opening_quantity:10};
  const props={data:{employee,locations:[location],outletProducts:{point:[product]},reports:[]}};
  const f=setup('hotesse',props);try{
-  const home=f.draw();assert.match(home,/Point of sale tasks/);assert.doesNotMatch(home,/Finished products at this outlet/);assert.equal(f.state.buttons[0]['aria-label'],'Daily report');
-  f.state.buttons.find(b=>b['aria-label']==='Shelf stock').onClick();f.draw();assert.ok(!f.state.buttons.some(b=>(b['aria-label']||'').startsWith('Record daily report for')));assert.equal(f.state.report,undefined);
-  f.state.buttons.find(b=>b['data-page-back']!==undefined).onClick();f.draw();f.state.buttons[0].onClick();f.draw();f.state.buttons.find(b=>b.label==='Record daily report').onClick();f.draw();assert.equal(f.state.report.location.id,'point');assert.equal(f.state.report.snapshotKey,'snapshot');
-  f.draw({...props,preview:true,activeTab:'today'});assert.equal(f.state.report,undefined);assert.ok(!f.state.buttons.some(b=>b.label==='Record daily report'));
+  const home=f.draw();assert.match(home,/Point of sale tasks/);assert.match(home,/Finished products at this outlet/);assert.ok(home.indexOf('Finished products at this outlet')<home.indexOf('Point of sale tasks'));
+  f.state.buttons.find(b=>b['aria-label']==='Shelf stock').onClick();f.draw();assert.ok(!f.state.buttons.some(b=>(b['aria-label']||'').startsWith('Report units sold:')));assert.equal(f.state.report,undefined);
+  f.state.buttons.find(b=>b['data-page-back']!==undefined).onClick();f.draw();f.state.buttons.find(b=>b['aria-label']==='Daily report').onClick();f.draw();f.state.buttons.find(b=>b.label==='Record closing report').onClick();f.draw();assert.equal(f.state.report.location.id,'point');assert.equal(f.state.report.snapshotKey,'snapshot');
+  f.draw({...props,preview:true,activeTab:'today'});assert.equal(f.state.report,undefined);assert.ok(!f.state.buttons.some(b=>b.label==='Record closing report'));
  }finally{f.close();}
 });
 

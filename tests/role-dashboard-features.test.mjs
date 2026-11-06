@@ -13,7 +13,7 @@ test('saved reporting permission gives every operational template a usable repor
  for(const template of ['cashier','driver','commercial','hotesse','employee','procurement','warehouse_manager','production_manager']){
   const profile=validateRoleProfile({key:'reporting_worker',label:'Reporting worker',category:'Operations',summary:'Reports',template_role:template,modules:['sales_reports']});
   const catalogue=catalogueFromStored({revision:3,roles:{reporting_worker:profile}}),employee=decorateEmployee({role:'user'},{id:'staff',role:'reporting_worker',status:'active'},catalogue),role=effectiveRole({role:'user'},employee);
-  assert.equal(role,template);const cards=modulesForRole(role,employee.allowed_modules);assert.deepEqual(cards.map(m=>m.path),['/sales-reports']);
+  assert.equal(role,template);const cards=modulesForRole(role,employee.allowed_modules);assert.deepEqual(cards.map(m=>m.path),template==='hotesse'?['/sales-reports']:['/my-stock','/approval-history','/sales-reports']);
   assert.equal(canOpenFieldPath(role,cards[0].path),true);assert.equal(permitsWorkspace(cards[0].path,employee.allowed_modules),true);
   assert.ok(!employee.allowed_modules.includes('sales'));assert.ok(!employee.allowed_modules.includes('admin'));
  }
@@ -67,11 +67,11 @@ test('saved operational grants appear beyond legacy template lists and disappear
    assert.equal(canOpenFieldPath(template,path,staff.allowed_modules),true);
    assert.equal(permitsWorkspace(path,staff.allowed_modules),true);
   }
-  assert.deepEqual(modulesForRole(template,[]),[]);
+  assert.deepEqual(modulesForRole(template,[]).map(m=>m.path),template==='hotesse'?[]:['/my-stock','/approval-history']);
   assert.equal(permitsWorkspace('/customers',[]),false);
  }
  // Explicitly selected features are usable across job titles; they do not change the underlying employee identity.
- assert.equal(modulesForRole('driver',['admin','employees','payroll']).length,0);
+ assert.deepEqual(modulesForRole('driver',['admin','employees','payroll']).map(m=>m.path),['/my-stock','/approval-history']);
  assert.equal(canOpenFieldPath('driver','/admin',['admin']),false);
  assert.equal(canOpenFieldPath('driver','/team-workspaces',['employees']),false);
 });

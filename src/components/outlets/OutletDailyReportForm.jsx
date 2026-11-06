@@ -21,13 +21,13 @@ export default function OutletDailyReportForm({ location, products, snapshotKey,
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const [sort,setSort]=useState('name');
 
-  const [lines, setLines] = useState(() => products.map(product => ({ product_id: product.id, sold_quantity: '0', damaged_quantity: '0', quantity: '', observed_price: product.retail_price ?? '', issue: 'none' })));
+  const [lines, setLines] = useState(() => products.map(product => ({ product_id: product.id, sold_quantity: String(product.today_sold_quantity || 0), damaged_quantity: '0', quantity: '', observed_price: product.retail_price ?? '', issue: 'none' })));
   const [activeProduct, setActiveProduct] = useState(initialProductId || products[0]?.id || '');
   const isComplete = line => {
     if (!line) return false;
     const product = products.find(row => row.id === line.product_id);
     const valid = value => value !== '' && value != null && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1e9;
-    return [line.sold_quantity, line.damaged_quantity, line.quantity].every(valid) && Number(line.sold_quantity) + Number(line.damaged_quantity) <= product.opening_quantity && (line.observed_price === '' || line.observed_price == null || valid(line.observed_price));
+    return Number(line.sold_quantity) >= Number(product.today_sold_quantity || 0) && [line.sold_quantity, line.damaged_quantity, line.quantity].every(valid) && Number(line.sold_quantity) + Number(line.damaged_quantity) <= product.opening_quantity && (line.observed_price === '' || line.observed_price == null || valid(line.observed_price));
   };
   const completed = lines.filter(isComplete).length;
   const [notes, setNotes] = useState(''), [files, setFiles] = useState([]), [uploading, setUploading] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');

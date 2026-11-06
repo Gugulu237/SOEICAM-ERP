@@ -1,3 +1,4 @@
+import {stockStaff,eligibleStockRecipient} from './employee-custody.js';
 import {requireStaff,round2,round3,today,audit,stockTransfer} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
 import {dispatchAction,dispatchReconciliationData} from './dispatch-operations.js';
@@ -19,12 +20,13 @@ function snapshotStores(tables){return {entities:Object.fromEntries(Object.entri
 
 async function overview(svc,date){
   const s=svc.entities;
-  const [staff,vehicles,warehouses,products,allOpen,daySales,acquisitions,dayOrders]=await Promise.all([
-    readRecords(s.Employee,{role:{$in:['commercial','driver']}}),readRecords(s.Vehicle),readRecords(s.Warehouse),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']}}),
+  const [rawStaff,vehicles,warehouses,products,allOpen,daySales,acquisitions,dayOrders]=await Promise.all([
+    readRecords(s.Employee),readRecords(s.Vehicle),readRecords(s.Warehouse),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']}}),
     readRecords(s.Dispatch,{status:{$in:open}}),readRecords(s.FieldSale,{$or:[{transaction_date:date},{sale_reversal_date:date}],status:'approved_posted'}),readRecords(s.Customer,{acquisition_date:date}),readRecords(s.SalesOrder,{$or:[{order_date:date},{sale_reversal_date:date}],status:'invoiced',sales_supply_recorded_at:{$exists:true},dispatch_id:{$ne:''}}),
   ]);
+  const staff=await stockStaff(s,rawStaff);
   const runs=await readRecords(s.Dispatch,{$or:[{dispatch_date:date},{id:{$in:[...daySales,...dayOrders].map(v=>v.dispatch_id).filter(Boolean)}},...(date===today()?[{status:{$in:[...open,'returned']}}]:[])]});
-  const ids=runs.map(r=>r.id),legacyLocations=warehouses.filter(w=>w.warehouse_type==='commercial_custody');
+  const ids=runs.map(r=>r.id),legacyLocations=warehouses.filter(w=>w.warehouse_type==='commercial_custody'&&!w.employee_delivery_custody);
   const [lines,fieldSales,orders,balances,runMovements,extraMovements,journals]=await Promise.all([
     byIds(s.DispatchLine,'dispatch_id',ids),byIds(s.FieldSale,'dispatch_id',ids),byIds(s.SalesOrder,'dispatch_id',ids),
     byIds(s.StockBalance,'warehouse_id',[...warehouses.filter(w=>storage.includes(w.warehouse_type)).map(w=>w.id),...runs.filter(r=>open.includes(r.status)).map(r=>r.vehicle_warehouse_id),...legacyLocations.map(w=>w.id)]),
@@ -42,7 +44,7 @@ async function overview(svc,date){
   const journalById=new Map(journals.map(j=>[j.id,j]));
   const suppliedOrders=dayOrders.filter(o=>{const j=journalById.get(o.sales_supply_journal_id);return provenOrders.has(o.id)&&j?.status==='posted'&&j.source_document_type==='Invoice'&&j.source_document_id===o.invoice_id;}).map(o=>({...o,commercial_id:o.salesperson_id}));
   const sales=[...daySales.filter(v=>proven.has(v.id)&&posted.has(v.journal_id)),...suppliedOrders];
-  const agents=staff.filter(e=>normalizeRole(e.role)==='commercial').map(agent=>{
+  const agents=staff.filter(e=>eligibleStockRecipient(e)||runs.some(r=>r.salesperson_id===e.id)).map(agent=>{
     const matching=sales.filter(sale=>sale.commercial_id===agent.id),own=matching.filter(sale=>(sale.transaction_date||sale.order_date)===date),reversed=matching.filter(sale=>sale.sale_reversal?.date===date).reduce((sum,sale)=>sum+Number(sale.total||0),0),customers=acquisitions.filter(c=>c.acquired_by_id===agent.id);
     return {...pick(agent,'id full_name status'),sales:round2(own.reduce((sum,v)=>sum+Number(v.total || 0),0)-reversed),cash_collected:round2(own.reduce((sum,v)=>sum+Number(v.amount_collected || 0),0)),credit:round2(own.reduce((sum,v)=>sum+Number(v.amount_due ?? Math.max(0,Number(v.total || 0)-Number(v.amount_collected || 0))),0)),supplies:own.length,customers_supplied:new Set(own.map(v=>v.customer_id)).size,new_customers:customers.length,verified_customers:customers.filter(c=>c.acquisition_verified==='verified_unique').length,open_runs:views.filter(r=>r.salesperson_id===agent.id&&open.includes(r.status)).length};
   });
@@ -50,7 +52,7 @@ async function overview(svc,date){
   const legacy=legacyLocations.map(w=>({...pick(w,'id name custodian_employee_id'),lots:balances.filter(b=>b.warehouse_id===w.id&&Number(b.quantity)>0).map(b=>({...pick(b,'id product_id product_name quantity lot_number expiry_date qc_status'),unit:stockUnit(productMap.get(b.product_id) || {})}))})).filter(w=>w.lots.length);
   return {date,agents,runs:views,legacy,unverified_supplies:daySales.length+dayOrders.length-sales.length,
     products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),
-    staff:staff.map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.role)})),
+    staff:staff.filter(eligibleStockRecipient).map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.access_template||e.role)})),
     vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),
     warehouses:warehouses.filter(w=>storage.includes(w.warehouse_type)&&w.is_active!==false).map(w=>pick(w,'id name warehouse_type')),
     warehouse_stock:balances.filter(b=>warehouses.some(w=>w.id===b.warehouse_id&&storage.includes(w.warehouse_type))).map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date'))};
@@ -63,9 +65,10 @@ export async function distributionControlAction(client,user,body){
   const svc=client.asServiceRole,s=svc.entities;
   if(body.action==='distributionIssueWorkspace') {
     client.auth.assertModule?.('distribution');
-    const [staff,vehicles,warehouses,products]=await Promise.all([readRecords(s.Employee,{role:{$in:['commercial','driver']},status:'active'}),readRecords(s.Vehicle,{is_active:true}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:true})]);
+    const [rawStaff,vehicles,warehouses,products]=await Promise.all([readRecords(s.Employee,{status:'active'}),readRecords(s.Vehicle,{is_active:true}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:true})]);
+    const staff=await stockStaff(s,rawStaff);
     const locations=warehouses.filter(w=>storage.includes(w.warehouse_type)),balances=await byIds(s.StockBalance,'warehouse_id',locations.map(w=>w.id));
-    return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date'))};
+    return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.filter(eligibleStockRecipient).map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.access_template||e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date'))};
   }
   if(body.action==='distributionControl'&&principalRole(user,employee)!=='admin')throw Error('Only top administrators can view reports across distribution teams.');
   if(body.action==='distributionControl'){const {from:date}=periodDates(body.date || today(),body.date || today());if(date>today())throw Error('Choose today or an earlier reporting date');return overview(svc,date);}
@@ -98,7 +101,7 @@ export async function distributionControlAction(client,user,body){
   const prior=await readRecords(s.StockMovement,{document_type:'CustodyReturn',document_id:documentId});
   if(prior.length){if(prior.some(m=>m.legacy_return_payload!==snapshot))throw Error('This legacy return was already recorded with different details');return {reused:true,returnRef:documentId};}
   const source=await s.Warehouse.get(body.warehouseId),destination=await s.Warehouse.get(body.toWarehouseId);
-  if(!source||source.warehouse_type!=='commercial_custody'||!destination||destination.is_active===false||!storage.includes(destination.warehouse_type)||source.id===destination.id)throw Error('Choose the old custody location and a finished-goods receiving warehouse');
+  if(!source||source.warehouse_type!=='commercial_custody'||source.employee_delivery_custody||!destination||destination.is_active===false||!storage.includes(destination.warehouse_type)||source.id===destination.id)throw Error('Choose the old custody location and a finished-goods receiving warehouse');
   const products=await byIds(s.Product,'id',(body.lines || []).map(r=>r.product_id)),balances=await readRecords(s.StockBalance,{warehouse_id:source.id});
   const checked=validateCustodyLines(body.lines,products,balances,false,today());
   for(const {product,quantity} of checked)await stockTransfer(svc,{productId:product.id,productName:product.name,fromWarehouseId:source.id,toWarehouseId:destination.id,toWarehouseName:destination.name,quantity,movementType:'commercial_return',documentType:'CustodyReturn',documentId,movementDate:today(),reason:String(body.reason || 'Legacy custody recovered into Distribution').slice(0,1000)});

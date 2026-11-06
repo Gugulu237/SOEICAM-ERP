@@ -50,7 +50,7 @@ test('approved and closed runs cannot supply, and each staff member must match t
   await assert.rejects(supplyRun(svc, 'other-agent', 'run', date, true), /assigned to you/);
   await assert.rejects(supplyRun(svc, 'agent', 'run', '2000-01-01', true), /assigned to you/);
   rows.Employee[0].status = 'suspended';
-  await assert.rejects(supplyRun(svc, 'agent', 'run', date, true), /active assigned Commercial/);
+  await assert.rejects(supplyRun(svc, 'agent', 'run', date, true), /active employee other than Hotesse/);
   rows.Employee[0].status = 'active'; rows.Employee[1].status = 'suspended';
   await assert.rejects(supplyRun(svc, 'agent', 'run', date, true), /active assigned driver/);
 });

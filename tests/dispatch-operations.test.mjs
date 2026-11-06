@@ -69,8 +69,8 @@ test('load preflight rejects invalid lines, unavailable stock and unconfigured p
 
 test('load requires an active paired team and vehicle mapped to a distinct valid storage location', async () => {
   const cases = [
-    f => { f.run.driver_id = ''; }, f => { f.run.salesperson_id = ''; }, f => { f.run.salesperson_id = 'driver'; },
-    f => { f.rows.Employee[1].status = 'inactive'; }, f => { f.rows.Employee[2].role = 'cashier'; }, f => { f.rows.Employee[2].status = 'inactive'; },
+    f => { f.run.driver_id = 'missing-driver'; }, f => { f.run.salesperson_id = ''; }, f => { f.run.salesperson_id = 'missing-employee'; },
+    f => { f.rows.Employee[1].status = 'inactive'; }, f => { f.rows.Employee[2].role = 'hotesse'; }, f => { f.rows.Employee[2].status = 'inactive'; },
     f => { f.rows.Vehicle[0].is_active = false; },
     f => { f.run.vehicle_warehouse_id = 'other'; }, f => { f.rows.Warehouse[1].warehouse_type = 'commercial_custody'; },
     f => { f.rows.Warehouse[0].warehouse_type = 'vehicle'; }, f => { f.rows.Warehouse[0].is_active = false; },
@@ -118,7 +118,7 @@ test('approval validates the authoritative paired team, vehicle and finished man
   assert.ok(f.writes.every(write => ['Dispatch', 'AuditLog'].includes(write.entity)));
   const count = f.writes.length; assert.equal((await f.action('approveDispatch')).reused, true); assert.equal(f.writes.length, count);
   for (const mutate of [
-    f => { f.run.status = 'draft'; }, f => { f.run.status = 'loaded'; }, f => { f.run.driver_id = ''; },
+    f => { f.run.status = 'draft'; }, f => { f.run.status = 'loaded'; }, f => { f.run.driver_id = 'missing-driver'; },
     f => { f.rows.Product[0].is_active = false; }, f => { f.rows.DispatchLine.length = 0; },
     f => { f.line.loaded_quantity = 0; }, f => { f.rows.Warehouse[0].warehouse_type = 'quarantine'; },
   ]) {
@@ -257,7 +257,7 @@ test('request approval validates pair, products, unit, availability and vehicle 
   for (const mutate of cases) {
     const f = requestedFixture(); mutate(f); await assert.rejects(f.approveRequest()); assert.equal(f.writes.length, 0); assert.equal(f.balance.quantity, 12);
   }
-  const missing = requestedFixture(); await assert.rejects(missing.approveRequest({ commercialId: '' }), /driver and a commercial/); assert.equal(missing.writes.length, 0);
+  const missing = requestedFixture(); await assert.rejects(missing.approveRequest({ commercialId: '' }), /employee to receive goods/); assert.equal(missing.writes.length, 0);
 });
 
 test('request approval can use its stored reviewed commercial and rejects broken processed links', async () => {

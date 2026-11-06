@@ -50,6 +50,7 @@ export async function fieldInventory(s, employee) {
   const legacy = [];
   if (role === 'commercial') {
     for (const warehouse of await readRecords(s.Warehouse, { warehouse_type: 'commercial_custody', custodian_employee_id: employee.id })) {
+      if(warehouse.employee_delivery_custody)continue;
       const lots = (await readRecords(s.StockBalance, { warehouse_id: warehouse.id })).filter(b => Number(b.quantity) !== 0);
       const ids = [...new Set(lots.map(b => b.product_id))]; if (!ids.length) continue;
       const products = await readRecords(s.Product, { id: { $in: ids } });

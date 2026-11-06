@@ -1,3 +1,4 @@
+import {stockStaff,eligibleStockRecipient,STOCK_RECIPIENT_ROLES} from './employee-custody.js';
 import {normalizeSaleReplacements,combinedSupplyQuantities,validateReplacementDeclaration} from '../../lib/sale-replacements.js';
 import {postSaleReplacements} from './commercial-returns.js';
 import {inclusiveSaleLine} from '../../lib/sale-vat.js';
@@ -17,21 +18,27 @@ const text=(value,max=1000)=>typeof value==='string'?value.trim().slice(0,max):'
 const saleDate=(value,current=today())=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||value>current)throw Error('Choose a valid sale date on or before today.');periodDates(value,value);return value;};
 const number=(value,label,max=1e9)=>{if(value==null||value===''||!['number','string'].includes(typeof value)||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>max)throw Error('Enter a valid '+label+'.');return Number(value);};
 
-export async function salesOrderAction(client,user,body){
-  const {role,employee}=await requireStaff(client,user,['admin','employee'],'recording customer supplies');
+export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={}){
+  const {role,employee}=await requireStaff(client,user,ownIssuedStock?STOCK_RECIPIENT_ROLES:['admin','employee'],'recording customer supplies');
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active sales staff account is required.');
-  client.auth.assertModule?.('sales');
+  if(ownIssuedStock){if(!eligibleStockRecipient(employee))throw Error('An active employee other than Hotesse is required.');}
+  else client.auth.assertModule?.('sales');
   const svc=client.asServiceRole,s=svc.entities,date=today();
   const currentSellerId=employee?.id&&employee.status==='active'&&!employee.employee_removed_at?employee.id:'user:'+user.id;
   const currentSeller={id:currentSellerId,name:(currentSellerId===employee?.id?employee.full_name:'')||user.full_name||user.email||'Current user',user_id:user.id};
+  if(ownIssuedStock&&['salesOrderStock','recordSuppliedOrder'].includes(body.action)){
+    const run=body.dispatchId?await s.Dispatch.get(body.dispatchId):null;
+    if(body.sourceType!=='issued'||!run||run.salesperson_id!==employee.id||body.orderId)throw Error('Use only goods issued to your own employee account.');
+  }
   if(body.action==='salesOrderWorkspace'){
-    const [runs,warehouses,staff,customers,vehicles]=await Promise.all([
-      readRecords(s.Dispatch,{status:{$in:['loaded','in_transit']}}),readRecords(s.Warehouse),readRecords(s.Employee,{status:'active'}),readRecords(s.Customer,{is_active:true}),readRecords(s.Vehicle),
+    const [runs,warehouses,rawStaff,customers,vehicles]=await Promise.all([
+      readRecords(s.Dispatch,{status:{$in:['loaded','in_transit']},...(ownIssuedStock?{salesperson_id:employee.id}:{})}),readRecords(s.Warehouse),readRecords(s.Employee,{status:'active'}),readRecords(s.Customer,{is_active:true}),readRecords(s.Vehicle),
     ]);
-    const sources=runs.filter(r=>r.vehicle_warehouse_id && !r.return_date && r.dispatch_date<=date && staff.some(e=>e.id===r.salesperson_id&&e.role==='commercial') && staff.some(e=>e.id===r.driver_id&&e.role==='driver'))
+    const staff=await stockStaff(s,rawStaff);
+    const sources=runs.filter(r=>r.vehicle_warehouse_id && !r.return_date && r.dispatch_date<=date && staff.some(e=>e.id===r.salesperson_id&&eligibleStockRecipient(e)) && (!r.driver_id||staff.some(e=>e.id===r.driver_id&&(e.access_template||e.role)==='driver')))
       .map(r=>({id:r.id,dispatch_number:r.dispatch_number,commercial_name:staff.find(e=>e.id===r.salesperson_id)?.full_name,driver_name:staff.find(e=>e.id===r.driver_id)?.full_name,vehicle_name:r.vehicle_name,vehicle_registration:vehicles.find(v=>v.id===r.vehicle_id)?.registration||'',dispatch_date:r.dispatch_date}));
     const sellers=[currentSeller];
-    return {sellers,currentSeller,currentSellerId,defaultSource:warehouses.some(companySalesWarehouse)?'company':'',runs:sources,warehouses:warehouses.filter(w=>w.is_active!==false&&!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:customers.filter(c=>!c.customer_removed_at).map(c=>({id:c.id,business_name:c.business_name,customer_number:c.customer_number,phone:c.phone,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
+    return {sellers,currentSeller,currentSellerId,defaultSource:!ownIssuedStock&&warehouses.some(companySalesWarehouse)?'company':'',runs:sources,warehouses:warehouses.filter(w=>!ownIssuedStock&&w.is_active!==false&&!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:customers.filter(c=>!c.customer_removed_at).map(c=>({id:c.id,business_name:c.business_name,customer_number:c.customer_number,phone:c.phone,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
   }
   if(body.action==='salesOrderDeliveryPoints'){
     const customer=typeof body.customerId==='string'?await s.Customer.get(body.customerId):null;
@@ -101,7 +108,7 @@ export async function salesOrderAction(client,user,body){
   await s.SalesOrderLine.bulkCreate(lines.map(l=>({...l,order_id:order.id,sales_supply_order_id:order.id})));
   const due=new Date(Date.parse(suppliedOn+'T00:00:00Z')+(body.paymentType==='credit'?terms:0)*86400000).toISOString().slice(0,10);
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);
-  const result=exchangeOnly?null:await invoiceAction(client,user,{action:'createSalesInvoice',sourceType:'order',sourceId:order.id,invoiceDate:suppliedOn,dueDate:due,options:{...invoiceDefaults(customer,company),reference:input.receiptReference}});
+  const result=exchangeOnly?null:await invoiceAction(client,user,{action:'createSalesInvoice',sourceType:'order',sourceId:order.id,invoiceDate:suppliedOn,dueDate:due,options:{...invoiceDefaults(customer,company),reference:input.receiptReference}},{ownIssuedStock});
   await postSaleReplacements(svc,user,{...order,...context,id:order.id,source_order_id:order.id,sale_number:order.order_number,transaction_date:suppliedOn,commercial_id:context.salesperson_id||seller.id,commercial_name:context.salesperson_name||seller.name,recorded_by:user.id},replacements,context);
   if(exchangeOnly)await s.SalesOrder.update(order.id,{status:'delivered',amount_collected:0,amount_due:0,exchange_completed_at:now});
   const posted=await s.SalesOrder.get(order.id);

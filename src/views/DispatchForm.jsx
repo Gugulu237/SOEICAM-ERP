@@ -5,6 +5,8 @@ import { sourceMessage, uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import {eligibleStockRecipient} from '@/lib/stock-recipient';
+import {readAll} from '@/lib/field-pos';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { useBack, useNavigate, useParams } from "@/lib/router";
@@ -56,11 +58,11 @@ export default function DispatchForm() {
     setLoading(true);
     setLoadError("");
     Promise.all([
-      erp.entities.Product.filter({ is_active: true, inventory_type: { $in: ["finished_product", "assembly"] } }),
-      erp.entities.Warehouse.filter({ is_active: true }),
-      erp.entities.Vehicle.filter({ is_active: true }),
-      erp.entities.Route.filter({ is_active: true }),
-      erp.entities.Employee.filter({ status: "active" }),
+      readAll(erp.entities.Product, { is_active: true, inventory_type: { $in: ["finished_product", "assembly"] } }),
+      readAll(erp.entities.Warehouse, { is_active: true }),
+      readAll(erp.entities.Vehicle, { is_active: true }),
+      readAll(erp.entities.Route, { is_active: true }),
+      readAll(erp.entities.Employee, { status: "active" }),
       isEdit ? Promise.all([erp.entities.Dispatch.get(id), erp.entities.DispatchLine.filter({ dispatch_id: id })]) : Promise.resolve(null),
     ]).then(([p, w, v, r, e, record]) => {
       if (cancelled) return;
@@ -113,13 +115,13 @@ export default function DispatchForm() {
     && !vehicles.some(vehicle => vehicle.id !== selectedVehicle?.id && vehicle.warehouse_id === vehicleStockLocation.id);
 
   function validateDetails(requireTeam = false) {
-    if (!form.vehicle_id || !form.warehouse_id) return ui("Select a vehicle and the finished-goods warehouse.");
+    if (!form.warehouse_id) return ui('Choose a source warehouse');
     if (!sourceWarehouses.some(w => w.id === form.warehouse_id)) return ui("Choose a finished-goods, cold-room or general warehouse as the loading source.");
     const vehicle = vehicles.find(v => v.id === form.vehicle_id);
-    if (!vehicle || vehicle.is_active === false) return ui("Select an active delivery vehicle.");
+    if (form.vehicle_id && (!vehicle || vehicle.is_active === false)) return ui("Select an active delivery vehicle.");
     if (requireTeam) {
-      if (!employees.some(e => e.id === form.driver_id && e.role === "driver" && e.status === "active")) return ui("Pair an active driver with this run.");
-      if (!employees.some(e => e.id === form.salesperson_id && e.role === "commercial" && e.status === "active")) return ui("Pair an active commercial agent with this driver.");
+      if (form.driver_id && !employees.some(e => e.id === form.driver_id && e.role === "driver" && e.status === "active")) return ui("Pair an active driver with this run.");
+      if (!employees.some(e => e.id === form.salesperson_id && eligibleStockRecipient(e))) return ui("Choose an active employee other than Hotesse to receive goods.");
       const selectedLines = lines.filter(l => l.product_id);
       if (!selectedLines.length) return ui("Add the finished products and exact quantities to load.");
       if (new Set(selectedLines.map(l => l.product_id)).size !== selectedLines.length) return ui("Use one load-list row per finished product.");
@@ -193,7 +195,7 @@ export default function DispatchForm() {
     setSaving(true);
     try {
     await approveDispatch(dispatch);
-    toast({ title: ui("Dispatch approved"), description: ui("Stock can now be issued to the driver") });
+    toast({ title: ui("Dispatch approved"), description: ui("Stock can now be issued to the employee") });
     await loadRecord();
     } catch (e) { toast({ title: ui("Approval failed"), description: e.message, variant: "destructive" }); }
     finally { setSaving(false); }
@@ -205,7 +207,7 @@ export default function DispatchForm() {
     setSaving(true);
     try {
       const res = await loadDispatch(dispatch, user?.full_name || user?.email);
-      toast({ title: ui("Stock now out for delivery"), description: ui("Finished products moved to {0}. Recorded load value: {1}", dispatch.vehicle_name, res.totalValue) });
+      toast({ title: ui("Stock now out for delivery"), description: ui("Finished products moved to {0}. Recorded load value: {1}", dispatch.vehicle_name||dispatch.salesperson_name, res.totalValue) });
       await loadRecord();
     } catch (e) {
       toast({ title: ui("Loading failed"), description: e.message, variant: "destructive" });
@@ -233,7 +235,7 @@ export default function DispatchForm() {
     <div>
       <PageHeader back={{onClick:goBack,label:ui(" Back")}}
         title={isEdit ? ui("Dispatch {0}", dispatch?.dispatch_number || "") : ui("New Dispatch")}
-        subtitle={isEdit && dispatch ? <StatusBadge status={dispatch.status} /> : ui("Load finished goods onto a delivery vehicle")}
+        subtitle={isEdit && dispatch ? <StatusBadge status={dispatch.status} /> : ui("Issue finished goods to an employee")}
         actions={
           <div className="flex flex-wrap gap-2">
             {editable && <Button variant="outline" onClick={() => handleSave()} disabled={saving}><Save size={16} className="mr-1" />{ui(" Save")}</Button>}
@@ -258,17 +260,17 @@ export default function DispatchForm() {
 
         <TabsContent value="details" className="mt-4">
           <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-5xl">
-            <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900"><p className="font-semibold">{ui("One delivery team, one recorded load")}</p><p className="mt-1 leading-6">{ui("Pair a driver with a commercial agent. The warehouse issues finished products to the vehicle; the commercial agent records each cash or credit supply with exact quantities and a receipt photo.")}</p><p className="mt-2 text-xs text-blue-800">{ui("Loading moves stock out for delivery. It does not record a customer sale.")}</p></div>
+            <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900"><p className="font-semibold">{ui("One delivery team, one recorded load")}</p><p className="mt-1 leading-6">{ui("Choose the employee responsible for the goods. A driver and vehicle are optional. The employee records sales from My issued stock.")}</p><p className="mt-2 text-xs text-blue-800">{ui("Loading moves stock out for delivery. It does not record a customer sale.")}</p></div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
               <div>
                 <Label>{ui("Dispatch Date *")}</Label>
                 <Input type="date" value={form.dispatch_date} disabled={!editable} onChange={e => setForm(f => ({ ...f, dispatch_date: e.target.value }))} />
               </div>
               <div>
-                <Label>{ui("Vehicle *")}</Label>
-                <Select value={form.vehicle_id} disabled={!editable} onValueChange={v => setForm(f => ({ ...f, vehicle_id: v }))}>
+                <Label>{ui('Vehicle (optional)')}</Label>
+                <Select value={form.vehicle_id} disabled={!editable} onValueChange={v => setForm(f => ({ ...f, vehicle_id: v==='none'?'':v }))}>
                   <SelectTrigger><SelectValue placeholder={ui("Select vehicle")} /></SelectTrigger>
-                  <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.name} ({v.registration})</SelectItem>)}</SelectContent>
+                  <SelectContent><SelectItem value="none">{ui('None')}</SelectItem>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.name} ({v.registration})</SelectItem>)}</SelectContent>
                 </Select>
                 {selectedVehicle && <div className="mt-2 text-xs leading-5 text-slate-500">
                   <p>{vehicleLocationReady ? ui("Delivery stock: {0}", vehicleStockLocation.name) : selectedVehicle.warehouse_id ? ui("Check the dedicated vehicle stock location in vehicle setup before loading.") : ui("An empty dedicated vehicle stock location will be prepared before loading.")}</p>
@@ -283,17 +285,17 @@ export default function DispatchForm() {
                 </Select>
               </div>
               <div>
-                <Label>{ui("Driver *")}</Label>
-                <Select value={form.driver_id} disabled={!editable} onValueChange={v => setForm(f => ({ ...f, driver_id: v }))}>
+                <Label>{ui('Driver (optional)')}</Label>
+                <Select value={form.driver_id} disabled={!editable} onValueChange={v => setForm(f => ({ ...f, driver_id: v==='none'?'':v }))}>
                   <SelectTrigger><SelectValue placeholder={ui("Select driver")} /></SelectTrigger>
-                  <SelectContent>{employees.filter(e => e.role === "driver" || e.id === form.driver_id).map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
+                  <SelectContent><SelectItem value="none">{ui('None')}</SelectItem>{employees.filter(e => e.role === "driver" || e.id === form.driver_id).map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>{ui("Commercial agent paired with driver *")}</Label>
+                <Label>{ui('Employee receiving goods')}</Label>
                 <Select value={form.salesperson_id} disabled={!editable} onValueChange={v => setForm(f => ({ ...f, salesperson_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder={ui("Select commercial agent")} /></SelectTrigger>
-                  <SelectContent>{employees.filter(e => e.role === 'commercial' || e.id === form.salesperson_id).map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
+                  <SelectTrigger><SelectValue placeholder={ui("Choose an employee")} /></SelectTrigger>
+                  <SelectContent>{employees.filter(e => eligibleStockRecipient(e) || e.id === form.salesperson_id).map(e => <SelectItem key={e.id} value={e.id}>{e.full_name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>

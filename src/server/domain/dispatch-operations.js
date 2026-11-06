@@ -1,3 +1,4 @@
+import {stockStaff,eligibleStockRecipient,ensureEmployeeStockLocation,validEmployeeStockLocation} from './employee-custody.js';
 import { requireStaff, stockTransfer, audit, round2, round3, today } from './field-ops.js';
 import { finishedProduct, periodDates } from './commercial-rules.js';
 import { normalizeRole } from './roles.js';
@@ -44,11 +45,16 @@ async function byIds(entity, key, ids) {
 }
 
 async function locations(svc, dispatch) {
-  if (!dispatch.warehouse_id || !dispatch.vehicle_id) throw new Error('Choose a source warehouse and an assigned vehicle');
+  if (!dispatch.warehouse_id) throw new Error('Choose a source warehouse');
   const [source, assignedVehicle] = await Promise.all([
-    svc.entities.Warehouse.get(dispatch.warehouse_id), svc.entities.Vehicle.get(dispatch.vehicle_id),
+    svc.entities.Warehouse.get(dispatch.warehouse_id), dispatch.vehicle_id ? svc.entities.Vehicle.get(dispatch.vehicle_id) : null,
   ]);
   if (!source || source.is_active === false || !storageTypes.includes(source.warehouse_type)) throw new Error('Load and return finished products through an active finished-goods storage warehouse');
+  if(!dispatch.vehicle_id){
+    const destination=dispatch.vehicle_warehouse_id?await svc.entities.Warehouse.get(dispatch.vehicle_warehouse_id):await ensureEmployeeStockLocation(svc.entities,dispatch.salesperson_id);
+    if(!validEmployeeStockLocation(destination,dispatch.salesperson_id)||destination.id===source.id)throw Error('The assigned employee stock location changed. Ask dispatch management to check this run.');
+    return {source,destination,vehicle:null};
+  }
   if (!assignedVehicle || assignedVehicle.is_active === false) throw new Error('Assign an active vehicle for this delivery run');
   // Legacy vehicles may already have a dedicated location without its reverse
   // mapping. Recover that link (or provision an empty one) only while writing.
@@ -61,12 +67,12 @@ async function locations(svc, dispatch) {
 }
 
 async function validateTeam(svc, dispatch) {
-  if (!dispatch.driver_id || !dispatch.salesperson_id || dispatch.driver_id === dispatch.salesperson_id) throw new Error('Assign both a driver and a commercial sales agent before loading');
-  const [driver, commercial] = await Promise.all([
-    svc.entities.Employee.get(dispatch.driver_id), svc.entities.Employee.get(dispatch.salesperson_id),
-  ]);
-  if (!driver || driver.status !== 'active' || normalizeRole(driver.role) !== 'driver') throw new Error('This run needs an active assigned driver');
-  if (!commercial || commercial.status !== 'active' || normalizeRole(commercial.role) !== 'commercial') throw new Error('This run needs an active assigned commercial sales agent');
+  if (!dispatch.salesperson_id) throw new Error('Choose an employee to receive goods');
+  const [driver, commercial] = await stockStaff(svc.entities,await Promise.all([
+    dispatch.driver_id ? svc.entities.Employee.get(dispatch.driver_id) : null, svc.entities.Employee.get(dispatch.salesperson_id),
+  ]));
+  if (dispatch.driver_id && (!driver || driver.employee_removed_at || driver.status !== 'active' || normalizeRole(driver.access_template || driver.role) !== 'driver')) throw new Error('This run needs an active assigned driver');
+  if (!eligibleStockRecipient(commercial)) throw new Error('Choose an active employee other than Hotesse to receive goods.');
   return { driver, commercial };
 }
 
@@ -110,7 +116,7 @@ async function prepareLoad(svc, dispatch, suppliedLines) {
     records(svc.entities.StockBalance, { warehouse_id: source.id }),
     records(svc.entities.StockBalance, { warehouse_id: destination.id }),
   ]);
-  if (runs.some(run => run.id !== dispatch.id && (run.vehicle_id === vehicle.id || run.vehicle_warehouse_id === destination.id || run.driver_id === dispatch.driver_id || run.salesperson_id === dispatch.salesperson_id))) throw new Error('This vehicle or paired team already has an open delivery run. Return its stock first.');
+  if (runs.some(run => run.id !== dispatch.id && ((vehicle && run.vehicle_id === vehicle.id) || run.vehicle_warehouse_id === destination.id || (dispatch.driver_id && run.driver_id === dispatch.driver_id) || run.salesperson_id === dispatch.salesperson_id))) throw new Error('This vehicle or paired team already has an open delivery run. Return its stock first.');
   if (vehicleBalances.some(balance => number(balance.quantity, 'vehicle stock quantity') !== 0)) throw new Error('The vehicle must be empty before loading a new run');
   // An explicit zero is intentional: do not fall back to the requested amount.
   const toLoad = await manifest(svc, lines), date = today();
@@ -131,7 +137,7 @@ async function load(svc, user, dispatch) {
     const result = await stockTransfer(svc, {
       productId: product.id, productName: product.name, fromWarehouseId: source.id, toWarehouseId: destination.id, toWarehouseName: destination.name,
       quantity, movementType: 'vehicle_load', documentType: 'Dispatch', documentId: dispatch.id, movementDate: dispatch.dispatch_date || date,
-      reason: `Loaded to ${vehicle.name || 'vehicle'} - ${dispatch.dispatch_number || ''}`, saleableOnly: true,
+      reason: `Loaded to ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}`, saleableOnly: true,
     });
     totalValue = round2(totalValue + result.totalValue);
     await svc.entities.DispatchLine.update(line.id, { product_name: product.name, unit: stockUnit(product), loaded_quantity: quantity, unit_cost: round2(result.totalValue / quantity), loaded_value: round2(result.totalValue) });
@@ -164,7 +170,7 @@ async function approveRequest(svc, user, body) {
   });
   const candidate = {
     id: `request:${request.id}`, warehouse_id: request.source_warehouse_id, vehicle_id: request.vehicle_id,
-    driver_id: body.driverId || request.driver_id, salesperson_id: body.commercialId || request.commercial_id || request.salesperson_id,
+    driver_id: body.driverId ?? request.driver_id, salesperson_id: body.commercialId ?? request.commercial_id ?? request.salesperson_id,
   };
   const existing = await records(svc.entities.Dispatch, { request_id: request.id });
   if (request.dispatch_id || existing.length) throw new Error('This request already has a dispatch. Review the existing dispatch before issuing stock again.');
@@ -183,16 +189,16 @@ async function approveRequest(svc, user, body) {
   if (request.route_id && (!route || route.is_active === false)) throw new Error('Choose an active delivery route before approving the request');
   const dispatch = await svc.entities.Dispatch.create({
     dispatch_number: `DSP-REQ-${request.id.slice(-12).toUpperCase()}`, dispatch_date: request.request_date, source: 'driver_request', request_id: request.id,
-    vehicle_id: prepared.vehicle.id, vehicle_name: prepared.vehicle.name || prepared.vehicle.registration || '', vehicle_warehouse_id: prepared.destination.id,
-    driver_id: prepared.driver.id, driver_name: prepared.driver.full_name || '', salesperson_id: prepared.commercial.id, salesperson_name: prepared.commercial.full_name || '',
+    vehicle_id: prepared.vehicle?.id || '', vehicle_name: prepared.vehicle?.name || prepared.vehicle?.registration || '', vehicle_warehouse_id: prepared.destination.id,
+    driver_id: prepared.driver?.id || '', driver_name: prepared.driver?.full_name || '', salesperson_id: prepared.commercial.id, salesperson_name: prepared.commercial.full_name || '',
     warehouse_id: prepared.source.id, warehouse_name: prepared.source.name || '', route_id: route?.id || '', route_name: route?.name || '', status: 'draft', notes: String(request.notes || '').slice(0, 2000),
   });
   for (const line of checkedLines) await svc.entities.DispatchLine.create({ dispatch_id: dispatch.id, ...line });
   const pending = await svc.entities.Dispatch.update(dispatch.id, { status: 'pending_approval' });
   const approved = await approve(svc, user, pending);
   const result = await load(svc, user, approved.dispatch);
-  await svc.entities.DispatchRequest.update(request.id, { status: 'processed', dispatch_id: dispatch.id, driver_id: prepared.driver.id, driver_name: prepared.driver.full_name || '', salesperson_id: prepared.commercial.id, salesperson_name: prepared.commercial.full_name || '', approved_by: user.id, approved_at: new Date().toISOString() });
-  await audit(svc, { action: 'approve_dispatch_request', module: 'distribution', entityType: 'DispatchRequest', entityId: request.id, userId: user.id, description: `Stock request ${request.request_number || request.id} approved and loaded for its paired delivery team` });
+  await svc.entities.DispatchRequest.update(request.id, { status: 'processed', dispatch_id: dispatch.id, driver_id: prepared.driver?.id || '', driver_name: prepared.driver?.full_name || '', salesperson_id: prepared.commercial.id, salesperson_name: prepared.commercial.full_name || '', approved_by: user.id, approved_at: new Date().toISOString() });
+  await audit(svc, { action: 'approve_dispatch_request', module: 'distribution', entityType: 'DispatchRequest', entityId: request.id, userId: user.id, description: `Stock request ${request.request_number || request.id} approved and issued to its assigned employee` });
   return { dispatch: await svc.entities.Dispatch.get(dispatch.id), ...result };
 }
 
@@ -200,7 +206,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
   const ownsVehicleStock = openStates.includes(dispatch.status);
   if (ownsVehicleStock) {
     const runs = await records(svc.entities.Dispatch, { status: { $in: openStates } });
-    if (runs.some(run => run.id !== dispatch.id && (run.vehicle_id === dispatch.vehicle_id || (dispatch.vehicle_warehouse_id && run.vehicle_warehouse_id === dispatch.vehicle_warehouse_id)))) throw new Error('Multiple open delivery runs share this vehicle. Reconcile the assignments before proceeding.');
+    if (runs.some(run => run.id !== dispatch.id && ((dispatch.vehicle_id && run.vehicle_id === dispatch.vehicle_id) || (dispatch.vehicle_warehouse_id && run.vehicle_warehouse_id === dispatch.vehicle_warehouse_id)))) throw new Error('Multiple open delivery runs share this vehicle. Reconcile the assignments before proceeding.');
   }
   const [lines, orders, fieldSales, balances, returnMovements, replacementMovements] = await Promise.all([
     records(svc.entities.DispatchLine, { dispatch_id: dispatch.id }), records(svc.entities.SalesOrder, { dispatch_id: dispatch.id }),
@@ -280,7 +286,7 @@ async function returnStock(svc, user, dispatch, body={}) {
   if (!dispatch.vehicle_warehouse_id) throw new Error('This dispatch has no vehicle stock location');
   const { source, destination, vehicle } = await locations(svc, dispatch);
   const runs = await records(svc.entities.Dispatch, { status: { $in: openStates } });
-  if (runs.some(run => run.id !== dispatch.id && (run.vehicle_id === vehicle.id || run.vehicle_warehouse_id === destination.id))) throw new Error('Multiple open delivery runs share this vehicle. Reconcile the assignments before returning stock.');
+  if (runs.some(run => run.id !== dispatch.id && ((vehicle && run.vehicle_id === vehicle.id) || run.vehicle_warehouse_id === destination.id))) throw new Error('Multiple open delivery runs share this vehicle. Reconcile the assignments before returning stock.');
   const [balances, lines] = await Promise.all([records(svc.entities.StockBalance, { warehouse_id: destination.id }), records(svc.entities.DispatchLine, { dispatch_id: dispatch.id })]);
   const quantities = new Map();
   for (const balance of balances) {
@@ -298,7 +304,7 @@ async function returnStock(svc, user, dispatch, body={}) {
   let totalValue = 0;
   for (const [productId, quantity] of quantities) {
     const product = productMap.get(productId);
-    const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle.name || 'vehicle'} - ${dispatch.dispatch_number || ''}` });
+    const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}` });
     totalValue = round2(totalValue + result.totalValue);
     const line = lines.find(row => row.product_id === productId);
     if (line) await svc.entities.DispatchLine.update(line.id, { returned_quantity: round3((line.returned_quantity || 0) + quantity) });

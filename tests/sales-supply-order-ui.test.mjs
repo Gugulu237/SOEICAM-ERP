@@ -6,7 +6,7 @@ import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
 let compiled;
 async function bundle(){
-  compiled ||= build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Form from './src/views/SalesOrderForm.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Form));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'sales-order-ui',setup(b){
+  compiled ||= build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Form from './src/views/SalesOrderForm.jsx';export const render=(props)=>renderToStaticMarkup(React.createElement(Form,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'sales-order-ui',setup(b){
     b.onResolve({filter:/^react$/},a=>(/(?:SalesOrderForm|SaleReplacements)\.jsx$/.test(a.importer))?{path:'hooks',namespace:'fixture'}:undefined);
     b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__suppliedOrderUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__suppliedOrderUI.state('form',v),useRef=v=>globalThis.__suppliedOrderUI.ref('form',v),useMemo=fn=>fn(),useEffect=(f,d)=>globalThis.__suppliedOrderUI.effect('form',f,d);",resolveDir:process.cwd()}));
     const mocks={
@@ -145,4 +145,10 @@ test('Sales refreshes source availability and new products on focus without disc
     f.button('No replacements').onClick();f.paint();f.button('Review sale').onClick();assert.match(f.paint(),/Review product quantities/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
     const before=f.calls.length;tick();for(let i=0;i<3;i++){f.paint();await f.r.flush();}assert.ok(f.calls.length>before);
   }finally{f.close();globalThis.window=previous.window;globalThis.document=previous.document;}
+});
+
+test('personal stock sale uses scoped endpoints and returns to the employee stock page',async()=>{
+ const {render}=await bundle(),f=setup(()=>render({ownIssuedStock:true}),{...options,warehouses:[]});
+ f.r.invoke=async body=>{f.calls.push(body);if(body.action==='employeeSalesWorkspace')return {data:{...options,warehouses:[]}};if(body.action==='employeeSalesStock')return {data:stock};if(body.action==='employeeSalesDeliveryPoints')return {data:{points:[]}};if(body.action==='employeeRecordSupply')return {data:{order:{id:'own'},invoiceId:'own-invoice'}};throw Error('Unscoped action '+body.action);};
+ try{await f.ready();await productsStep(f);quantity(f,2);reviewStep(f);await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.at(-1).action,'employeeRecordSupply');assert.equal(f.calls.at(-1).dispatchId,'run-a');assert.equal(f.calls.at(-1).sourceType,'issued');assert.deepEqual(f.r.navigation,['/my-stock']);assert.equal(f.r.sourcePicker.options.length,1);}finally{f.close();}
 });
