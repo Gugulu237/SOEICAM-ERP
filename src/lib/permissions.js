@@ -274,7 +274,7 @@ export function canOpenFieldPath(role, path, allowedModules) {
   if (!role) return false;
   if (role === 'admin') return true;
   if(path==='/approval-history')return true;
-  if(path==='/my-stock'||path==='/my-stock/new')return role!=='hotesse';
+  if(path==='/my-stock'||path==='/my-stock/new'||path==='/my-stock/returns')return role!=='hotesse';
   if (path === '/profile' || path === '/profile/') return true;
   if (role === 'driver') return ['/', '/driver', '/driver/', '/distribution', '/distribution/', '/sales-reports'].includes(path);
   if (path === '/sales-reports') return true;

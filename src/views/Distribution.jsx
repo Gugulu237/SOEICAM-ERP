@@ -9,7 +9,7 @@ import {useMenuBack} from '@/hooks/useMenuBack';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {readAll} from '@/lib/field-pos';
 import {canManageDeliveries,canIssueDeliveryStock} from '@/lib/operations-access';
-import {distributionSections} from '@/lib/distribution-navigation';
+import {distributionSections,distributionMenuSections} from '@/lib/distribution-navigation';
 import {formatXAF,formatDate} from '@/lib/formatters';
 import PageHeader from '@/components/shared/PageHeader';
 import DataTable from '@/components/shared/DataTable';
@@ -22,7 +22,8 @@ import DeliveriesBoard from '@/components/distribution/DeliveriesBoard';
 const StockControl=dynamic(()=>import('@/components/distribution/DistributionStockControl'),{loading:()=> <p role="status">{ui('Loading stock control...')}</p>});
 const ExpiredExchangeReview=dynamic(()=>import('@/components/field/ExpiredExchangeReview'),{loading:()=> <p role="status">{ui('Loading exchange review...')}</p>});
 const DriverWorkspace=dynamic(()=>import('@/views/EmployeeDashboard'),{loading:()=> <p role="status">{ui('Loading your deliveries...')}</p>});
-const icons={stock:Boxes,deliveries:Truck,fleet:CarFront,dispatches:ClipboardList,requests:PackageCheck,routes:RouteIcon,vehicles:Car,exchanges:RotateCcw};
+const OwnFieldStock=dynamic(()=>import('@/components/field/FieldInventoryCards'),{loading:()=> <p role="status">{ui('Loading assigned inventory...')}</p>});
+const icons={stock:Boxes,deliveries:Truck,fleet:CarFront,dispatches:ClipboardList,requests:PackageCheck,routes:RouteIcon,vehicles:Car,exchanges:RotateCcw,returns:RotateCcw};
 
 function DistributionMenu({sections,onOpen}){
   return <div className="min-w-0 space-y-5"><PageHeader title={ui('Distribution')}/>
@@ -37,13 +38,15 @@ function DistributionMenu({sections,onOpen}){
 
 export default function Distribution(){
   useInterfaceLanguage();
-  const {role:featureRole,principalRole,loading}=useCurrentUser(),[params,setParams]=useSearchParams(),backToMenu=useMenuBack('/distribution');
+  const {role:featureRole,principalRole,employee,loading}=useCurrentUser(),[params]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/distribution');
   const role=principalRole||featureRole;
   if(loading)return <p role="status">{ui('Loading distribution...')}</p>;
   if(role==='driver'){
+    if(params.get('tab')==='stock')return <div className="space-y-4"><PageHeader title={ui('My issued stock')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><OwnFieldStock employeeId={employee?.id} enabled={!!employee?.id}/></div>;
     if(params.get('tab')==='deliveries')return <div className="space-y-4"><PageHeader title={ui('My deliveries')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><DriverWorkspace/></div>;
     if(params.has('tab'))return <Navigate to="/distribution" replace/>;
-    return <DistributionMenu sections={distributionSections(role)} onOpen={tab=>setParams(new URLSearchParams({tab}))}/>;
+    const menu=distributionMenuSections(role);
+    return <DistributionMenu sections={menu} onOpen={key=>navigate(menu.find(section=>section.key===key).path)}/>;
   }
   if(role!=='admin')return <Navigate to={role==='commercial'?'/commercial':canIssueDeliveryStock(role)?'/inventory':'/'} replace/>;
   if(params.get('issue')==='1')return <Navigate to={canIssueDeliveryStock(role)?'/inventory?'+new URLSearchParams({issue:'1',...(params.get('commercial')?{commercial:params.get('commercial')}:{})}):'/distribution?tab=stock'} replace/>;
@@ -126,7 +129,7 @@ function DistributionManagement(){
   ];
 
 
-  if(selectedTab==='home')return <DistributionMenu sections={sections} onOpen={tab=>setSearchParams(new URLSearchParams({tab}))}/>;
+  if(selectedTab==='home')return <DistributionMenu sections={distributionMenuSections(role)} onOpen={tab=>setSearchParams(new URLSearchParams({tab}))}/>;
   const register=['deliveries','fleet','dispatches','requests','routes','vehicles'].includes(selectedTab);
   return <div className="min-w-0 space-y-5">
     <PageHeader back={{onClick:backToMenu,label:ui('Distribution menu')}} title={sections.find(section=>section.key===selectedTab)?.label} actions={register&&<Button variant="outline" disabled={loading} onClick={loadData}><RefreshCw size={15} className="mr-2"/>{ui('Refresh')}</Button>}/>

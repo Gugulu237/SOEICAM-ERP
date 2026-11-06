@@ -35,6 +35,7 @@ export function blankComponent(type = 'inventory_part') {
 }
 export function componentFromRecord(type, record, previous = {}) {
   const row = { ...blankComponent(type), ...previous, component_type: type, product_id: '', asset_id: '', product_name: record.name, cost_source: type === 'fixed_asset' ? 'manual' : 'registered' };
+  if (Object.hasOwn(previous, 'recover_on_exchange') && (previous.product_id !== record.id || type === 'fixed_asset')) row.recover_on_exchange = undefined;
   if (type === 'fixed_asset') { row.asset_id = record.id; row.unit = 'use'; row.unit_cost = 0; }
   else { row.product_id = record.id; row.unit = stockUnit(record); row.unit_cost = componentCostInUnit(record, row.unit); }
   row.line_cost = componentLineCost(row);

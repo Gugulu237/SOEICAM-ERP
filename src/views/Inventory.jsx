@@ -30,7 +30,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PageBackButton from '@/components/shared/PageBackButton';
-import { Plus, ArrowLeftRight, ClipboardCheck, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal, Package, Warehouse, History, Bell, Recycle, BookOpen, Truck } from "lucide-react";
+import { Plus, ArrowLeftRight, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal, Package, Warehouse, Bell, Truck } from "lucide-react";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -172,15 +172,10 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
   const sectionTitle = {items:'Items & pricing',stock:'Stock on Hand',movements:'Movements',alerts:'Stock alerts',adjustments:'Stock counts & adjustments',locations:'Storage locations',counts:'Production count requests'}[workspace.section];
   const menu = [
     {key:'items',label:'Items & pricing',icon:Package,open:()=>changeWorkspace({section:'items'})},
-    {key:'stock',label:'Stock on Hand',icon:Warehouse,open:()=>changeWorkspace({section:'stock'})},
     ...(canReceive?[{key:'receiving',label:'Receive inventory',icon:PackageCheck,open:()=>navigate('/purchases?section=receiving')}]:[]),
     ...(canIssueStock?[{key:'issue',label:'Issue goods',icon:Truck,open:()=>{setIssueAgent('');setShowIssue(true);}}]:[]),
-    {key:'movements',label:'Movements',icon:History,open:()=>changeWorkspace({section:'movements'})},
     {key:'alerts',label:'Stock alerts',icon:Bell,open:()=>changeWorkspace({section:'alerts'})},
     ...(canManageWarehouses?[{key:'locations',label:'Storage locations',icon:Warehouse,open:()=>changeWorkspace({section:'locations'})}]:[]),
-    ...(canMoveStock&&hasModule('manufacturing')?[{key:'counts',label:'Production count requests',icon:ClipboardCheck,open:()=>changeWorkspace({section:'counts'})}]:[]),
-    ...(canMoveStock?[{key:'recovery',label:'Recovered packaging',icon:Recycle,open:()=>setShowRecoveryReceipt(true)}]:[]),
-    ...(['admin','cashier'].includes(role)&&hasModule('accounting')?[{key:'audit',label:'Inventory count review',icon:BookOpen,open:()=>navigate('/accounting/inventory')}]:[]),
   ];
 
   return <div className="min-w-0 space-y-4">

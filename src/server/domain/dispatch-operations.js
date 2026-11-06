@@ -286,8 +286,9 @@ export async function dispatchReconciliationData(svc, dispatch) {
   return { rows, degustations: degustationHistory(giveawayMovements), degustationCost: round2(giveawayMovements.reduce((sum,m) => sum + Number(m.total_value || 0),0)), orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
 }
 
-async function returnStock(svc, user, dispatch, body={}) {
+async function returnStock(svc, user, dispatch, body={}, {returnRequestId}={}) {
   if (dispatch.status === 'returned') return { totalValue: round2(dispatch.total_returned_value), reused: true };
+  if (dispatch.unsold_return_request_id && dispatch.unsold_return_request_id !== returnRequestId) throw Error('Receive the pending unsold return through the warehouse return queue.');
   if (!openStates.includes(dispatch.status)) throw new Error('Only a loaded or in-transit run can return stock');
   if (!dispatch.vehicle_warehouse_id) throw new Error('This dispatch has no vehicle stock location');
   const { source, destination, vehicle } = await locations(svc, dispatch);
@@ -312,19 +313,19 @@ async function returnStock(svc, user, dispatch, body={}) {
   let totalValue = 0;
   for (const [productId, quantity] of quantities) {
     const product = productMap.get(productId);
-    const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}` });
+    const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, preserveRecordedValue:true, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}` });
     totalValue = round2(totalValue + result.totalValue);
     const line = lines.find(row => row.product_id === productId);
     if (line) await svc.entities.DispatchLine.update(line.id, { returned_quantity: round3((line.returned_quantity || 0) + quantity), degustation_returned_quantity: round3((line.degustation_returned_quantity || 0) + (beforeReturn.rows.find(row=>row.product_id===productId)?.degustation_remaining || 0)) });
   }
   const expiredReturned = await receiveVehicleExpiredReturns(svc, dispatch, source, user);
   const recon = await dispatchReconciliationData(svc, dispatch);
-  await svc.entities.Dispatch.update(dispatch.id, { status: 'returned', total_returned_value: totalValue, total_delivered_value: recon.totalSales, total_cash_collected: recon.cashSales, total_credit_sales: recon.creditSales, return_date: new Date().toISOString(),...(body.countedLines?{return_counted_by:user.id,return_counted_lines:body.countedLines}: {}) });
+  await svc.entities.Dispatch.update(dispatch.id, { status: 'returned', total_returned_value: totalValue, total_delivered_value: recon.totalSales, total_cash_collected: recon.cashSales, total_credit_sales: recon.creditSales, return_date: new Date().toISOString(),...(returnRequestId?{unsold_return_request_id:'',unsold_return_received_request_id:returnRequestId}:{}),...(body.countedLines?{return_counted_by:user.id,return_counted_lines:body.countedLines}: {}) });
   await audit(svc, { action: 'return_dispatch_stock', module: 'distribution', entityType: 'Dispatch', entityId: dispatch.id, userId: user.id, description: `Returned unsold stock from ${dispatch.dispatch_number || dispatch.id}; ${quantities.size} finished products${recon.hasVariance ? '; reconciliation variance requires review' : ''}` });
   return { totalValue, expiredReturned };
 }
 
-export async function dispatchAction(base44, user, body) {
+export async function dispatchAction(base44, user, body, options={}) {
   const { employee, role } = await requireStaff(base44, user, managers, 'dispatch stock management');
   if (role !== 'admin' && employee?.status !== 'active') throw new Error('An active management staff record is required');
   if (!['approveDispatchRequest', 'approveDispatch', 'loadDispatch', 'returnDispatchStock', 'dispatchReconciliation'].includes(body.action)) throw new Error('Unknown dispatch stock action');
@@ -336,6 +337,6 @@ export async function dispatchAction(base44, user, body) {
   if (!dispatch) throw new Error('Dispatch not found');
   if (body.action === 'approveDispatch') return approve(svc, user, dispatch);
   if (body.action === 'loadDispatch') return load(svc, user, dispatch);
-  if (body.action === 'returnDispatchStock') return returnStock(svc, user, dispatch,body);
+  if (body.action === 'returnDispatchStock') return returnStock(svc, user, dispatch,body,options);
   return dispatchReconciliationData(svc, dispatch);
 }

@@ -26,18 +26,28 @@ async function overview(svc,date){
     readRecords(s.Dispatch,{status:{$in:open}}),readRecords(s.FieldSale,{$or:[{transaction_date:date},{sale_reversal_date:date}],status:'approved_posted'}),readRecords(s.Customer,{acquisition_date:date}),readRecords(s.SalesOrder,{$or:[{order_date:date},{sale_reversal_date:date}],status:'invoiced',sales_supply_recorded_at:{$exists:true},dispatch_id:{$ne:''}}),
   ]);
   const staff=await stockStaff(s,rawStaff);
-  const runs=await readRecords(s.Dispatch,{$or:[{dispatch_date:date},{id:{$in:[...daySales,...dayOrders].map(v=>v.dispatch_id).filter(Boolean)}},...(date===today()?[{status:{$in:[...open,'returned']}}]:[])]});
-  const ids=runs.map(r=>r.id),legacyLocations=warehouses.filter(w=>w.warehouse_type==='commercial_custody'&&!w.employee_delivery_custody);
+  const datedRuns=await readRecords(s.Dispatch,{$or:[{dispatch_date:date},{id:{$in:[...daySales,...dayOrders].map(v=>v.dispatch_id).filter(Boolean)}},...(date===today()?[{status:'returned'}]:[])]});
+  // The performance date must never hide goods still held from an earlier issue.
+  const runs=[...new Map([...datedRuns,...allOpen].map(run=>[run.id,run])).values()];
+  const ids=runs.map(r=>r.id),legacyLocations=warehouses.filter(w=>w.warehouse_type==='commercial_custody'&&!w.employee_delivery_custody),fieldReturnLocations=warehouses.filter(w=>w.warehouse_type==='quarantine'&&(w.field_return_bin||w.customer_supply_return_bin));
   const [lines,fieldSales,orders,balances,runMovements,extraMovements,journals]=await Promise.all([
     byIds(s.DispatchLine,'dispatch_id',ids),byIds(s.FieldSale,'dispatch_id',ids),byIds(s.SalesOrder,'dispatch_id',ids),
-    byIds(s.StockBalance,'warehouse_id',[...warehouses.filter(w=>storage.includes(w.warehouse_type)).map(w=>w.id),...runs.filter(r=>open.includes(r.status)).map(r=>r.vehicle_warehouse_id),...legacyLocations.map(w=>w.id)]),
+    byIds(s.StockBalance,'warehouse_id',[...warehouses.filter(w=>storage.includes(w.warehouse_type)).map(w=>w.id),...runs.filter(r=>open.includes(r.status)).map(r=>r.vehicle_warehouse_id),...legacyLocations.map(w=>w.id),...fieldReturnLocations.map(w=>w.id)]),
     byIds(s.StockMovement,'document_id',ids),byIds(s.StockMovement,'dispatch_id',ids),byIds(s.JournalEntry,'id',[...daySales.map(v=>v.journal_id),...dayOrders.map(v=>v.sales_supply_journal_id)]),
   ]);
   const [fieldLines,orderLines,supplyMovements,expiredReturns]=await Promise.all([byIds(s.FieldSaleLine,'field_sale_id',fieldSales.map(v=>v.id)),byIds(s.SalesOrderLine,'order_id',orders.map(v=>v.id)),byIds(s.StockMovement,'document_id',[...fieldSales,...orders].map(v=>v.id)),byIds(s.SpoilageRecord,'dispatch_id',ids)]);
   const movements=[...new Map([...runMovements,...extraMovements,...supplyMovements].map(m=>[m.id,m])).values()];
+  // Use physical balances, including held/expired lots, rather than loaded totals,
+  // expected quantities or reconciliation success. Pending returns still hold stock.
+  const occupiedLocations=new Set(balances.filter(b=>Number.isFinite(Number(b.quantity))&&round3(b.quantity)>0).map(b=>b.warehouse_id));
+  const holdsStock=run=>open.includes(run.status)&&(occupiedLocations.has(run.vehicle_warehouse_id)||fieldReturnLocations.some(w=>occupiedLocations.has(w.id)&&(run.vehicle_id?w.field_return_bin&&w.vehicle_id===run.vehicle_id:w.customer_supply_return_bin&&w.source_warehouse_id===run.vehicle_warehouse_id)));
+  const currentHolders=new Set([
+    ...allOpen.filter(holdsStock).map(run=>run.salesperson_id),
+    ...legacyLocations.filter(w=>occupiedLocations.has(w.id)).map(w=>w.custodian_employee_id),
+  ].filter(Boolean));
   const snapshot=snapshotStores({Dispatch:allOpen,DispatchLine:lines,SalesOrder:orders,FieldSale:fieldSales,StockBalance:balances,StockMovement:movements,SalesOrderLine:orderLines,FieldSaleLine:fieldLines});
   const views=await Promise.all(runs.map(async run=>{
-    const view={...pick(run,'id dispatch_number dispatch_date status warehouse_id warehouse_name vehicle_id vehicle_name vehicle_warehouse_id driver_id driver_name salesperson_id salesperson_name route_name total_loaded_value total_returned_value return_date'),customer_returns:expiredReturns.filter(r=>r.dispatch_id===run.id&&r.record_type==='field_expired_return').map(r=>pick(r,'id record_number customer_name product_id product_name quantity unit returned_lot_number returned_expiry_date status return_received_at'))};
+    const view={...pick(run,'id dispatch_number dispatch_date status warehouse_id warehouse_name vehicle_id vehicle_name vehicle_warehouse_id driver_id driver_name salesperson_id salesperson_name route_name total_loaded_value total_returned_value return_date'),has_current_stock:holdsStock(run),customer_returns:expiredReturns.filter(r=>r.dispatch_id===run.id&&r.record_type==='field_expired_return').map(r=>pick(r,'id record_number customer_name product_id product_name quantity unit returned_lot_number returned_expiry_date status return_received_at'))};
     try{const recon=await dispatchReconciliationData(snapshot,run);return {...view,reconciliation:{...recon,orders:recon.orders.map(o=>pick(o,'id order_number')),fieldSales:recon.fieldSales.map(v=>pick(v,'id sale_number'))},error:''};}catch(e){return {...view,error:e.message,reconciliation:null};}
   }));
   const proven=new Set(views.flatMap(v=>v.reconciliation?.fieldSales.map(s=>s.id) || [])),posted=new Set(journals.filter(j=>j.status==='posted').map(j=>j.id));
@@ -45,9 +55,9 @@ async function overview(svc,date){
   const journalById=new Map(journals.map(j=>[j.id,j]));
   const suppliedOrders=dayOrders.filter(o=>{const j=journalById.get(o.sales_supply_journal_id);return provenOrders.has(o.id)&&j?.status==='posted'&&j.source_document_type==='Invoice'&&j.source_document_id===o.invoice_id;}).map(o=>({...o,commercial_id:o.salesperson_id}));
   const sales=[...daySales.filter(v=>proven.has(v.id)&&posted.has(v.journal_id)),...suppliedOrders];
-  const agents=staff.filter(e=>eligibleStockRecipient(e)||runs.some(r=>r.salesperson_id===e.id)).map(agent=>{
+  const agents=staff.filter(e=>eligibleStockRecipient(e)||currentHolders.has(e.id)||runs.some(r=>r.salesperson_id===e.id)).map(agent=>{
     const matching=sales.filter(sale=>sale.commercial_id===agent.id),own=matching.filter(sale=>(sale.transaction_date||sale.order_date)===date),reversed=matching.filter(sale=>sale.sale_reversal?.date===date).reduce((sum,sale)=>sum+Number(sale.total||0),0),customers=acquisitions.filter(c=>c.acquired_by_id===agent.id);
-    return {...pick(agent,'id full_name status'),sales:round2(own.reduce((sum,v)=>sum+Number(v.total || 0),0)-reversed),cash_collected:round2(own.reduce((sum,v)=>sum+Number(v.amount_collected || 0),0)),credit:round2(own.reduce((sum,v)=>sum+Number(v.amount_due ?? Math.max(0,Number(v.total || 0)-Number(v.amount_collected || 0))),0)),supplies:own.length,customers_supplied:new Set(own.map(v=>v.customer_id)).size,new_customers:customers.length,verified_customers:customers.filter(c=>c.acquisition_verified==='verified_unique').length,open_runs:views.filter(r=>r.salesperson_id===agent.id&&open.includes(r.status)).length};
+    return {...pick(agent,'id full_name status'),has_current_stock:currentHolders.has(agent.id),sales:round2(own.reduce((sum,v)=>sum+Number(v.total || 0),0)-reversed),cash_collected:round2(own.reduce((sum,v)=>sum+Number(v.amount_collected || 0),0)),credit:round2(own.reduce((sum,v)=>sum+Number(v.amount_due ?? Math.max(0,Number(v.total || 0)-Number(v.amount_collected || 0))),0)),supplies:own.length,customers_supplied:new Set(own.map(v=>v.customer_id)).size,new_customers:customers.length,verified_customers:customers.filter(c=>c.acquisition_verified==='verified_unique').length,open_runs:views.filter(r=>r.salesperson_id===agent.id&&r.has_current_stock).length};
   });
   const productMap=new Map(products.map(p=>[p.id,p]));
   const legacy=legacyLocations.map(w=>({...pick(w,'id name custodian_employee_id'),lots:balances.filter(b=>b.warehouse_id===w.id&&Number(b.quantity)>0).map(b=>({...pick(b,'id product_id product_name quantity lot_number expiry_date qc_status'),unit:stockUnit(productMap.get(b.product_id) || {})}))})).filter(w=>w.lots.length);

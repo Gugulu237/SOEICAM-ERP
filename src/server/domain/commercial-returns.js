@@ -7,12 +7,13 @@ import { requireStaff, stockIssue, stockReceive, stockTransfer, postJournal, get
 import { stockUnit } from '../../lib/item-units.js';
 import { saleItemPostings } from '../../lib/item-posting.js';
 import { driverReturnRun, driverReturnWorkspace, assertDriverReturnCustomer } from './driver-returns.js';
+import {recoverSaleExchangePackaging,receiveTransferredExchangePackaging} from './exchange-packaging.js';
 
 const kind = 'field_expired_return';
 const requestKind = 'field_expired_request';
 const pick = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
 const viewFields = ['id', 'record_number', 'customer_id', 'customer_name', 'location_name', 'product_id', 'product_name', 'quantity', 'unit', 'reported_date', 'dispatch_id', 'driver_name', 'vehicle_name', 'commercial_id', 'commercial_name', 'returned_expiry_date', 'returned_lot_number', 'status', 'replacement_dispatch_id', 'replacement_date', 'receipt_reference', 'receipt_file_uris', 'replacement_receipt_file_uris', 'replacement_receipt_reference', 'notes', 'return_received_at', 'request_type', 'replace_now', 'return_id', 'posted_return_id', 'verified_by', 'verified_at', 'review_note', 'rejected_by', 'rejected_at', 'reason', 'source_sale_id', 'source_sale_number', 'posting_basis'];
-export const expiredReturnView = row => pick(row, viewFields);
+export const expiredReturnView = row => pick(row, [...viewFields,'exchange_packaging_warning','exchange_packaging_result']);
 
 async function returnBin(stores, vehicle, branchId = '') {
   const code = 'ER-' + vehicle.id;
@@ -79,8 +80,10 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
   else {
     const code='ER-SUPPLY-'+(context.stock_warehouse_id||'COMPANY'),bins=await readRecords(stores.Warehouse,{code});
     if(bins.length>1||bins[0]&&(bins[0].warehouse_type!=='quarantine'||bins[0].is_active===false||!bins[0].customer_supply_return_bin))throw Error('The customer return quarantine location needs management review.');
-    bin=bins[0]||await stores.Warehouse.create({code,name:(context.stock_warehouse_name||'Company')+' - customer returns',warehouse_type:'quarantine',is_active:true,customer_supply_return_bin:true,source_warehouse_id:context.stock_warehouse_id||''});
+    bin=bins[0]||await stores.Warehouse.create({code,name:(context.stock_warehouse_name||'Company')+' - customer returns',warehouse_type:'quarantine',is_active:true,customer_supply_return_bin:true,source_warehouse_id:context.stock_warehouse_id||'',...(context.dispatch_id?{field_return_bin:true}:{})});
+    if(context.dispatch_id&&!bin.field_return_bin)bin=await stores.Warehouse.update(bin.id,{field_return_bin:true});
   }
+  const recoveryWarnings=[];
   for (const row of replacements) {
     const product = await stores.Product.get(row.product_id);
     if (!finishedProduct(product) || product.is_active === false) throw Error('Choose an active finished product for each replacement');
@@ -97,9 +100,14 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,
       reason: row.reason + ' customer goods collected during ' + sale.sale_number + '; not available for sale' });
     await replace(stores, record, context, sale.transaction_date, user.id);
+    const recovery=await recoverSaleExchangePackaging(svc,{record,product,warehouse:bin,date:sale.transaction_date,user});
+    recoveryWarnings.push(...recovery.warnings.map(message=>({product_id:product.id,product_name:product.name,record_id:record.id,message})));
     await audit(svc, { action: 'sale_stock_exchange', module: 'field_returns', entityType: 'SpoilageRecord', entityId: record.id, userId: user.id,
       description: row.quantity + ' ' + stockUnit(product) + ' ' + row.reason + ' goods exchanged during ' + sale.sale_number + '; fresh stock issued without customer charge' });
   }
+  const entity=sale.source_order_id?'SalesOrder':'FieldSale';
+  await stores[entity].update(sale.source_order_id||sale.id,{exchange_packaging_warnings:recoveryWarnings});
+  return {recoveryWarnings};
 }
 
 // Requests preserve field evidence, but cannot move inventory or post accounting.
@@ -157,6 +165,7 @@ async function reviewReturn(base44, user, body) {
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: date,
       reason: `Verified expired collection from ${customer.business_name}; not available for sale` });
     if (request.replace_now) await replace(stores, record, context, date, user.id);
+    await recoverSaleExchangePackaging(svc,{record,product,warehouse:bin,date,user});
   }
   await stores.SpoilageRecord.update(request.id, { status: 'verified', verified_by: user.id, verified_at: timestamp, review_note: note, posted_return_id: record.id });
   await audit(svc, { action: 'verify_expired_exchange', module: 'field_returns', entityType: 'SpoilageRecord', entityId: request.id, userId: user.id,
@@ -270,9 +279,10 @@ export async function receiveVehicleExpiredReturns(svc, dispatch, source, user) 
     for (const [productId, quantity] of quantities) {
       await stockTransfer(svc, { productId, productName: positive.find(row => row.product_id === productId).product_name, fromWarehouseId: bin.id,
         toWarehouseId: destination.id, toWarehouseName: destination.name, quantity, movementType: 'quality_quarantine',
-        documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: 'Expired customer returns handed to warehouse; remain quarantined' });
+        documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), preserveRecordedValue: true, reason: 'Expired customer returns handed to warehouse; remain quarantined' });
       received += quantity;
     }
+    await receiveTransferredExchangePackaging(stores,positive,destination,user,dispatch);
     const records = await readRecords(stores.SpoilageRecord, { record_type: kind, collection_warehouse_id: bin.id });
     for (const record of records.filter(row => !row.return_received_at)) await stores.SpoilageRecord.update(record.id, { return_received_at: new Date().toISOString(), return_received_by: user.id, return_received_warehouse_id: destination.id });
   }

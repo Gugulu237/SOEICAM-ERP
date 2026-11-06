@@ -22,7 +22,7 @@ export const APP_MODULES = [
   {key:'quality',get label(){return ui('Quality control');},path:'/manufacturing?section=quality',icon:FlaskConical,description:'Expiry, batch inspection and traceability',color:'bg-green-50 text-green-700',ring:'hover:border-green-300',roles:QUALITY_ROLES},
   { key: "commercial_workspace", get label(){return ui("Commercial Dashboard");}, path: "/commercial", icon: Users, description: "Field POS, agent stock, sales and performance", color: "bg-green-50 text-green-700", ring: "hover:border-green-300", roles: ["commercial"] },
   { key: "team_workspaces", get label(){return ui("Employee Dashboard");}, path: "/team-workspaces", icon: Users, description: "Staff, roles, payroll and live workspaces", color: "bg-sky-50 text-sky-800", ring: "hover:border-sky-300", roles: ["admin","cashier"] },
-  { key: "driver", get label(){return ui("My Deliveries");}, path: "/distribution?tab=deliveries", icon: Truck, description: "Assigned runs, stops & delivery reports", color: "bg-blue-50 text-blue-700", ring: "hover:border-blue-300", roles: ["driver"] },
+  { key: "driver", get label(){return ui("Distribution");}, path: "/distribution", icon: Truck, description: "Your issued stock and goods returns", color: "bg-blue-50 text-blue-700", ring: "hover:border-blue-300", roles: ["driver"] },
   {
     key: "expenses", get label(){return ui("Expenses & Budgets");}, path: "/expenses", icon: Wallet,
     description: "Request, approve & pay expenses",

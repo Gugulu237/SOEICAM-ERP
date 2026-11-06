@@ -51,7 +51,7 @@ test('stock landing removes adjustment shortcuts for every role and keeps second
   let html=paint();assert.doesNotMatch(html,/All stock|Production stock|Out for delivery|Manage storage locations|Production count requests|Adjust quantity/);assert.match(html,/Move stock/);
   r.session={role:'admin',principalRole:'admin'};assert.doesNotMatch(paint(),/Adjust quantity|Correct existing stock/);
   r.session={role:'admin',principalRole:'warehouse_manager'};paint();assert.equal(r.lazy.some(v=>v.props.warehouseId==='cold'),false);
-  r.query='';html=paint();assert.match(html,/Storage locations/);assert.match(html,/Production count requests/);
+  r.query='';html=paint();assert.match(html,/Storage locations/);assert.doesNotMatch(html,/Production count requests|Stock on Hand|Movements|Recovered packaging|Inventory count review/);
   r.buttons.find(b=>b['aria-label']==='Storage locations').onClick();assert.equal(new URLSearchParams(r.query).get('section'),'locations');assert.equal(new URLSearchParams(r.query).has('area'),false);
   paint();r.buttons.find(b=>b["aria-label"]==='Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
  }finally{r.cleanup();delete globalThis.__inventoryFlow;}

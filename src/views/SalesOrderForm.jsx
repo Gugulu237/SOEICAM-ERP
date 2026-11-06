@@ -1,3 +1,4 @@
+import ExchangePackagingNotice,{exchangePackagingWarningText} from '@/components/field/ExchangePackagingNotice';
 import {watchSalesStock} from '@/lib/sales-stock-refresh';
 import SaleReplacements from '@/components/field/SaleReplacements';
 import {validateSaleReplacements,validateReplacementDeclaration} from '@/lib/sale-replacements';
@@ -123,7 +124,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     busy.current=true;setSaving(true);setSaveError('');
     try{
       const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
-      toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted')});
+      toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted'),description:exchangePackagingWarningText(result.order)});
       navigate(ownIssuedStock?'/my-stock':result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
     }catch(e){setSaveError(e.message);const reason=e.data?.error||e.response?.data?.error||e.message;if(['Choose the customer branch that received this supply.','Choose a delivery point belonging to this customer.'].includes(reason)){setStep(0);setPointsRetry(n=>n+1);}}finally{busy.current=false;setSaving(false);}
   }
@@ -140,6 +141,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const sourceLabel=sourceOptions.find(option=>option.id===source)?.label||order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location');
   return <div className="min-w-0 space-y-4">
     <PageHeader back={{onClick:back,label:ui('Back'),disabled:saving}} title={order?ui('Sales Order {0}',order.order_number):ui('Record a sale or exchange')} subtitle={order?<StatusBadge status={order.status}/>:undefined} actions={order?.invoice_id&&<Button onClick={()=>navigate('/sales/invoices/'+order.invoice_id)}><FileText size={16} className="mr-1"/>{ui('Open invoice')}</Button>}/>
+    <ExchangePackagingNotice record={order}/>
     <div className="mx-auto w-full min-w-0 max-w-3xl rounded-xl border bg-white p-4 sm:p-6">
       {wizard&&<div className="mb-6"><p className="mb-3 text-xs font-semibold uppercase tracking-wide text-green-700">{ui('Step {0} of 3',step+1)}</p><nav aria-label={ui('Sale steps')} className="grid grid-cols-3 gap-2">{['Customer','Products','Review'].map((label,index)=><button type="button" key={label} disabled={saving||index>step} aria-current={step===index?'step':undefined} onClick={()=>goTo(index)} className={'rounded-xl border px-2 py-3 text-xs font-semibold '+(step===index?'border-green-700 bg-green-700 text-white':index<step?'border-green-200 bg-green-50 text-green-800':'text-slate-400')}><span className="mb-1 flex justify-center">{index<step?<Check size={16}/>:index+1}</span>{ui(label)}</button>)}</nav><h2 className="mt-5 text-xl font-bold">{ui(['Who are you selling to?','Build your sale','Review and record'][step])}</h2></div>}
       <fieldset disabled={saving||locked} className="min-w-0 space-y-5">

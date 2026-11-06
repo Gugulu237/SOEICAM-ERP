@@ -6,9 +6,11 @@ import { businessDate } from '../../lib/business-date.js';
 import { isAssemblyInventoryType } from '../../lib/item-types.js';
 import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { countedQuantity, roundMoney, roundQuantity } from '../../lib/inventory-audit.js';
+import {isPackagingItem as packagingItem} from '../../lib/inventory-packaging.js';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value,(_,v)=>v && typeof v==='object' && !Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
-const factory = w => w && w.is_active!==false && !w.vehicle_id && !['vehicle','commercial_custody'].includes(w.warehouse_type);
+const factory = w => w && w.is_active!==false && !w.vehicle_id && !w.field_return_bin && !['vehicle','commercial_custody'].includes(w.warehouse_type);
+const isPackagingItem=product=>!!product&&packagingItem(product);
 const eligible = (b,p,w) => factory(w) && isAssemblyInventoryType(p?.inventory_type) && Number(b.quantity)>0 && /^\d{4}-\d{2}-\d{2}$/.test(b.expiry_date || '') && Number.isFinite(Date.parse(b.expiry_date)) && b.expiry_date<businessDate();
 const snapshot = b => hash(b);
 const positive = value => { const n=countedQuantity(value); if(!n)throw Error('Enter a positive quantity.'); return n; };
@@ -26,7 +28,7 @@ export async function expiryRecoveryAction(client,user,body) {
     const access=await adjustmentAccess(client,role,employee,{user,requirePermission:false});
     return {can_post:role==='cashier' || ['admin','warehouse_manager'].includes(role) && access.can_adjust,can_receive:role==='admin' || role==='warehouse_manager' && employee?.assigned_role!=='production_manager',can_release:(role==='admin' || role==='production_manager') && (role==='admin' || !employee?.allowed_modules || employee.allowed_modules.includes('quality')),
       lots:balances.filter(b=>eligible(b,pmap.get(b.product_id),wmap.get(b.warehouse_id))).map(b=>({...b,unit:stockUnit(pmap.get(b.product_id)),fingerprint:snapshot(b)})),
-      packaging:products.filter(p=>p.inventory_type==='packaging' && p.is_active!==false && p.configuration_status!=='draft').map(p=>({id:p.id,name:p.name,unit:stockUnit(p)})),
+      packaging:products.filter(p=>isPackagingItem(p) && p.is_active!==false && p.configuration_status!=='draft').map(p=>({id:p.id,name:p.name,unit:stockUnit(p)})),
       locations:warehouses.filter(w=>factory(w) && ['packaging','raw_material'].includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),
       accounts:role==='cashier' || access.can_adjust?accounts.filter(a=>{try{account(a.id);return true;}catch{return false;}}).map(a=>({id:a.id,name:a.name,account_number:a.account_number})):[],
       held:balances.filter(b=>b.inventory_recovery_id && b.qc_status==='quarantine' && Number(b.quantity)>0).map(b=>({id:b.id,product_name:b.product_name,quantity:b.quantity,unit:stockUnit(pmap.get(b.product_id)),lot_number:b.lot_number,warehouse_name:wmap.get(b.warehouse_id)?.name,receipt_required:b.inventory_recovery_receipt_required===true,received_at:b.inventory_recovery_received_at || null})),
@@ -35,7 +37,7 @@ export async function expiryRecoveryAction(client,user,body) {
   if(body.action==='receive') {
     if(!['admin','warehouse_manager'].includes(role) || role!=='admin' && employee?.assigned_role==='production_manager')throw Error('Warehouse management must receive recovered packaging.');
     const b=balances.find(row=>row.id===body.balanceId);
-    if(!b?.inventory_recovery_id || !b.inventory_recovery_receipt_required || pmap.get(b.product_id)?.inventory_type!=='packaging' || !factory(wmap.get(b.warehouse_id)))throw Error('Choose recovered packaging awaiting warehouse receipt.');
+    if(!b?.inventory_recovery_id || !b.inventory_recovery_receipt_required || !isPackagingItem(pmap.get(b.product_id)) || !factory(wmap.get(b.warehouse_id)))throw Error('Choose recovered packaging awaiting warehouse receipt.');
     const reference=typeof body.reference==='string'?body.reference.trim():'',quantity=positive(body.quantity);
     if(body.inspectionConfirmed!==true || reference.length<3 || reference.length>500 || quantity!==Number(b.quantity))throw Error('Confirm the complete physical packaging count and enter a receipt reference.');
     if(b.inventory_recovery_received_at){if(b.inventory_recovery_receipt_reference!==reference || Number(b.inventory_recovery_received_quantity)!==quantity)throw Error('This packaging receipt was already recorded with different details.');return {received:true,reused:true};}
@@ -49,7 +51,7 @@ export async function expiryRecoveryAction(client,user,body) {
     if(!['admin','production_manager'].includes(role))throw Error('Production quality control must release recovered packaging.');
     client.auth.assertModule?.('quality');
     const b=balances.find(b=>b.id===body.balanceId);
-    if(!b?.inventory_recovery_id || pmap.get(b.product_id)?.inventory_type!=='packaging' || !factory(wmap.get(b.warehouse_id)))throw Error('Choose a recovered packaging lot.');
+    if(!b?.inventory_recovery_id || !isPackagingItem(pmap.get(b.product_id)) || !factory(wmap.get(b.warehouse_id)))throw Error('Choose a recovered packaging lot.');
     if(b.inventory_recovery_receipt_required && !b.inventory_recovery_received_at)throw Error('Warehouse must receive this recovered packaging before quality release.');
     if(b.qc_status==='approved' && b.inventory_recovery_released_by)return {released:true,reused:true};
     const note=typeof body.reference==='string'?body.reference.trim():'';
@@ -84,7 +86,7 @@ export async function expiryRecoveryAction(client,user,body) {
     const order=await s.ProductionOrder.get(b.production_order_id),materials=await readRecords(s.ProductionMaterial,{production_order_id:b.production_order_id});
     if(order && Number(order.actual_output)>0 && materials.length) {
       componentLimits=new Map();quantityBasis='original production material quantities';
-      for(const m of materials)if(pmap.get(m.material_id)?.inventory_type==='packaging') {
+      for(const m of materials)if(isPackagingItem(pmap.get(m.material_id))) {
         const limit=Number(m.consumed_quantity ?? m.issued_quantity)/Number(order.actual_output)*quantity;
         if(!Number.isFinite(limit) || limit<0)throw Error('Reconcile the original batch packaging quantities before recovery.');
         componentLimits.set(m.material_id,(componentLimits.get(m.material_id)||0)+limit);
@@ -93,7 +95,7 @@ export async function expiryRecoveryAction(client,user,body) {
   }
   if(body.recoveries.length && !componentLimits && Array.isArray(p.components) && p.components.length) {
     componentLimits=new Map();quantityBasis='registered assembly components';
-    for(const c of p.components)if(pmap.get(c.product_id)?.inventory_type==='packaging') {
+    for(const c of p.components)if(isPackagingItem(pmap.get(c.product_id))) {
       const pack=pmap.get(c.product_id),limit=Number(c.quantity)*unitFactor(c.unit || stockUnit(pack),stockUnit(pack))*quantity;
       if(!Number.isFinite(limit) || limit<0)throw Error('Reconcile the assembly packaging quantities before recovery.');
       componentLimits.set(pack.id,(componentLimits.get(pack.id)||0)+limit);
@@ -101,7 +103,7 @@ export async function expiryRecoveryAction(client,user,body) {
   }
   for(const input of body.recoveries) {
     const pack=pmap.get(input?.productId);
-    if(!pack || pack.inventory_type!=='packaging' || pack.is_active===false || pack.configuration_status==='draft' || seen.has(pack.id))throw Error('Choose each active packaging item only once.');
+    if(!pack || !isPackagingItem(pack) || pack.is_active===false || pack.configuration_status==='draft' || seen.has(pack.id))throw Error('Choose each active packaging item only once.');
     seen.add(pack.id);
     const recoveredQuantity=positive(input.quantity);
     if(componentLimits && (!componentLimits.has(pack.id) || recoveredQuantity>Math.floor((componentLimits.get(pack.id)+1e-9)*1000)/1000))throw Error('Recovered packaging exceeds the quantity recorded in this product assembly or original production batch. Check the packaging item, units and physical count.');

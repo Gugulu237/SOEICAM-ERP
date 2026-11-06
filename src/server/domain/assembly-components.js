@@ -1,5 +1,6 @@
 import {pricedAssemblyProducts} from '../../lib/assembly-pricing.js';
 import {priceComponent} from '../../lib/assembly-components.js';
+import {exchangePackagingOverrideAllowed} from '../../lib/exchange-packaging.js';
 import { readRecords } from './commercial-workspace.js';
 import { productComponentType, validateComponentNumbers, componentLineCost, assemblyCost } from '../../lib/assembly-components.js';
 import { isAssemblyInventoryType } from '../../lib/item-types.js';
@@ -83,7 +84,8 @@ export async function validateProductComponents(stores, input, existing = null) 
     const unit_cost = cost_source === 'manual' ? Number(row.unit_cost) : registeredCost;
     if (!Number.isFinite(unit_cost) || unit_cost < 0) throw new Error('The selected component has an invalid registered cost');
     const costed = { quantity: Number(row.quantity), unit_cost };
-    checked.push({ component_type: type, ...reference, ...costed, cost_source, unit, line_cost: componentLineCost(costed) });
+    if(Object.hasOwn(row,'recover_on_exchange')&&(typeof row.recover_on_exchange!=='boolean'||!exchangePackagingOverrideAllowed(record)))throw new Error('Choose packaging before setting its exchange recovery preference.');
+    checked.push({ component_type: type, ...reference, ...costed, cost_source, unit, line_cost: componentLineCost(costed),...(Object.hasOwn(row,'recover_on_exchange')?{recover_on_exchange:row.recover_on_exchange}:{}) });
   }
   // Load each breadth level once, including missing references, before walking
   // paths. The path walk still detects cycles in graphs with shared branches.

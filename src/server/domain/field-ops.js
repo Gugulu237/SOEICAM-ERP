@@ -120,7 +120,7 @@ export async function stockOnHand(base44, productId, warehouseId) {
   return round3(balances.reduce((s, b) => s + (b.quantity || 0), 0));
 }
 
-export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId }) {
+export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = false }) {
   let remaining = round3(quantity);
   if (remaining <= 0) throw new Error("Quantity must be greater than zero");
 
@@ -140,6 +140,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     .sort((a, b) => String(a.expiry_date || "9999-12-31").localeCompare(String(b.expiry_date || "9999-12-31")));
 
   if (usable.some(b=>!Number.isFinite(Number(b.quantity)) || !Number.isFinite(Number(b.unit_cost || 0)) || Number(b.unit_cost || 0)<0)) throw new Error('Reconcile invalid lot quantities or costs before issuing stock');
+  if (preserveRecordedValue && usable.some(b=>!Number.isFinite(Number(b.total_value)) || Number(b.total_value)<0)) throw new Error('Reconcile invalid recorded lot values before returning stock.');
 
   const available = round3(usable.reduce((s, b) => s + Number(b.quantity || 0), 0));
   if (available < remaining) {
@@ -151,9 +152,12 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     if (remaining <= 0) break;
     const take = Math.min(round3(b.quantity), remaining);
     const newQty = round3(b.quantity - take);
+    // Whole-load returns carry the exact recorded value, including rounding
+    // left by weighted-average unit costs. No value is lost between locations.
+    const layerValue = preserveRecordedValue ? round2(newQty===0?Number(b.total_value):Number(b.total_value)*take/Number(b.quantity)) : undefined;
     await base44.entities.StockBalance.update(b.id, {
       quantity: newQty,
-      total_value: round2(newQty * (b.unit_cost || 0)),
+      total_value: preserveRecordedValue ? round2(Number(b.total_value)-layerValue) : round2(newQty * (b.unit_cost || 0)),
     });
     layers.push({
       ...(multiple?{warehouseId:b.warehouse_id}:{}),
@@ -161,6 +165,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       expiryDate: b.expiry_date || "",
       quantity: take,
       unitCost: b.unit_cost || 0,
+      ...(preserveRecordedValue?{totalValue:layerValue}:{}),
       qcStatus: b.qc_status || "approved",
       ...(b.production_order_id ? { productionOrderId: b.production_order_id } : {}),
       ...(b.batch_number ? { batchNumber: b.batch_number } : {}),
@@ -180,7 +185,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       ...(l.productionOrderId ? { production_order_id: l.productionOrderId } : {}),
       ...(l.batchNumber ? { batch_number: l.batchNumber } : {}),
       unit_cost: round2(l.unitCost),
-      total_value: round2(l.quantity * l.unitCost),
+      total_value: l.totalValue ?? round2(l.quantity * l.unitCost),
       document_type: documentType || "",
       document_id: documentId || "",
       ...(dispatchId ? { dispatch_id: dispatchId } : {}),
@@ -190,12 +195,14 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     });
   }
 
-  return { layers, totalValue: round2(layers.reduce((s, l) => s + l.quantity * l.unitCost, 0)) };
+  return { layers, totalValue: round2(layers.reduce((s, l) => s + (l.totalValue ?? l.quantity * l.unitCost), 0)) };
 }
 
-export async function stockReceive(base44, { productId, productName, warehouseId, warehouseName, quantity, unitCost, lotNumber, expiryDate, movementType, documentType, documentId, movementDate, reason, qcStatus, productionOrderId, batchNumber }) {
+export async function stockReceive(base44, { productId, productName, warehouseId, warehouseName, quantity, unitCost, totalValue, lotNumber, expiryDate, movementType, documentType, documentId, movementDate, reason, qcStatus, productionOrderId, batchNumber }) {
   const qty = round3(quantity);
   if (qty <= 0) throw new Error("Quantity must be greater than zero");
+  if(totalValue!==undefined&&(!Number.isFinite(Number(totalValue))||Number(totalValue)<0))throw Error('Reconcile invalid recorded lot values before receiving stock.');
+  const value=totalValue===undefined?qty*unitCost:round2(totalValue);
 
   const existing = (await base44.entities.StockBalance.filter({
     product_id: productId,
@@ -205,8 +212,11 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   })).find(row => (row.expiry_date || '') === (expiryDate || '') && (row.production_order_id || '') === (productionOrderId || '') && (row.batch_number || '') === (batchNumber || ''));
 
   if (existing) {
-    const newQty = round3((existing.quantity || 0) + qty);
-    const newValue = round2((existing.total_value || 0) + qty * unitCost);
+    const preserving=totalValue!==undefined,oldQty=preserving?Number(existing.quantity):(existing.quantity||0),oldValue=preserving?Number(existing.total_value):(existing.total_value||0);
+    if(preserving&&(!Number.isFinite(oldQty)||oldQty<0||!Number.isFinite(oldValue)||oldValue<0||oldQty===0&&oldValue!==0))throw Error('Reconcile the receiving lot quantity and value before accepting returned stock.');
+    const newQty = round3(oldQty + qty);
+    const newValue = round2(oldValue + value);
+    if(preserving&&(!Number.isFinite(newQty)||newQty<=0||!Number.isSafeInteger(Math.round(newValue*100))||newValue<0))throw Error('The returned stock exceeds the supported quantity or value.');
     await base44.entities.StockBalance.update(existing.id, {
       quantity: newQty,
       total_value: newValue,
@@ -224,8 +234,8 @@ export async function stockReceive(base44, { productId, productName, warehouseId
       lot_number: lotNumber || "",
       expiry_date: expiryDate || "",
       quantity: qty,
-      unit_cost: round2(unitCost),
-      total_value: round2(qty * unitCost),
+      unit_cost: round2(totalValue===undefined?unitCost:value/qty),
+      total_value: round2(value),
       qc_status: qcStatus || "approved",
       ...(productionOrderId ? { production_order_id: productionOrderId } : {}),
       ...(batchNumber ? { batch_number: batchNumber } : {}),
@@ -243,7 +253,7 @@ export async function stockReceive(base44, { productId, productName, warehouseId
     ...(productionOrderId ? { production_order_id: productionOrderId } : {}),
     ...(batchNumber ? { batch_number: batchNumber } : {}),
     unit_cost: round2(unitCost),
-    total_value: round2(qty * unitCost),
+    total_value: round2(value),
     document_type: documentType || "",
     document_id: documentId || "",
     reason: reason || "",
@@ -252,19 +262,19 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   });
 }
 
-export async function stockTransfer(base44, { productId, productName, fromWarehouseId, toWarehouseId, toWarehouseName, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly }) {
+export async function stockTransfer(base44, { productId, productName, fromWarehouseId, toWarehouseId, toWarehouseName, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue = false }) {
   if (!fromWarehouseId || !toWarehouseId) throw new Error("Both source and destination locations are required");
   if (fromWarehouseId === toWarehouseId) throw new Error("Source and destination locations must differ");
 
   const { layers, totalValue } = await stockIssue(base44, {
     productId, productName, warehouseId: fromWarehouseId, quantity,
-    movementType, documentType, documentId, movementDate, reason, saleableOnly,
+    movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue,
   });
 
   for (const l of layers) {
     await stockReceive(base44, {
       productId, productName, warehouseId: toWarehouseId, warehouseName: toWarehouseName,
-      quantity: l.quantity, unitCost: l.unitCost, lotNumber: l.lotNumber, expiryDate: l.expiryDate,
+      quantity: l.quantity, unitCost: l.unitCost, totalValue:l.totalValue, lotNumber: l.lotNumber, expiryDate: l.expiryDate,
       movementType, documentType, documentId, movementDate, reason, qcStatus: l.qcStatus,
       productionOrderId: l.productionOrderId, batchNumber: l.batchNumber,
     });

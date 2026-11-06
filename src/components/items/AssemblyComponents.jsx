@@ -12,6 +12,7 @@ import AssemblyComponentPicker from './AssemblyComponentPicker';
 import { stockUnit, compatibleUnits, DEFAULT_ITEM_UNITS, componentCostInUnit } from '@/lib/item-units';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { itemAttributes } from '@/lib/item-attributes';
+import {exchangePackagingEnabled, exchangePackagingOverrideAllowed} from '@/lib/exchange-packaging';
 const formatXAF = value => Number.isFinite(value) ? formatNumber(value, Number.isInteger(value) ? 0 : 6) + ' XAF' : '\u2014';
 
 export default function AssemblyComponents({components,setComponents,products,assets=[],units=DEFAULT_ITEM_UNITS,excludedProductIds=[],onCatalogChange,onRefreshCatalogue,refreshing=false,disabled=false}) {
@@ -84,6 +85,7 @@ export default function AssemblyComponents({components,setComponents,products,as
               {type!=='other'&&<button type="button" disabled={disabled||type==='fixed_asset'&&!['admin','cashier'].includes(role)} onClick={()=>setCreating({index,type})} className="min-h-9 font-semibold text-primary underline disabled:text-slate-400">{ui('Create new ')}{definition.label.toLowerCase()}</button>}
             </div>
             {type==='fixed_asset'&&<p className="sm:col-span-2">{ui('Equipment stays in the asset register. Enter only the usage cost allocated to this assembly, if applicable. Its purchase value and depreciation are managed separately.')}</p>}
+            {measuredItem&&exchangePackagingOverrideAllowed(selected)&&<label className="flex items-start gap-2 sm:col-span-2"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0" aria-label={ui('Recover packaging component {0} on exchange',index+1)} checked={exchangePackagingEnabled(row,selected)} onChange={event=>patch(index,{recover_on_exchange:event.target.checked})}/><span>{ui('Recover this packaging when a product is exchanged')}<span className="block font-normal">{ui('Recovered quantities follow this assembly and remain on hold until warehouse receipt and quality release.')}</span></span></label>}
             {selected&&itemAttributes(selected).length>0&&<dl className="flex flex-wrap gap-2 sm:col-span-2">{itemAttributes(selected).map(attr=><div key={attr.name}><dt className="inline font-medium">{attr.name}: </dt><dd className="inline">{attr.value}</dd></div>)}</dl>}
           </div>
         </details>

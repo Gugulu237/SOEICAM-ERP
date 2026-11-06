@@ -1,4 +1,5 @@
 import {employeeStockAction,EMPLOYEE_STOCK_ACTIONS} from '../domain/employee-stock.js';
+import {unsoldStockReturnAction,UNSOLD_RETURN_ACTIONS} from '../domain/unsold-stock-returns.js';
 import {approvalHistory} from '../domain/approval-history.js';
 import {SALE_REVERSAL_ACTIONS,saleReversalAction} from '../domain/sale-reversals.js';
 import {CUSTOMER_ACTIVITY_ACTIONS,customerActivityAction} from '../domain/customer-activity.js';
@@ -159,6 +160,7 @@ export default async function (req) {
     // Report-only Supply Chain grants use sales_reports, without opening the
     // agent's operational Commercial module. The report handler checks both.
     if (EMPLOYEE_STOCK_ACTIONS.includes(action)) return Response.json(await employeeStockAction(base44,user,body));
+    if (UNSOLD_RETURN_ACTIONS.includes(action)) return Response.json(await unsoldStockReturnAction(base44,user,body));
     if (action === 'approvalHistory') return Response.json(await approvalHistory(base44,user,body));
     if (action === 'commercialPerformance') return Response.json(await commercialAction(base44,user,body));
     if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)){await selectFeature('customers');return Response.json(await customerRegistrationAction(base44, user, body));}

@@ -168,7 +168,7 @@ test('partial legacy deliveries consume physical run stock without prematurely r
 test('return transfers remaining goods including expired/inactive goods, updates reconciliation and is idempotent', async () => {
   const f = fixture(); await f.action('loadDispatch');
   const vehicle = f.rows.StockBalance.find(row => row.warehouse_id === 'van-stock');
-  vehicle.quantity = 2; vehicle.expiry_date = '2000-01-01'; f.rows.Product[0].is_active = false;
+  vehicle.quantity = 2; vehicle.total_value = 80; vehicle.expiry_date = '2000-01-01'; f.rows.Product[0].is_active = false;
   f.rows.FieldSale.push({ id: 'sale', dispatch_id: 'run', status: 'approved_posted', total: 300, amount_collected: 50, amount_due: 250 });
   f.rows.FieldSaleLine.push({ id: 'sale-line', field_sale_id: 'sale', product_id: 'yogurt', quantity: 3, line_total: 300 });
   f.rows.StockMovement.push({ id: 'sale-issued', document_type: 'FieldSale', document_id: 'sale', product_id: 'yogurt', source_warehouse_id: 'van-stock', movement_type: 'field_delivery', status: 'approved', quantity: 3 });
@@ -176,7 +176,7 @@ test('return transfers remaining goods including expired/inactive goods, updates
   assert.equal(f.line.returned_quantity, 2); assert.equal(vehicle.quantity, 0); assert.equal(f.balance.quantity, 7); assert.equal(f.run.status, 'returned');
   assert.equal(f.balance.expiry_date, '2099-01-01', 'returning an expired lot must not overwrite the expiry on fresh stock');
   const expired = f.rows.StockBalance.find(row => row.warehouse_id === 'store' && row.expiry_date === '2000-01-01');
-  assert.equal(expired.quantity, 2); assert.equal(expired.lot_number, 'lot');
+  assert.equal(expired.quantity, 2); assert.equal(expired.total_value, 80); assert.equal(expired.lot_number, 'lot');
   assert.equal(f.run.total_cash_collected, 50); assert.equal(f.run.total_credit_sales, 250); assert.equal(f.run.total_delivered_value, 300);
   const recon = await f.action('dispatchReconciliation'); assert.equal(recon.rows[0].expected, 0); assert.equal(recon.rows[0].returned, 2); assert.equal(recon.hasVariance, false);
   const writes = f.writes.length; assert.deepEqual(await f.action('returnDispatchStock'), { totalValue: 80, reused: true }); assert.equal(f.writes.length, writes);

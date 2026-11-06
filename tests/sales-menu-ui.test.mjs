@@ -8,11 +8,15 @@ const output=await build({stdin:{contents:"import React from 'react';import {ren
   b.onResolve({filter:/^react$/},a=>a.importer.endsWith('Sales.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
   b.onLoad({filter:/.*/,namespace:'fixture'},()=>({resolveDir:process.cwd(),contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__salesMenu.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__salesMenu.state('orders',v),useEffect=(fn,deps)=>globalThis.__salesMenu.effect('orders',fn,deps);"}));
   const mocks={
+    '@/hooks/useMenuBack':"export const useMenuBack=path=>()=>{globalThis.__salesMenu.navigation.push(path);globalThis.__salesMenu.query='';};",
     '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__salesMenu.session;",
     '@/lib/router':"export const Link=()=>null;export const useNavigate=()=>path=>{globalThis.__salesMenu.navigation.push(path);globalThis.__salesMenu.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__salesMenu.query||''),value=>{globalThis.__salesMenu.query=new URLSearchParams(value).toString();}];",
     '@/api/erpClient':"export const erp={entities:{SalesOrder:'orders'}};",
     '@/lib/field-pos':"export const readAll=async()=>{globalThis.__salesMenu.reads++;return [];};",
     '@/components/sales/CompanySalesRegister':"import React from 'react';export default props=>{globalThis.__salesMenu.register=props;return React.createElement('p',null,'Company register');};",
+    '@/components/sales/InvoiceWorkspace':"export default ()=>null;",
+    '@/components/sales/FieldSalesPanel':"export default ()=>null;",
+    '@/views/OutletReports':"export default ()=>null;",
     'next/dynamic':"import React from 'react';export default factory=>{const label=factory.toString().includes('InvoiceWorkspace')?'Invoice workspace':factory.toString().includes('FieldSalesPanel')?'Field workspace':'Outlet workspace';return ()=>React.createElement('p',null,label);};",
     '@/components/ui/button':"import React from 'react';export const Button=({children,...props})=>{globalThis.__salesMenu.capture('button',props,children);return React.createElement('button',props,children);};"
   };
@@ -27,13 +31,28 @@ test('Sales starts with action tiles and mounts only the chosen register',async(
   const r=state(),draw=()=>{r.beforeRender();return render();};
   try{
     const html=draw();await r.flush();assert.doesNotMatch(html,/Company register|Invoice workspace/);assert.equal(r.reads,0);
-    assert.deepEqual(r.buttons.map(b=>b['aria-label']),['New sale','All sales','Sales orders','Invoices','Field sales','Outlet reports']);
+    assert.deepEqual(r.buttons.map(b=>b['aria-label']),['New sale','All sales','Sales orders','Invoices','Outlet reports']);
     r.buttons.find(b=>b['aria-label']==='All sales').onClick();assert.match(draw(),/Company register/);assert.equal(r.register.readOnly,false);
     r.buttons.find(b=>b["aria-label"]==='Sales menu').onClick();draw();assert.equal(r.query,'');
     r.buttons.find(b=>b['aria-label']==='Sales orders').onClick();draw();await r.flush();draw();assert.equal(r.reads,1);
     r.buttons.find(b=>b["aria-label"]==='Sales menu').onClick();draw();r.buttons.find(b=>b['aria-label']==='New sale').onClick();assert.equal(r.navigation.at(-1),'/sales/new');
     r.query='tab=invoices';assert.match(draw(),/Invoice workspace/);assert.doesNotMatch(draw(),/Company register/);
   }finally{r.cleanup();delete globalThis.__salesMenu;}
+});
+
+test('Field sales remains reachable by its existing admin link without returning to the landing menu',()=>{
+  for(const role of ['admin','cashier','production_manager','warehouse_manager','employee']){
+    const r=state(role),draw=()=>{r.beforeRender();return render();};r.query='tab=field';
+    try{
+      const html=draw();
+      if(role==='admin'){
+        assert.match(html,/Field workspace/);
+        r.buttons.find(b=>b['aria-label']==='Sales menu').onClick();assert.doesNotMatch(draw(),/Field workspace/);
+      }else assert.doesNotMatch(html,/Field workspace/);
+      assert.ok(!r.buttons.some(b=>b['aria-label']==='Field sales'));
+      assert.equal(r.reads,0);
+    }finally{r.cleanup();delete globalThis.__salesMenu;}
+  }
 });
 
 test('Sales menus preserve management reporting and employee permissions',()=>{

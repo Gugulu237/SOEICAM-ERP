@@ -54,8 +54,9 @@ test('Inventory opens a light icon menu, loads only the selected workspace and k
  globalThis.fetch=async()=>{reads++;return Response.json({products:[],balances:[],warehouses:[]});};
  try{
   const paint=painter(r,ui,'Inventory');let html=paint();await r.flush();html=paint();
-  assert.match(html,/aria-label="Inventory sections"/);assert.match(html,/grid-cols-2/);assert.match(html,/Inventory count review/);assert.doesNotMatch(html,/Stock counts &amp; adjustments/);assert.doesNotMatch(html,/Moving an existing business|Enter opening inventory|Item types/);assert.equal(reads,0);
-  r.buttons.find(b=>b['aria-label']==='Stock on Hand').onClick();paint();await r.flush();html=paint();assert.ok(reads>0);assert.equal(new URLSearchParams(r.search).get('section'),'stock');assert.doesNotMatch(html,/Item types|Inventory sections/);assert.ok(!r.elements.some(e=>e.props.embedded&&e.props.itemId));button(r,'Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
+  assert.match(html,/aria-label="Inventory sections"/);assert.match(html,/grid-cols-2/);assert.doesNotMatch(html,/Stock on Hand|Movements|Production count requests|Recovered packaging|Inventory count review|Stock counts &amp; adjustments/);assert.doesNotMatch(html,/Moving an existing business|Enter opening inventory|Item types/);assert.equal(reads,0);
+  r.buttons.find(b=>b['aria-label']==='Items & pricing').onClick();paint();await r.flush();html=paint();assert.ok(reads>0);assert.equal(new URLSearchParams(r.search).get('section'),'items');assert.match(html,/Item types/);assert.doesNotMatch(html,/Inventory sections/);assert.ok(!r.elements.some(e=>e.props.embedded&&e.props.itemId));
+  r.search='section=stock';paint();await r.flush();html=paint();assert.match(html,/Stock on Hand/);assert.doesNotMatch(html,/Item types|Inventory sections/);button(r,'Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
   r.search='';r.session={role:'warehouse_manager',allowedModules:['inventory']};html=paint();assert.doesNotMatch(html,/Issue goods|Stock counts &amp; adjustments|Inventory count review|Receive inventory/);
  }finally{r.cleanup();Object.assign(globalThis,previous);delete globalThis.__iaUI;}
 });

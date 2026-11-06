@@ -15,6 +15,11 @@ export function distributionSections(role){
     ...(['admin','warehouse_manager'].includes(role)?[{key:'exchanges',label:ui('Expired exchanges')}]:[]),
   ];
 }
+// Keep historical deep links separate from the compact landing menu.
+export function distributionMenuSections(role){
+  if(role==='driver')return [{key:'stock',label:ui('My issued stock'),path:'/distribution?tab=stock'},{key:'returns',label:ui('Return goods'),path:'/my-stock/returns'}];
+  return distributionSections(role).filter(section=>['stock','vehicles'].includes(section.key));
+}
 export function distributionPath(tab='stock',search={}){
   const query=new URLSearchParams();for(const [key,value] of search instanceof URLSearchParams?search.entries():Object.entries(search))for(const item of Array.isArray(value)?value:[value])if(item!=null)query.append(key,String(item));query.set('tab',tab);return DISTRIBUTION_PATH+'?'+query.toString();
 }

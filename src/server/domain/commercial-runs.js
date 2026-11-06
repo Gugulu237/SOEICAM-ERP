@@ -17,6 +17,7 @@ const active = employee => employee && employee.status === 'active' && !employee
 // creates a second commercial-custody warehouse or moves the goods again.
 async function runStockSource(svc, run, verifyingReturn = false) {
   if (!supplyRunStates.includes(run.status)) throw new Error('The warehouse must load this run before recording supplies');
+  if (run.unsold_return_request_id) throw new Error('This load is reserved for warehouse return. Cancel or resolve the return before recording more supplies.');
   if (!run.vehicle_warehouse_id) throw new Error('This run has no loaded vehicle stock location. Ask dispatch management to check the load.');
   const [vehicle, warehouse, conflicts, activities] = await Promise.all([
     run.vehicle_id ? svc.entities.Vehicle.get(run.vehicle_id) : null,

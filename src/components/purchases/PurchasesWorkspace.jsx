@@ -26,6 +26,7 @@ import {formatDate,formatXAF} from '@/lib/formatters';
 import {Plus,RefreshCw,ShoppingCart,Users,PackageCheck,Wallet,ShieldCheck,ArrowRight,ReceiptText,Download,Mail} from 'lucide-react';
 
 const Suppliers=dynamic(()=>import('@/components/suppliers/SupplierWorkspace'),{loading:()=> <p role="status" className="py-12 text-center text-slate-500">{ui("Loading suppliers...")}</p>});
+const UnsoldStockReturns=dynamic(()=>import('@/components/distribution/UnsoldStockReturns'),{ssr:false});
 const icons={orders:ShoppingCart,suppliers:Users,receiving:PackageCheck,bills:ReceiptText,payments:Wallet};
 const receiving=order=>['approved','partially_received'].includes(order.status);
 const textMatch=(row,term,fields)=>fields.some(key=>String(row[key] || '').toLowerCase().includes(term.toLowerCase().trim()));
@@ -112,6 +113,7 @@ export default function PurchasesWorkspace() {
   </div>;
   return <div className="space-y-5">{section!=='suppliers'&&<PageHeader back={{onClick:section==='receiving'?backToOrders:backToMenu,label:section==='receiving'?ui('Purchase orders'):ui('Purchases menu')}} title={sections.find(s=>s.key===section)?.label||ui("Purchases")} actions={section!=='suppliers'&&<div className="flex flex-wrap gap-2"><Button variant="outline" disabled={loading} onClick={load}><RefreshCw size={15} className="mr-1"/>{ui("Refresh")}</Button>{section==='orders'&&p.receive&&<Button variant="outline" onClick={()=>navigate({section:'receiving'})}><PackageCheck size={15} className="mr-1"/>{ui('Receive goods')}</Button>}{section==='orders'&&p.purchase&&<Button onClick={()=>navigate({section:'orders',compose:'order'})}><Plus size={15} className="mr-1"/>{ui("New purchase order")}</Button>}</div>}/>}
 
+    {section==='receiving'&&['admin','warehouse_manager'].includes(role)&&<UnsoldStockReturns mode="receive"/>}
     {section==='suppliers'?<Suppliers embedded/>:<>
       {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}<button className="ml-3 underline" onClick={load}>{ui("Try again")}</button></p>}
       {loading?<p role="status" className="py-14 text-center text-slate-500">{ui("Loading purchases...")}</p>:data&&<>

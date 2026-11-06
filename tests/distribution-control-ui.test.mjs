@@ -9,7 +9,7 @@ async function ui(){
     b.onResolve({filter:/^react$/},args=>/(?:Distribution|DistributionStockControl|IssueGoods|FleetBoard|DegustationForm)\.jsx$/.test(args.importer)?{path:args.importer.split(/[\\/]/).at(-1),namespace:'fixture'}:undefined);
     b.onLoad({filter:/.*/,namespace:'fixture'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__distributionUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__distributionUI.state(${JSON.stringify(key)},v);export const useRef=v=>globalThis.__distributionUI.ref(${JSON.stringify(key)},v);export const useEffect=${key==='IssueGoods.jsx'?'React.useEffect':"(fn,deps)=>globalThis.__distributionUI.effect("+JSON.stringify(key)+",fn,deps)"};export function useCallback(fn,deps){const slot=globalThis.__distributionUI.ref(${JSON.stringify(key)},null);if(!slot.current||deps.some((v,i)=>!Object.is(v,slot.current.deps[i])))slot.current={fn,deps};return slot.current.fn;}`,resolveDir:process.cwd()}));
     const mocks={
-      'next/dynamic':`import React from 'react';export default loader=>()=>React.createElement('div',null,loader.toString().includes('EmployeeDashboard')?'Mounted Driver delivery workspace':'Mounted Commercial stock control');`,
+      'next/dynamic':`import React from 'react';export default loader=>props=>React.createElement('div',null,loader.toString().includes('EmployeeDashboard')?'Mounted Driver delivery workspace':loader.toString().includes('FieldInventoryCards')?'Mounted assigned stock: '+props.employeeId:'Mounted Commercial stock control');`,
       '@/views/EmployeeDashboard':`export default function DriverWorkspace(){return null;}`,
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__distributionUI.session||({role:'admin',principalRole:'admin',user:{id:'manager',role:'admin'}});`,
       '@/lib/AuthContext':`export const useAuth=()=>({logout:()=>{}});`,
@@ -28,21 +28,22 @@ async function ui(){
   }}]});const mod={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,mod,mod.exports);return mod.exports;
 }
 function runtime(){const r=hookRuntime(),capture=r.capture.bind(r),before=r.beforeRender.bind(r);r.inputs=[];r.selects=[];r.reads=[];r.capture=(tag,props,children)=>{capture(tag,props,children);if(tag==='select')r.selects.push(props);};r.beforeRender=()=>{before();r.inputs=[];r.selects=[];};return r;}
-test('Distribution opens eight icon destinations without data reads or stock issuance buttons',async()=>{
+test('Distribution opens only field stock and vehicles without data reads or historical register tiles',async()=>{
   const {render,modules}=await ui(),r=runtime();globalThis.__distributionUI=r;
   const paint=()=>{r.beforeRender();return render('distribution');};
-  try{let html=paint();await r.flush();assert.deepEqual(r.reads,[]);assert.deepEqual(r.buttons.map(b=>b['aria-label']),['Field stock','Deliveries','Fleet','Dispatches','Issue records','Routes','Vehicles','Expired exchanges']);assert.doesNotMatch(html,/New Dispatch|Issue finished goods|Mounted Commercial stock control|tablist/);
+  try{let html=paint();await r.flush();assert.deepEqual(r.reads,[]);assert.deepEqual(r.buttons.map(b=>b['aria-label']),['Field stock','Vehicles']);assert.doesNotMatch(html,/New Dispatch|Issue finished goods|Mounted Commercial stock control|tablist|Expired exchanges|Issue records|Routes|Dispatches|Fleet|Deliveries/);
     r.buttons.find(b=>b['aria-label']==='Field stock').onClick();html=paint();assert.match(html,/Mounted Commercial stock control/);assert.doesNotMatch(html,/Distribution sections|New Dispatch|tablist/);
     r.buttons.find(b=>b["aria-label"]==='Distribution menu').onClick();assert.equal(r.navigation.at(-1),'/distribution');
     const sidebar=render('sidebar');assert.ok(sidebar.includes('href="/distribution"'));assert.equal(sidebar.includes('href="/custody"'),false);assert.equal(modules.filter(m=>['/distribution','/custody'].includes(m.path)).length,1);
   }finally{r.cleanup();delete globalThis.__distributionUI;}
 });
 
-test('driver tiles and direct delivery bookmarks only mount the assigned-driver workspace',async()=>{
+test('driver landing offers own stock and returns while direct delivery bookmarks keep the assigned-driver workspace',async()=>{
   const {render}=await ui(),r=runtime();globalThis.__distributionUI=r;r.session={role:'driver',employee:{id:'driver-a'}};
   const paint=()=>{r.beforeRender();return render('distribution');};
-  try{paint();await r.flush();assert.deepEqual(r.buttons.map(b=>b['aria-label']),['My deliveries']);assert.deepEqual(r.reads,[]);
-    r.buttons.find(b=>b['aria-label']==='My deliveries').onClick();const html=paint();assert.match(html,/Mounted Driver delivery workspace/);assert.doesNotMatch(html,/Commercial stock control|Fleet|New Dispatch/);
+  try{paint();await r.flush();assert.deepEqual(r.buttons.map(b=>b['aria-label']),['My issued stock','Return goods']);assert.deepEqual(r.reads,[]);
+    r.buttons.find(b=>b['aria-label']==='My issued stock').onClick();assert.equal(r.navigation.at(-1),'/distribution?tab=stock');r.query+='&employee=other-driver';assert.match(paint(),/Mounted assigned stock: driver-a/);r.query='';paint();r.buttons.find(b=>b['aria-label']==='Return goods').onClick();assert.equal(r.navigation.at(-1),'/my-stock/returns');
+    r.query='tab=deliveries';const html=paint();assert.match(html,/Mounted Driver delivery workspace/);assert.doesNotMatch(html,/Commercial stock control|Fleet|New Dispatch/);
     const sidebar=render('sidebar');assert.match(sidebar,/href="\/distribution"/);assert.doesNotMatch(sidebar,/href="\/driver"/);
     r.query='tab=vehicles';assert.match(paint(),/data-redirect="\/distribution"/);
   }finally{r.cleanup();delete globalThis.__distributionUI;}
@@ -75,6 +76,24 @@ test('Distribution field-stock reports cannot reopen the issue form even through
   const previous=globalThis.document;globalThis.document={hidden:true};
   try{r.beforeRender();render('stock');await r.flush();r.beforeRender();const html=render('stock');assert.match(html,/Field stock/);assert.doesNotMatch(html,/Issue finished goods|Confirm &amp; issue|Load list/);}
   finally{r.cleanup();globalThis.document=previous;delete globalThis.__distributionUI;}
+});
+
+test('Field stock lists only current holders and issues, refreshes after receipt and preserves explicit run history',async()=>{
+  const {render}=await ui(),r=runtime();globalThis.__distributionUI=r;
+  const record={id:'held-run',dispatch_number:'CURRENT-ISSUE',salesperson_id:'holder',status:'loaded',has_current_stock:true,error:'Review this stock assignment'};
+  const history={id:'old-run',dispatch_number:'HISTORICAL-ISSUE',salesperson_id:'former',status:'completed',has_current_stock:false,error:'Historical manifest unavailable'};
+  const data={agents:[{id:'holder',full_name:'Current Employee',status:'active',has_current_stock:true},{id:'former',full_name:'Former Employee',status:'active',has_current_stock:false},{id:'empty',full_name:'Never Issued Employee',status:'active',has_current_stock:false}],runs:[record,history],legacy:[],staff:[],warehouses:[],products:[],unverified_supplies:0};
+  r.invoke=async()=>({data});const previous=globalThis.document;globalThis.document={hidden:true};
+  const paint=()=>{r.beforeRender();return render('stock');};
+  try{
+    paint();await r.flush();let html=paint();assert.match(html,/Current Employee/);assert.match(html,/CURRENT-ISSUE/);assert.match(html,/Review this stock assignment/);
+    assert.doesNotMatch(html,/Former Employee|Never Issued Employee|HISTORICAL-ISSUE/);
+    r.query='commercial=former';html=paint();assert.match(html,/Current Employee/);assert.equal(r.selects[0].value,'');
+    data.agents[0].has_current_stock=false;record.has_current_stock=false;record.status='returned';
+    await r.buttons.find(b=>b.label==='Refresh').onClick();html=paint();assert.doesNotMatch(html,/Current Employee|CURRENT-ISSUE|Former Employee/);assert.match(html,/No current stock issues/);
+    r.query='run=old-run';html=paint();assert.match(html,/HISTORICAL-ISSUE/);assert.match(html,/Historical manifest unavailable/);
+    r.buttons.find(b=>b.label==='Run details').onClick();assert.equal(r.navigation.at(-1),'/distribution/dispatches/old-run');
+  }finally{r.cleanup();globalThis.document=previous;delete globalThis.__distributionUI;}
 });
 
 test('management Deliveries shows active paired runs and opens their dispatch detail',async()=>{

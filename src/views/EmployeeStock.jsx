@@ -27,7 +27,7 @@ export default function EmployeeStock() {
   }, [revision]);
   const canRecord = data?.runs.some(r => r.can_supply) && !error && !busy;
   return <div className="space-y-5">
-    <PageHeader title={ui('My issued stock')} subtitle={data?.employeeName || ui('Goods assigned to your employee account')} actions={<div className="flex flex-wrap gap-2"><Button disabled={!canRecord} onClick={() => navigate('/my-stock/new')}>{ui('Record sale')}</Button><Button variant="outline" disabled={!canRecord || !data.balances.some(b => b.degustation_quantity > 0)} onClick={() => setGiveaway(true)}>{ui('Record Dégustation')}</Button></div>}/>
+    <PageHeader title={ui('My issued stock')} subtitle={data?.employeeName || ui('Goods assigned to your employee account')} actions={<div className="flex flex-wrap gap-2"><Button disabled={!canRecord} onClick={() => navigate('/my-stock/new')}>{ui('Record sale')}</Button><Button variant="outline" onClick={() => navigate('/my-stock/returns')}>{ui('Return goods')}</Button><Button variant="outline" disabled={!canRecord || !data.balances.some(b => b.degustation_quantity > 0)} onClick={() => setGiveaway(true)}>{ui('Record Dégustation')}</Button></div>}/>
     {error && <p role="alert" className="text-red-700">{uiMessage(error)} <Button variant="outline" onClick={() => setRevision(n => n + 1)}>{ui('Retry')}</Button></p>}
     {!data && busy && <p role="status">{ui('Loading...')}</p>}
     {data && <>

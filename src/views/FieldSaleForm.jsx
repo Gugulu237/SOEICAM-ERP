@@ -1,3 +1,4 @@
+import ExchangePackagingNotice,{exchangePackagingWarningText} from '@/components/field/ExchangePackagingNotice';
 
 /* localized-messages */
 import { sourceMessage, uiMessage } from '@/lib/i18n';
@@ -230,7 +231,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
       if (res.data.error) throw new Error(res.data.error);
       dirty.current = false;
       toast({ title: submit ? `${res.data.sale.sale_number} recorded` : ui("{0} saved as a draft", res.data.sale.sale_number),
-        description: submit ? ui(exchangeOnly?'Exchange recorded and stock deducted':"Posted to company Sales. Customer balance and vehicle stock have been updated.") : ui("Stock and sales are unchanged until you record this supply.") });
+        description: [submit ? ui(exchangeOnly?'Exchange recorded and stock deducted':"Posted to company Sales. Customer balance and vehicle stock have been updated.") : ui("Stock and sales are unchanged until you record this supply."), exchangePackagingWarningText(res.data.sale)].filter(Boolean).join(' ') });
       if (embedded) onDone?.({ sale: res.data.sale, submitted: submit });
       else navigate(returnPath);
     } catch (error) {
@@ -243,6 +244,7 @@ export default function FieldSaleForm({ embedded = false, commercialId: selected
   if (!canSell) return <div className="mx-auto max-w-lg rounded-2xl border bg-white p-8"><h2 className="font-semibold">{isAdmin ? ui("Employee sales entry is read-only for management") : ui("Field POS needs a linked sales employee")}</h2><p className="mt-2 text-sm text-slate-600">{isAdmin ? ui("The Commercial employee must record sales from their own account. Open Commercial reports to review their activity.") : ui("Ask an administrator to link your login to an active Commercial employee before recording field sales.")}</p><Button className="mt-4" variant="outline" onClick={() => navigate('/commercial')}>{ui("Open Commercial workspace")}</Button></div>;
 
   return <div className="mx-auto w-full min-w-0 max-w-3xl pb-8">
+    <ExchangePackagingNotice record={sale}/>
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
         <div data-page-heading className="flex min-w-0 items-start gap-2"><PageBackButton onClick={back} disabled={busy} label={ui('My field sales')}/><div className="flex min-w-0 flex-wrap items-center gap-2 self-center"><h1 className="break-words text-2xl font-bold tracking-tight text-slate-900">{sale ? sale.sale_number : ui("Record sale / supply")}</h1><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800">{ui("Field POS")}</span>{sale && <StatusPill map={SALE_STATUS} value={sale.status} />}</div></div>
