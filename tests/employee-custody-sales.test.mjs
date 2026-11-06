@@ -7,9 +7,13 @@ import {employeeStockAction} from '../src/server/domain/employee-stock.js';
 import {dispatchAction,dispatchReconciliationData} from '../src/server/domain/dispatch-operations.js';
 import {invoiceAction} from '../src/server/domain/sales-invoices.js';
 import {isReadOnlyFunction} from '../src/lib/function-actions.js';
+import catalog from '../src/server/generated/schema.json' with {type:'json'};
+import {splitRecord} from '../src/server/query.js';
 const gm={id:'gm',role:'admin'};
 async function setup(db){
  const f=await fixture(db),s=f.entities;
+ // Exercise the same required-field checks and defaults as the real entity store.
+ for(const name of ['DispatchRequest','Dispatch']){const create=s[name].create;s[name].create=async value=>{const {record,extra}=splitRecord(value,catalog[name],{creating:true});return create({...record,...extra});};}
  for(const name of ['Warehouse','AuditLog']){const create=s[name].create;s[name].create=async value=>{if(!value.id)return create(value);const row={...value};if(db)await db.query('INSERT INTO fixture_entity VALUES($1,$2,$3)',[name,row.id,JSON.stringify(row)]);else {assert.ok(!f.rows[name].some(r=>r.id===row.id));f.rows[name].push(row);}return structuredClone(row);};}
  await s.CompanySettings.update('settings',{company_name:'SOEICAM',next_invoice_number:1});await s.Employee.update('cashier',{role:'employee'});
  await s.Dispatch.deleteMany({});await s.DispatchLine.deleteMany({});await s.Warehouse.update('factory',{warehouse_type:'finished_goods'});
@@ -38,6 +42,29 @@ test('all active employee types except Hotesse can receive goods; optional trans
  const f=await setup();f.body.vehicleId='vehicle-a';assert.equal((await f.issue()).dispatch.driver_id,'');
  const g=await setup(),driver=await g.s.Employee.create({role:'driver',status:'active'});g.body.driverId=driver.id;assert.equal((await g.issue()).dispatch.vehicle_id,'');
  const h=await setup();h.body.driverId='missing';await assert.rejects(h.issue(),/active assigned driver/);
+ const invalidVehicle=await setup();invalidVehicle.body.vehicleId='missing';await assert.rejects(invalidVehicle.issue(),/active vehicle/);
+});
+
+test('the API issues sale goods, mixed loads and degustation-only loads without a vehicle using production record validation',async()=>{
+ const db=new PGlite();
+ try{
+  const f=await setup(db),route=await functionRoute();f.client.auth.me=async()=>gm;globalThis.__cashierClient=f.client;
+  globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+  for(const [index,degustation] of [0,2,5].entries()){
+   const recipient=await f.s.Employee.create({full_name:'Recipient '+index,role:'employee',status:'active'});
+   const body={...f.body,commercialId:recipient.id,requestKey:crypto.randomUUID(),vehicleId:[undefined,'',null][index],lines:[{product_id:'product-a',quantity:5,degustation_quantity:degustation}]};
+   const response=await route(request(body),{params:Promise.resolve({name:'fieldOps'})}),result=await response.json();
+   assert.equal(response.status,200,JSON.stringify(result));const dispatch=result.dispatch;
+   assert.equal(dispatch.status,'loaded');assert.equal(dispatch.vehicle_id,'');assert.equal(dispatch.driver_id,'');assert.equal(dispatch.salesperson_id,recipient.id);
+   const location=await f.s.Warehouse.get(dispatch.vehicle_warehouse_id);assert.equal(location.employee_delivery_custody,true);assert.equal(location.custodian_employee_id,recipient.id);
+   assert.equal((await f.s.DispatchRequest.get(dispatch.request_id)).status,'processed');
+   assert.equal((await f.s.DispatchLine.filter({dispatch_id:dispatch.id}))[0].degustation_quantity,degustation);
+   const recon=await dispatchReconciliationData(f.client.asServiceRole,dispatch);assert.equal(recon.hasVariance,false);assert.equal(recon.rows[0].actual,5);assert.equal(recon.rows[0].degustation_remaining,degustation);
+   const retry=await route(request(body),{params:Promise.resolve({name:'fieldOps'})});assert.equal(retry.status,200);assert.equal((await retry.json()).dispatch.id,dispatch.id);
+  }
+  assert.equal((await f.s.Dispatch.list()).length,3);assert.equal((await f.s.DispatchRequest.list()).length,3);
+  assert.equal((await f.s.StockBalance.filter({warehouse_id:'factory'})).reduce((n,b)=>n+b.quantity,0),5);assert.equal((await f.s.JournalEntry.list()).length,0);
+ }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 test('personal stock endpoints refuse other employees, company warehouses, spoofed sellers and invoice authority',async()=>{
  const f=await setup(),{dispatch}=await f.issue();

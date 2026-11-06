@@ -52,12 +52,13 @@ test('GM opens an employee dashboard even when that employees operational module
  }finally{for(const key of ['__dashboardSession','__dashboardParams','__dashboardCatalogue','__dashboardState'])delete globalThis[key];}
 });
 
-test('Payroll appears under Employee Dashboard and legacy links retain their selected run',async()=>{
+test('Payroll stays inside Employee Dashboard without a separate sidebar entry and legacy links retain their selected run',async()=>{
  const ui=await screens();Object.assign(globalThis,{__dashboardSession:{role:'admin',allowedModules:null},__dashboardParams:'section=payroll'});
  try{
-  const markup=ui.renderSidebar();assert.match(markup,/href="\/team-workspaces\?section=payroll"[^>]*>.*?Payroll/s);assert.doesNotMatch(markup,/href="\/payroll"/);
+  const markup=ui.renderSidebar();assert.match(markup,/href="\/team-workspaces"/);assert.doesNotMatch(markup,/Payroll|Approval history|href="\/approval-history"|href="\/payroll"/);
+  globalThis.__dashboardState=0;assert.match(ui.renderEmployee(),/href="\/team-workspaces\?section=payroll"[^>]*>Payroll/);
   await assert.rejects(ui.PayrollPage({searchParams:Promise.resolve({run:'run-1'})}),{location:'/team-workspaces?section=payroll&run=run-1'});
- }finally{delete globalThis.__dashboardSession;delete globalThis.__dashboardParams;}
+ }finally{delete globalThis.__dashboardSession;delete globalThis.__dashboardParams;delete globalThis.__dashboardState;}
 });
 
 test('Commercial sidebar offers direct customer sale entry only to the agent workspace',async()=>{

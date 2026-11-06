@@ -87,7 +87,6 @@
     }
   },
   "required": [
-    "vehicle_id",
     "request_date"
   ]
 }

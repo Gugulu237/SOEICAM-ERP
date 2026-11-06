@@ -1292,8 +1292,7 @@
       }
     },
     "required": [
-      "dispatch_date",
-      "vehicle_id"
+      "dispatch_date"
     ],
     "source": "Dispatch.jsonc"
   },
@@ -1455,7 +1454,6 @@
       }
     },
     "required": [
-      "vehicle_id",
       "request_date"
     ],
     "source": "DispatchRequest.jsonc"

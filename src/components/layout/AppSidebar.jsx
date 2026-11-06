@@ -22,9 +22,8 @@ import {InstallAppButton} from '@/components/pwa/PwaProvider';
 
 const navItems = [
   {get label(){return ui('My issued stock');},icon:Package,path:'/my-stock',roles:['admin','procurement','warehouse_manager','cashier','production_manager','employee','commercial','driver']},
-  {get label(){return ui('Approval history');},icon:Receipt,path:'/approval-history',roles:['admin','procurement','warehouse_manager','cashier','production_manager','employee','commercial','driver']},
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
-  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"], children:[{get label(){return ui("Payroll");},path:"/team-workspaces?section=payroll",roles:["admin","cashier"]}] },
+  { get label(){return ui("Employee Dashboard");}, icon: Users, path: "/team-workspaces", roles: ["admin","cashier"] },
   { get label(){return ui("Supply Chain Dashboard");}, icon: Truck, path: "/supply-chain", roles: ["warehouse_manager"], assignedRole: "supply_chain_manager" },
   { get label(){return ui("Commercial Dashboard");}, icon: ShoppingBag, path: "/commercial", roles: ["commercial"], personalCommercial: true, children: [
     { get label(){return ui("Record sale");}, path: "/commercial?section=pos&new=1", roles: ["commercial"] },

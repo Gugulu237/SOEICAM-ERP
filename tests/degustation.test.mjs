@@ -9,9 +9,12 @@ import { dispatchAction, dispatchReconciliationData } from '../src/server/domain
 import { currentSupplyRun, assertRunSupplyStock } from '../src/server/domain/commercial-runs.js';
 import { salesSourceProducts } from '../src/server/domain/sales-stock-source.js';
 import { isReadOnlyFunction } from '../src/lib/function-actions.js';
+import catalog from '../src/server/generated/schema.json' with { type: 'json' };
+import { splitRecord } from '../src/server/query.js';
 const gm = { id: 'gm', role: 'admin' };
 async function setup(db, { allocated = 2, total = 7, vehicle = false } = {}) {
   const f = await fixture(db), s = f.entities;
+  for (const name of ['DispatchRequest', 'Dispatch']) { const create = s[name].create; s[name].create = async value => { const { record, extra } = splitRecord(value, catalog[name], { creating: true }); return create({ ...record, ...extra }); }; }
   for (const name of ['Warehouse', 'AuditLog']) { const create = s[name].create; s[name].create = async value => { if (!value.id) return create(value); const row = { ...value }; if (db) await db.query('INSERT INTO fixture_entity VALUES($1,$2,$3)', [name, row.id, JSON.stringify(row)]); else f.rows[name].push(row); return structuredClone(row); }; }
   await s.CompanySettings.update('settings', { company_name: 'SOEICAM', next_invoice_number: 1 });
   await s.Employee.update('cashier', { role: 'employee' });

@@ -116,7 +116,6 @@
     }
   },
   "required": [
-    "dispatch_date",
-    "vehicle_id"
+    "dispatch_date"
   ]
 }
