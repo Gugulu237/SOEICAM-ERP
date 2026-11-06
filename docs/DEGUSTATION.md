@@ -1,6 +1,8 @@
 # Dégustation: customer giveaways
 
-Warehouse staff use Inventory → Issue goods and enter **For sale** and **Dégustation** quantities for each product. Their sum is transferred into the employee's existing delivery custody, preserving batch, expiry and cost. Driver and vehicle remain optional. A load may contain only giveaways. Old loads with no Dégustation allocation remain fully available for sale.
+Warehouse staff use **Inventory → Issue goods** and follow the normal employee, warehouse and sale-product selection. Selecting **Continue** asks **Are you also issuing Dégustation units?** Staff explicitly choose No to finish a normal issue, or Yes to select the additional giveaway products and quantities. The review shows sale, Dégustation and total quantities before one **Confirm & issue goods** action. Combined quantities are checked against available stock; returning to edit sale quantities rechecks the giveaway allowance. Changing the source warehouse clears both selections.
+
+The combined load is transferred into the employee's existing delivery custody, preserving batch, expiry and cost. Driver and vehicle remain optional. For a giveaway-only load, staff continue without sale products, choose Yes and add Dégustation units. Old loads with no Dégustation allocation remain fully available for sale.
 
 The signed-in employee uses **My issued stock → Record Dégustation**, chooses a registered customer (including a customer branch), and enters the quantities actually handed out. The employee cannot use another employee's run or consume the sale allocation as a giveaway. Sales and replacement workflows cannot consume the reserved giveaway allocation. Expired and quarantined units remain unavailable for distribution.
 

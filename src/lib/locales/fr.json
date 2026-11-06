@@ -7743,5 +7743,20 @@
   "Dégustation quantity cannot exceed the total issued quantity.": "La quantité de dégustation ne peut pas dépasser la quantité totale remise.",
   "Record Dégustation on the current business date.": "Enregistrez la dégustation à la date du jour.",
   "Choose an active customer receiving the giveaway.": "Choisissez un client actif bénéficiaire de la dégustation.",
-  "This Dégustation reference was already recorded with different details.": "Cette référence de dégustation a déjà été enregistrée avec des détails différents."
+  "This Dégustation reference was already recorded with different details.": "Cette référence de dégustation a déjà été enregistrée avec des détails différents.",
+  "Step {0} of 2": "Étape {0} sur 2",
+  "Goods for sale": "Marchandises à vendre",
+  "Are you also issuing Dégustation units?": "Remettez-vous également des produits pour la dégustation ?",
+  "No, sale goods only": "Non, uniquement des produits à vendre",
+  "Yes, add Dégustation": "Oui, ajouter la dégustation",
+  "Issue summary": "Récapitulatif de la sortie",
+  "For a Dégustation-only issue, continue without sale products.": "Pour une sortie uniquement destinée à la dégustation, continuez sans ajouter de produits à vendre.",
+  "Go back to add sale products, or choose Yes and add Dégustation units.": "Revenez pour ajouter des produits à vendre, ou choisissez Oui et ajoutez des produits pour la dégustation.",
+  "Add the extra units being issued for Dégustation. These are separate from the sale quantities entered earlier.": "Ajoutez les unités supplémentaires remises pour la dégustation. Elles sont distinctes des quantités à vendre saisies précédemment.",
+  "No stock remains after the sale quantities. Go back to adjust the load.": "Aucun stock ne reste après les quantités à vendre. Revenez pour ajuster le chargement.",
+  "Dégustation units": "Produits pour la dégustation",
+  "Choose the products and quantities for Dégustation.": "Choisissez les produits et les quantités pour la dégustation.",
+  "Remove Dégustation": "Retirer la dégustation",
+  "Choose Yes or No before confirming the issue.": "Choisissez Oui ou Non avant de confirmer la sortie.",
+  "Review Dégustation quantities. The combined load cannot exceed available stock.": "Vérifiez les quantités de dégustation. Le chargement total ne peut pas dépasser le stock disponible."
 }
