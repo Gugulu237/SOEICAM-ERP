@@ -53,6 +53,34 @@ test('transfer with a fee reports only the fee as an external payment', () => {
   const r = l.run(); assert.equal(r.internal_transfers, 98); assert.equal(r.outflow, 2); assert.equal(r.inflow, 0); assert.equal(r.closing, 98);
 });
 
+test('supplier advances and their refunds stay in supplier cash flows instead of customer collections', () => {
+  const l = ledger();
+  l.accounts.push({ id: 'advance', account_number: '1501', name: 'Prepaid purchases / Supplier receivables', account_type: 'asset', normal_balance: 'debit', balance: 0 });
+  l.add('open', '2026-09-30', [['bank', 1000, 0], ['capital', 0, 1000]]);
+  l.add('advance', '2026-10-01', [['advance', 300, 0], ['bank', 0, 300]]);
+  l.add('refund', '2026-10-02', [['bank', 50, 0], ['advance', 0, 50]]);
+  const r = l.run(), supplier = r.activities[0].rows.find(row => row.account_id === 'advance');
+  assert.equal(supplier.label, 'Suppliers, raw materials and packaging');
+  assert.equal(supplier.inflow, 50); assert.equal(supplier.outflow, 300);
+  assert.equal(r.closing, 750); assert.equal(r.reconciliation_difference, 0);
+  assert.equal(classifyCashAccount({account_type:'asset',name:'Avances et créances fournisseurs'}).label, supplier.label);
+  assert.equal(classifyCashAccount({account_type:'asset',name:'Customer receivables'}).label, 'Sales and customer collections / refunds');
+});
+
+test('new-company cash imports reconcile in the CSV account rows while noncash opening stock stays outside cash flow', () => {
+  const l = ledger();
+  l.add('opening-cash', '2026-10-01', [['bank', 500, 0], ['capital', 0, 500]], {source_module:'opening_balances'});
+  l.add('opening-stock', '2026-10-01', [['stock', 900, 0], ['capital', 0, 900]], {source_module:'opening_balances'});
+  l.add('transfer', '2026-10-02', [['cash', 100, 0], ['bank', 0, 100]]);
+  l.add('payment', '2026-10-03', [['payable', 50, 0], ['bank', 0, 50]]);
+  const r = l.run(), csv = cashFlowCsv(r);
+  assert.equal(r.opening, 0); assert.equal(r.opening_adjustments, 500); assert.equal(r.inflow, 0); assert.equal(r.outflow, 50); assert.equal(r.closing, 450); assert.equal(r.internal_transfers, 100);
+  assert.equal(r.history.length, 2); assert.equal(r.reconciliation_difference, 0);
+  assert.match(csv, /"Cash account","Opening","Opening balance imports","Debits","Credits","Closing"/);
+  assert.match(csv, /"bank Bank","0","500","0","150","350"/);
+  assert.match(csv, /"cash Cash on hand","0","0","100","0","100"/);
+});
+
 test('dated reversals retain the original movement and reverse the same source classification', () => {
   const l = ledger(); const original = l.add('sale', '2026-09-30', [['cash', 100, 0], ['sales', 0, 100], ['cogs', 50, 0], ['stock', 0, 50]], { source_module: 'sales', source_document_type: 'Invoice' });
   original.status = 'reversed'; original.reversed_by_journal = 'reverse';

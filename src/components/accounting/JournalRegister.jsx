@@ -201,7 +201,7 @@ export default function JournalRegister() {
         </>
       )}
 
-      {isAdmin&&<AccountingIntegrityCheck/>}
+      {isAdmin&&<AccountingIntegrityCheck onCorrected={refresh}/>}
       <JournalActivityFeed />
     </div>
   );

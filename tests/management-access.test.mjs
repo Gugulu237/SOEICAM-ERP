@@ -31,14 +31,16 @@ test('management navigation exposes reporting and expense requests without journ
   }
 });
 
-test('management reads only posted journal data; reports do not grant accounting writes or payroll access',async()=>{
+test('management reads posted journals and reversed originals across every page without drafts or accounting writes',async()=>{
   const {entities:s}=await fixture(),catalogue=catalogueFromStored();
-  const posted=await s.JournalEntry.create({status:'posted',entry_date:date}),draft=await s.JournalEntry.create({status:'draft',entry_date:date});
+  const posted=await s.JournalEntry.create({status:'posted',entry_date:date}),draft=await s.JournalEntry.create({status:'draft',entry_date:date}),cancelled=await s.JournalEntry.create({status:'cancelled',entry_date:date});
+  for(let index=0;index<200;index++)await s.JournalEntry.create({status:'posted',entry_date:date});
+  const reversed=await s.JournalEntry.create({status:'reversed',entry_date:date});
   for(const key of ['production_manager','supply_chain_manager']){
     const employee=decorateEmployee(user,{id:'manager',role:key,status:'active'},catalogue),role=employee.access_template,context={user,employee,role};
     for(const entity of ['Account','JournalEntry','JournalLine'])assert.equal(assertEntityAccess(context,entity,'filter'),role);
-    assert.deepEqual(await recordScope(context,'JournalEntry','filter',s),{status:'posted'});
-    const scope=await recordScope(context,'JournalLine','filter',s);assert.ok(scope.journal_id.$in.includes(posted.id));assert.ok(!scope.journal_id.$in.includes(draft.id));
+    assert.deepEqual(await recordScope(context,'JournalEntry','filter',s),{status:{$in:['posted','reversed']}});
+    const scope=await recordScope(context,'JournalLine','filter',s);assert.equal(scope.journal_id.$in.length,202);assert.ok(scope.journal_id.$in.includes(posted.id));assert.ok(scope.journal_id.$in.includes(reversed.id));assert.ok(!scope.journal_id.$in.includes(draft.id));assert.ok(!scope.journal_id.$in.includes(cancelled.id));
     for(const entity of ['Account','JournalEntry','JournalLine','TreasuryAccount','PayrollRun'])assert.throws(()=>assertEntityAccess(context,entity,'create'));
     await assert.rejects(saveManualJournal(s,context,{status:'posted'}),/accounting|Accountant|accountant|restricted|permitted/i);
   }

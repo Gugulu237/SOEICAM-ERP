@@ -12,6 +12,8 @@ async function bundle(){
   b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__reportFlow.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__reportFlow.state('reports',v),useEffect=(fn,deps)=>globalThis.__reportFlow.effect('reports',fn,deps);",resolveDir:process.cwd()}));
   const mocks={
    '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__reportFlow.session;",
+   '@/lib/asset-depreciation-client':"export const syncAssetDepreciation=async()=>({through:'2025-10',pending_count:0,pending_total:0,issues:[]});",
+   '@/components/assets/DepreciationStatus':'export default ()=>null;',
    '@/lib/field-ops':"export const invokeFieldOps=payload=>globalThis.__reportFlow.invoke(payload);export const errorMessage=e=>e.message;",
    '@/lib/router':"import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);",
    '@/components/ui/button':"import React from 'react';export const Button=({children,...props})=>{globalThis.__reportFlow.capture('button',props,children);return React.createElement('button',props,children);};",

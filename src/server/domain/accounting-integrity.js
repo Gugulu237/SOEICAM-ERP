@@ -3,6 +3,7 @@ import {requireActiveContext,forbidden} from '../access.js';
 import {assertModule} from './role-catalogue.js';
 import {readRecords} from './commercial-workspace.js';
 import {journalCents,journalDate,ledgerStatuses} from './journal-validation.js';
+import {supplierPayableMismatches} from './supplier-payables.js';
 export async function accountingIntegrity(stores,context){
  if(requireActiveContext(context)!=='admin')throw forbidden('Only administrators can run the accounting integrity check.');assertModule({...context,role:'admin'},'accounting');
  const [accounts,journals,lines,treasury,periods,payments,allocations,invoices,bills,rules]=await Promise.all(['Account','JournalEntry','JournalLine','TreasuryAccount','AccountingPeriod','Payment','PaymentAllocation','Invoice','Bill','PostingRule'].map(n=>readRecords(stores[n])));
@@ -42,6 +43,9 @@ export async function accountingIntegrity(stores,context){
   if(!ledgerStatuses.includes(byJournal.get(p.journal_id)?.status))issue('payment_without_posted_journal',p.payment_number||p.id);
   try{if((allocated.get(p.id)||0)>journalCents(p.amount))issue('overallocated_payment',p.payment_number||p.id);}catch{issue('invalid_payment_amount',p.payment_number||p.id);}
  }
+ const supplier_payable_mismatches=await supplierPayableMismatches(stores);
+ for(const row of supplier_payable_mismatches.mismatches)issue('supplier_payment_account_mismatch',row.payment_number||row.payment_id);
+ for(const row of supplier_payable_mismatches.blocked)issue('supplier_payment_evidence_unverified',row.payment_number||row.payment_id);
  const safe=!invalid&&Number.isSafeInteger(totalDebit)&&Number.isSafeInteger(totalCredit);
- return {checked_at:new Date().toISOString(),journal_count:journals.length,line_count:lines.length,issue_count:Object.values(counts).reduce((n,v)=>n+v,0),counts,issues,truncated:Object.values(counts).reduce((n,v)=>n+v,0)>issues.length,totals:safe?{debit:totalDebit/100,credit:totalCredit/100,difference:(totalDebit-totalCredit)/100}:null};
+ return {checked_at:new Date().toISOString(),journal_count:journals.length,line_count:lines.length,issue_count:Object.values(counts).reduce((n,v)=>n+v,0),counts,issues,truncated:Object.values(counts).reduce((n,v)=>n+v,0)>issues.length,totals:safe?{debit:totalDebit/100,credit:totalCredit/100,difference:(totalDebit-totalCredit)/100}:null,supplier_payable_mismatches};
 }

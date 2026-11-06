@@ -5,6 +5,7 @@ import { assertEntityModule, assertModule } from './domain/role-catalogue.js';
 import { canReadManagementAccounting } from '../lib/management-access.js';
 import { CASH_ACCOUNT_TYPES } from '../lib/treasury-access.js';
 import { guardEmployeeAttribution } from './domain/employee-action-access.js';
+import { ledgerStatuses } from './domain/journal-validation.js';
 
 const readRoles = {
   Account:['cashier'], AccountingPeriod:['cashier','production_manager','warehouse_manager','procurement','employee'], AuditLog:[],
@@ -64,10 +65,10 @@ export async function recordScope(context, entity, operation, stores) {
   const role = assertEntityAccess(context,entity,operation), employeeId = context.employee?.id;
   if (role === 'admin') return {};
   if (['production_manager','warehouse_manager'].includes(role) && canReadManagementAccounting(role,context.employee)) {
-    if (entity==='JournalEntry') return {status:'posted'};
+    if (entity==='JournalEntry') return {status:{$in:ledgerStatuses}};
     if (entity==='JournalLine') {
       const ids=[];
-      for(let skip=0;;skip+=200){const page=await stores.JournalEntry.filter({status:'posted'},'id',200,skip);ids.push(...page.map(j=>j.id));if(page.length<200)break;}
+      for(let skip=0;;skip+=200){const page=await stores.JournalEntry.filter({status:{$in:ledgerStatuses}},'id',200,skip);ids.push(...page.map(j=>j.id));if(page.length<200)break;}
       return {journal_id:{$in:ids}};
     }
   }
@@ -98,6 +99,7 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if([value,existing].some(row=>row&&(Object.keys(row).some(key=>key.startsWith('setup_stock_'))||[row.source_module,row.module].includes('accounting_corrections')||row.source_document_type==='SetupStockCorrection'||row.action==='correct_setup_stock'||String(row.id||'').startsWith('SSC-'))))throw forbidden('Setup inventory corrections and their evidence use the checked Accounting workflow.');
   if(entity==='AuditLog'&&[value,existing].some(r=>r&&(r.action==='import_account_opening_balance'||String(r.id||'').startsWith('AOB-')||'opening_account_payload' in r)))throw forbidden('Account opening audit records use the checked Accounting workflow.');
   if([value,existing].some(row=>row&&(Object.keys(row).some(key=>key.startsWith('recurring_'))||row.accounting_source==='recurring_expense'||row.source_module==='recurring_expenses'||['Bill','AuditLog'].includes(entity)&&/^RE-|^REP-/.test(row.id||''))))throw forbidden('Recurring expenses, bills and payment evidence use the checked Accounting workflow.');
   if(context.user?.[FEATURE_AUTHORITY]?.module==='approvals'&&(!['update','updateMany'].includes(operation)||Object.keys(value).some(k=>!['status','approved_by','approved_at','rejected_by','rejected_at','rejection_reason','rejection_notes','review_notes'].includes(k))))throw forbidden('Approval access permits review decisions, not edits to the original request.');

@@ -9,6 +9,8 @@ import { purchaseItemPostings } from '../../lib/item-posting.js';
 import { canReadPurchase } from './purchase-workspace.js';
 import {openingPartyLines} from '../../lib/opening-records.js';
 import { supplierCatalogue, supplierItems, supplierMaterial } from '../../lib/supplier-catalogue.js';
+import {receiptSupplierPayable,billSupplierPayable,supplierAdvanceSource} from './supplier-payables.js';
+import {journalCents} from './journal-validation.js';
 
 export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill'];
 const pick = (row, keys) => Object.fromEntries(keys.split(' ').map(key=>[key,row[key]]));
@@ -28,48 +30,54 @@ function requestKey(user,body) {
 }
 const supplierFields = 'id supplier_number name contact_person phone email address city tax_id category payment_terms_days is_active notes supplier_items updated_date supplier_removed_at supplier_lifecycle_revision';
 async function postedSupplierBalances(svc){
-  const s=svc.entities,[rules,legacy,journals,bills]=await Promise.all([readRecords(s.PostingRule,{rule_key:'supplier_payable',is_active:true}),readRecords(s.Account,{account_number:'4010'}),readRecords(s.JournalEntry,{status:'posted',entry_date:{$lte:businessDate()}}),readRecords(s.Bill)]);
-  const accounts=[...new Set([...rules.map(r=>r.account_id),...legacy.map(a=>a.id),...bills.flatMap(b=>[b.opening_account_id,b.payable_account_id])].filter(Boolean))],totals={};
+  const s=svc.entities,[rules,ledgerAccounts,journals,bills,payments]=await Promise.all([readRecords(s.PostingRule,{rule_key:{$in:['supplier_payable','supplier_prepayment']},is_active:true}),readRecords(s.Account),readRecords(s.JournalEntry,{status:{$in:['posted','reversed']},entry_date:{$lte:businessDate()}}),readRecords(s.Bill),readRecords(s.Payment,{payment_type:'supplier_payment',status:'posted'})]);
+  const accounts=[...new Set([...rules.map(r=>r.account_id),...ledgerAccounts.filter(a=>a.account_type==='liability'||a.account_number==='4010').map(a=>a.id),...bills.flatMap(b=>[b.opening_account_id,b.payable_account_id]),...payments.flatMap(p=>[p.supplier_prepayment_account_id,p.supplier_payable_account_id])].filter(Boolean))],totals={};
   if(!accounts.length)throw Error('Configure the supplier payable account before reviewing supplier balances');
   for(let i=0;i<journals.length;i+=100){
     const lines=await readRecords(s.JournalLine,{account_id:{$in:accounts},journal_id:{$in:journals.slice(i,i+100).map(j=>j.id)}});
-    for(const raw of lines)for(const line of openingPartyLines(raw)){if(line.party_type!=='supplier'||!line.party_id || ['draft','reversed'].includes(line.status))continue;totals[line.party_id]=round2(Number(totals[line.party_id] || 0)+Number(line.credit || 0)-Number(line.debit || 0));}
+    for(const raw of lines)for(const line of openingPartyLines(raw)){if(line.party_type!=='supplier'||!line.party_id || line.status&&!['posted','reversed'].includes(line.status))continue;totals[line.party_id]=round2(Number(totals[line.party_id] || 0)+Number(line.credit || 0)-Number(line.debit || 0));}
   }
   return totals;
 }
-async function allocateAdvances(svc,bill) {
+async function allocateAdvances(svc,bill,user) {
   const s=svc.entities,advances=await readRecords(s.Payment,{po_id:bill.po_id,party_id:bill.supplier_id,payment_type:'supplier_payment',status:'posted'});
-  let balance=Number(bill.balance);
+  let balance=journalCents(bill.balance);const planned=[];
   for(const payment of advances){
-    if(!payment.journal_id || payment.bill_id)continue;
-    const journal=await s.JournalEntry.get(payment.journal_id);if(journal?.status!=='posted')continue;
+    if(payment.bill_id)continue;
     const allocations=await readRecords(s.PaymentAllocation,{payment_id:payment.id});
-    const available=round2(Number(payment.amount)-allocations.reduce((sum,a)=>sum+Number(a.amount || 0),0)),amount=Math.min(balance,available);
+    const allocated=allocations.reduce((sum,a)=>sum+journalCents(a.amount),0),available=journalCents(payment.amount)-allocated;
+    if(!Number.isSafeInteger(allocated)||available<0)throw Error('Reconcile supplier advance allocations before receiving more goods.');
+    const amount=Math.min(balance,available);
     if(amount<=0)continue;
-    await s.PaymentAllocation.create({payment_id:payment.id,payment_number:payment.payment_number,document_type:'bill',document_id:bill.id,document_number:bill.bill_number,party_type:'supplier',party_id:bill.supplier_id,party_name:bill.supplier_name,amount,allocation_date:bill.bill_date});balance=round2(balance-amount);
+    const source=await supplierAdvanceSource(s,payment,bill),payable=await billSupplierPayable(s,bill,bill.bill_date);
+    if(!source.prepayment&&source.account.id!==payable.id)throw Error('This legacy supplier advance was posted to another payable account. Review its original journal before applying it to this bill.');
+    planned.push({payment,source,payable,amount:amount/100});balance-=amount;
   }
-  return balance!==Number(bill.balance)?s.Bill.update(bill.id,{balance,amount_paid:round2(bill.total-balance),status:balance===0?'paid':'partially_paid'}):bill;
+  for(const {payment,source,payable,amount}of planned){
+    let journal;
+    if(source.prepayment){
+      const posted=await postJournal(svc,{entryDate:bill.bill_date,description:'Apply supplier advance '+payment.payment_number+' to '+bill.bill_number,sourceModule:'procurement',sourceDocumentType:'SupplierAdvanceAllocation',sourceDocumentId:payment.id+':'+bill.id,userId:user.id,lines:[{account_id:payable.id,debit:amount,credit:0,party_type:'supplier',party_id:bill.supplier_id},{account_id:source.account.id,debit:0,credit:amount,party_type:'supplier',party_id:bill.supplier_id}]});
+      if(posted.reused)throw Error('Reconcile the existing supplier advance allocation journal before retrying.');journal=posted.journal;
+    }
+    await s.PaymentAllocation.create({payment_id:payment.id,payment_number:payment.payment_number,document_type:'bill',document_id:bill.id,document_number:bill.bill_number,party_type:'supplier',party_id:bill.supplier_id,party_name:bill.supplier_name,amount,allocation_date:bill.bill_date,...(journal?{journal_id:journal.id,supplier_advance_allocation:true}:{})});
+  }
+  return balance!==journalCents(bill.balance)?s.Bill.update(bill.id,{balance:balance/100,amount_paid:(journalCents(bill.total)-balance)/100,status:balance===0?'paid':'partially_paid'}):bill;
 }
 async function billForReceipt(svc, user, supplier, po, receipt) {
   const s=svc.entities;
   if(receipt.historical_settlement_id)throw Error('This pre-start receipt has an archived paid setup bill and cannot be billed again.');
   const previous=(await readRecords(s.Bill,{receipt_id:receipt.id})).find(b=>b.status!=='cancelled');
-  if(previous)return allocateAdvances(svc,previous);
+  if(previous)return allocateAdvances(svc,previous,user);
   // Historical POs may already have one bill for the whole PO. Never add a
   // second payable on top of it or manufacture an allocation to that bill.
   const poBills=await readRecords(s.Bill,{po_id:po.id});
   if(poBills.some(b=>!b.receipt_id && b.status!=='cancelled'))throw Error('This order already has a legacy bill. Reconcile it before adding another receipt bill.');
-  const journals=await readRecords(s.JournalEntry,{source_document_id:receipt.id,status:'posted'});
-  if(journals.length!==1)throw Error('This receipt needs a posted receiving journal before a bill can be registered. Reconcile the receipt first.');
-  const lines=await readRecords(s.JournalLine,{journal_id:journals[0].id});
-  const payable=await getRuleAccount(svc,'supplier_payable');
-  const value=round2(lines.filter(l=>l.account_id===payable.id && l.party_id===supplier.id).reduce((sum,l)=>sum+Number(l.credit || 0)-Number(l.debit || 0),0));
-  if(value<=0)throw Error('The receipt has no matching supplier payable. Reconcile its accounting before billing.');
+  const {account:payable,journal,value}=await receiptSupplierPayable(s,receipt,supplier.id);
   const due=new Date(receipt.receipt_date+'T12:00:00Z');due.setUTCDate(due.getUTCDate()+Number(supplier.payment_terms_days ?? 30));
-  const bill=await s.Bill.create({bill_number:await nextSequence(svc,'next_bill_number','BILL',6),supplier_id:supplier.id,supplier_name:supplier.name,po_id:po.id,po_number:po.po_number,receipt_id:receipt.id,receipt_number:receipt.receipt_number,bill_date:receipt.receipt_date,due_date:due.toISOString().slice(0,10),total:value,amount_paid:0,balance:value,status:'open',journal_id:journals[0].id,accounting_source:'goods_receipt'});
+  const bill=await s.Bill.create({bill_number:await nextSequence(svc,'next_bill_number','BILL',6),supplier_id:supplier.id,supplier_name:supplier.name,po_id:po.id,po_number:po.po_number,receipt_id:receipt.id,receipt_number:receipt.receipt_number,bill_date:receipt.receipt_date,due_date:due.toISOString().slice(0,10),total:value,amount_paid:0,balance:value,status:'open',journal_id:journal.id,payable_account_id:payable.id,accounting_source:'goods_receipt'});
   await s.GoodsReceipt.update(receipt.id,{bill_id:bill.id});
   await audit(svc,{action:'register_supplier_bill',module:'suppliers',entityType:'Bill',entityId:bill.id,userId:user.id,description:`Registered ${bill.bill_number} against the existing ${receipt.receipt_number} payable; no second journal`});
-  return allocateAdvances(svc,bill);
+  return allocateAdvances(svc,bill,user);
 }
 
 export async function supplierAction(client,user,body,{allowUnlistedProductionRequest=false}={}) {

@@ -78,11 +78,16 @@ test('supplier requests leave money untouched and require GM approval before rel
   await assert.rejects(cashierAction(client, user, { ...args('cashierReleasePayment'), paymentId: payment.id }), /approved by the General Manager/);
   await entities.Payment.update(payment.id, { status: 'approved', approved_by: 'gm', approved_at: new Date().toISOString() });
   const release = { ...args('cashierReleasePayment'), paymentId: payment.id };
+  await assert.rejects(cashierAction(client,user,release),/Configure Supplier prepayments/);
+  assert.equal((await entities.TreasuryTransaction.list()).length,0);assert.equal((await entities.JournalEntry.list()).length,0);
+  const prepayment=await entities.Account.create({account_number:'4090',name:'Supplier prepayments',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true,balance:0});
+  await entities.PostingRule.create({rule_key:'supplier_prepayment',account_id:prepayment.id,is_active:true});
   await cashierAction(client, user, release); await cashierAction(client, user, release);
   assert.equal((await entities.TreasuryAccount.get('till')).balance, 50000);
   assert.equal((await entities.PurchaseOrder.get('po')).cash_disbursed, true);
   assert.equal((await entities.Payment.get(payment.id)).status, 'posted');
   assert.equal((await entities.JournalEntry.list()).length, 1);
+  assert.equal((await entities.Account.get(prepayment.id)).balance,50000);assert.equal((await entities.Account.get('payable')).balance,0);
 });
 
 test('legacy half-completed cash operations are held for reconciliation rather than charged again', async () => {

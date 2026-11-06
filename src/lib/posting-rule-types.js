@@ -1,4 +1,5 @@
 export function postingRuleType(key){
+ if(key==='supplier_prepayment')return {types:['asset'],normal:'debit'};
  if(/accum.*depreciation/.test(key))return {types:['asset'],normal:'credit'};
  if(/payable|liability/.test(key))return {types:['liability'],normal:'credit'};
  if(/receivable|inventory|work_in_progress|wip|cash|bank/.test(key))return {types:['asset'],normal:'debit'};
@@ -9,5 +10,5 @@ export function postingRuleType(key){
 }
 export function validPostingRuleAccount(account,key){
  const expected=postingRuleType(key);
- return !!account&&account.is_active!==false&&account.is_posting!==false&&(!account.currency||account.currency==='XAF')&&(!expected||expected.types.includes(account.account_type)&&account.normal_balance===expected.normal);
+ return !!account&&account.is_active!==false&&account.is_posting!==false&&(!account.currency||account.currency==='XAF')&&(key!=='supplier_prepayment'||!account.is_treasury&&account.account_number!=='1050')&&(!expected||expected.types.includes(account.account_type)&&account.normal_balance===expected.normal);
 }

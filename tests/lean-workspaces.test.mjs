@@ -49,6 +49,7 @@ test('company overview uses posted ledger profit, excludes drafts and purchases,
  for(const [id,type] of [['report-sales','revenue'],['report-cost','cogs'],['report-expense','expense'],['report-other','other_income']])accountIds[id]=(await s.Account.create({name:id,account_type:type})).id;
  const posted=await s.JournalEntry.create({status:'posted',entry_date:date}),draft=await s.JournalEntry.create({status:'draft',entry_date:date});
  for(const [account_id,debit,credit] of [['report-sales',0,100000],['report-cost',30000,0],['report-expense',20000,0],['report-other',0,5000]])await s.JournalLine.create({journal_id:posted.id,account_id:accountIds[account_id],debit,credit});
+ await s.JournalLine.create({journal_id:posted.id,account_id:'till-gl',debit:55000,credit:0});
  await s.JournalLine.create({journal_id:draft.id,account_id:accountIds['report-sales'],debit:0,credit:900000});
  for(const [name,store] of Object.entries(s))store.aggregate=async({query={},groupBy,sum=[]}={})=>{const records=await store.filter(query),groups=new Map();for(const row of records){const key=groupBy?row[groupBy]:'all';if(!groups.has(key))groups.set(key,{count:0,...(groupBy?{[groupBy]:key}:{})});const out=groups.get(key);out.count++;for(const field of Array.isArray(sum)?sum:[sum])out['sum_'+field]=(out['sum_'+field]||0)+Number(row[field]||0);}return {rows:[...groups.values()]};};
  s.Product.filter=()=>{throw Error('Business summary must not fetch product images');};

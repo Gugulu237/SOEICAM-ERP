@@ -1,7 +1,7 @@
 import ReportExport from '@/components/shared/ReportExport';
 
 /* localized-interface */
-import { ui } from '@/lib/i18n';
+import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect, useMemo } from "react";
 import { erp } from "@/api/erpClient";
@@ -9,6 +9,9 @@ import { readAll } from "@/lib/field-pos";
 import { useNavigate } from "@/lib/router";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import { round2 } from "@/lib/posting";
+import { computeTrialBalance, trialBalanceFields } from '@/lib/statements';
+import { ledgerStatuses } from '@/server/domain/journal-validation';
+import { businessDate } from '@/lib/business-date';
 import PageHeader from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,58 +24,26 @@ export default function TrialBalance() {
   const [accounts, setAccounts] = useState([]);
   const [journalsById, setJournalsById] = useState({});
   const [allLines, setAllLines] = useState([]);
-  const [fromDate, setFromDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
+  const [fromDate, setFromDate] = useState(() => businessDate().slice(0,4) + '-01-01');
+  const [toDate, setToDate] = useState(() => businessDate());
   const [loading, setLoading] = useState(true);
   const [error,setError] = useState('');
 
   useEffect(() => {
     Promise.all([
       readAll(erp.entities.Account,{},"account_number"),
-      readAll(erp.entities.JournalEntry,{status:"posted"},"-entry_date"),
+      readAll(erp.entities.JournalEntry,{status:{$in:ledgerStatuses}},"-entry_date"),
       readAll(erp.entities.JournalLine,{},"-created_date"),
     ]).then(([accs, journals, lines]) => {
-      setAccounts(accs.sort((a, b) => a.account_number.localeCompare(b.account_number)));
+      setAccounts(accs.sort((a, b) => String(a.account_number || '').localeCompare(String(b.account_number || ''), undefined, {numeric:true})));
       setJournalsById(Object.fromEntries(journals.map((j) => [j.id, j])));
       setAllLines(lines);
     }).catch(e => setError(e.message || 'Could not load the report.')).finally(() => setLoading(false));
   }, []);
 
-  const { rows, totals } = useMemo(() => {
-    const byAccount = {};
-    for (const l of allLines) {
-      const j = journalsById[l.journal_id];
-      if (!j) continue;
-      const d = j.entry_date || "";
-      const acc = byAccount[l.account_id] || (byAccount[l.account_id] = { openDebit: 0, openCredit: 0, periodDebit: 0, periodCredit: 0 });
-      if (d < fromDate) { acc.openDebit += round2(l.debit); acc.openCredit += round2(l.credit); }
-      else if (d <= toDate) { acc.periodDebit += round2(l.debit); acc.periodCredit += round2(l.credit); }
-    }
-    const rows = accounts.map((a) => {
-      const m = byAccount[a.id] || { openDebit: 0, openCredit: 0, periodDebit: 0, periodCredit: 0 };
-      const net = round2(m.openDebit - m.openCredit + m.periodDebit - m.periodCredit);
-      const openNet = round2(m.openDebit - m.openCredit);
-      return {
-        ...a,
-        openingDebit: openNet > 0 ? openNet : 0,
-        openingCredit: openNet < 0 ? -openNet : 0,
-        periodDebit: round2(m.periodDebit),
-        periodCredit: round2(m.periodCredit),
-        closingDebit: net > 0 ? net : 0,
-        closingCredit: net < 0 ? -net : 0,
-      };
-    }).filter((r) => r.openingDebit || r.openingCredit || r.periodDebit || r.periodCredit);
-
-    const totals = rows.reduce((t, r) => ({
-      openingDebit: round2(t.openingDebit + r.openingDebit),
-      openingCredit: round2(t.openingCredit + r.openingCredit),
-      periodDebit: round2(t.periodDebit + r.periodDebit),
-      periodCredit: round2(t.periodCredit + r.periodCredit),
-      closingDebit: round2(t.closingDebit + r.closingDebit),
-      closingCredit: round2(t.closingCredit + r.closingCredit),
-    }), { openingDebit: 0, openingCredit: 0, periodDebit: 0, periodCredit: 0, closingDebit: 0, closingCredit: 0 });
-
-    return { rows, totals };
+  const { rows, totals, reportError } = useMemo(() => {
+    try { return {...computeTrialBalance({accounts, journalsById, lines: allLines, fromDate, toDate}), reportError: ''}; }
+    catch (cause) { return {rows: [], totals: Object.fromEntries(trialBalanceFields.map(k => [k, 0])), reportError: cause.message}; }
   }, [accounts, allLines, journalsById, fromDate, toDate]);
 
   const balanced = totals.closingDebit === totals.closingCredit;
@@ -88,7 +59,7 @@ export default function TrialBalance() {
         subtitle={ui("Posted transactions from {0} to {1}", formatDate(fromDate), formatDate(toDate))}
         actions={
           <div className="flex gap-2">
-            <ReportExport disabled={!fromDate || !toDate || fromDate>toDate} report={{title:'Trial balance',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals']],notes:[balanced?'Total debits equal total credits.':`Trial balance does not balance. Difference: ${round2(totals.closingDebit-totals.closingCredit)} XAF.`],sections:[{title:'Trial balance',columns:['Account code','Account name',...['Opening debit','Opening credit','Period debit','Period credit','Closing debit','Closing credit'].map(label=>({label,type:'money'}))],rows:rows.map(r=>[r.account_number,r.name,r.openingDebit,r.openingCredit,r.periodDebit,r.periodCredit,r.closingDebit,r.closingCredit]),totals:[['','Totals',...['openingDebit','openingCredit','periodDebit','periodCredit','closingDebit','closingCredit'].map(k=>totals[k])]]}]}}/>
+            <ReportExport disabled={!!reportError} report={{title:'Trial balance',metadata:[['From',fromDate],['To',toDate],['Basis','Posted journals']],notes:[balanced?'Total debits equal total credits.':`Trial balance does not balance. Difference: ${round2(totals.closingDebit-totals.closingCredit)} XAF.`],sections:[{title:'Trial balance',columns:['Account code','Account name',...['Opening debit','Opening credit','Period debit','Period credit','Closing debit','Closing credit'].map(label=>({label,type:'money'}))],rows:rows.map(r=>[r.account_number,r.name,r.openingDebit,r.openingCredit,r.periodDebit,r.periodCredit,r.closingDebit,r.closingCredit]),totals:[['','Totals',...trialBalanceFields.map(k=>totals[k])]]}]}}/>
             <Button variant="outline" onClick={() => navigate("/accounting")}>{ui("Back to Accounting")}</Button>
           </div>
         }
@@ -103,12 +74,12 @@ export default function TrialBalance() {
           <Label>{ui("To")}</Label>
           <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
         </div>
-        <div className={`px-3 py-2 rounded-md text-sm font-medium ${balanced ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+        {!reportError && <div className={`px-3 py-2 rounded-md text-sm font-medium ${balanced ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
           {balanced ? ui("✓ Total debits equal total credits") : ui("✗ Trial balance does not balance")}
-        </div>
+        </div>}
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+      {reportError ? <p role="alert">{uiMessage(reportError)}</p> : <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-left text-slate-500">
@@ -152,7 +123,7 @@ export default function TrialBalance() {
             </tr>
           </tfoot>
         </table>
-      </div>
+      </div>}
     </div>
   );
 }

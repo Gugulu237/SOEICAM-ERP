@@ -6,6 +6,7 @@ import {fixture,functionRoute,request,user,date} from './helpers/cashier.mjs';
 import {purchaseWorkspace,purchasePaymentDecision} from '../src/server/domain/purchase-workspace.js';
 import {supplierAction} from '../src/server/domain/supplier-workspace.js';
 import {cashierAction} from '../src/server/domain/cashier-workspace.js';
+import {postJournal} from '../src/server/domain/field-ops.js';
 import {purchaseSections,purchasePath,legacySupplierPath} from '../src/lib/purchase-workspace.js';
 
 async function setup(db){
@@ -67,15 +68,18 @@ test('General Manager order authorization rechecks supplier, lines and totals, i
 
 test('payment authorization uses fresh balances and server identity, and keeps money untouched until checked release',async()=>{
   const f=await setup(),s=f.entities;await s.Employee.update('cashier',{role:'cashier'});
-  const bill=await s.Bill.create({supplier_id:'supplier',po_id:'po',status:'open',total:1000,amount_paid:0,balance:1000});
+  const receipt=await s.GoodsReceipt.create({supplier_id:'supplier',po_id:'po',status:'confirmed',receipt_date:date,total:1000});
+  const {journal}=await postJournal(f.client.asServiceRole,{entryDate:date,description:'Goods received',sourceModule:'procurement',sourceDocumentType:'GoodsReceipt',sourceDocumentId:receipt.id,userId:user.id,lines:[{account_id:'inventory',debit:1000,credit:0},{account_id:'payable',debit:0,credit:1000,party_type:'supplier',party_id:'supplier'}]});
+  await s.GoodsReceipt.update(receipt.id,{journal_id:journal.id});await s.Supplier.update('supplier',{balance:1000});
+  const bill=await s.Bill.create({supplier_id:'supplier',po_id:'po',receipt_id:receipt.id,journal_id:journal.id,payable_account_id:'payable',status:'open',total:1000,amount_paid:0,balance:1000});
   const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',billId:bill.id,amount:500,accountId:'till',date,reference:'Invoice 001',requestKey:crypto.randomUUID()});
   const body={action:'approvePurchasePayment',paymentId:payment.id,approved_by:'forged'};
   await assert.rejects(purchasePaymentDecision(f.client,user,body),/restricted/);
   await s.Employee.update('cashier',{role:'admin'});await s.Bill.update(bill.id,{amount_paid:800,balance:200});await assert.rejects(purchasePaymentDecision(f.client,user,body),/current supplier bill/);
   await s.Bill.update(bill.id,{amount_paid:0,balance:1000});const approved=await purchasePaymentDecision(f.client,user,body);assert.equal(approved.payment.approved_by,user.id);
-  assert.equal((await purchasePaymentDecision(f.client,user,body)).reused,true);assert.equal((await s.TreasuryAccount.get('till')).balance,100000);assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.Bill.get(bill.id)).balance,1000);
+  assert.equal((await purchasePaymentDecision(f.client,user,body)).reused,true);assert.equal((await s.TreasuryAccount.get('till')).balance,100000);assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.Bill.get(bill.id)).balance,1000);
   await s.Employee.update('cashier',{role:'cashier'});const release={action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()};await cashierAction(f.client,user,release);await cashierAction(f.client,user,release);
-  assert.equal((await s.TreasuryAccount.get('till')).balance,99500);assert.equal((await s.Bill.get(bill.id)).balance,500);assert.equal((await s.JournalEntry.list()).length,1);
+  assert.equal((await s.TreasuryAccount.get('till')).balance,99500);assert.equal((await s.Bill.get(bill.id)).balance,500);assert.equal((await s.JournalEntry.list()).length,2);
 });
 
 test('a late approval audit failure rolls back payment authorization at the actual API transaction boundary',async()=>{

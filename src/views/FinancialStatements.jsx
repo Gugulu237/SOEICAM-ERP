@@ -10,7 +10,9 @@ import React, { useState, useEffect, useMemo } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { formatDate } from "@/lib/formatters";
-import { computeActivity } from "@/lib/statements";
+import { computeActivity, validStatementRange } from "@/lib/statements";
+import { ledgerStatuses } from '@/server/domain/journal-validation';
+import { businessDate } from '@/lib/business-date';
 import PageHeader from "@/components/shared/PageHeader";
 import IncomeStatement from "@/components/accounting/IncomeStatement";
 import {syncAssetDepreciation} from '@/lib/asset-depreciation-client';
@@ -36,8 +38,8 @@ export default function FinancialStatements() {
   const {isAdmin}=useCurrentUser();
   const [depreciation,setDepreciation]=useState(null),[version,setVersion]=useState(0);
   useEffect(()=>{const refresh=()=>setVersion(v=>v+1);window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[]);
-  const [fromDate, setFromDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10));
-  const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
+  const [fromDate, setFromDate] = useState(() => businessDate().slice(0,4) + '-01-01');
+  const [toDate, setToDate] = useState(() => businessDate());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,11 +48,11 @@ export default function FinancialStatements() {
     setLoading(true); setError('');
     syncAssetDepreciation().then(status=>{if(active)setDepreciation(status);return Promise.all([
       readAll(erp.entities.Account, {}, "account_number"),
-      readAll(erp.entities.JournalEntry, { status: "posted" }, "-entry_date"),
+      readAll(erp.entities.JournalEntry, { status: {$in: ledgerStatuses} }, "-entry_date"),
       readAll(erp.entities.JournalLine, {}, "-created_date"),
     ]);}).then(([accs, journals, jl]) => {
       if (!active) return;
-      setAccounts(accs.sort((a, b) => a.account_number.localeCompare(b.account_number)));
+      setAccounts(accs.sort((a, b) => String(a.account_number || '').localeCompare(String(b.account_number || ''), undefined, {numeric:true})));
       setJournalsById(Object.fromEntries(journals.map((j) => [j.id, j])));
       setLines(jl);
       setLoading(false);
@@ -58,10 +60,14 @@ export default function FinancialStatements() {
     return () => { active = false; };
   }, [tab, version]);
 
-  const activity = useMemo(
-    () => computeActivity({ journalsById, lines, fromDate, toDate }),
-    [journalsById, lines, fromDate, toDate]
+  const statement = useMemo(
+    () => {
+      try { return {activity: computeActivity({ accounts, journalsById, lines, fromDate, toDate }), error: ''}; }
+      catch (cause) { return {activity: {}, error: cause.message}; }
+    },
+    [accounts, journalsById, lines, fromDate, toDate]
   );
+  const activity = statement.activity, reportError = error || statement.error;
 
   return (
     <div>
@@ -90,10 +96,10 @@ export default function FinancialStatements() {
           <TabsTrigger value="cashflow">{ui("Cash Flow")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pnl" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : error ? <p role="alert">{uiMessage(error)}</p> : !fromDate || !toDate || fromDate > toDate ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} fromDate={fromDate} toDate={toDate} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} fromDate={fromDate} toDate={toDate} />}
         </TabsContent>
         <TabsContent value="balance" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : error ? <p role="alert">{uiMessage(error)}</p> : !fromDate || !toDate || fromDate > toDate ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} />}
         </TabsContent>
         <TabsContent value="cashflow" className="mt-4">
           <CashFlowStatement />

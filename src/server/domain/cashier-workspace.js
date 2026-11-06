@@ -6,6 +6,7 @@ import { smallOperatingExpenseIssue } from '../../lib/small-operating-expenses.j
 import { reconcileDailyCash, dailyCashSettlements } from '../../lib/cash-settlement.js';
 import { effectiveRole } from './roles.js';
 import { requestDailyCash } from './daily-cash-handover.js';
+import {billSupplierPayable,supplierPrepaymentAccount} from './supplier-payables.js';
 
 // All mutations run in the API route's serializable transaction. Request keys
 // survive lost responses; balances, journals and source documents commit once.
@@ -209,7 +210,7 @@ export async function cashierAction(base44, user, body) {
   }
 
   const account = await treasury(svc, body.accountId, role);
-  let amount, description, debit, document, expenseAccount, department, po;
+  let amount, description, debit, document, expenseAccount, department, po, prepaymentAccountId;
   if (action === 'cashierTransfer') {
     amount = amountOf(body.amount); description = textOf(body.description, 'a transfer purpose');
     const destination = await treasury(svc, body.toAccountId, role);
@@ -255,12 +256,15 @@ export async function cashierAction(base44, user, body) {
     if (!po || !['approved', 'partially_received', 'received', 'billed'].includes(po.status) || po.cash_disbursed || po.supplier_id !== document.party_id) throw Error('This purchase order is already paid, not approved or does not match the supplier');
     if (document.journal_id || (await readRecords(svc.entities.JournalEntry, { source_document_id: document.id, status: 'posted' })).length) throw Error('This payment has an earlier ledger entry; reconcile it before releasing cash again');
     amount = amountOf(document.amount); description = `${document.payment_number}: ${document.party_name}`;
-    if(document.bill_id){const bill=await svc.entities.Bill.get(document.bill_id);if(!bill || bill.po_id!==po.id || bill.supplier_id!==document.party_id || !['open','partially_paid','overdue'].includes(bill.status) || amount>round2(bill.balance) || round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance))throw Error('The approved payment does not match the current bill balance; reconcile it before releasing cash');}
+    if(document.bill_id){const bill=await svc.entities.Bill.get(document.bill_id);if(!bill || bill.po_id!==po.id || bill.supplier_id!==document.party_id || !['open','partially_paid','overdue'].includes(bill.status) || amount>round2(bill.balance) || round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance))throw Error('The approved payment does not match the current bill balance; reconcile it before releasing cash');debit=await billSupplierPayable(svc.entities,bill,date);}
     const paid = await readRecords(svc.entities.Payment, { po_id: po.id, status: 'posted' });
     const settled = round2(paid.reduce((sum, p) => sum + Number(p.amount || 0), 0) + amount);
     if (settled > round2(po.total)) throw Error('This payment exceeds the unpaid purchase order balance');
     po = { ...po, fullyPaid: settled >= round2(po.total) };
-    debit = await ledger(svc, (await getAccountByNumber(svc, '4010')).id);
+    if(!debit){
+      if(po.status!=='approved'||(await readRecords(svc.entities.GoodsReceipt,{po_id:po.id})).some(r=>r.status==='confirmed'))throw Error('This purchase order has received goods. Request payment against its recorded supplier bill.');
+      debit=await supplierPrepaymentAccount(svc.entities);prepaymentAccountId=debit.id;
+    }
   } else throw Error('Unknown cash desk action');
   funds(account, amount);
   const receipt = body.receiptFileUri ? await base44.validateExpenseReceipt(body.receiptFileUri) : '';
@@ -271,7 +275,7 @@ export async function cashierAction(base44, user, body) {
   await svc.entities.TreasuryTransaction.update(tx.id, { journal_id: journal.id });
   await svc.entities.TreasuryAccount.update(account.id, { balance: round2(Number(account.balance || 0) - amount) });
   if (po) {
-    await svc.entities.Payment.update(document.id, { status: 'posted', journal_id: journal.id, disbursed_by: user.id, disbursed_at: now });
+    await svc.entities.Payment.update(document.id, { status: 'posted', journal_id: journal.id, disbursed_by: user.id, disbursed_at: now, ...(prepaymentAccountId?{supplier_prepayment_account_id:prepaymentAccountId}:{supplier_payable_account_id:debit.id}) });
     await svc.entities.PurchaseOrder.update(po.id, { cash_disbursed: po.fullyPaid, cash_treasury_account_id: account.id, cash_treasury_account_name: account.name, cash_disbursed_at: now, cash_disbursed_by: user.id, cash_journal_id: journal.id });
     const supplier = await svc.entities.Supplier.get(document.party_id);
     if (supplier) await svc.entities.Supplier.update(supplier.id, { balance: round2(Number(supplier.balance || 0) - amount) });

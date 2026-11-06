@@ -10,7 +10,7 @@ export function records() {
   rows.Employee = [{ id: 'cashier', user_id: user.id, role: 'cashier', status: 'active', full_name: 'Cashier' }];
   rows.Account.forEach(a => { a.is_active = true; a.is_posting = true; });
   rows.Account.push(...['till-gl', 'float-gl', 'bank-gl', 'expense'].map((id, i) => ({ id, name: id, account_number: id, account_type: i === 3 ? 'expense' : 'asset', is_active: true, is_posting: true, normal_balance: 'debit', balance: i === 3 ? 0 : 100000 })));
-  rows.Account.push({ id: 'payable', account_number: '4010', name: 'Payable', is_active: true, is_posting: true, normal_balance: 'credit', balance: 0 });
+  rows.Account.push({ id: 'payable', account_number: '4010', name: 'Payable', account_type:'liability', is_active: true, is_posting: true, normal_balance: 'credit', balance: 0 });
   rows.TreasuryAccount = ['till', 'float', 'bank'].map((id, i) => ({ id, name: id, account_type: ['cash', 'petty_cash', 'bank'][i], is_active: true, balance: 100000, gl_account_id: id + '-gl' }));
   rows.TreasuryTransaction = []; rows.Payment = []; rows.PaymentAllocation = []; rows.Invoice = []; rows.InvoiceLine = [];
   rows.CashHandover = [{ id: 'handover', handover_number: 'HOV-01', commercial_id: 'agent-a', commercial_name: 'Agent A', handover_date: date, expected_amount: 1000, offered_amount: 1000, received_amount: 0, status: 'submitted' }];

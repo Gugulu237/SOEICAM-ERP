@@ -25,6 +25,7 @@ export default function PostingRulesManager() {
       readAll(erp.entities.PostingRule),
       readAll(erp.entities.Account,{is_active:true},"account_number"),
     ]).then(([r, a]) => {
+      if(!r.some(rule=>rule.rule_key==='supplier_prepayment'))r.push({id:'pending-supplier-prepayment',rule_key:'supplier_prepayment',label:ui('Supplier prepayments'),description:ui('Amounts paid to suppliers before goods are received'),account_id:'',is_active:true,unsaved:true});
       if(!active)return;if(!r.some(rule=>rule.rule_key==='marketing_degustation_expense'))r.push({id:'pending-degustation',rule_key:'marketing_degustation_expense',label:'Marketing · Dégustation',description:ui('Inventory cost of products given to customers'),account_id:'',is_active:true,unsaved:true});setRules(r.sort((x, y) => (x.rule_key || "").localeCompare(y.rule_key || "")));
       setAccounts(a.sort((x, y) => x.account_number.localeCompare(y.account_number)));
     }).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};

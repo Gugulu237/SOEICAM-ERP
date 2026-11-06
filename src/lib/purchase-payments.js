@@ -1,7 +1,7 @@
 // Cash disbursement for approved purchase orders.
-// Cash released to a supplier before/at delivery is booked as an advance against
-// the supplier payable control account, so the later goods receipt (Dr Inventory,
-// Cr Payable) nets the supplier balance back to zero.
+// Cash released before delivery uses the configured supplier-prepayment asset.
+// The receipt records Inventory/AP, then its verified advance allocation clears
+// the prepayment asset against that receipt's original payable account.
 //
 // No cash leaves the till on the cashier's word alone:
 //   prepareCashDisbursement (cashier asks) → approveCashDisbursement (General Manager)

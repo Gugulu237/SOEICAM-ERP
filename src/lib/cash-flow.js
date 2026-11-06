@@ -35,6 +35,8 @@ export function classifyCashAccount(account) {
   else if (account.account_type === 'equity') { activity = 'financing'; label = 'Owner capital and distributions'; }
   else if (/fixed.asset|property|plant|equipment|machiner|vehicle|building|land|immobilis/.test(name) && account.account_type === 'asset') { activity = 'investing'; label = 'Fixed asset purchases and disposals'; }
   else if (/investment|loan receivable|placement/.test(name) && account.account_type === 'asset') { activity = 'investing'; label = 'Investments and loans advanced'; }
+  // Supplier advances are debit assets too; their refunds are not customer collections.
+  else if (account.account_type === 'asset' && /supplier|fournisseur|prepaid purchas|purchase prepay|advance.*purchas/.test(name)) { activity = 'operating'; label = 'Suppliers, raw materials and packaging'; }
   else if (account.account_type === 'revenue' || (/receivable|customer|client/.test(name) && account.account_type === 'asset')) { activity = 'operating'; label = 'Sales and customer collections / refunds'; }
   else if (/payroll|salary|salaries|wage|personnel|social security|cnps/.test(name)) { activity = 'operating'; label = 'Staff wages and statutory contributions'; }
   else if (/tax|vat|imp[oô]t|tva/.test(name)) { activity = 'operating'; label = 'Taxes and duties'; }
@@ -154,8 +156,8 @@ export function cashFlowCsv(report) {
   const rows = [ [ui('SOEICAM Cash Flow'), report.from, report.to, 'XAF'], [ui('Opening cash'), report.opening], [ui('Activity'), ui('Category'), ui('Account'), ui('Receipts'), ui('Payments'), ui('Net')] ];
   if(report.opening_adjustments)rows.splice(2,0,[ui('Opening balance imports'),report.opening_adjustments]);
   for (const activity of report.activities) for (const r of activity.rows) rows.push([ui(activity.label), ui(r.label), `${r.account_number} ${r.account_name}`, r.inflow, r.outflow, r.net]);
-  rows.push([ui('Total external cash'), '', '', report.inflow, report.outflow, report.net], ['Closing cash', report.closing], ['Internal transfers excluded', report.internal_transfers], [], ['Cash account', 'Opening', 'Debits', 'Credits', 'Closing']);
-  for (const a of report.components) rows.push([`${a.number} ${a.name}`, a.opening, a.inflow, a.outflow, a.closing]);
+  rows.push([ui('Total external cash'), '', '', report.inflow, report.outflow, report.net], ['Closing cash', report.closing], ['Internal transfers excluded', report.internal_transfers], [], ['Cash account', 'Opening', ui('Opening balance imports'), 'Debits', 'Credits', 'Closing']);
+  for (const a of report.components) rows.push([`${a.number} ${a.name}`, a.opening, a.opening_adjustments || 0, a.inflow, a.outflow, a.closing]);
   rows.push([], [ui('Date'), ui('Journal'), ui('Description'), ui('Reference'), ui('Cash accounts'), ui('Counterpart accounts'), ui('Activity / classification'), ui('Cash debits'), ui('Cash credits'), ui('External receipts'), ui('External payments'), ui('Internal transfer'), ui('Review')]);
   for (const h of report.history) rows.push([h.date, h.journal_number, h.description, h.reference, h.cash_accounts.join('; '), h.counterpart_accounts.join('; '), h.allocations.map(a => `${CASH_FLOW_ACTIVITIES[a.activity]||a.activity}: ${ui(a.label)}`).join('; ') || ui('Internal transfer'), h.inflow, h.outflow, h.allocations.reduce((n, a) => n + cents(a.inflow), 0) / 100, h.allocations.reduce((n, a) => n + cents(a.outflow), 0) / 100, h.internal_transfer, h.review]);
   rows.push([], [ui('Basis: posted ledger entries only; includes commercial cash held in account 1050; excludes non-cash journals. Interest defaults to operating unless account classification is configured.')], [ui('Review issues')]);
