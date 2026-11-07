@@ -1,5 +1,13 @@
 # Delivery stock returns and exchange packaging
 
+## Viewing current stock
+
+An active stock holder sees **My current stock** directly on their own dashboard, with product quantities and **View all stock**. The full list is searchable and shows batch details. These dashboard controls do not add a main navigation tab.
+
+**On hand** is the actual recorded quantity still held. **For sale**, **Dégustation**, and **Held / expired** are separate quantities. Vehicle and employee-held goods use the same view; a paired driver can see the shared load without gaining sales permissions. Pending returns remain visible until warehouse receipt. Collected customer returns and recovered packaging stay separate from saleable finished goods.
+
+The overview refreshes on focus, on returning to a visible tab, and every 30 seconds while visible. **Refresh** reloads it immediately. A failed refresh retains the last confirmed figures with a warning and timestamp. Unresolved stock records show a review warning instead of claiming that no stock is held. Management previews retain their existing read-only reports.
+
 ## Returning unsold goods
 
 The holder opens **My issued stock → Return goods**. Drivers can open **Distribution → Return goods** for their assigned or paired delivery load. This works with vehicle stock and goods held by an employee without a vehicle.

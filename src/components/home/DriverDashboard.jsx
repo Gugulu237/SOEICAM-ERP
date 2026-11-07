@@ -17,6 +17,10 @@ import { driverRunStock } from '@/lib/driver-stock';
 import { deliveryPointKey, latestDriverPlan } from '@/lib/driver-deliveries';
 import CommercialReturns from '@/components/field/CommercialReturns';
 import FieldInventoryCards from '@/components/field/FieldInventoryCards';
+import MyStockOverview from '@/components/field/MyStockOverview';
+import EmployeeStock from '@/views/EmployeeStock';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { eligibleStockRecipient, STOCK_RECIPIENT_ROLES } from '@/lib/stock-recipient';
 import DriverDeliveryPlanner, { DriverLoadReceipt } from './DriverDeliveryPlanner';
 
 const formatQuantity = value => value == null ? '-' : new Intl.NumberFormat('en-CM', { maximumFractionDigits: 3 }).format(value);
@@ -26,9 +30,13 @@ const statusLabel = (status) => ({ approved: ui("Awaiting warehouse loading"), l
 export default function DriverDashboard({ data, preview = false, loading = false, onRefresh, activeTab, onTabChange, onBackToMenu, managing=false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const { centralHero } = useDashboardIdentity();
+  const auth = useCurrentUser();
+  const ownStock = !preview && !managing && data?.readOnly !== true && !auth.loading && !auth.error && !!auth.user?.id
+    && STOCK_RECIPIENT_ROLES.includes(auth.principalRole) && eligibleStockRecipient(auth.employee)
+    && (!data?.employee?.id || data.employee.id === auth.employee.id);
 
   const [selected, setSelected] = useState('');
-  const tasks=[['receive','Receive inventory',ClipboardCheck],['plan','Plan deliveries & view customers',MapPin],['runs','My delivery runs',Truck],['inventory','Vehicle stock',Package],['returns','Report expired collections',AlertTriangle]];
+  const tasks=[['receive','Receive inventory',ClipboardCheck],['plan','Plan deliveries & view customers',MapPin],['runs','My delivery runs',Truck],['inventory','Current stock',Package],['returns','Report expired collections',AlertTriangle]];
   const [localPanel,setLocalPanel]=useState('home');
   const panel=['home',...tasks.map(([key])=>key)].includes(activeTab)?activeTab:localPanel;
   const setPanel=value=>{setSelected('');setSearch('');onTabChange?onTabChange(value):setLocalPanel(value);};
@@ -56,9 +64,9 @@ export default function DriverDashboard({ data, preview = false, loading = false
   const canReport = current && current.status === 'in_transit' && !returned(current.id) && ready && !preview;
   const openTask = (type, order) => { if (!preview && ready) setTask({ dispatch: current, type, order }); };
 
-  if(panel==='home')return <div className="min-w-0 space-y-4">{!centralHero&&<header><MobileDashboardIdentity/><h1 className="hidden text-xl font-semibold sm:block">{ui('Driver workspace')}</h1></header>}<DashboardTaskGrid label={ui('Driver inventory actions')} tasks={tasks.map(([key,label,icon])=>({key,label:ui(label),icon,primary:key==='receive',onSelect:()=>setPanel(key)}))}/></div>;
+  if(panel==='home')return <div className="min-w-0 space-y-4">{!centralHero&&<header><MobileDashboardIdentity/><h1 className="hidden text-xl font-semibold sm:block">{ui('Driver workspace')}</h1></header>}{ownStock && <MyStockOverview />}<DashboardTaskGrid label={ui('Driver inventory actions')} tasks={tasks.map(([key,label,icon])=>({key,label:ui(label),icon,primary:key==='receive',onSelect:()=>setPanel(key)}))}/></div>;
   const heading=<PageHeader title={current&&panel==='runs'?current.dispatch_number:ui(tasks.find(([key])=>key===panel)?.[1])} back={{onClick:current&&panel==='runs'?()=>setSelected(''):backToMenu,label:ui(current&&panel==='runs'?'All my runs':'Driver workspace')}}/>;
-  if(panel!=='runs')return <div className="min-w-0 space-y-4">{heading}{panel==='receive'?<DriverReceiveInventory data={data||{}} preview={preview||!ready} onRefresh={onRefresh}/>:panel==='plan'?<DriverDeliveryPlanner data={data||{}} preview={preview||!ready} onRefresh={onRefresh}/>:panel==='inventory'?<FieldInventoryCards employeeId={data?.employee?.id} enabled={ready&&(!preview||managing)}/>:<CommercialReturns key={data?.employee?.id} employeeId={data?.employee?.id} driver preview={preview||!ready} onChanged={onRefresh}/>}</div>;
+  if(panel!=='runs')return <div className="min-w-0 space-y-4">{heading}{panel==='receive'?<DriverReceiveInventory data={data||{}} preview={preview||!ready} onRefresh={onRefresh}/>:panel==='plan'?<DriverDeliveryPlanner data={data||{}} preview={preview||!ready} onRefresh={onRefresh}/>:panel==='inventory'?ownStock?<EmployeeStock embedded/>:<FieldInventoryCards employeeId={data?.employee?.id} enabled={ready&&(!preview||managing)}/>:<CommercialReturns key={data?.employee?.id} employeeId={data?.employee?.id} driver preview={preview||!ready} onChanged={onRefresh}/>}</div>;
 
   return <div className="min-w-0 space-y-5">
     {heading}

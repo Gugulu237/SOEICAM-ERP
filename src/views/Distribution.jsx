@@ -22,7 +22,7 @@ import DeliveriesBoard from '@/components/distribution/DeliveriesBoard';
 const StockControl=dynamic(()=>import('@/components/distribution/DistributionStockControl'),{loading:()=> <p role="status">{ui('Loading stock control...')}</p>});
 const ExpiredExchangeReview=dynamic(()=>import('@/components/field/ExpiredExchangeReview'),{loading:()=> <p role="status">{ui('Loading exchange review...')}</p>});
 const DriverWorkspace=dynamic(()=>import('@/views/EmployeeDashboard'),{loading:()=> <p role="status">{ui('Loading your deliveries...')}</p>});
-const OwnFieldStock=dynamic(()=>import('@/components/field/FieldInventoryCards'),{loading:()=> <p role="status">{ui('Loading assigned inventory...')}</p>});
+const OwnFieldStock=dynamic(()=>import('@/views/EmployeeStock'),{loading:()=> <p role="status">{ui('Loading assigned inventory...')}</p>});
 const icons={stock:Boxes,deliveries:Truck,fleet:CarFront,dispatches:ClipboardList,requests:PackageCheck,routes:RouteIcon,vehicles:Car,exchanges:RotateCcw,returns:RotateCcw};
 
 function DistributionMenu({sections,onOpen}){
@@ -38,11 +38,11 @@ function DistributionMenu({sections,onOpen}){
 
 export default function Distribution(){
   useInterfaceLanguage();
-  const {role:featureRole,principalRole,employee,loading}=useCurrentUser(),[params]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/distribution');
+  const {role:featureRole,principalRole,loading}=useCurrentUser(),[params]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/distribution');
   const role=principalRole||featureRole;
   if(loading)return <p role="status">{ui('Loading distribution...')}</p>;
   if(role==='driver'){
-    if(params.get('tab')==='stock')return <div className="space-y-4"><PageHeader title={ui('My issued stock')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><OwnFieldStock employeeId={employee?.id} enabled={!!employee?.id}/></div>;
+    if(params.get('tab')==='stock')return <div className="space-y-4"><PageHeader title={ui('My current stock')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><OwnFieldStock embedded/></div>;
     if(params.get('tab')==='deliveries')return <div className="space-y-4"><PageHeader title={ui('My deliveries')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><DriverWorkspace/></div>;
     if(params.has('tab'))return <Navigate to="/distribution" replace/>;
     const menu=distributionMenuSections(role);

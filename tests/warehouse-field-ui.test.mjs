@@ -11,6 +11,9 @@ async function renderer() {
     b.onResolve({ filter: /^react$/ }, a => /(?:CommercialReturns|FieldInventoryCards)\.jsx$/.test(a.importer) ? { path: 'hooks', namespace: 'fixture' } : undefined);
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__warehouseUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__warehouseUI.state('return',v),useRef=v=>globalThis.__warehouseUI.ref('return',v),useEffect=(fn,deps)=>globalThis.__warehouseUI.effect('return',fn,deps),useMemo=fn=>fn();`, resolveDir: process.cwd() }));
     const mocks = {
+      '@/hooks/useCurrentUser': 'export const useCurrentUser=()=>({});',
+      '@/components/field/MyStockOverview': 'export default ()=>null;',
+      '@/views/EmployeeStock': 'export default ()=>null;',
       '@/components/ui/picker-popdown': `import React from 'react';export default props=>{globalThis.__warehouseUI.popup=props;return React.createElement('section',{role:'dialog','aria-label':props.label},props.children);};`,
       '@/components/shared/ProductCatalog': 'export default props=>{globalThis.__warehouseUI.catalog=props;return null;};',
       '@/api/erpClient': 'export const erp={functions:{invoke:(...args)=>globalThis.__warehouseUI.stockRead(...args)},entities:new Proxy({},{get:()=>{throw Error("Driver UI must use scoped endpoints");}})};',
@@ -29,7 +32,7 @@ async function renderer() {
 test('driver dashboard offers delivery planning, personal inventory and collection reports without issuing controls', async () => {
   const render = await renderer();
   const html = render('Driver', { data: { employee: { id: 'driver', full_name: 'Driver' }, dispatches: [], activities: [], stops: [] }, onRefresh: () => {} });
-  assert.match(html, /Vehicle stock/); assert.match(html, /Receive inventory/); assert.match(html, /Plan deliveries &amp; view customers/); assert.match(html, /Report expired collections/); assert.doesNotMatch(html, /Request inventory|Stock requests|Issue goods|Expired returns &amp; replacements/);
+  assert.match(html, /Current stock/); assert.match(html, /Receive inventory/); assert.match(html, /Plan deliveries &amp; view customers/); assert.match(html, /Report expired collections/); assert.doesNotMatch(html, /Request inventory|Stock requests|Issue goods|Expired returns &amp; replacements/);
 });
 test('driver collection form uses scoped data and retains its receipt, values and retry key after a failed save', async () => {
   const r = hookRuntime(), calls = []; r.elements = []; r.capture = (tag, props, children) => r.elements.push({ tag, props: props || {}, children }); globalThis.__warehouseUI = r;

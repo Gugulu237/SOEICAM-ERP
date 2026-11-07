@@ -54,7 +54,7 @@ function exampleData(data) {
   };
 }
 
-export default function CashierWorkspace({ data, preview = false }) {
+export default function CashierWorkspace({ data, preview = false, afterPrimaryActions }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const {toast}=useToast(),[params,setParams]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/cashier',{currentWorkspace:true});
   const [date,setDate]=useState(businessDate),[localTab,setLocalTab]=useState('home');
@@ -91,6 +91,7 @@ export default function CashierWorkspace({ data, preview = false }) {
       <Button disabled={!canAct} onClick={()=>open('receive')}><Banknote size={17} className="mr-2"/>{ui('Receive cash')}</Button>
       <Button variant="outline" disabled={!canAct} onClick={()=>open('petty')}><ArrowUpRight size={17} className="mr-2"/>{ui('Petty cash')}</Button>
     </WorkspaceHero>
+    {!preview && tab === 'home' && afterPrimaryActions}
     {preview&&<p className="text-xs text-slate-500">{ui('Read-only preview of the company cash desk.')} <Link className="underline" to="/cashier">{ui('Open live cash desk')}</Link></p>}
     <div className="flex flex-wrap items-end justify-between gap-3"><Field title={ui('Cash activity date')}><Input type="date" max={businessDate()} value={date} onChange={e=>{if(e.target.value)setDate(e.target.value);}} disabled={example}/></Field><div className="flex items-center gap-2"><HelpNotice title={ui('Cash activity date')}><p>{ui('Open balances and pending work cover all dates. Activity refreshes every 30 seconds.')}</p></HelpNotice><Button variant="outline" onClick={refresh} disabled={loading||example} aria-label={ui('Refresh cash desk')}><RefreshCw size={17} className={loading?'animate-spin':''}/></Button></div></div>
     {error&&<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}

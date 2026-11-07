@@ -8,6 +8,9 @@ const output=await build({stdin:{contents:`import React from 'react';import {ren
  b.onResolve({filter:/^react$/},a=>/(CommercialDashboard|CommercialActivityReport|DriverDashboard|HotesseWorkspace|DriverReceiveInventory)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
  b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__tasks.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__tasks.state(${JSON.stringify(key)},v),useEffect=(fn,deps)=>globalThis.__tasks.effect(${JSON.stringify(key)},fn,deps),useRef=v=>globalThis.__tasks.ref(${JSON.stringify(key)},v);`,resolveDir:process.cwd()}));
  const mocks={
+  '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__tasks.session;",
+  '@/components/field/MyStockOverview':"export default ()=>null;",
+  '@/views/EmployeeStock':"export default props=>{globalThis.__tasks.ownInventory=props;return null;};",
   '@/lib/localization':"export const useLocaleRender=()=> 'en';",
   '@/lib/router':"export const useLocation=()=>({pathname:globalThis.__tasks.pathname});export const useNavigate=()=>(...args)=>globalThis.__tasks.navigation.push(args);export const useSearchParams=()=>[new URLSearchParams(globalThis.__tasks.query),value=>{globalThis.__tasks.query=new URLSearchParams(typeof value==='function'?value(new URLSearchParams(globalThis.__tasks.query)):value).toString();}];",
   '@/lib/navigation-context':"import React from 'react';export const useNavigationSession=()=>null;export const usePageState=(key,initial)=>React.useState(initial);",
@@ -35,7 +38,7 @@ const output=await build({stdin:{contents:`import React from 'react';import {ren
 }}]});
 const module={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,module,module.exports);
 const employee={id:'own-agent',full_name:'Agent A',status:'active'};
-function setup(kind,props){const state=hookRuntime();state.query='';state.pathname='/';globalThis.__tasks=state;return {state,draw(next=props){state.beforeRender();for(const key of ['sale','registration','supplies','inventory','returns','cash','plan','receipt','report','shelf','deliveries'])delete state[key];return module.exports.render(kind,next);},close(){state.cleanup();delete globalThis.__tasks;}};}
+function setup(kind,props){const state=hookRuntime();state.query='';state.pathname='/';state.session={user:{id:'login'},employee:{...employee,role:kind},principalRole:kind};globalThis.__tasks=state;return {state,draw(next=props){state.beforeRender();for(const key of ['sale','registration','supplies','inventory','ownInventory','returns','cash','plan','receipt','report','shelf','deliveries'])delete state[key];return module.exports.render(kind,next);},close(){state.cleanup();delete globalThis.__tasks;}};}
 
 test('Commercial landing prioritizes own-account sale and registration, mounting one selected task',async()=>{
  const f=setup('commercial',{data:{employee,customers:[]}});try{
@@ -59,9 +62,9 @@ test('manager and restricted Commercial views cannot open employee registration 
 
 test('Driver tiles expose custody and delivery work without sales or warehouse issuing',()=>{
  const f=setup('driver',{data:{employee,dispatches:[]}});try{
-  const html=f.draw();assert.deepEqual(f.state.buttons.map(b=>b['aria-label']),['Receive inventory','Plan deliveries & view customers','My delivery runs','Vehicle stock','Report expired collections']);assert.doesNotMatch(html,/Record sale|Register a new customer|Issue goods/);assert.equal(f.state.plan,undefined);
+  const html=f.draw();assert.deepEqual(f.state.buttons.map(b=>b['aria-label']),['Receive inventory','Plan deliveries & view customers','My delivery runs','Current stock','Report expired collections']);assert.doesNotMatch(html,/Record sale|Register a new customer|Issue goods/);assert.equal(f.state.plan,undefined);
   f.state.buttons[1].onClick();f.draw();assert.equal(f.state.plan.preview,false);assert.equal(f.state.inventory,undefined);
-  f.state.buttons.find(b=>b['data-page-back']!==undefined).onClick();f.draw();f.state.buttons.find(b=>b['aria-label']==='Vehicle stock').onClick();f.draw();assert.equal(f.state.inventory.employeeId,employee.id);
+  f.state.buttons.find(b=>b['data-page-back']!==undefined).onClick();f.draw();f.state.buttons.find(b=>b['aria-label']==='Current stock').onClick();f.draw();assert.equal(f.state.ownInventory.embedded,true);assert.equal(f.state.inventory,undefined);
   f.draw({data:{employee,dispatches:[]},activeTab:'plan',managing:true});assert.equal(f.state.plan.preview,true);
   f.draw({data:{employee,dispatches:[]},activeTab:'inventory',managing:true});assert.equal(f.state.inventory.enabled,true);assert.equal(f.state.inventory.employeeId,employee.id);
  }finally{f.close();}
