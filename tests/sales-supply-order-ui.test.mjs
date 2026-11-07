@@ -234,3 +234,110 @@ for(const language of ['English','French'])test('a changed destination refreshes
   const writes=f.calls.filter(c=>c.action==='recordSuppliedOrder');assert.equal(writes[1].locationId,'new-b');assert.equal(writes[0].requestKey,writes[1].requestKey);
  }finally{f.close();}
 });
+
+const adminOptions={...options,canChooseSeller:true,currentSeller:{id:'seller',name:'Salesperson A'},defaultSource:'company',runs:[
+  {...options.runs[0],salesperson_id:'seller'},
+  {id:'run-b',salesperson_id:'other',commercial_name:'Salesperson B',driver_name:'Driver B',vehicle_registration:'CE 456 CD',dispatch_number:'DSP-2'},
+]};
+async function settle(f){for(let i=0;i<3;i++){f.paint();await f.r.flush();}return f.paint();}
+function changeSeller(f,id){f.control('Person making the sale').onChange({target:{value:id}});return f.paint();}
+
+test('an administrator attributes stock checks and sale retries to the selected salesperson and their compatible issued load',async()=>{
+ const {render}=await bundle(),f=setup(render,adminOptions);
+ try{
+  await f.ready();assert.equal(f.control('Person making the sale').tag,'select');assert.equal(f.control('Person making the sale').value,'seller');
+  changeSeller(f,'other');await settle(f);assert.equal(f.control('Person making the sale').value,'other');
+  await productsStep(f);assert.equal(f.r.sourcePicker.value,'issued:run-b');assert.ok(f.r.sourcePicker.options.some(o=>o.id==='issued:run-b'));assert.equal(f.r.sourcePicker.options.some(o=>o.id==='issued:run-a'),false);
+  const stockRead=f.calls.filter(c=>c.action==='salesOrderStock').at(-1);assert.equal(stockRead.sellerId,'other');assert.equal(stockRead.dispatchId,'run-b');
+  quantity(f,2);reviewStep(f,'SELLER-B-RECEIPT');assert.match(f.paint(),/Person making the sale.*Salesperson B/);
+  await f.button('Record sale & deduct stock').onClick();assert.match(f.paint(),/Connection interrupted/);
+  const first=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(first.sellerId,'other');assert.equal(first.dispatchId,'run-b');
+  f.button('Customer').onClick();f.paint();assert.equal(f.control('Person making the sale').value,'other');
+  f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,2);reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'SELLER-B-RECEIPT');
+  f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const writes=f.calls.filter(c=>c.action==='recordSuppliedOrder');
+  assert.equal(writes.length,2);assert.equal(writes[1].requestKey,writes[0].requestKey);assert.equal(writes[1].sellerId,'other');assert.equal(writes[1].lines[0].quantity,2);
+ }finally{f.close();}
+});
+
+test('changing salesperson retains entered quantities but invalidates the old preview and blocks unavailable products until reviewed',async()=>{
+ const {render}=await bundle(),f=setup(render,adminOptions),invoke=f.r.invoke;let finishSelectedStock;
+ f.r.invoke=body=>body.action==='salesOrderStock'&&body.sellerId==='other'?new Promise(resolve=>{f.calls.push(body);finishSelectedStock=resolve;}):invoke(body);
+ try{
+  await f.ready();await productsStep(f);quantity(f,4);f.button('Yes, goods replaced').onClick();f.paint();f.button('Choose replacement products').onClick();f.paint();
+  f.r.replacementPicker.onQuantityChange(f.r.replacementPicker.products[0],2);f.r.replacementPicker.onOpenChange(false);f.paint();f.r.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});await settle(f);
+  f.button('Customer').onClick();f.paint();changeSeller(f,'other');await settle(f);
+  f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,4);assert.equal(f.r.sourcePicker.value,'issued:run-b');assert.deepEqual(f.r.productPicker.products,[]);assert.equal(f.r.productPicker.disabled,true);
+  f.button('Review sale').onClick();assert.match(f.paint(),/Choose a stock source and wait for available products/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+  finishSelectedStock({data:{...stock,products:[{id:'different',name:'Other finished product',available:8,selling_price:500,unit:'ea'}]}});await settle(f);
+  assert.equal(f.control('Qty 1').value,4);assert.equal(f.r.controls.find(c=>c.id==='exchange-qty-0').value,2);assert.equal(f.r.controls.find(c=>c.id==='exchange-reason-0').value,'damaged');assert.match(f.paint(),/This product is no longer available at the selected stock source/);
+  f.button('Review sale').onClick();assert.match(f.paint(),/Review product quantities and available stock/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+ }finally{f.close();}
+});
+
+test('a failed selected-seller stock lookup keeps the choice and retries the same source without using another person stock',async()=>{
+ const {render}=await bundle(),f=setup(render,adminOptions),invoke=f.r.invoke;let unavailable=true;
+ f.r.invoke=async body=>{if(body.action!=='salesOrderStock'||body.sellerId!=='other')return invoke(body);f.calls.push(body);if(unavailable)throw Error('Choose issued stock assigned to the selected salesperson.');return {data:stock};};
+ try{
+  await f.ready();changeSeller(f,'other');await settle(f);await productsStep(f);assert.match(f.paint(),/Choose issued stock assigned to the selected salesperson/);assert.equal(f.r.sourcePicker.value,'issued:run-b');assert.equal(f.r.productPicker.disabled,true);
+  unavailable=false;f.button('Refresh stock').onClick();await settle(f);assert.equal(f.r.productPicker.products[0].available,10);
+  f.button('Customer').onClick();f.paint();assert.equal(f.control('Person making the sale').value,'other');
+  const reads=f.calls.filter(c=>c.action==='salesOrderStock'&&c.sellerId==='other');assert.equal(reads.length,2);assert.ok(reads.every(c=>c.dispatchId==='run-b'));
+ }finally{f.close();}
+});
+
+test('a same-company source refresh follows seller changes and ignores an obsolete response',async()=>{
+ const {render}=await bundle(),f=setup(render,{...adminOptions,runs:[]}),invoke=f.r.invoke;const pending=[];
+ f.r.invoke=body=>body.action==='salesOrderStock'?new Promise(resolve=>{f.calls.push(body);pending.push({body,resolve});}):invoke(body);
+ try{
+  await f.ready();assert.equal(pending.length,1);changeSeller(f,'other');await settle(f);await productsStep(f);assert.equal(f.r.sourcePicker.value,'');assert.equal(pending.length,1);
+  f.r.sourcePicker.onChange('company');await settle(f);assert.equal(pending.length,2);assert.equal(pending[1].body.sellerId,'other');assert.equal(pending[1].body.sourceType,'company');
+  pending[1].resolve({data:{...stock,products:stock.products.map(p=>({...p,available:3}))}});await settle(f);
+  pending[0].resolve({data:{...stock,products:stock.products.map(p=>({...p,available:99}))}});await settle(f);
+  assert.equal(f.r.sourcePicker.value,'company');assert.equal(f.r.productPicker.products[0].available,3);quantity(f,4);f.button('Review sale').onClick();assert.match(f.paint(),/Review product quantities/);
+ }finally{f.close();}
+});
+
+test('own-issued-stock mode remains self-attributed even if its response contains an administrator seller chooser flag',async()=>{
+ const {render}=await bundle(),f=setup(()=>render({ownIssuedStock:true}),adminOptions);
+ f.r.invoke=async body=>{f.calls.push(body);if(body.action==='employeeSalesWorkspace')return {data:{...adminOptions,defaultSource:'',runs:[adminOptions.runs[0]],warehouses:[]}};if(body.action==='employeeSalesStock')return {data:stock};if(body.action==='employeeSalesDeliveryPoints')return {data:{points:[]}};if(body.action==='employeeRecordSupply')return {data:{order:{id:'own'},invoiceId:'own-invoice'}};throw Error('Unscoped action '+body.action);};
+ try{
+  await f.ready();assert.equal(f.control('Person making the sale').tag,'input');assert.equal(f.control('Person making the sale').readOnly,true);assert.equal(f.control('Person making the sale').value,'Salesperson A');
+  await productsStep(f);quantity(f,2);reviewStep(f);await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.at(-1).sellerId,undefined);assert.equal(f.calls.find(c=>c.action==='employeeSalesStock').sellerId,undefined);
+ }finally{f.close();}
+});
+
+for(const listed of [true,false])test('a recorded sale displays its saved salesperson name without an editable selector when '+(listed?'the employee name later changes':'the former employee is no longer selectable'),async()=>{
+ const {render}=await bundle(),f=setup(render,{...adminOptions,sellers:listed?[options.sellers[0],{id:'former',name:'Renamed employee'}]:options.sellers});f.r.routeId='recorded';
+ f.r.client.entities.SalesOrder={get:async()=>({id:'recorded',status:'invoiced',sales_supply_source:'company',customer_id:'customer',order_date:'2026-10-25',sales_supply_seller_id:'former',salesperson_id:'former',salesperson_name:'Historical salesperson',receipt_reference:'OLD-RECEIPT'})};f.r.client.entities.SalesOrderLine={filter:async()=>[]};
+ try{
+  await f.ready();assert.equal(f.control('Person making the sale').tag,'input');assert.equal(f.control('Person making the sale').readOnly,true);assert.equal(f.control('Person making the sale').value,'Historical salesperson');
+  assert.equal(f.button('Record sale & deduct stock'),undefined);assert.equal(f.calls.some(c=>c.action==='salesOrderStock'),false);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+ }finally{f.close();}
+});
+
+test('an administrator editing a draft retains its selected salesperson, saved source, quantities and receipt',async()=>{
+ const {render}=await bundle(),f=setup(render,adminOptions);f.r.routeId='draft';
+ f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',sales_supply_source:'company',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',salesperson_name:'Salesperson B',receipt_reference:'DRAFT-SELLER-REF'})};
+ f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'line',product_id:'yola',product_name:'YOLA 500 g',quantity:3,unit_price:500,tax_rate:0,discount_pct:0}]};
+ try{
+  await f.ready();assert.equal(f.control('Person making the sale').value,'other');f.button('Continue to products').onClick();f.paint();assert.equal(f.r.sourcePicker.value,'company');assert.equal(f.control('Qty 1').value,3);
+  reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'DRAFT-SELLER-REF');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.sellerId,'other');assert.equal(body.sourceType,'company');assert.equal(body.orderId,'draft');
+ }finally{f.close();}
+});
+
+test('an unavailable draft salesperson remains visible until an administrator explicitly chooses a valid attribution',async()=>{
+ const {render}=await bundle(),f=setup(render,adminOptions);f.r.routeId='draft';
+ f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',sales_supply_source:'company',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'former',salesperson_name:'Former salesperson',receipt_reference:'DRAFT-OLD'})};f.r.client.entities.SalesOrderLine={filter:async()=>[]};
+ try{
+  assert.match(await f.ready(),/Former salesperson/);assert.equal(f.control('Person making the sale').value,'former');f.button('Continue to products').onClick();assert.match(f.paint(),/Step 1 of 3/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+  changeSeller(f,'other');await settle(f);f.button('Continue to products').onClick();assert.match(f.paint(),/Step 2 of 3/);assert.equal(f.r.sourcePicker.value,'issued:run-b');
+ }finally{f.close();}
+});
+
+test('multiple issued loads for the chosen salesperson require an explicit source and never select another holder load',async()=>{
+ const {render}=await bundle(),f=setup(render,{...adminOptions,runs:[...adminOptions.runs,{...adminOptions.runs[1],id:'run-b-older',vehicle_registration:'CE 789 EF',dispatch_number:'DSP-OLD'}]});
+ try{
+  await f.ready();changeSeller(f,'other');await settle(f);await productsStep(f);assert.equal(f.r.sourcePicker.value,'');assert.deepEqual(f.r.sourcePicker.options.filter(o=>o.id.startsWith('issued:')).map(o=>o.id).sort(),['issued:run-b','issued:run-b-older']);assert.equal(f.r.productPicker.products.length,0);
+  f.r.sourcePicker.onChange('issued:run-b-older');await settle(f);assert.equal(f.r.productPicker.products[0].available,10);const read=f.calls.filter(c=>c.action==='salesOrderStock').at(-1);assert.equal(read.sellerId,'other');assert.equal(read.dispatchId,'run-b-older');
+ }finally{f.close();}
+});

@@ -14,6 +14,20 @@ const open=['loaded','in_transit'];
 const productFields='id name sku image_url inventory_type category size flavor product_family storage_unit unit_of_measure sales_unit is_active configuration_status';
 const positiveStock=row=>Number.isFinite(Number(row.quantity))&&Number(row.quantity)>0;
 
+async function ownMonthlySales(stores,employee,user){
+ const sales=await readRecords(stores.SalesOrder,{salesperson_id:employee.id,order_date:{$gte:today().slice(0,8)+'01'}});
+ const ids=[...new Set(sales.map(s=>s.sales_supply_request_id).filter(Boolean))],events=[];
+ for(let i=0;i<ids.length;i+=100)events.push(...await readRecords(stores.AuditLog,{id:{$in:ids.slice(i,i+100)}}));
+ const evidence=new Map(events.map(event=>[event.id,event]));
+ // The salesperson owns the sale even when management entered it. The checked
+ // submission audit proves its source without granting that salesperson edits.
+ return sales.filter(s=>{
+  if(s.sales_supply_recorded_by===user.id&&s.dispatch_id)return true;
+  const event=evidence.get(s.sales_supply_request_id);
+  return s.sales_supply_recorded_at&&event?.action==='record_supplied_order'&&event.module==='sales_supply'&&event.audit_source==='server_verified'&&event.entity_type==='SalesOrder'&&event.entity_id===s.id&&event.user_id===s.sales_supply_recorded_by&&event.sales_supply_seller_id===employee.id&&event.sales_supply_payload&&event.sales_supply_invoice_id===(s.invoice_id||'')&&(s.supply_kind==='exchange'?s.status==='delivered'&&!s.invoice_id:s.status==='invoiced'&&!!s.invoice_id);
+ }).map(s=>({id:s.id,order_number:s.order_number,customer_name:s.customer_name,order_date:s.order_date,total:s.total,payment_type:s.payment_type,status:s.status}));
+}
+
 // Viewing custody is separate from permission to supply it. A pending return,
 // expired lot or inactive product must not make physically held goods disappear.
 async function ownStockSnapshot(svc,employee){
@@ -98,9 +112,9 @@ export async function employeeStockAction(client,user,body){
    return {...stock,customers:customers.filter(c=>!c.customer_removed_at).map(c=>({id:c.id,business_name:c.business_name}))};
  }
  if(body.action==='employeeStockWorkspace'){
-   const [stock,sales]=await Promise.all([ownStockSnapshot(client.asServiceRole,employee),readRecords(client.asServiceRole.entities.SalesOrder,{sales_supply_recorded_by:user.id,order_date:{$gte:today().slice(0,8)+'01'}})]);
+   const [stock,sales]=await Promise.all([ownStockSnapshot(client.asServiceRole,employee),ownMonthlySales(client.asServiceRole.entities,employee,user)]);
    const movements=await readRecords(client.asServiceRole.entities.StockMovement,{document_type:'Degustation',employee_id:employee.id,movement_date:{$gte:today().slice(0,8)+'01'},status:'approved'});
-   return {...stock,degustations:degustationHistory(movements,{costs:false}),sales:sales.filter(s=>s.salesperson_id===employee.id&&s.dispatch_id).map(s=>({id:s.id,order_number:s.order_number,customer_name:s.customer_name,order_date:s.order_date,total:s.total,payment_type:s.payment_type,status:s.status})),employeeName:employee.full_name};
+   return {...stock,degustations:degustationHistory(movements,{costs:false}),sales,employeeName:employee.full_name};
  }
  const action={employeeSalesWorkspace:'salesOrderWorkspace',employeeSalesStock:'salesOrderStock',employeeSalesDeliveryPoints:'salesOrderDeliveryPoints',employeeRecordSupply:'recordSuppliedOrder'}[body.action];
  if(!action)throw Error('Unknown employee stock action');

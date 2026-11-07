@@ -33,7 +33,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   useLocaleRender();
   const {id}=useParams(),navigate=useNavigate(),back=useBack(ownIssuedStock?'/my-stock':'/sales'),{toast}=useToast(),today=businessDate();
   const [catalogue,setCatalogue]=useState(null),[order,setOrder]=useState(null),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[retry,setRetry]=useState(0);
-  const [source,setSource]=useState(''),[sourceData,setSourceData]=useState(null),[sourceLoading,setSourceLoading]=useState(false),[sourceError,setSourceError]=useState(''),[stockRetry,setStockRetry]=useState(0);
+  const [source,setSource]=useState(''),[stockResult,setStockResult]=useState(null),[sourceLoading,setSourceLoading]=useState(false),[sourceError,setSourceError]=useState(''),[stockRetry,setStockRetry]=useState(0);
   const [form,setForm]=useState({customer_id:'',location_id:'',payment_type:'cash',notes:'',receipt_reference:'',date:today,seller_id:'',replacements_declared:null}),[lines,setLines]=useState([]),[points,setPoints]=useState([]),[pointsError,setPointsError]=useState(''),[pointsLoading,setPointsLoading]=useState(false);
   const [replacements,setReplacements]=useState([]);
   const [pointsCustomerId,setPointsCustomerId]=useState(''),[pointsRetry,setPointsRetry]=useState(0);
@@ -42,28 +42,31 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const busy=useRef(false),requestKey=useRef(crypto.randomUUID());
   const locked=Boolean(order && !['draft','confirmed','ready'].includes(order.status));
   const wizard=!locked;
+  const canChooseSeller=catalogue?.canChooseSeller===true&&!ownIssuedStock;
+  const stockKey=JSON.stringify([source,form.date,canChooseSeller?form.seller_id:""]);
+  const sourceData=stockResult?.key===stockKey?stockResult.data:null;
   useEffect(()=>{
     let active=true;setLoading(true);setLoadError('');
     Promise.all([call({action:'salesOrderWorkspace'}),id?Promise.all([erp.entities.SalesOrder.get(id),readAll(erp.entities.SalesOrderLine,{order_id:id})]):null])
-      .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(saved.dispatch_id?'issued:'+saved.dispatch_id:saved.sales_supply_source==='company'?'company':'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',receipt_reference:saved.receipt_reference||'',date:saved.order_date||today,seller_id:['draft','confirmed','ready'].includes(saved.status)?data.currentSellerId||'':saved.sales_supply_seller_id||saved.salesperson_id||''});setLines(rows);setReplacements(saved.stock_replacements||[]);setForm(f=>({...f,replacements_declared:saved.stock_replacements_declared??Boolean(saved.stock_replacements?.length)}));}
+      .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(saved.dispatch_id?'issued:'+saved.dispatch_id:saved.sales_supply_source==='company'?'company':'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',receipt_reference:saved.receipt_reference||'',date:saved.order_date||today,seller_id:['draft','confirmed','ready'].includes(saved.status)?data.canChooseSeller&&!ownIssuedStock?(saved.sales_supply_seller_id||saved.salesperson_id||data.currentSellerId||''):data.currentSellerId||'':saved.sales_supply_seller_id||saved.salesperson_id||''});setLines(rows);setReplacements(saved.stock_replacements||[]);setForm(f=>({...f,replacements_declared:saved.stock_replacements_declared??Boolean(saved.stock_replacements?.length)}));}
         else{setOrder(null);setForm(f=>({...f,customer_id:f.customer_id||data.customers.find(c=>c.id===new URLSearchParams(typeof window==='undefined'?'':window.location.search).get('customer'))?.id||'',seller_id:data.currentSeller?.id||data.currentSellerId||''}));setSource(data.defaultSource==='company'?'company':data.runs.length===1?'issued:'+data.runs[0].id:data.warehouses.length===1?'warehouse:'+data.warehouses[0].id:'');}})
       .catch(e=>{if(active)setLoadError(e.message);}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
   },[id,retry]);
   useEffect(()=>{
-    let active=true,pending=false;setSourceData(null);setSourceError('');setSourceLoading(false);
-    if(!source||locked||!form.date)return()=>{active=false;};
+    let active=true,pending=false;setStockResult(null);setSourceError('');setSourceLoading(false);
+    if(!source||locked||!form.date||canChooseSeller&&!form.seller_id)return()=>{active=false;};
     const refresh=async()=>{
       if(!active||pending||busy.current)return;
       pending=true;setSourceLoading(true);
       try{
-        const data=await call({action:'salesOrderStock',date:form.date,...sourceInput(source)});
-        if(active){setSourceError('');setSourceData(data);setLines(previous=>previous.map(line=>{const p=data.products.find(p=>p.id===line.product_id);return p?{...line,tax_rate:p.tax_rate??0}:line;}));}
+        const data=await call({action:'salesOrderStock',date:form.date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{})});
+        if(active){setSourceError('');setStockResult({key:stockKey,data});setLines(previous=>previous.map(line=>{const p=data.products.find(p=>p.id===line.product_id);return p?{...line,tax_rate:p.tax_rate??0}:line;}));}
       }catch(e){if(active)setSourceError(e.message);}finally{pending=false;if(active)setSourceLoading(false);}
     };
     refresh();const stop=watchSalesStock(refresh);
     return()=>{active=false;stop();};
-  },[source,locked,stockRetry,form.date]);
+  },[source,locked,stockRetry,form.date,canChooseSeller,form.seller_id,stockKey]);
   useEffect(()=>{
     let active=true;setPoints([]);setPointsCustomerId('');setPointsError('');setPointsLoading(false);
     if(!form.customer_id||locked)return()=>{active=false;};
@@ -100,6 +103,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   function stepError(index){
     if(!form.customer_id||!customer)return 'Choose a customer before continuing.';
     if(!form.seller_id||!form.date||form.date>today)return 'Choose the salesperson and a valid sale date.';
+    if(canChooseSeller&&!catalogue.sellers.some(seller=>seller.id===form.seller_id))return 'Choose an active commercial or your signed-in account.';
     if(pointsCustomerId!==form.customer_id||pointsLoading||pointsError)return 'Wait for the delivery locations to load, or retry.';
     if(form.location_id&&!points.some(point=>point.id===form.location_id))return 'Choose a delivery point belonging to this customer.';
     if(points.length&&!form.location_id)return 'Choose the customer branch that received this supply.';
@@ -114,6 +118,14 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     if(index>=2&&!form.receipt_reference.trim())return 'Enter the reference number of the receipt issued before recording this sale.';
     return '';
   }
+  function changeSeller(sellerId){
+    if(saving||locked||!canChooseSeller)return;
+    setForm(previous=>({...previous,seller_id:sellerId}));setStockResult(null);setSourceError('');setSaveError('');
+    if(sellerId!==catalogue.currentSellerId){
+      const matching=catalogue.runs.filter(run=>run.salesperson_id===sellerId&&(!run.dispatch_date||run.dispatch_date<=form.date));
+      setSource(matching.length===1?'issued:'+matching[0].id:'');
+    }
+  }
   function goTo(next){setStep(next);setSaveError('');if(typeof window!=='undefined')window.scrollTo?.({top:0,behavior:'smooth'});}
   function advance(){const message=stepError(step);if(message){setSaveError(ui(message));return;}goTo(step+1);}
   async function save(){
@@ -123,7 +135,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     for(const line of calculated){const p=products.find(p=>p.id===line.product_id),q=Number(line.quantity);if(!p||!Number.isFinite(q)||q<=0||q>p.available||ids.has(line.product_id)){setSaveError(ui('Choose distinct finished products and quantities available at this source.'));return;}ids.add(line.product_id);}
     busy.current=true;setSaving(true);setSaveError('');
     try{
-      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
+      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{}),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
       toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted'),description:exchangePackagingWarningText(result.order)});
       navigate(ownIssuedStock?'/my-stock':result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
     }catch(e){setSaveError(e.message);const reason=e.data?.error||e.response?.data?.error||e.message;if(['Choose the customer branch that received this supply.','Choose a delivery point belonging to this customer.'].includes(reason)){setStep(0);setPointsRetry(n=>n+1);}}finally{busy.current=false;setSaving(false);}
@@ -132,10 +144,11 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   if(loadError)return <div role="alert" className="space-y-3 rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(loadError)}<Button variant="outline" onClick={()=>setRetry(n=>n+1)}>{ui('Retry')}</Button></div>;
   const selectedRun=catalogue?.runs.find(r=>'issued:'+r.id===source);
   const currentSeller=catalogue?.currentSeller||catalogue?.sellers?.find(person=>person.id===catalogue.currentSellerId);
-  const sellerName=(locked?catalogue?.sellers?.find(person=>person.id===form.seller_id)?.name||order.salesperson_name:currentSeller?.name)||ui('Signed-in account');
+  const sellerName=(locked?order.salesperson_name||catalogue?.sellers?.find(person=>person.id===form.seller_id)?.name:canChooseSeller?catalogue.sellers.find(person=>person.id===form.seller_id)?.name:currentSeller?.name)||ui('Signed-in account');
+  const onBehalf=canChooseSeller&&form.seller_id!==catalogue.currentSellerId;
   const sourceOptions=[
     ...(catalogue?.defaultSource==='company'||source==='company'?[{id:'company',kind:'warehouse',label:ui('Company stock')}]:[]),
-    ...(catalogue?.runs||[]).map(run=>({id:'issued:'+run.id,kind:'vehicle',label:vehicleSaleLabel(run)})),
+    ...(catalogue?.runs||[]).filter(run=>!onBehalf||run.salesperson_id===form.seller_id).map(run=>({id:'issued:'+run.id,kind:'vehicle',label:vehicleSaleLabel(run)})),
     ...(catalogue?.defaultSource!=='company'?catalogue?.warehouses||[]:[]).map(w=>({id:'warehouse:'+w.id,kind:'warehouse',label:w.name})),
   ];
   const sourceLabel=sourceOptions.find(option=>option.id===source)?.label||order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location');
@@ -151,7 +164,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
           {(points.length>0||form.location_id)&&<label className="space-y-1 text-sm">{ui('Delivered To (Branch)')}<select aria-label={ui('Delivered To (Branch)')} className={selectClass} value={form.location_id} disabled={saving||locked||pointsLoading||pointsCustomerId!==form.customer_id} onChange={e=>setForm(f=>({...f,location_id:e.target.value}))}><option value="">{points.length?ui('Choose delivery point'):customer?.business_name}</option>{points.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}{form.location_id&&!points.some(p=>p.id===form.location_id)&&<option disabled={!locked} value={form.location_id}>{locked?order?.location_name:ui('Previous delivery point is unavailable. Choose the current destination.')}</option>}</select></label>}
           {!exchangeOnly&&<label className="space-y-1 text-sm">{ui('Payment Type')}<select aria-label={ui('Payment Type')} className={selectClass} value={form.payment_type} onChange={e=>setForm(f=>({...f,payment_type:e.target.value}))}><option value="cash">{ui('Cash')}</option><option value="credit">{ui('Credit')}</option></select></label>}
           <label className="space-y-1 text-sm">{ui('Sale date *')}<Input required aria-label={ui('Sale date')} type="date" max={today} value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></label>
-          <label className="min-w-0 space-y-1 text-sm">{ui('Person making the sale')}<Input aria-label={ui('Person making the sale')} readOnly value={sellerName} className="w-full min-w-0 bg-slate-50"/>{!locked&&<span className="block text-xs text-slate-500">{ui('Automatically assigned to your signed-in account.')}</span>}</label>
+          <label className="min-w-0 space-y-1 text-sm">{ui('Person making the sale')}{canChooseSeller&&!locked?<select aria-label={ui('Person making the sale')} className={selectClass} value={form.seller_id} onChange={event=>changeSeller(event.target.value)}><option value="">{ui('Choose salesperson')}</option>{catalogue.sellers.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}{form.seller_id&&!catalogue.sellers.some(person=>person.id===form.seller_id)&&<option value={form.seller_id} disabled>{order?.salesperson_name||ui('Previous salesperson is unavailable')}</option>}</select>:<Input aria-label={ui('Person making the sale')} readOnly value={sellerName} className="w-full min-w-0 bg-slate-50"/>}{!locked&&<span className="block text-xs text-slate-500">{ui(canChooseSeller?'Select who made the sale. Your account remains recorded as the person entering it.':'Automatically assigned to your signed-in account.')}</span>}</label>
         </div>
         {pointsLoading&&<p role="status" className="text-xs text-slate-500">{ui('Loading delivery points...')}</p>}
         {pointsError&&<div role="alert" className="space-y-2 text-xs text-red-700"><p>{uiMessage(pointsError)}</p><Button type="button" variant="outline" disabled={pointsLoading||saving} onClick={()=>setPointsRetry(n=>n+1)}>{ui('Retry')}</Button></div>}

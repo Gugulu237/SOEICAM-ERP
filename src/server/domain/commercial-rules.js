@@ -76,7 +76,8 @@ export function commercialReport({ agents, customers, sales, lines, from, to }) 
   const inPeriod = (date) => date && date.slice(0, 10) >= from && date.slice(0, 10) <= to;
   const corrections=sales.filter(s=>s.supply_kind!=='exchange'&&s.status==='approved_posted'&&s.sale_reversal?.journal_id&&inPeriod(s.sale_reversal.date)).map(s=>({...s,id:'reversal:'+s.id,transaction_date:s.sale_reversal.date,subtotal:-Number(s.subtotal||0),total:-Number(s.total||0),is_reversal:true}));
   const approved = [...sales.filter((s) => s.supply_kind !== 'exchange' && s.status === 'approved_posted' && inPeriod(s.transaction_date)),...corrections];
-  const reportLines=[...lines,...lines.filter(l=>corrections.some(c=>c.id==='reversal:'+l.field_sale_id)).map(l=>({...l,field_sale_id:'reversal:'+l.field_sale_id,quantity:-Number(l.quantity||0)}))];
+  const saleId = line => line.sale_id || line.field_sale_id;
+  const reportLines=[...lines,...lines.filter(l=>corrections.some(c=>c.id==='reversal:'+saleId(l))).map(l=>({...l,sale_id:'reversal:'+saleId(l),quantity:-Number(l.quantity||0)}))];
   const saleMap = new Map(approved.map((s) => [s.id, s]));
   const registered = customers.filter((c) => c.acquired_by_id && inPeriod(c.acquisition_date || c.registered_at));
   const customerMap = new Map(customers.map((c) => [c.id, c]));
@@ -106,7 +107,7 @@ export function commercialReport({ agents, customers, sales, lines, from, to }) 
     if(!sale.is_reversal)row.deliveries++; row.net = money(row.net + Number(sale.subtotal || 0)); row.total = money(row.total + Number(sale.total || 0));
   }
   for (const line of reportLines) {
-    const sale = saleMap.get(line.field_sale_id);
+    const sale = saleMap.get(saleId(line));
     if (!sale) continue;
     const row = supplies.get(`${sale.commercial_id}:${sale.customer_id}`);
     let product = row.products.find((p) => p.product_id === line.product_id && p.unit === line.unit);

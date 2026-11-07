@@ -18,7 +18,7 @@ test('own Commercial dashboard exposes entry while management reports remain rea
       builder.onResolve({ filter: /^@\/hooks\/useCurrentUser$/ }, () => ({ path: 'auth', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/(components\/field\/MyStockOverview|views\/EmployeeStock)$/ }, () => ({ path: 'form', namespace: 'commercial-ui' }));
       builder.onLoad({ filter: /.*/, namespace: 'commercial-ui' }, ({ path }) => ({ contents: {
-        router: 'export const useNavigate = () => path => { globalThis.__commercialNavigation = path; }; export const useSearchParams = () => [new URLSearchParams(), () => {}];',
+        router: 'import React from "react";export const Link=({to,children})=>React.createElement("a",{href:to},children);export const useNavigate = () => path => { globalThis.__commercialNavigation = path; }; export const useSearchParams = () => [new URLSearchParams(), () => {}];',
         client: 'export const erp = {}; export const invalidateERPReads = () => {};',
         form: 'export default function Form(){return null;}',
         auth: 'export const useCurrentUser = () => ({});',

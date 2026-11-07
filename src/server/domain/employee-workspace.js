@@ -9,6 +9,7 @@ import { commercialRunInventory } from './commercial-runs.js';
 import { driverDeliveryPoints } from './driver-deliveries.js';
 import { principalRole } from './roles.js';
 import { catalogueFromStored, decorateEmployee, TEMPLATE_MODULES } from './role-catalogue.js';
+import { commercialOrderSales } from './commercial-order-sales.js';
 
 export { businessDate };
 const pick = (row, fields) => Object.fromEntries(fields.map((key) => [key, row?.[key]]));
@@ -119,25 +120,28 @@ export async function employeeWorkspaceAction(base44, user, body) {
   if (template === 'hotesse') return { ...shared, ...await hotesseData(svc, id, date) };
 
   if (template === 'commercial') {
-    const [inventory, sales, pending, customers, cash, handovers] = await Promise.all([
+    const [inventory, sales, pending, customers, cash, handovers, orders] = await Promise.all([
       commercialRunInventory(svc, id, date),
       readRecords(svc.entities.FieldSale, { commercial_id: id, $or:[{transaction_date: { $gte: monthStart, $lte: date }},{sale_reversal_date:{$gte:monthStart,$lte:date}}] }),
       readRecords(svc.entities.FieldSale, { commercial_id: id, status: { $in: ['draft', 'returned', 'submitted', 'under_review', 'posting_failed'] } }),
       readRecords(svc.entities.Customer, { acquired_by_id: id }),
       readRecords(svc.entities.CashCollection, { commercial_id: id, $or: [{ collection_date: { $gte: monthStart, $lte: date } }, { received_at: { $gte: receivedSince } }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
       readRecords(svc.entities.CashHandover, { commercial_id: id, $or: [{ handover_date: { $gte: monthStart, $lte: date } }, { received_date: { $gte: monthStart } }, { status: { $in: ['submitted', 'partially_received', 'disputed'] } }] }),
+      commercialOrderSales(svc, {commercialId:id, from:monthStart, to:date}),
     ]);
     // Include already-settled collections from an older outstanding day so the
     // daily total stays complete, and keep recently settled older days visible.
     const olderDates = [...new Set(cash.filter(c => c.collection_date && c.collection_date < monthStart).map(c => c.collection_date))];
     const completeCash = new Map(cash.map(c => [c.id, c]));
+    // Supplied orders settle through invoice cashier confirmation. Their report
+    // projections must never create FieldSale cash handovers or missing-cash alerts.
     const completeSales = new Map(sales.map(sale => [sale.id, sale]));
     for (let offset = 0; offset < olderDates.length; offset += 100) {
       for (const collection of await readRecords(svc.entities.CashCollection, { commercial_id: id, collection_date: { $in: olderDates.slice(offset, offset + 100) } })) completeCash.set(collection.id, collection);
       for (const sale of await readRecords(svc.entities.FieldSale, { commercial_id: id, transaction_date: { $in: olderDates.slice(offset, offset + 100) }, status: 'approved_posted', payment_type: 'cash' })) completeSales.set(sale.id, sale);
     }
     return { ...shared, runs: inventory.runs, products: inventory.products, balances: inventory.balances,
-      sales: [...new Map([...sales, ...pending].map((s) => [s.id, pick(s, ['id', 'sale_number', 'customer_id', 'customer_name', 'transaction_date', 'status', 'total', 'subtotal', 'amount_collected', 'amount_due', 'payment_type', 'dispatch_id', 'decision_reason', 'created_date', 'sale_reversal'])])).values()],
+      sales: [...new Map([...sales, ...pending].map(sale => ({...sale, source_type:'FieldSale', source_id:sale.id})).concat(orders.sales).map((s) => [s.id, pick(s, ['id', 'source_type', 'source_id', 'source_status', 'invoice_id', 'invoice_number', 'sale_number', 'customer_id', 'customer_name', 'transaction_date', 'status', 'total', 'subtotal', 'amount_collected', 'amount_due', 'payment_type', 'dispatch_id', 'decision_reason', 'created_date', 'sale_reversal'])])).values()],
       customers: customers.map((c) => pick(c, ['id', 'business_name', 'acquisition_date', 'acquisition_verified', 'is_active'])),
       cash: cash.filter(c => c.status !== 'cancelled').map((c) => pick(c, ['id', 'outstanding_amount', 'status'])),
       cashDays: reconcileDailyCash([...completeCash.values()], handovers, [...completeSales.values()]) };

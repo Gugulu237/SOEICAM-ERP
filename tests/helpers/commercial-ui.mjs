@@ -19,7 +19,7 @@ export async function commercialUI() {
       const mocks = {
         '@/hooks/usePhoneLayout': 'export const usePhoneLayout=()=>Boolean(globalThis.__commercialUI.phone);',
         '@/components/sales/SaleProductPicker': 'export default function Picker(props){if(props.purpose==="replacement")globalThis.__commercialUI.replacementCatalog=props;else globalThis.__commercialUI.catalog={...props,onSelect:product=>props.onQuantityChange(product,1)};return null;}',
-        '@/lib/router': `export const useNavigate=()=>path=>globalThis.__commercialUI.navigation.push(path); export const useParams=()=>({}); export const useSearchParams=()=>[new URLSearchParams()];`,
+        '@/lib/router': `import React from 'react';export const Link=({to,children})=>React.createElement('a',{href:to},children);export const useNavigate=()=>path=>globalThis.__commercialUI.navigation.push(path); export const useParams=()=>({}); export const useSearchParams=()=>[new URLSearchParams()];`,
         '@/hooks/useCurrentUser': 'export const useCurrentUser=()=>globalThis.__commercialUI.session || {};',
         '@/components/field/MyStockOverview': 'export default ()=>null;',
         '@/views/EmployeeStock': 'export default ()=>null;',

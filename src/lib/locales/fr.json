@@ -1,4 +1,13 @@
 {
+  "Reversed on {0}": "Extournée le {0}",
+  "Recorded through Sales": "Enregistrée dans Ventes",
+  "Choose a valid Commercial report scope.": "Choisissez un périmètre valide pour le rapport commercial.",
+  "Choose an active commercial or your signed-in account.": "Choisissez un commercial actif ou le compte avec lequel vous êtes connecté.",
+  "Choose salesperson": "Choisir le vendeur",
+  "Previous salesperson is unavailable": "Le vendeur précédent n'est plus disponible",
+  "Select who made the sale. Your account remains recorded as the person entering it.": "Sélectionnez la personne qui a réalisé la vente. Votre compte reste enregistré comme auteur de la saisie.",
+  "Choose an active Commercial salesperson.": "Choisissez un commercial actif.",
+  "Choose issued stock assigned to the selected salesperson.": "Choisissez un stock remis au commercial sélectionné.",
   "More than one open load shares this stock. Ask warehouse management to reconcile the assignments.": "Plusieurs chargements en cours partagent ce stock. Demandez au magasinier de rapprocher les affectations.",
   "The stock quantities need management review.": "Les quantités en stock doivent être vérifiées par un responsable.",
   "The recorded load and current stock differ. Ask warehouse management to review the difference.": "Le chargement enregistré et le stock actuel diffèrent. Demandez au magasinier de vérifier l'écart.",

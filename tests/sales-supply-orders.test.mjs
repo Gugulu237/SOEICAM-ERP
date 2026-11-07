@@ -10,6 +10,7 @@ import {companySalesRegister} from '../src/lib/company-sales.js';
 import {invoiceDefaults} from '../src/lib/invoice-documents.js';
 import {guardMutation} from '../src/server/access.js';
 import {isReadOnlyFunction} from '../src/lib/function-actions.js';
+import {FEATURE_AUTHORITY} from '../src/server/domain/roles.js';
 
 const admin={id:'gm',role:'admin',full_name:'General Manager'};
 test('omitting the salesperson uses the signed-in employee rather than the selected stock holder',async()=>{
@@ -108,7 +109,7 @@ test('invalid quantities, prices, customer branches, source locations and credit
   await assert.rejects(f.call({...f.body,sourceType:'warehouse',dispatchId:'',warehouseId:'van-stock'}),/finished-goods warehouse/);
   await assert.rejects(f.call({...f.body,warehouseId:'factory'}),/does not match/);
   await assert.rejects(f.call({...f.body,date:'2099-01-01'}),/valid sale date/);
-  await assert.rejects(f.call({...f.body,sellerId:'missing'}),/signed-in account/);
+  await assert.rejects(f.call({...f.body,sellerId:'missing'}),/active Commercial salesperson/);
   await assert.rejects(f.call({...f.body,expectedTotal:900}),/sale total changed/);
   assert.deepEqual(f.rows,before);
   await f.s.Customer.update('customer-a',{credit_limit:500});await assert.rejects(f.call({...f.body,paymentType:'credit'}),/credit limit/);
@@ -170,7 +171,7 @@ test('historical sale dates retain the signed-in seller regardless of stock cust
   assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,admin.id);
   assert.equal(result.order.sales_supply_stockholder_id,'');assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,18);assert.equal((await f.s.StockBalance.get('stock')).quantity,10);
   await f.s.Employee.update('cashier',{status:'inactive'});
-  await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active employee|signed-in account/);
+  await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active Commercial salesperson/);
 });
 
 test('multiple customer delivery points require an explicit current selection before stock moves',async()=>{
@@ -394,7 +395,67 @@ for(const sourceType of ['company','warehouse','issued'])for(const exchangeOnly 
  const snapshot=structuredClone(f.rows);assert.equal((await f.call(args)).reused,true);assert.deepEqual(f.rows,snapshot);
 });
 
-test('the salesperson catalogue contains only the authenticated seller and rejects another active employee',async()=>{
- const f=await setup(),workspace=await f.call({action:'salesOrderWorkspace'});assert.equal(workspace.sellers.length,1);assert.equal(workspace.sellers[0].id,workspace.currentSellerId);
- await assert.rejects(f.call({...f.body,sellerId:f.agent.id}),/signed-in account/);assert.equal((await f.s.SalesOrder.list()).length,0);
+test('only principal administrators can choose active Commercial sellers, including staff without sign-in accounts',async()=>{
+ const f=await setup(),inactive=await f.s.Employee.create({role:'commercial',status:'inactive',full_name:'Inactive seller'}),removed=await f.s.Employee.create({role:'commercial',status:'active',full_name:'Removed seller',employee_removed_at:date}),unrelated=await f.s.Employee.create({role:'employee',status:'active',full_name:'Unrelated employee'});
+ const workspace=await f.call({action:'salesOrderWorkspace'});assert.equal(workspace.canChooseSeller,true);assert.equal(workspace.sellers[0].id,workspace.currentSellerId);
+ assert.ok(workspace.sellers.some(s=>s.id===f.agent.id&&s.name==='Agent A'&&s.user_id===''));
+ for(const id of [f.driver.id,inactive.id,removed.id,unrelated.id])assert.ok(!workspace.sellers.some(s=>s.id===id));
+ assert.equal(workspace.runs.find(run=>run.id==='run-a').salesperson_id,f.agent.id);
+ await f.s.Employee.update('cashier',{role:'employee'});
+ for(const actor of [{id:'cashier-login',role:'user'},{id:'cashier-login',role:'user',[FEATURE_AUTHORITY]:{module:'sales',role:'admin'}}]){
+  const own=await salesOrderAction(f.client,actor,{action:'salesOrderWorkspace'});assert.equal(own.canChooseSeller,false);assert.deepEqual(own.sellers.map(s=>s.id),['cashier']);
+  for(const action of ['salesOrderStock','recordSuppliedOrder'])await assert.rejects(salesOrderAction(f.client,actor,{...f.body,action,sellerId:f.agent.id}),/signed-in account/);
+ }
+ assert.equal((await f.s.SalesOrder.list()).length,0);
+ await f.s.Dispatch.update('run-a',{salesperson_id:'cashier'});
+ const ownWorkspace=await salesOrderAction(f.client,admin,{action:'salesOrderWorkspace'},{ownIssuedStock:true});assert.equal(ownWorkspace.canChooseSeller,false);assert.deepEqual(ownWorkspace.sellers.map(s=>s.id),['cashier']);
+ await assert.rejects(salesOrderAction(f.client,admin,{...f.body,sellerId:f.agent.id},{ownIssuedStock:true}),/signed-in account/);
+});
+
+test('an admin recording an offline Commercial sale preserves seller, stock holder and recorder separately',async()=>{
+ const f=await setup(),before=Object.fromEntries(await Promise.all(['Payment','CashCollection','TreasuryTransaction'].map(async entity=>[entity,await f.s[entity].list()]))),body={...f.body,sellerId:f.agent.id,sales_supply_seller_role:'admin'};
+ const stock=await f.call({action:'salesOrderStock',sourceType:'issued',dispatchId:'run-a',sellerId:f.agent.id});assert.equal(stock.source.salesperson_id,f.agent.id);
+ const result=await f.call(body),invoice=await f.s.Invoice.get(result.invoiceId),audit=(await f.s.AuditLog.list()).find(row=>row.action==='record_supplied_order');
+ assert.equal(result.order.salesperson_id,f.agent.id);assert.equal(result.order.salesperson_name,'Agent A');assert.equal(result.order.sales_supply_seller_id,f.agent.id);assert.equal(result.order.sales_supply_stockholder_id,f.agent.id);
+ assert.equal(result.order.sales_supply_recorded_by,admin.id);assert.equal(result.order.created_by,admin.id);assert.equal(invoice.salesperson_id,f.agent.id);assert.equal(invoice.recorded_by,admin.id);
+ assert.equal(audit.user_id,admin.id);assert.equal(audit.sales_supply_recorded_by,admin.id);assert.equal(audit.sales_supply_seller_id,f.agent.id);assert.equal(audit.sales_supply_seller_name,'Agent A');assert.equal(audit.sales_supply_on_behalf,true);
+ assert.equal(result.order.sales_supply_seller_role,'commercial');assert.equal(audit.sales_supply_seller_role,'commercial');
+ assert.equal((await f.s.StockBalance.get('stock')).quantity,8);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.Invoice.list()).length,1);
+ for(const [entity,records] of Object.entries(before))assert.deepEqual(await f.s[entity].list(),records);
+ await f.s.Employee.update(f.agent.id,{role:'procurement',status:'inactive',full_name:'Renamed after posting'});
+ const committed=structuredClone(f.rows),retry=await f.call({...body,sales_supply_seller_role:'driver'});assert.equal(retry.reused,true);assert.equal(retry.order.sales_supply_seller_role,'commercial');assert.deepEqual(f.rows,committed);
+ await assert.rejects(f.call({...body,sellerId:'cashier'}),/different supply details/);
+ await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/active Commercial salesperson/);
+});
+
+test('on-behalf issued stock must belong to the selected seller while company and warehouse supplies remain explicit options',async()=>{
+ const f=await setup(),other=await f.s.Employee.create({role:'commercial',status:'active',full_name:'Other Commercial'}),body={...f.body,sellerId:other.id};
+ for(const action of ['salesOrderStock','recordSuppliedOrder'])await assert.rejects(f.call({...body,action}),/assigned to the selected salesperson/);
+ assert.equal((await f.s.StockBalance.get('stock')).quantity,10);assert.equal((await f.s.SalesOrder.list()).length,0);
+ for(const sourceType of ['company','warehouse']){
+  const options={...body,sourceType,dispatchId:'',warehouseId:sourceType==='warehouse'?'factory':'',requestKey:crypto.randomUUID(),paymentType:'credit'};
+  const preview=await f.call({...options,action:'salesOrderStock'});assert.equal(preview.source.source_type,sourceType);
+  const result=await f.call(options);assert.equal(result.order.salesperson_id,other.id);assert.equal(result.order.sales_supply_recorded_by,admin.id);assert.equal(result.order.dispatch_id,'');assert.equal(result.order.sales_supply_stockholder_id,'');
+ }
+ assert.equal((await f.s.StockBalance.get('stock')).quantity,10);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,16);
+});
+
+test('seller validation is fresh and respects custom Commercial roles without accepting other staff or user identities',async()=>{
+ const f=await setup(),custom=await f.s.Employee.create({role:'field_representative',status:'active',full_name:'Offline representative'});
+ await f.s.CompanySettings.update('settings',{staff_role_catalogue:{roles:{field_representative:{key:'field_representative',template_role:'commercial',label:'Field representative',modules:['commercial']}}}});
+ const workspace=await f.call({action:'salesOrderWorkspace'});assert.ok(workspace.sellers.some(s=>s.id===custom.id));
+ const company={...f.body,sourceType:'company',dispatchId:''};
+ for(const sellerId of [f.driver.id,'user:another-admin','missing',true])await assert.rejects(f.call({...company,sellerId}),/active Commercial salesperson/);
+ await f.s.Employee.update(custom.id,{status:'inactive'});await assert.rejects(f.call({...company,sellerId:custom.id}),/active Commercial salesperson/);
+ await f.s.Employee.update(custom.id,{status:'active'});const result=await f.call({...company,sellerId:custom.id});assert.equal(result.order.salesperson_id,custom.id);assert.equal(result.order.salesperson_name,'Offline representative');assert.equal(result.order.sales_supply_seller_role,'commercial');
+});
+
+test('seller role snapshots use the principal role and ignore client or feature-elevated roles',async()=>{
+ for(const principalAdmin of [true,false]){
+  const f=await setup();await f.s.Employee.update('cashier',{role:'employee'});
+  const actor=principalAdmin?admin:{id:'cashier-login',role:'user',[FEATURE_AUTHORITY]:{module:'sales',role:'admin'}};
+  const result=await salesOrderAction(f.client,actor,{...f.body,sales_supply_seller_role:'commercial'});
+  const expected=principalAdmin?'admin':'employee',audit=(await f.s.AuditLog.list()).find(row=>row.action==='record_supplied_order');
+  assert.equal(result.order.sales_supply_seller_role,expected);assert.equal(audit.sales_supply_seller_role,expected);
+ }
 });

@@ -45,7 +45,7 @@ test('driver pairing requires an assigned loaded run and active driver, with con
   const svc = client.asServiceRole;
   assert.equal((await supplyRun(svc, staff.id, run.id, date, true)).driver_name, driver.full_name);
   assert.equal((await supplyRun(svc, staff.id, run.id, date, true)).stock_warehouse_id, 'van-stock');
-  await assert.rejects(supplyRun(svc, staff.id, '', date, true), /paired driver/);
+  await assert.rejects(supplyRun(svc, staff.id, '', date, true), /Select goods issued to you/);
   for (const changed of [{ ...run, salesperson_id: 'other' }, { ...run, dispatch_date: '2999-01-01' }, { ...run, status: 'cancelled' }]) {
     tables.Dispatch[0] = changed;
     await assert.rejects(supplyRun(svc, staff.id, run.id, date, true), /assigned to you/);

@@ -4,6 +4,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {fixture,functionRoute,request,date} from './helpers/cashier.mjs';
 import {distributionControlAction} from '../src/server/domain/distribution-control.js';
 import {employeeStockAction} from '../src/server/domain/employee-stock.js';
+import {salesOrderAction} from '../src/server/domain/sales-orders.js';
 import {dispatchAction,dispatchReconciliationData} from '../src/server/domain/dispatch-operations.js';
 import {invoiceAction} from '../src/server/domain/sales-invoices.js';
 import {isReadOnlyFunction} from '../src/lib/function-actions.js';
@@ -35,6 +36,42 @@ test('unpaired employee issue, own sale, retry and physical return conserve stoc
  await dispatchAction(f.client,gm,{action:'returnDispatchStock',dispatchId:dispatch.id,countedLines:[{product_id:'product-a',quantity:3}]});
  assert.equal((await f.s.StockBalance.filter({warehouse_id:'factory'})).reduce((n,b)=>n+b.quantity,0),18);assert.equal((await f.s.JournalEntry.list()).length,1);
  await assert.rejects(employeeStockAction(f.client,f.actor,{...input,requestKey:crypto.randomUUID()}),/load|assigned/);
+});
+
+test('a manager-entered sale belongs to the selected commercial monthly history without assigning cash to the recorder',async()=>{
+ const f=await setup();await f.s.Employee.update('cashier',{role:'commercial'});
+ const {dispatch}=await f.issue(),staffFilter=f.client.entities.Employee.filter;
+ f.client.entities.Employee.filter=async()=>[];
+ const result=await salesOrderAction(f.client,gm,{...f.sale(dispatch.id),action:'recordSuppliedOrder',sellerId:'cashier'});
+ f.client.entities.Employee.filter=staffFilter;
+ const invoice=await f.s.Invoice.get(result.invoiceId),event=await f.s.AuditLog.get(result.order.sales_supply_request_id);
+ assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,gm.id);assert.equal(invoice.salesperson_id,'cashier');assert.equal(invoice.recorded_by,gm.id);assert.equal(event.user_id,gm.id);
+ const before=structuredClone(f.rows),workspace=await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'});
+ assert.deepEqual(workspace.sales.map(s=>s.id),[result.order.id]);assert.deepEqual(f.rows,before,'monthly visibility is read-only');
+ assert.equal((await f.s.Payment.list()).length,0);assert.equal((await f.s.TreasuryTransaction.list()).length,0);assert.ok(!(await f.s.CashCollection.list()).some(c=>c.recorded_by===gm.id||c.collector_user_id===gm.id));assert.equal(invoice.cash_deposited,false);
+ await f.s.AuditLog.update(event.id,{entity_id:'unrelated-order'});assert.deepEqual((await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'})).sales,[]);
+ await f.s.AuditLog.update(event.id,{entity_id:result.order.id,audit_source:'client_reported'});assert.deepEqual((await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'})).sales,[]);
+ await f.s.AuditLog.update(event.id,{audit_source:'server_verified'});
+ await f.s.SalesOrder.update(result.order.id,{salesperson_id:'another-commercial'});assert.deepEqual((await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'})).sales,[]);
+});
+
+test('a delegated replacement-only exchange remains visible with its checked completion evidence',async()=>{
+ const f=await setup();await f.s.Employee.update('cashier',{role:'commercial'});const {dispatch}=await f.issue(),staffFilter=f.client.entities.Employee.filter;f.client.entities.Employee.filter=async()=>[];
+ const result=await salesOrderAction(f.client,gm,{...f.sale(dispatch.id),action:'recordSuppliedOrder',sellerId:'cashier',lines:[],paymentType:'exchange',expectedTotal:0,replacementsDeclared:true,stockReplacements:[{product_id:'product-a',quantity:2,reason:'damaged',expiry_date:''}]});
+ f.client.entities.Employee.filter=staffFilter;const workspace=await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'});assert.deepEqual(workspace.sales.map(s=>s.id),[result.order.id]);assert.equal(workspace.sales[0].total,0);assert.equal(workspace.sales[0].status,'delivered');
+});
+
+test('monthly history includes delegated company and warehouse sales while preserving existing own-issued history',async()=>{
+ const f=await setup();await f.s.Employee.update('cashier',{role:'commercial'});const staffFilter=f.client.entities.Employee.filter;
+ const expected=[];
+ for(const sourceType of ['company','warehouse']){
+  f.client.entities.Employee.filter=async()=>[];
+  const result=await salesOrderAction(f.client,gm,{...f.sale(''),action:'recordSuppliedOrder',sourceType,warehouseId:sourceType==='warehouse'?'factory':'',sellerId:'cashier'});expected.push(result.order.id);
+ }
+ f.client.entities.Employee.filter=staffFilter;
+ const legacy=await f.s.SalesOrder.create({order_number:'LEGACY-DRAFT',salesperson_id:'cashier',sales_supply_recorded_by:f.actor.id,dispatch_id:'former-run',order_date:date,status:'draft',total:200});expected.push(legacy.id);
+ await f.s.SalesOrder.create({order_number:'UNVERIFIED',salesperson_id:'cashier',sales_supply_recorded_by:gm.id,dispatch_id:'former-run',order_date:date,status:'invoiced',total:500});
+ const workspace=await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'});assert.deepEqual(workspace.sales.map(s=>s.id).sort(),expected.sort());assert.equal(workspace.sales.find(s=>s.id===legacy.id).status,'draft');
 });
 test('all active employee types except Hotesse can receive goods; optional transport is independently validated',async()=>{
  for(const role of ['admin','procurement','warehouse_manager','cashier','production_manager','employee','commercial','driver']){const f=await setup();await f.s.Employee.update('cashier',{role});const r=await f.issue();assert.ok(r.dispatch.vehicle_warehouse_id);}

@@ -17,6 +17,8 @@ import { dailySupplySummary } from '@/lib/commercial-daily';
 import { formatXAF } from '@/lib/formatters';
 import ProductThumb from '@/components/shared/ProductThumb';
 import { availableCustody } from '@/lib/field-pos';
+import { Link } from '@/lib/router';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 function SupplyRow({ readOnly, onOpen, children, ...props }) {
   return readOnly ? <article {...props}>{children}</article> : <button type="button" onClick={onOpen} {...props}>{children}</button>;
@@ -24,6 +26,8 @@ function SupplyRow({ readOnly, onOpen, children, ...props }) {
 
 export default function CommercialDailySupplies({ employeeId, today, preview, managing, readOnly = false, onOpenSale }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const auth = useCurrentUser();
+  const canOpenInvoice = auth?.principalRole === 'admin' && (!auth.allowedModules || auth.allowedModules.includes('sales'));
 
   const [date, setDate] = usePageState('daily-supplies:date:' + employeeId, today), [filter, setFilter] = usePageState('daily-supplies:filter:' + employeeId, 'all'), [data, setData] = useState(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState(''), [reload, setReload] = useState(0);
@@ -69,6 +73,16 @@ export default function CommercialDailySupplies({ employeeId, today, preview, ma
     </div>
     <div className="flex flex-wrap gap-2">{[['all', ui("All supplies")], ['cash', 'Cash'], ['credit', 'Credit']].map(([value, label]) => <Button key={value} variant={filter === value ? 'default' : 'outline'} onClick={() => setFilter(value)}>{label}</Button>)}</div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}</p>}
-    {loading && !data ? <p role="status" className="text-sm text-slate-500">{ui("Loading daily supplies...")}</p> : !preview && data && <div className="divide-y overflow-hidden rounded-2xl border bg-white">{!sales.length && <p className="p-6 text-sm text-slate-500">{ui("No supplies match this date and payment type. Record each supply after delivery.")}</p>}{sales.map(sale => <SupplyRow key={sale.id} readOnly={readOnly} onOpen={onOpenSale ? () => onOpenSale(sale.id) : undefined} className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-slate-50"><span><span className="block text-sm font-semibold">{sale.customer_name}</span><span className="mt-1 block text-xs text-slate-500">{[sale.sale_number, sale.location_name, sale.driver_name].filter(Boolean).join(' / ')}</span><span className="mt-2 flex flex-wrap gap-3">{(data?.lines || []).filter(line => line.field_sale_id === sale.id).slice(0, readOnly ? undefined : 3).map(line => <span key={line.id} className="inline-flex items-center gap-1 text-[11px] text-slate-600"><ProductThumb product={(data?.products || []).find(product => product.id === line.product_id) || { name: line.product_name }} size={26} /><span>{line.quantity} {line.unit}<span className="block max-w-36 truncate text-[10px]">{line.product_name}</span></span></span>)}</span><span className="mt-2 block text-xs font-medium text-slate-700">{sale.payment_type === 'credit' ? ui("Credit") : ui("Cash")}{ui(" / Collected ")}{formatXAF(sale.amount_collected || 0)}{ui(" / Due ")}{formatXAF(sale.amount_due || 0)}</span></span><span className="space-y-2 text-right"><span className="block text-sm font-bold">{formatXAF(sale.total)}</span><StatusPill map={SALE_STATUS} value={sale.status} /></span></SupplyRow>)}</div>}
+    {loading && !data ? <p role="status" className="text-sm text-slate-500">{ui("Loading daily supplies...")}</p> : !preview && data && <div className="divide-y overflow-hidden rounded-2xl border bg-white">{!sales.length && <p className="p-6 text-sm text-slate-500">{ui("No supplies match this date and payment type. Record each supply after delivery.")}</p>}{sales.map(sale => {
+      const order = sale.source_type === 'SalesOrder', rowReadOnly = readOnly || order;
+      return <SupplyRow key={sale.id} readOnly={rowReadOnly} onOpen={!order && onOpenSale ? () => onOpenSale(sale.id) : undefined} className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-slate-50">
+        <span><span className="block text-sm font-semibold">{sale.customer_name}</span><span className="mt-1 block text-xs text-slate-500">{[sale.sale_number, sale.location_name, sale.driver_name].filter(Boolean).join(' / ')}</span>
+          {order && <span className="mt-1 block text-xs text-slate-600">{ui('Recorded through Sales')}{sale.invoice_number ? ' / ' + sale.invoice_number : ''}</span>}
+          {order && sale.sale_reversal && <span className="mt-1 block text-xs font-medium text-amber-800">{ui('Reversed on {0}', sale.sale_reversal.date)}{' / '}{formatXAF(-Number(sale.total || 0))}</span>}
+          <span className="mt-2 flex flex-wrap gap-3">{(data?.lines || []).filter(line => (line.sale_id || line.field_sale_id) === sale.id).slice(0, rowReadOnly ? undefined : 3).map(line => <span key={line.id} className="inline-flex items-center gap-1 text-[11px] text-slate-600"><ProductThumb product={(data?.products || []).find(product => product.id === line.product_id) || { name: line.product_name }} size={26} /><span>{line.quantity} {line.unit}<span className="block max-w-36 truncate text-[10px]">{line.product_name}</span></span></span>)}</span>
+          <span className="mt-2 block text-xs font-medium text-slate-700">{sale.payment_type === 'credit' ? ui("Credit") : ui("Cash")}{ui(" / Collected ")}{formatXAF(sale.amount_collected || 0)}{ui(" / Due ")}{formatXAF(sale.amount_due || 0)}</span>
+        </span><span className="space-y-2 text-right"><span className="block text-sm font-bold">{formatXAF(sale.total)}</span><StatusPill map={SALE_STATUS} value={sale.status} />{order && sale.invoice_id && canOpenInvoice && <Link to={'/sales/invoices/' + encodeURIComponent(sale.invoice_id)} className="block text-xs font-medium text-green-800 underline">{ui('Open invoice')}</Link>}</span>
+      </SupplyRow>;
+    })}</div>}
   </section>;
 }

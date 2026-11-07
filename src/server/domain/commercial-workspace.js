@@ -4,9 +4,11 @@ import { registrationData, customerGpsData, normalizedPhone, reportScope, period
 import { commercialRunInventory } from './commercial-runs.js';
 import { commercialActor } from './commercial-actor.js';
 import { prepareDeliveryDefinition } from './customer-delivery.js';
-import { effectiveRole } from './roles.js';
+import { effectiveRole, principalRole } from './roles.js';
 import { reportAgentCashDeposit } from './agent-cash-deposit.js';
 import { registrationFingerprint } from './commercial-request.js';
+import { commercialOrderSales } from './commercial-order-sales.js';
+import { stockStaff } from './employee-custody.js';
 
 // Positional pagination also works with the SDK version used by older functions.
 export async function readRecords(entity, query = {}) {
@@ -103,19 +105,21 @@ export async function commercialAction(base44, user, body) {
   if (body.action === 'commercialDailySupplies') {
     if (!commercialId) throw new Error('Choose a Commercial agent');
     const { from: date } = periodDates(body.date, body.date);
-    const [sales, inventory] = await Promise.all([
+    const [fieldSales, inventory, orders] = await Promise.all([
       readRecords(svc.entities.FieldSale, { commercial_id: commercialId, $or:[{transaction_date:date},{sale_reversal_date:date}] }),
       commercialRunInventory(svc, commercialId, date, {includeCatalogue:body.includeCatalogue===true}),
+      commercialOrderSales(svc, {commercialId, from:date, to:date}),
     ]);
-    const fields = ['id', 'sale_number', 'customer_name', 'location_name', 'transaction_date', 'status', 'payment_type', 'total', 'amount_collected', 'amount_due', 'submitted_at', 'driver_name', 'dispatch_id', 'dispatch_number', 'vehicle_name', 'supply_kind', 'sale_reversal'];
-    const lines = await rowsByIds(svc.entities.FieldSaleLine, 'field_sale_id', sales.map(sale => sale.id));
+    const sales = [...fieldSales.map(sale => ({...sale, source_type:'FieldSale', source_id:sale.id})), ...orders.sales];
+    const fields = ['id', 'source_type', 'source_id', 'source_status', 'invoice_id', 'invoice_number', 'sale_number', 'customer_name', 'location_name', 'transaction_date', 'status', 'payment_type', 'total', 'amount_collected', 'amount_due', 'submitted_at', 'driver_name', 'dispatch_id', 'dispatch_number', 'vehicle_name', 'supply_kind', 'sale_reversal'];
+    const lines = [...await rowsByIds(svc.entities.FieldSaleLine, 'field_sale_id', fieldSales.map(sale => sale.id)), ...orders.lines];
     const products = await rowsByIds(svc.entities.Product, 'id', lines.map(line => line.product_id));
     const view = (row, keys) => Object.fromEntries(keys.map(key => [key, row[key]]));
     const manifest = await rowsByIds(svc.entities.DispatchLine, 'dispatch_id', inventory.runs.map(run => run.id));
     return { date, runs: inventory.runs, runBalances: inventory.balances, runProducts: inventory.products,
       runManifest: manifest.map(line => view(line, ['dispatch_id', 'product_id', 'product_name', 'unit', 'loaded_quantity', 'returned_quantity'])),
       sales: sales.map(sale => view(sale, fields)),
-      lines: lines.map(line => view(line, ['id', 'field_sale_id', 'product_id', 'product_name', 'unit', 'quantity'])),
+      lines: lines.map(line => view(line, ['id', 'sale_id', 'field_sale_id', 'source_type', 'source_id', 'product_id', 'product_name', 'unit', 'quantity'])),
       products: products.map(product => view(product, ['id', 'name', 'inventory_type', 'image_url', 'size', 'flavor'])) };
   }
   if (body.action === 'fieldCustomers') {
@@ -127,15 +131,20 @@ export async function commercialAction(base44, user, body) {
 
   if (body.action === 'commercialPerformance') {
     const { from, to } = periodDates(body.from, body.to);
-    const sales = await readRecords(svc.entities.FieldSale, { ...(commercialId ? { commercial_id: commercialId } : {}),
-      $or:[{transaction_date: { $gte: from, $lte: to }},{sale_reversal_date:{$gte:from,$lte:to}}], status: 'approved_posted' });
+    const staff = (await stockStaff(svc.entities, await readRecords(svc.entities.Employee, commercialId ? {id:commercialId} : {})))
+      .filter(agent => commercialId || principalRole({role:'user'},agent) === 'commercial');
+    const [fieldSales, orders] = await Promise.all([
+      readRecords(svc.entities.FieldSale, { ...(commercialId ? { commercial_id: commercialId } : {}),
+        $or:[{transaction_date: { $gte: from, $lte: to }},{sale_reversal_date:{$gte:from,$lte:to}}], status: 'approved_posted' }),
+      commercialOrderSales(svc, {commercialId, commercialIds:staff.map(agent => agent.id), allCommercial:!commercialId, from, to}),
+    ]);
+    const sales = [...fieldSales, ...orders.sales];
     const registrations = await readRecords(svc.entities.Customer, { ...(commercialId ? { acquired_by_id: commercialId } : { acquired_by_id: { $exists: true, $ne: '' } }),
       acquisition_date: { $gte: from, $lte: to } });
     const supplied = await rowsByIds(svc.entities.Customer, 'id', sales.map((s) => s.customer_id));
     const customers = [...new Map([...registrations, ...supplied].map((c) => [c.id, customerView(c)])).values()];
-    const staff = await readRecords(svc.entities.Employee, commercialId ? { id: commercialId } : { role: 'commercial' });
     const agents = staff.map((s) => ({ id: s.id, full_name: s.full_name, bonus_plan: s.bonus_plan || '' }));
-    const lines = await rowsByIds(svc.entities.FieldSaleLine, 'field_sale_id', sales.map((s) => s.id));
+    const lines = [...await rowsByIds(svc.entities.FieldSaleLine, 'field_sale_id', fieldSales.map(sale => sale.id)), ...orders.lines];
     const productRows = await rowsByIds(svc.entities.Product, 'id', lines.map((l) => l.product_id));
     const products = productRows.map((p) => ({ id: p.id, name: p.name, inventory_type: p.inventory_type, image_url: p.image_url, size: p.size, flavor: p.flavor }));
     // A supplied customer may belong to another agent. Keep acquisition counts scoped to the selected agent.
