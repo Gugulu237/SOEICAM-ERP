@@ -2,6 +2,7 @@
 // Convention: activity nets are debit-positive (debit − credit).
 import { round2 } from "@/lib/posting";
 import { journalCents, journalDate, ledgerStatuses } from '../server/domain/journal-validation.js';
+import { resolveAccountConsolidations } from './account-consolidation.js';
 
 export function validStatementRange(fromDate, toDate) {
   try { journalDate(fromDate); journalDate(toDate); return fromDate <= toDate; }
@@ -122,9 +123,17 @@ export function netProfit(accounts, activity, field = "period") {
 
 // Rows for a section: accounts of given types with non-zero amounts, sign-adjusted.
 export function sectionRows(accounts, activity, types, sign, field = "period") {
-  return accounts
-    .filter((a) => types.includes(a.account_type))
-    .map((a) => ({ ...a, amount: round2(sign * (activity[a.id]?.[field] || 0)) }))
+  const {byId,canonicalId}=resolveAccountConsolidations(accounts),groups=new Map();
+  // A consolidation changes presentation, never the original journal account.
+  // Sum each member's own ledger balance once; dated transfers within the
+  // family therefore have no effect on profit in any reporting period.
+  for(const account of accounts.filter(a=>types.includes(a.account_type))){
+    const id=canonicalId(account.id),canonical=byId.get(id),value=Number(activity[account.id]?.[field]||0);
+    const cents=journalCents(Math.abs(value))*(value<0?-1:1);
+    const row=groups.get(id)||{account:canonical,cents:0};row.cents=addCents(row.cents,cents);groups.set(id,row);
+  }
+  return [...groups.values()]
+    .map(({account,cents}) => ({ ...account, amount: (sign*cents||0)/100 }))
     .filter((r) => r.amount !== 0)
     .sort((a, b) => String(a.account_number || '').localeCompare(String(b.account_number || ''), undefined, {numeric:true}));
 }

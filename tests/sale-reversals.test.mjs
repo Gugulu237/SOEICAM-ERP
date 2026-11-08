@@ -12,6 +12,7 @@ import {commercialReport} from '../src/server/domain/commercial-rules.js';
 import {dailySupplySummary} from '../src/lib/commercial-daily.js';
 import {commercialSnapshot} from '../src/lib/employee-dashboard.js';
 import {companySalesAction} from '../src/server/domain/company-sales.js';
+import {previewAccountConsolidation,postAccountConsolidation} from '../src/server/domain/account-consolidation.js';
 
 const gm={id:'gm',role:'admin',full_name:'GM'};
 async function setup(db,{cash=false}={}){
@@ -47,6 +48,19 @@ test('returned goods restore exact carrying value in quarantine and retries cann
  const restored=(await f.s.StockBalance.list()).filter(s=>s.stock_origin==='sale_reversal');assert.equal(restored.length,1);assert.equal(restored[0].quantity,2);assert.equal(restored[0].total_value,400);assert.equal(restored[0].qc_status,'pending');assert.equal(restored[0].lot_number,'LOT');
  assert.equal((await f.s.StockBalance.get('stock')).quantity,8);assert.equal((await f.s.Account.get('cogs')).balance,0);assert.equal((await f.s.StockMovement.list()).length,2);
  await assert.rejects(saleReversalAction(f.client,gm,{...body,reason:'Changed reason'}),/different details/);
+});
+
+test('a historical sale can return stock after COGS consolidation without changing its original cost lines or payload',async()=>{
+ const f=await setup(),s=f.s;s.FixedAsset={filter:async()=>[]};
+ const create=s.AuditLog.create;s.AuditLog.create=async row=>{if(!row.id)return create(row);f.rows.AuditLog.push(structuredClone(row));return row;};
+ await s.Account.update('cogs',{account_number:'7000'});
+ const target=await s.Account.create({account_number:'5100',name:'Direct Material Cost of Goods Sold',account_type:'cogs',normal_balance:'debit',currency:'XAF',is_active:true,is_posting:true,balance:0,is_system:true});
+ const original=await s.JournalEntry.get((await s.Invoice.get(f.input.invoiceId)).journal_id),lines=await s.JournalLine.filter({journal_id:original.id}),stale=await f.preview(),body={sourceAccountId:'cogs',targetAccountId:target.id,date,reference:'Consolidate duplicate sale costs'},context={user:gm,role:'admin'},preview=await previewAccountConsolidation(s,context,body);
+ await postAccountConsolidation(s,context,{...body,token:preview.token,requestKey:crypto.randomUUID(),confirmed:true});
+ await assert.rejects(f.reverse({reviewToken:stale.reviewToken}),/changed/);
+ const result=await f.reverse({stockDisposition:'return_stock',warehouseId:'factory'}),reversalLines=await s.JournalLine.filter({journal_id:result.reversal.journal_id});
+ assert.equal(reversalLines.find(line=>line.account_id===target.id).credit,400);assert.ok(reversalLines.every(line=>line.account_id!=='cogs'));assert.equal((await s.Account.get('cogs')).balance,0);assert.equal((await s.Account.get(target.id)).balance,0);assert.deepEqual(await s.JournalLine.filter({journal_id:original.id}),lines);assert.equal((await s.JournalEntry.get(original.id)).posting_payload,original.posting_payload);
+ const count=(await s.JournalEntry.list()).length;assert.equal((await saleReversalAction(f.client,gm,{action:'reverseSale',...f.input,reason:'Incorrect sale during audit',stockDisposition:'return_stock',warehouseId:'factory',confirmed:true})).reused,true);assert.equal((await s.JournalEntry.list()).length,count);
 });
 
 test('partly paid credit sale creates customer credit without refunding cash or editing the original receipt',async()=>{

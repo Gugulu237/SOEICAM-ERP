@@ -24,6 +24,14 @@ Other inventory/P&L source families remain visible with blocking reasons. Import
 
 Do not remove all Other Income or cap COGS at current-period manufacturing. Current sales can consume opening finished goods, and genuine operating inventory gains/losses require their own treatment. Reconcile opening finished goods plus production and purchases, less closing goods, giveaways, losses and other documented movements, to the cost of units sold. Resolve duplicated costs, incorrect classifications and unsupported opening entries individually.
 
+## Consolidating duplicate COGS accounts
+
+Under **Accounting > Journal Entries > Consolidate duplicate COGS accounts**, preview the duplicate and retained debit-normal COGS accounts with a dated review reference. Clear unsupported references and unposted source drafts before confirming. A nonzero duplicate balance is transferred to the retained account in an open period; product and posting-rule mappings then use the retained account. Consolidation changes neither total COGS nor profit.
+
+The duplicate becomes inactive and read-only. Historical journal lines remain unchanged, while statements and source drilldowns combine both account IDs into one COGS row, including dates before consolidation. Historical sale and manual journal reversals post their new cost lines to the retained account. Both accounts are protected from deletion, and the retained account must keep its COGS posting structure.
+
+Gross profit uses signed revenue minus signed COGS. A negative COGS balance increases gross profit mathematically; investigate setup credits and genuine cost reversals instead of changing the formula or forcing costs positive.
+
 ## Completing a company adjustment
 
 1. Record exact reporting dates and obtain journal detail for each affected P&L account.

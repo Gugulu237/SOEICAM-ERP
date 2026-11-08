@@ -15,6 +15,7 @@ export function requireAccountant(context) {
   assertModule({...context,role},'accounting');
 }
 export async function prepareAccountDefinition(stores, input, existing = null) {
+  if(existing?.consolidated_into_account_id)throw Error('This account was consolidated. Manage the destination account and retain this account for history.');
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k=>!fields.includes(k))) throw Error('Only editable account fields may be supplied.');
   const form = {is_posting:true,is_control_account:false,allow_manual_journal:true,is_active:true,is_hidden:false,is_treasury:false,cash_flow_category:'none',parent_id:'',description:'',...existing,...input};
   form.parent_id=String(form.parent_id || '');
@@ -26,6 +27,7 @@ export async function prepareAccountDefinition(stores, input, existing = null) {
   for (const key of ['is_posting','is_control_account','allow_manual_journal','is_active','is_hidden','is_treasury']) if (typeof form[key]!=='boolean') throw Error('Account settings must be checked or unchecked.');
   if (existing?.is_system && ['account_number','account_type','normal_balance','is_posting','is_control_account','allow_manual_journal','is_active','parent_id'].some(k=>form[k]!== (existing[k] ?? (k==='parent_id'?'':k==='is_posting'||k==='allow_manual_journal'||k==='is_active'?true:false)))) throw Error('The structure and posting controls of a system account are protected.');
   const accounts = await readRecords(stores.Account), balances = {};
+  if(existing&&accounts.some(account=>account.consolidated_into_account_id===existing.id)&&(form.account_type!=='cogs'||form.normal_balance!=='debit'||!form.is_active||!form.is_posting||form.is_control_account||form.is_treasury))throw Error('Retained COGS accounts must remain active debit-normal COGS posting accounts while consolidated history depends on them.');
   if (existing) {
     // All historical lines count, including net-zero, reversed and draft entries.
     const lines = await stores.JournalLine.filter({account_id:existing.id},'id',1);

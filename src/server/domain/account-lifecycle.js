@@ -15,9 +15,11 @@ export async function deleteUnusedAccount(stores,context,body) {
   if(previous){if(previous.deleted_account_id!==body.accountId)throw Error('This deletion reference belongs to another account.');return {deleted:true,id:body.accountId,reused:true};}
   const account=await stores.Account.get(body.accountId);
   if(!account)throw Error('Account no longer exists. Refresh the account list.');
+  const accounts=await readRecords(stores.Account);
+  if(account.consolidated_into_account_id||accounts.some(a=>a.consolidated_into_account_id===account.id))throw Error('Keep consolidated COGS accounts and their retained destination for reporting history.');
   if(account.recurring_expense)throw Error('Keep accounts with recurring expense history. Pause the recurring schedule instead.');
   if(account.opening_balance_recorded)throw Error('Keep accounts with recorded opening balances. Hide this account instead.');
-  if((await readRecords(stores.Account)).some(a=>a.recurring_expense?.versions?.some(v=>v.payable_account_id===account.id)))throw Error('This account is linked to a recurring payable. Preserve its history.');
+  if(accounts.some(a=>a.recurring_expense?.versions?.some(v=>v.payable_account_id===account.id)))throw Error('This account is linked to a recurring payable. Preserve its history.');
   if(body.updatedDate!==account.updated_date)throw Object.assign(Error('This account changed in another window. Reload before deleting.'),{status:409});
   if(account.is_system || account.is_control_account || account.is_treasury || ['1050','1315','1320','4010'].includes(account.account_number))throw Error('System, control and cash accounts are protected. Hide this account instead.');
   if(['balance','opening_balance','opening_debit','opening_credit'].some(k=>Number(account[k] || 0)!==0))throw Error('Accounts with balances cannot be deleted. Hide this account instead.');

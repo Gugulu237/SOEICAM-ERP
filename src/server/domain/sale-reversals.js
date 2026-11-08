@@ -4,6 +4,7 @@ import {requireStaff,postJournal,getRuleAccount,getAccountByNumber,round2,round3
 import {readRecords} from './commercial-workspace.js';
 import {checkedJournalLines} from './journal-validation.js';
 import {postedInvoiceStatuses} from '../../lib/company-sales.js';
+import {resolveAccountConsolidations} from '../../lib/account-consolidation.js';
 
 export const SALE_REVERSAL_ACTIONS=['previewSaleReversal','reverseSale'];
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -45,6 +46,8 @@ async function plan(ctx){
   if(invoice&&round2(Number(invoice.amount_paid||0)+Number(invoice.balance))!==round2(invoice.total))throw Error('Reconcile the invoice receipts and balance before reversal.');
   const original=checkedJournalLines(await readRecords(s.JournalLine,{journal_id:journal.id}));
   if(original.debit!==round2(journal.total_debit)||original.credit!==round2(journal.total_credit))throw Error('The original sale journal totals need reconciliation.');
+  const accounts=await readRecords(s.Account),aliases=resolveAccountConsolidations(accounts),postingAccounts=new Map(original.lines.map(line=>[line.account_id,aliases.byId.get(aliases.canonicalId(line.account_id))]));
+  for(const account of postingAccounts.values())if(!account||account.is_active===false||account.is_posting===false||!['debit','credit'].includes(account.normal_balance)||account.currency&&account.currency!=='XAF')throw Error('Review the active posting accounts and currency before reversal.');
   const [lines,customer,pending,warehouses,moves]=await Promise.all([
     readRecords(s[field?'FieldSaleLine':'InvoiceLine'],{[field?'field_sale_id':'invoice_id']:record.id}),s.Customer.get(source.customer_id),
     readRecords(s.Payment,{party_id:source.customer_id,payment_type:'customer_payment',status:{$in:['awaiting_cashier','pending_approval','approved']}}),
@@ -72,8 +75,9 @@ async function plan(ctx){
   const canRestore=hash(quantities(issues))===hash(quantities(lines))&&sum(issues,'total_value')===cost;
   const period=(await readRecords(s.AccountingPeriod)).find(p=>p.start_date<=today()&&today()<=p.end_date&&['closed','locked'].includes(p.status));
   if(period)throw Error('The current accounting period is closed or locked. Reopen an authorized period before recording the correction.');
-  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today()};
-  return {journal,original,lines,customer,total,due,paid,cash,clearing,receivable,cost,costLines,issues,canRestore,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
+  const affectedIds=new Set([...postingAccounts.keys(),...[...postingAccounts.values()].map(account=>account.id)]);
+  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today()};
+  return {journal,original,postingAccounts,lines,customer,total,due,paid,cash,clearing,receivable,cost,costLines,issues,canRestore,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
 }
 
 export async function saleReversalAction(client,user,body){
@@ -94,7 +98,7 @@ export async function saleReversalAction(client,user,body){
   if(body.reviewToken!==p.reviewToken)throw Error('This sale or customer balance changed. Reload the reversal preview before confirming.');
   const restoring=request.stock==='return_stock',warehouse=p.warehouses.find(w=>w.id===request.warehouse);
   if(restoring&&(!p.canRestore||!warehouse))throw Error('Choose an active company return warehouse; all original stock issue layers must reconcile.');
-  const financial=p.original.lines.filter(l=>restoring||!p.costLines.some(c=>c.id===l.id)).map(l=>({account_id:l.account_id,account_number:l.account_number,account_name:l.account_name,party_type:l.party_type,party_id:l.party_id,debit:l.credit,credit:l.debit,description:'Sale reversal: '+(l.description||'Original posting')}));
+  const financial=p.original.lines.filter(l=>restoring||!p.costLines.some(c=>c.id===l.id)).map(l=>({account_id:p.postingAccounts.get(l.account_id).id,party_type:l.party_type,party_id:l.party_id,debit:l.credit,credit:l.debit,description:'Sale reversal: '+(l.description||'Original posting')}));
   // Preserve deposited money. Reclassify the original cash component to customer
   // credit instead of reducing treasury or losing its cash-in-transit clearing.
   if(p.cash)financial.push({account_id:p.clearing.id,debit:p.cash,credit:0,description:'Cash retained for customer credit'},{account_id:p.receivable.id,party_type:'customer',party_id:source.customer_id,debit:0,credit:p.cash,description:'Customer credit from reversed cash sale'});

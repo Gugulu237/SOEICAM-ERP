@@ -3,6 +3,7 @@ import { serviceEntities } from '@/server/entities';
 import { database, transaction } from '@/server/db';
 import { deleteUnusedAccount } from '@/server/domain/account-lifecycle';
 import { saveAccountDefinition } from '@/server/domain/account-definitions';
+import {previewAccountConsolidation,postAccountConsolidation} from '@/server/domain/account-consolidation';
 export const dynamic='force-dynamic';
 export async function POST(request) {
   try {
@@ -12,6 +13,8 @@ export async function POST(request) {
     const result=await transaction(async()=>{
       await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['chart-of-accounts']);
       if(body.opening!==undefined)await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['opening-balances']);
+      if(body.action==='previewConsolidation')return previewAccountConsolidation(serviceEntities,context,body);
+      if(body.action==='consolidate')return postAccountConsolidation(serviceEntities,context,body);
       if(body.action && !['save','delete'].includes(body.action))throw Error('Unknown account action.');
       return body.action==='delete'?deleteUnusedAccount(serviceEntities,context,body):saveAccountDefinition(serviceEntities,context,body);
     });

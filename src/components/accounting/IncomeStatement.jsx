@@ -4,7 +4,7 @@ import ReportExport from '@/components/shared/ReportExport';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
-import { formatXAF } from "@/lib/formatters";
+import { formatXAF, formatAccountingXAF } from "@/lib/formatters";
 import { round2 } from "@/lib/posting";
 import { sectionRows } from "@/lib/statements";
 import StatementSection from "@/components/accounting/StatementSection";
@@ -64,9 +64,10 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate, 
       <div className="mb-5"><ReportExport report={document} getReport={getReport} disabled={recurring.loading||!!recurring.error}/></div>
       <StatementSection title={ui("Revenue")} rows={revenue} total={totalRevenue} />
       <StatementSection title={ui("Cost of Goods Sold")} rows={cogs} total={totalCogs} />
-      <div className="flex justify-between py-2 mb-6 font-bold text-sm bg-slate-50 px-3 rounded">
+      <div className="flex justify-between py-2 font-bold text-sm bg-slate-50 px-3 rounded">
         <span>{ui("Gross Profit")}</span><span>{formatXAF(grossProfit)}</span>
       </div>
+      <p className="mb-6 mt-2 break-words text-xs text-slate-500">{ui('Gross profit = Revenue − Cost of goods sold')}: {formatAccountingXAF(totalRevenue)} − ({formatAccountingXAF(totalCogs)}) = {formatAccountingXAF(grossProfit)}</p>
       <StatementSection title={ui("Operating Expenses")} rows={expenses} total={totalExpenses} />
       <div className="flex justify-between py-2 mb-6 font-bold text-sm bg-slate-50 px-3 rounded">
         <span>{ui("Operating Profit")}</span><span>{formatXAF(operatingProfit)}</span>

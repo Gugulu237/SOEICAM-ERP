@@ -65,7 +65,7 @@ export async function journalLifecycle(stores,context,body){
  const reversal=await saveManualJournal(stores,context,{
   requestKey:'reverse-'+createHash('sha256').update(journal.id).digest('hex'),
   entryDate,description:('Reversal of '+journal.journal_number+': '+reason).slice(0,1000),status:'posted',
-  lines:checked.lines.map(l=>({account_id:l.account_id,debit:l.credit,credit:l.debit,description:l.description})),
+  lines:plan.reversal_lines,
  },{reversingManual:true,reversalPlan:plan});
  if(plan.requires_review)await stores.AuditLog.create({action:'reconcile_reversal_balances',module:'accounting',entity_type:'JournalEntry',entity_id:reversal.id,user_id:context.user.id,audit_source:'server_verified',reason,description:'Reviewed ledger and treasury balances while reversing '+journal.journal_number,accounting_control_reversal_review:{original_journal_id:journal.id,snapshot:plan.snapshot,accounts:plan.accounts,treasury:plan.treasury,verified_balances:review.verifiedBalances}});
  const saved=await stores.JournalEntry.update(reversal.id,{reversal_of:journal.id,source_document_type:'reversal',source_document_id:journal.id,reversal_reason:reason,reversal_request_payload:payload});

@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {readRecords} from './commercial-workspace.js';
 import {journalCents,checkedJournalLines,ledgerStatuses} from './journal-validation.js';
 import {assertTreasuryAccess} from '../../lib/treasury-access.js';
+import {resolveAccountConsolidations} from '../../lib/account-consolidation.js';
 const amount=cents=>cents/100||0;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const conflict=message=>Object.assign(Error(message),{status:409});
@@ -26,7 +27,11 @@ export const reversalReviewHash=review=>review?hash(review):'';
 // Read-only, bounded to the accounts touched by this exact journal.
 // No cash transaction, opening balance or reconciliation is created here.
 export async function manualReversalPlan(stores,context,journal,original){
- const checked=checkedJournalLines(original),ids=[...new Set(checked.lines.map(l=>l.account_id))].sort(),accounts=[];
+ const checked=checkedJournalLines(original),allAccounts=await readRecords(stores.Account),aliases=resolveAccountConsolidations(allAccounts);
+ // Original lines remain immutable. The dated mirror posts to the reviewed
+ // destination so a retired COGS account keeps its cleared ledger balance.
+ const reversalLines=checked.lines.map(l=>({account_id:aliases.canonicalId(l.account_id),debit:l.credit,credit:l.debit,description:l.description}));
+ const ids=[...new Set(reversalLines.map(l=>l.account_id))].sort(),accounts=[];
  for(const id of ids){
   const a=await stores.Account.get(id);
   if(!a||a.is_active===false||a.is_posting===false||!['debit','credit'].includes(a.normal_balance)||a.currency&&a.currency!=='XAF')throw Error('Review the active posting accounts and currency before reversal.');
@@ -45,7 +50,7 @@ export async function manualReversalPlan(stores,context,journal,original){
   const next=totals.get(line.account_id)+d-c;if(!Number.isSafeInteger(next))throw Error('Ledger balances exceed the supported precision.');totals.set(line.account_id,next);
  }
  const accountRows=accounts.map(a=>{
-  const ledger=totals.get(a.id),delta=checked.lines.filter(l=>l.account_id===a.id).reduce((n,l)=>n+journalCents(l.credit)-journalCents(l.debit),0),normal=a.normal_balance==='credit'?-1:1,after=ledger+delta,stored=signedCents(a.balance??0);
+  const ledger=totals.get(a.id),delta=reversalLines.filter(l=>l.account_id===a.id).reduce((n,l)=>n+journalCents(l.debit)-journalCents(l.credit),0),normal=a.normal_balance==='credit'?-1:1,after=ledger+delta,stored=signedCents(a.balance??0);
   if(!Number.isSafeInteger(after))throw Error('Ledger balances exceed the supported precision.');
   return {id:a.id,name:a.name||a.id,account_number:a.account_number||'',stored_balance:amount(stored),ledger_balance:amount(ledger*normal),balance_after:amount(after*normal),net_after:amount(after),reversal_delta:amount(delta),mismatch:stored!==ledger*normal};
  });
@@ -59,8 +64,9 @@ export async function manualReversalPlan(stores,context,journal,original){
   if(t.account_type!=='bank'&&after<0)blocked.push('A manual journal cannot create a negative cash balance.');
  }
  const requires_review=accountRows.some(a=>a.mismatch)||treasuryRows.some(t=>t.mismatch);
- const snapshot=hash({journal,original,accounts,treasury:sorted(treasury),ledger:sorted(rows),headers:sorted(headers)});
- return {snapshot,requires_review,accounts:accountRows,treasury:treasuryRows,blocked:[...new Set(blocked)]};
+ const aliasAccounts=ids.flatMap(id=>aliases.members(id));
+ const snapshot=hash({journal,original,accounts,alias_accounts:sorted(aliasAccounts),treasury:sorted(treasury),ledger:sorted(rows),headers:sorted(headers)});
+ return {snapshot,requires_review,accounts:accountRows,treasury:treasuryRows,blocked:[...new Set(blocked)],reversal_lines:reversalLines};
 }
 export function verifyReversalReview(plan,review){
  if(plan.blocked.length)throw Error(plan.blocked[0]);

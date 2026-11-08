@@ -87,3 +87,20 @@ test('fractional lines keep cent precision across account, source and journal to
   const input = { accounts, fromDate: '2026-11-04', toDate: '2026-11-08', journalsById: { fraction: { entry_date: '2026-11-04', status: 'posted', source_module: 'manual', source_document_type: 'manual_journal' } }, lines: [...Array.from({ length: 1001 }, () => ({ journal_id: 'fraction', account_id: 'cost', debit: 0.1 })), { journal_id: 'fraction', account_id: 'stock', credit: 100.1 }] };
   const [row] = incomeStatementSources(withActivity(input)); assert.equal(row.amount, 100.1); assert.equal(row.sources[0].amount, 100.1); assert.equal(row.sources[0].journals[0].amount, 100.1);
 });
+
+test('consolidated COGS includes historical member postings once and dated internal transfers leave every period unchanged',()=>{
+  const input=fixture();input.accounts.push({id:'legacy-cost',account_number:'7000',name:'Former COGS',account_type:'cogs',normal_balance:'debit',is_active:false,is_hidden:true,consolidated_into_account_id:'cost'});
+  const oldLine=input.lines.find(line=>line.journal_id==='sale'&&line.account_id==='cost'&&line.debit===300);oldLine.account_id='legacy-cost';
+  input.journalsById.transfer={id:'transfer',journal_number:'JV-TRANSFER',entry_date:'2026-11-06',status:'posted',source_module:'accounting_corrections',source_document_type:'AccountConsolidation',source_document_id:'legacy-cost:cost'};
+  input.lines.push({id:'transfer-debit',journal_id:'transfer',account_id:'cost',debit:300,credit:0},{id:'transfer-credit',journal_id:'transfer',account_id:'legacy-cost',debit:0,credit:300});
+  const before=structuredClone(input);
+  for(const range of [{toDate:'2026-11-05'},{toDate:'2026-11-08'}]){
+    const report=withActivity({...input,...range}),section=sectionRows(report.accounts,report.activity,['cogs'],1),rows=incomeStatementSources(report).filter(row=>row.account_type==='cogs');
+    assert.equal(section.length,1);assert.equal(section[0].id,'cost');assert.equal(section[0].amount,600);assert.equal(rows.length,1);assert.equal(rows[0].account_id,'cost');assert.equal(rows[0].amount,600);
+    assert.equal(rows[0].sources.find(source=>source.source_module==='sales').amount,400);
+  }
+  const transferOnly=withActivity({...input,fromDate:'2026-11-06'}),transferRows=incomeStatementSources(transferOnly);
+  assert.deepEqual(sectionRows(transferOnly.accounts,transferOnly.activity,['cogs'],1),[]);
+  assert.equal(transferRows.length,1);assert.equal(transferRows[0].amount,0);assert.equal(transferRows[0].sources[0].journals[0].debit,300);assert.equal(transferRows[0].sources[0].journals[0].credit,300);
+  assert.deepEqual(input,before,'reporting never rewrites original journal account IDs');
+});

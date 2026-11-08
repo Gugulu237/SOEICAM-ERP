@@ -4,6 +4,7 @@ import {ui,uiMessage} from '@/lib/i18n';
 import {formatAccountingXAF as formatXAF} from '@/lib/formatters';
 import {accountingControlRequest} from '@/lib/accounting-controls-client';
 import SetupStockCorrection from './SetupStockCorrection';
+import AccountConsolidation from './AccountConsolidation';
 import {Link} from '@/lib/router';
 const labels={
  duplicate_source_journal:'Several posted journals use the same source document',
@@ -55,6 +56,7 @@ function SupplierPayableReview({review}) {
 export default function AccountingIntegrityCheck({onCorrected}) {
   const [data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),flight=useRef(false);
   const [correctionOpened,setCorrectionOpened]=useState(false);
+  const [consolidationOpened,setConsolidationOpened]=useState(false);
   const run=async()=>{
     if(flight.current)return;
     flight.current=true;setBusy(true);setError('');
@@ -75,6 +77,10 @@ export default function AccountingIntegrityCheck({onCorrected}) {
     <details id="setup-stock-corrections" className="border-t pt-3" onToggle={event=>{if(event.currentTarget.open)setCorrectionOpened(true);}}>
       <summary className="cursor-pointer py-1 text-sm font-semibold">{ui('Correct setup inventory entries')}</summary>
       {correctionOpened&&<SetupStockCorrection onCorrected={result=>{setData(null);onCorrected?.(result);}}/>}
+    </details>
+    <details className="border-t pt-3" onToggle={event=>{if(event.currentTarget.open)setConsolidationOpened(true);}}>
+      <summary className="cursor-pointer py-1 text-sm font-semibold">{ui('Consolidate duplicate COGS accounts')}</summary>
+      {consolidationOpened&&<AccountConsolidation onConsolidated={result=>{setData(null);onCorrected?.(result);}}/>}
     </details>
   </section>;
 }

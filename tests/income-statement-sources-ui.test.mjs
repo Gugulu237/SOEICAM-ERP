@@ -54,6 +54,7 @@ function environment() {
   return runtime;
 }
 const amount = (report, title) => report.sections.find(section => section.title === title).totals[0][2];
+const profitAmount=(report,label)=>report.sections.find(section=>section.title==='Profit and loss').rows.find(row=>row[0]===label)[1];
 
 test('P&L offers account/source/journal inspection with source references and correction access without changing export totals', async () => {
   const render = await renderer(), runtime = environment(), input = fixture(); input.activity = render.computeActivity(input);
@@ -93,4 +94,44 @@ test('the loaded statement page passes the same dated ledger to the drilldown an
     runtime.user = { isAdmin: true, principalRole: 'commercial' }; html = paint(); assert.doesNotMatch(html, /Correct setup inventory entries/); assert.match(html, /href="\/accounting\/journals\/correction"/);
     const exported = await runtime.export.getReport(); assert.equal(amount(exported, 'Cost of goods sold'), -400); assert.deepEqual(exported.metadata.slice(0, 2), [['From', '2026-11-06'], ['To', input.toDate]]); assert.equal(exported.sections.some(section => section.title.includes('journal inspection')), false);
   } finally { runtime.dispose(); }
+});
+
+test('gross profit subtracts signed COGS and a dated setup correction removes the apparent addition without changing the formula',async()=>{
+  const render=await renderer(),runtime=environment(),input=fixture();input.accounts.push({id:'opening-equity',account_number:'OPENING',name:'Opening clearing',account_type:'equity',normal_balance:'credit'});
+  input.lines=input.lines.map(line=>line.journal_id==='sale'&&line.account_id==='cost'?{...line,debit:300}:line.journal_id==='sale'&&line.account_id==='stock'?{...line,credit:300}:line.journal_id==='setup'&&line.account_id==='stock'?{...line,debit:700}:line.journal_id==='setup'&&line.account_id==='gain'?{...line,account_id:'cost',credit:700}:line);
+  input.journalsById.correction={id:'correction',journal_number:'JV-CORRECT',status:'posted',entry_date:'2026-11-05',source_module:'accounting_corrections',source_document_type:'SetupStockCorrection',source_document_id:'setup'};
+  input.lines.push({id:'correct-cost',journal_id:'correction',account_id:'cost',debit:700,credit:0},{id:'correct-equity',journal_id:'correction',account_id:'opening-equity',debit:0,credit:700});
+  try{
+    const early={...input,toDate:'2026-11-04'};early.activity=render.computeActivity(early);const earlyHtml=render.income(early);
+    assert.equal(amount(runtime.export.report,'Revenue'),1000);assert.equal(amount(runtime.export.report,'Cost of goods sold'),-400);assert.equal(profitAmount(runtime.export.report,'Gross profit'),1400);assert.match(earlyHtml,/Gross profit = Revenue − Cost of goods sold/);
+    const corrected={...input,toDate:'2026-11-05'};corrected.activity=render.computeActivity(corrected);render.income(corrected);
+    assert.equal(amount(runtime.export.report,'Cost of goods sold'),300);assert.equal(profitAmount(runtime.export.report,'Gross profit'),700);assert.equal(profitAmount(runtime.export.report,'Net profit / loss'),700);
+    const correctionOnly={...input,fromDate:'2026-11-05',toDate:'2026-11-05'};correctionOnly.activity=render.computeActivity(correctionOnly);render.income(correctionOnly);
+    assert.equal(amount(runtime.export.report,'Revenue'),0);assert.equal(amount(runtime.export.report,'Cost of goods sold'),700);assert.equal(profitAmount(runtime.export.report,'Gross profit'),-700,'the dated correction is not moved silently into an earlier report');
+  }finally{runtime.dispose();}
+});
+
+test('one canonical COGS row and export retain historical costs while an internal account transfer has no profit effect',async()=>{
+  const render=await renderer(),runtime=environment(),input=fixture();
+  const canonical=input.accounts.find(account=>account.id==='cost');Object.assign(canonical,{name:'Cost of Goods Sold',normal_balance:'debit'});
+  input.accounts.push({id:'legacy-cost',account_number:'7000',name:'Direct Material COGS',account_type:'cogs',normal_balance:'debit',is_active:false,is_hidden:true,consolidated_into_account_id:'cost'});
+  input.lines=input.lines.flatMap(line=>line.journal_id==='sale'&&line.account_id==='cost'?[{...line,debit:300},{...line,id:'old-cost',account_id:'legacy-cost',debit:100}]:[line]);
+  input.journalsById.transfer={id:'transfer',journal_number:'JV-TRANSFER',entry_date:'2026-11-05',status:'posted',source_module:'accounting_corrections',source_document_type:'AccountConsolidation',source_document_id:'cost-transfer'};
+  input.lines.push({id:'move-debit',journal_id:'transfer',account_id:'cost',debit:100,credit:0},{id:'move-credit',journal_id:'transfer',account_id:'legacy-cost',debit:0,credit:100});
+  try{
+    for(const toDate of ['2026-11-04','2026-11-08']){
+      const report={...input,toDate};report.activity=render.computeActivity(report);const html=render.income(report),cost=runtime.export.report.sections.find(section=>section.title==='Cost of goods sold');
+      assert.equal(cost.rows.length,1);assert.deepEqual(cost.rows[0],['5100','Cost of Goods Sold',400]);assert.equal(profitAmount(runtime.export.report,'Gross profit'),600);assert.doesNotMatch(html,/7000 - Direct Material COGS/);assert.doesNotMatch(html,/entry details do not match/);
+    }
+    const transferOnly={...input,fromDate:'2026-11-05',toDate:'2026-11-05'};transferOnly.activity=render.computeActivity(transferOnly);render.income(transferOnly);
+    assert.equal(amount(runtime.export.report,'Cost of goods sold'),0);assert.equal(profitAmount(runtime.export.report,'Gross profit'),0);
+  }finally{runtime.dispose();}
+});
+
+test('the gross-profit equation displays exact ledger decimals rather than a misleading independently rounded equation',async()=>{
+  const render=await renderer(),runtime=environment(),input=fixture();delete input.journalsById.setup;
+  input.lines=input.lines.filter(line=>line.journal_id==='sale').map(line=>({...line,...(line.account_id==='customer'?{debit:1000.4}:line.account_id==='sales'?{credit:1000.4}:line.account_id==='cost'?{debit:400.6}:{credit:400.6})}));
+  input.activity=render.computeActivity(input);
+  try{const html=render.income(input);assert.match(html,/1,000\.4 XAF − \(400\.6 XAF\) = 599\.8 XAF/);assert.equal(profitAmount(runtime.export.report,'Gross profit'),599.8);}
+  finally{runtime.dispose();}
 });
