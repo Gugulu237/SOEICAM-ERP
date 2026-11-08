@@ -17,6 +17,7 @@ export function driverRunStock(data, run) {
   const ids = [...new Set([...manifests, ...balances, ...supplies].map(row => row.product_id))];
   const rows = ids.map(id => {
     const manifest = manifests.filter(line => line.product_id === id);
+    const reserved = Math.max(0,quantity(manifest.reduce((sum,line)=>sum+Number(line.degustation_quantity||0)-Number(line.degustation_returned_quantity||0),0)-(data.degustationLines||[]).filter(line=>line.dispatch_id===run.id&&line.product_id===id).reduce((sum,line)=>sum+Number(line.quantity||0),0)));
     return {
       product: products.get(id),
       unit: manifest[0]?.unit || products.get(id)?.unit_of_measure || products.get(id)?.storage_unit || 'units',
@@ -25,10 +26,10 @@ export function driverRunStock(data, run) {
       returned: quantity(manifest.reduce((sum, line) => sum + Number(line.returned_quantity || 0), 0)),
       supplied: supplied ? quantity(supplies.filter(line => line.product_id === id).reduce((sum, line) => sum + Number(line.quantity || 0), 0)) : null,
       degustationGiven: quantity((data.degustationLines || []).filter(line=>line.dispatch_id===run.id&&line.product_id===id).reduce((sum,line)=>sum+Number(line.quantity||0),0)),
-      degustationReserved: quantity(manifest.reduce((sum,line)=>sum+Number(line.degustation_quantity||0)-Number(line.degustation_returned_quantity||0),0)-(data.degustationLines||[]).filter(line=>line.dispatch_id===run.id&&line.product_id===id).reduce((sum,line)=>sum+Number(line.quantity||0),0)),
+      degustationReserved: reserved,
       replaced: quantity((data.replacementLines || []).filter(line => line.dispatch_id === run.id && line.product_id === id).reduce((sum, line) => sum + Number(line.quantity || 0), 0)),
       onVehicle: live ? quantity(balances.filter(balance => balance.product_id === id).reduce((sum, balance) => sum + Number(balance.quantity || 0), 0)) : null,
-      usable: live ? availableCustody(balances, id, data.date) : null,
+      usable: live ? Math.max(0,quantity(availableCustody(balances, id, data.date)-reserved)) : null,
     };
   });
   return { rows, live, supplied, shared: Boolean(run.vehicle_warehouse_id) && (data.dispatches || []).some(other => other.id !== run.id && other.vehicle_warehouse_id === run.vehicle_warehouse_id && ['loaded', 'in_transit'].includes(other.status)) };

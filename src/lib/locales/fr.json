@@ -8065,5 +8065,10 @@
   "Choose the products and quantities for Dégustation.": "Choisissez les produits et les quantités pour la dégustation.",
   "Remove Dégustation": "Retirer la dégustation",
   "Choose Yes or No before confirming the issue.": "Choisissez Oui ou Non avant de confirmer la sortie.",
-  "Review Dégustation quantities. The combined load cannot exceed available stock.": "Vérifiez les quantités de dégustation. Le chargement total ne peut pas dépasser le stock disponible."
+  "Review Dégustation quantities. The combined load cannot exceed available stock.": "Vérifiez les quantités de dégustation. Le chargement total ne peut pas dépasser le stock disponible.",
+  "Confirming this issue deducts giveaway units from inventory and posts their cost to Degustations expense. These units cannot be sold or recorded again as giveaways.": "La confirmation déduit les unités offertes du stock et comptabilise leur coût en charges de dégustations. Ces unités ne peuvent plus être vendues ni enregistrées une seconde fois comme cadeaux.",
+  "Giveaways issued": "Dégustations remises",
+  "Degustations": "Dégustations",
+  "Review duplicate Degustations accounts before issuing giveaways.": "Vérifiez les comptes de dégustations en double avant de remettre les cadeaux.",
+  "Review the Degustations expense account before issuing giveaways.": "Vérifiez le compte de charges de dégustations avant de remettre les cadeaux."
 }

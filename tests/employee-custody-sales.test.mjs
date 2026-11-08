@@ -86,6 +86,7 @@ test('the API issues sale goods, mixed loads and degustation-only loads without 
  const db=new PGlite();
  try{
   const f=await setup(db),route=await functionRoute();f.client.auth.me=async()=>gm;globalThis.__cashierClient=f.client;
+  const inventoryRule=(await f.s.PostingRule.filter({rule_key:'finished_goods_inventory'}))[0];await f.s.Account.update(inventoryRule.account_id,{account_type:'asset'});
   globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
   for(const [index,degustation] of [0,2,5].entries()){
    const recipient=await f.s.Employee.create({full_name:'Recipient '+index,role:'employee',status:'active'});
@@ -96,11 +97,11 @@ test('the API issues sale goods, mixed loads and degustation-only loads without 
    const location=await f.s.Warehouse.get(dispatch.vehicle_warehouse_id);assert.equal(location.employee_delivery_custody,true);assert.equal(location.custodian_employee_id,recipient.id);
    assert.equal((await f.s.DispatchRequest.get(dispatch.request_id)).status,'processed');
    assert.equal((await f.s.DispatchLine.filter({dispatch_id:dispatch.id}))[0].degustation_quantity,degustation);
-   const recon=await dispatchReconciliationData(f.client.asServiceRole,dispatch);assert.equal(recon.hasVariance,false);assert.equal(recon.rows[0].actual,5);assert.equal(recon.rows[0].degustation_remaining,degustation);
+   const recon=await dispatchReconciliationData(f.client.asServiceRole,dispatch);assert.equal(recon.hasVariance,false);assert.equal(recon.rows[0].actual,5-degustation);assert.equal(recon.rows[0].degustation_remaining,0);assert.equal(recon.rows[0].degustation_given,degustation);
    const retry=await route(request(body),{params:Promise.resolve({name:'fieldOps'})});assert.equal(retry.status,200);assert.equal((await retry.json()).dispatch.id,dispatch.id);
   }
   assert.equal((await f.s.Dispatch.list()).length,3);assert.equal((await f.s.DispatchRequest.list()).length,3);
-  assert.equal((await f.s.StockBalance.filter({warehouse_id:'factory'})).reduce((n,b)=>n+b.quantity,0),5);assert.equal((await f.s.JournalEntry.list()).length,0);
+  assert.equal((await f.s.StockBalance.filter({warehouse_id:'factory'})).reduce((n,b)=>n+b.quantity,0),5);assert.equal((await f.s.JournalEntry.list()).length,2);
  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 test('personal stock endpoints refuse other employees, company warehouses, spoofed sellers and invoice authority',async()=>{

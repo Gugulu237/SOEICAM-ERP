@@ -13,6 +13,36 @@ async function ruleAccount(s, key) {
   if (!validPostingRuleAccount(account, key)) throw Error('Review the account mapped to ' + key + ' before recording Dégustation.');
   return account;
 }
+
+// Provision a dedicated expense only when no mapping has been configured.
+// Existing mappings are respected; disabled or invalid mappings require review.
+async function expenseAccount(s) {
+  const key = 'marketing_degustation_expense', rules = await readRecords(s.PostingRule, { rule_key: key });
+  if (rules.length) return ruleAccount(s, key);
+  const matches = await readRecords(s.Account, { account_number: 'DEGUSTATIONS' });
+  if (matches.length > 1) throw Error('Review duplicate Degustations accounts before issuing giveaways.');
+  const account = matches[0] || await s.Account.create({ account_number: 'DEGUSTATIONS', name: 'Degustations', account_type: 'expense', normal_balance: 'debit', financial_statement: 'income_statement', cash_flow_category: 'operating', currency: 'XAF', balance: 0, is_active: true, is_posting: true, is_system: true });
+  if (!validPostingRuleAccount(account, key)) throw Error('Review the Degustations expense account before issuing giveaways.');
+  await s.PostingRule.create({ rule_key: key, label: 'Degustations', description: 'Inventory cost of promotional giveaways', account_id: account.id, account_name: account.name, account_number: account.account_number, is_active: true });
+  return account;
+}
+
+// Internal warehouse operation: the dispatch workflow has already checked the
+// issuer, recipient, manifest and stock. A giveaway is consumed and expensed at
+// issue, so it never remains in the commercial's available-for-sale balance.
+export async function issueDegustation(svc, user, employee, dispatch, loaded, date) {
+  const lines = loaded.filter(row => Number(row.line.degustation_quantity) > 0).map(row => ({ product_id: row.product.id, quantity: degustationQuantity(row.line.degustation_quantity), product: row.product }));
+  if (!lines.length) return null;
+  const expense = await expenseAccount(svc.entities), checked = [];
+  for (const row of lines) {
+    const inventory = row.product.inventory_account_id ? await svc.entities.Account.get(row.product.inventory_account_id) : await ruleAccount(svc.entities, 'finished_goods_inventory');
+    if (!validPostingRuleAccount(inventory, 'finished_goods_inventory')) throw Error('Review the inventory account for ' + row.product.name + '.');
+    checked.push({ ...row, inventory });
+  }
+  const id = 'DEG-ISSUE-' + dispatch.id;
+  return postGiveaway(svc, user, employee, { dispatch_id: dispatch.id, stock_warehouse_id: dispatch.vehicle_warehouse_id }, { id, date, notes: dispatch.notes || '', fingerprint: createHash('sha256').update(JSON.stringify([dispatch.id, employee.id, lines.map(row => [row.product_id, row.quantity])])).digest('hex'), customer: null, expense, checked, atIssue: true });
+}
+
 // Only called after employeeStockAction verifies the actual signed-in employee.
 // The enclosing API transaction commits custody, ledger and immutable evidence together.
 export async function recordDegustation(svc, user, employee, body) {
@@ -40,7 +70,7 @@ export async function recordDegustation(svc, user, employee, body) {
     degustationMovements(svc, context.dispatch_id, context.stock_warehouse_id), readRecords(s.Product, { id: { $in: lines.map(l => l.product_id) } }),
   ]);
   if (!customer || customer.is_active === false || customer.customer_removed_at) throw Error('Choose an active customer receiving the giveaway.');
-  const reserved = degustationState(manifest, movements), expense = await ruleAccount(s, 'marketing_degustation_expense');
+  const reserved = degustationState(manifest, movements), expense = await expenseAccount(s);
   const checked = [];
   for (const line of lines) {
     const product = products.find(p => p.id === line.product_id);
@@ -50,24 +80,29 @@ export async function recordDegustation(svc, user, employee, body) {
     if (!validPostingRuleAccount(inventory, 'finished_goods_inventory')) throw Error('Review the inventory account for ' + product.name + '.');
     checked.push({ ...line, product, inventory });
   }
-  const reference = 'DEG-' + id.slice(-12).toUpperCase(), recordedAt = new Date().toISOString(), credits = new Map();
+  return postGiveaway(svc, user, employee, context, { id, date, notes, fingerprint, customer, expense, checked });
+}
+
+async function postGiveaway(svc, user, employee, context, { id, date, notes, fingerprint, customer, expense, checked, atIssue = false }) {
+  const s = svc.entities, recipient = customer?.business_name || employee.full_name;
+  const reference = atIssue ? id : 'DEG-' + id.slice(-12).toUpperCase(), recordedAt = new Date().toISOString(), credits = new Map();
   let total = 0;
   for (const row of checked) {
     const issue = await stockIssue(svc, { productId: row.product.id, productName: row.product.name, quantity: row.quantity, warehouseId: context.stock_warehouse_id, dispatchId: context.dispatch_id,
-      movementType: 'promotional_issue', documentType: 'Degustation', documentId: id, movementDate: date, saleableOnly: true, reason: 'Dégustation · ' + customer.business_name + ' · ' + reference });
+      movementType: 'promotional_issue', documentType: 'Degustation', documentId: id, movementDate: date, saleableOnly: true, preserveRecordedValue: true, reason: 'Dégustation · ' + recipient + ' · ' + reference });
     total = round2(total + issue.totalValue);
     credits.set(row.inventory.id, round2((credits.get(row.inventory.id) || 0) + issue.totalValue));
   }
   let journal = null;
-  if (total > 0) ({ journal } = await postJournal(svc, { entryDate: date, description: 'Dégustation ' + reference + ' · ' + customer.business_name,
+  if (total > 0) ({ journal } = await postJournal(svc, { entryDate: date, description: 'Dégustation ' + reference + ' · ' + recipient,
     sourceModule: 'degustation', sourceDocumentType: 'Degustation', sourceDocumentId: id, userId: user.id,
-    lines: [{ account_id: expense.id, debit: total, credit: 0, description: 'Marketing expense · Dégustation' },
+    lines: [{ account_id: expense.id, debit: total, credit: 0, description: 'Degustations' },
       ...[...credits].filter(([, value]) => value > 0).map(([account_id, value]) => ({ account_id, debit: 0, credit: value, description: 'Finished goods given to customers' }))] }));
   const issued = await readRecords(s.StockMovement, { document_type: 'Degustation', document_id: id });
-  const evidence = { degustation_reference: reference, degustation_payload: fingerprint, degustation_notes: notes, customer_id: customer.id, customer_name: customer.business_name,
+  const evidence = { degustation_reference: reference, degustation_payload: fingerprint, degustation_notes: notes, degustation_at_issue: atIssue, customer_id: customer?.id || '', customer_name: customer?.business_name || '',
     employee_id: employee.id, employee_name: employee.full_name, recorded_by: user.id, recorded_at: recordedAt, journal_id: journal?.id || '', journal_number: journal?.journal_number || '' };
   for (const movement of issued) await s.StockMovement.update(movement.id, evidence);
   await audit(svc, { action: 'record_degustation', module: 'distribution', entityType: 'Dispatch', entityId: context.dispatch_id, userId: user.id,
-    description: reference + ' · ' + employee.full_name + ' · ' + customer.business_name + ' · ' + lines.map(l => l.quantity + ' ' + products.find(p => p.id === l.product_id).name).join(', ') + ' · marketing cost ' + total + ' XAF' });
+    description: reference + ' · ' + employee.full_name + ' · ' + (atIssue ? 'Warehouse giveaway issue' : customer.business_name) + ' · ' + checked.map(l => l.quantity + ' ' + l.product.name).join(', ') + ' · marketing cost ' + total + ' XAF' });
   return { record: degustationHistory(issued.map(m => ({ ...m, ...evidence })), { costs: false })[0] };
 }

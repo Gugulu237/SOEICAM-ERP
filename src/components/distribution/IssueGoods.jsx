@@ -5,6 +5,7 @@ import {ui, uiMessage} from '@/lib/i18n';
 import {useLocaleRender as useInterfaceLanguage} from '@/lib/localization';
 import {invokeFieldOps} from '@/lib/field-ops';
 import {businessDate} from '@/lib/business-date';
+import {watchSalesStock} from '@/lib/sales-stock-refresh';
 import {formatDate} from '@/lib/formatters';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
@@ -18,9 +19,16 @@ const selectClass='h-11 w-full rounded-md border border-slate-200 bg-white px-3 
 export default function IssueGoods({data:provided,initialAgent='',onClose,onSaved}) {
   useInterfaceLanguage();
   const [data,setData]=useState(provided),[error,setError]=useState(''),[attempt,setAttempt]=useState(0),[busy,setBusy]=useState(false);
-  useEffect(()=>{if(provided)return;let active=true;setError('');invoke({action:'distributionIssueWorkspace'}).then(value=>{if(active)setData(value);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[provided,attempt]);
+  useEffect(()=>{
+    if(busy)return;
+    let active=true,pending=false;
+    const refresh=async()=>{if(!active||pending)return;pending=true;try{const value=await invoke({action:'distributionIssueWorkspace'});if(active){setData(value);setError('');}}catch(e){if(active)setError(e.message);}finally{pending=false;}};
+    refresh();const stop=watchSalesStock(refresh);
+    return()=>{active=false;stop();};
+  },[provided,attempt,busy]);
   return <Dialog open onOpenChange={open=>{if(!open&&!busy)onClose();}}><DialogContent className="max-w-6xl max-h-[92dvh] overflow-y-auto" onEscapeKeyDown={e=>{if(busy)e.preventDefault();}} onPointerDownOutside={e=>{if(busy)e.preventDefault();}}>
     <DialogHeader><DialogTitle>{ui('Issue goods')} — {formatDate(businessDate())}</DialogTitle><DialogDescription className="hidden sm:block">{ui('Choose an employee and warehouse, then the goods. Driver and vehicle are optional.')}</DialogDescription></DialogHeader>
+    {data&&error&&<p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
     {data?<IssueGoodsForm data={data} initialAgent={initialAgent} onClose={onClose} onSaved={onSaved} onBusy={setBusy}/>:error?<div role="alert" className="space-y-3 text-sm text-red-700">{uiMessage(error)}<Button variant="outline" className="block" onClick={()=>setAttempt(n=>n+1)}>{ui('Retry')}</Button></div>:<p role="status" className="p-6 text-sm text-slate-500">{ui('Loading available stock...')}</p>}
   </DialogContent></Dialog>;
 }
@@ -77,6 +85,7 @@ function IssueGoodsForm({data,initialAgent='',onClose,onSaved,onBusy}) {
         </div>
         {degustation==='yes'?<>
           <p className="text-sm text-slate-500">{ui('Add the extra units being issued for Dégustation. These are separate from the sale quantities entered earlier.')}</p>
+          <p className="rounded-lg bg-green-50 p-3 text-sm text-green-900">{ui('Confirming this issue deducts giveaway units from inventory and posts their cost to Degustations expense. These units cannot be sold or recorded again as giveaways.')}</p>
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <ProductCatalog key={form.warehouseId+':degustation'} products={giftProducts.filter(p=>p.quantity>0||giveaways.some(l=>l.product_id===p.id))} selecting hidePrice lines={giveaways} onQuantityChange={giftQuantity} quantityLabel={ui('Dégustation')} disabled={busy} emptyMessage={ui('No stock remains after the sale quantities. Go back to adjust the load.')}/>
             <div className="space-y-3"><div className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">{ui('Dégustation units')}</h3>{!giveaways.length&&<p className="text-sm text-slate-500">{ui('Choose the products and quantities for Dégustation.')}</p>}{giveaways.map(l=>{const p=giftProducts.find(p=>p.id===l.product_id);return <div key={l.product_id} className="flex items-center gap-2"><ProductThumb product={p}/><label className="min-w-0 flex-1 text-sm">{p?.name}<Input aria-label={ui('Dégustation')+': '+p?.name} type="number" min="0" max={p?.quantity} step="0.001" value={l.quantity} onChange={e=>giftQuantity(p,e.target.value)}/></label><Button type="button" size="icon" variant="ghost" aria-label={ui('Remove Dégustation')+' '+p?.name} onClick={()=>giftQuantity(p,null)}><Trash2 size={14}/></Button></div>;})}</div>{summary}</div>

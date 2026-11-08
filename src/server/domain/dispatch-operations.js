@@ -1,4 +1,5 @@
 import {degustationQuantity,degustationState,degustationHistory} from './degustation-stock.js';
+import {issueDegustation} from './degustation.js';
 import {stockStaff,eligibleStockRecipient,ensureEmployeeStockLocation,validEmployeeStockLocation} from './employee-custody.js';
 import { requireStaff, stockTransfer, audit, round2, round3, today } from './field-ops.js';
 import { finishedProduct, periodDates } from './commercial-rules.js';
@@ -10,7 +11,7 @@ import { DISPATCH_MANAGER_ROLES, canIssueDeliveryStock } from '../../lib/operati
 
 // These operations execute inside the function route's serializable transaction.
 // All validation is completed before the first stock write. A load is custody,
-// not a sale, and no accounting entry is posted by this module.
+// not a sale. Giveaway units are expensed separately in the same transaction.
 const managers = DISPATCH_MANAGER_ROLES;
 const openStates = ['loaded', 'in_transit'];
 const storageTypes = ['finished_goods', 'cold_room', 'general'];
@@ -134,17 +135,18 @@ async function prepareLoad(svc, dispatch, suppliedLines) {
 async function load(svc, user, dispatch) {
   if (openStates.includes(dispatch.status)) return { totalValue: round2(dispatch.total_loaded_value), vehicleWarehouseId: dispatch.vehicle_warehouse_id, reused: true };
   if (dispatch.status !== 'approved') throw new Error('Stock can only be loaded once the dispatch has been approved');
-  const { source, destination, vehicle, toLoad, date } = await prepareLoad(svc, dispatch);
+  const { source, destination, vehicle, commercial, toLoad, date } = await prepareLoad(svc, dispatch);
   let totalValue = 0;
   for (const { line, product, quantity } of toLoad) {
     const result = await stockTransfer(svc, {
       productId: product.id, productName: product.name, fromWarehouseId: source.id, toWarehouseId: destination.id, toWarehouseName: destination.name,
       quantity, movementType: 'vehicle_load', documentType: 'Dispatch', documentId: dispatch.id, movementDate: dispatch.dispatch_date || date,
-      reason: `Loaded to ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}`, saleableOnly: true,
+      reason: `Loaded to ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}`, saleableOnly: true, preserveRecordedValue: true,
     });
     totalValue = round2(totalValue + result.totalValue);
     await svc.entities.DispatchLine.update(line.id, { product_name: product.name, unit: stockUnit(product), loaded_quantity: quantity, unit_cost: round2(result.totalValue / quantity), loaded_value: round2(result.totalValue) });
   }
+  await issueDegustation(svc, user, commercial, { ...dispatch, vehicle_warehouse_id: destination.id }, toLoad, date);
   const now = new Date().toISOString();
   // Loading and departure are separate employee attestations. A planned or
   // legacy draft date is not evidence that the driver has actually departed.

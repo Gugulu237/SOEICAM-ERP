@@ -32,3 +32,8 @@ test('driver stock flags a live balance shared by another open run and does not 
   const result = driverRunStock({ ...data, dispatches: [run, { id: 'run-b', vehicle_warehouse_id: 'vehicle-a', status: 'loaded' }], activities: [{ type: 'delivery_completed', quantity: 100 }] }, run);
   assert.equal(result.shared, true); assert.equal(result.rows[0].onVehicle, 11);
 });
+
+test('driver saleable quantities exclude unconsumed legacy giveaway reservations',()=>{
+  const reserved={...data,manifest:[{...data.manifest[0],degustation_quantity:3}],degustationLines:[{dispatch_id:run.id,product_id:'yogurt',quantity:1}]};
+  const row=driverRunStock(reserved,run).rows[0];assert.equal(row.onVehicle,11);assert.equal(row.usable,6);assert.equal(row.degustationReserved,2);assert.equal(row.degustationGiven,1);
+});

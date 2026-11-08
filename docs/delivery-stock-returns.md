@@ -12,7 +12,7 @@ The overview refreshes on focus, on returning to a visible tab, and every 30 sec
 
 The holder opens **My issued stock → Return goods**. Drivers can open **Distribution → Return goods** for their assigned or paired delivery load. This works with vehicle stock and goods held by an employee without a vehicle.
 
-The request returns the **entire remaining load**, including unused Dégustation quantities. The holder enters every physical count, including zero. A stock discrepancy must be reconciled by management before submitting the return.
+The request returns the **entire remaining load**. Older reserved loads can include unused Dégustation quantities. New Dégustation issues are deducted and expensed during issuing; see [Dégustation at goods issue](degustation-issuing.md). The holder enters every physical count, including zero. A stock discrepancy must be reconciled by management before submitting the return.
 
 Submission reserves the load and pauses further supplies. Stock stays with the holder until warehouse receipt. The holder can cancel a pending request; warehouse management can reject it with a reason. Either action releases the reservation.
 

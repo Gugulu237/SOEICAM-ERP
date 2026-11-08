@@ -11,8 +11,9 @@ import { salesSourceProducts } from '../src/server/domain/sales-stock-source.js'
 import { isReadOnlyFunction } from '../src/lib/function-actions.js';
 import catalog from '../src/server/generated/schema.json' with { type: 'json' };
 import { splitRecord } from '../src/server/query.js';
+import { fieldInventory } from '../src/server/domain/field-stock-inventory.js';
 const gm = { id: 'gm', role: 'admin' };
-async function setup(db, { allocated = 2, total = 7, vehicle = false } = {}) {
+async function setup(db, { allocated = 2, total = 7, vehicle = false, legacy = true } = {}) {
   const f = await fixture(db), s = f.entities;
   for (const name of ['DispatchRequest', 'Dispatch']) { const create = s[name].create; s[name].create = async value => { const { record, extra } = splitRecord(value, catalog[name], { creating: true }); return create({ ...record, ...extra }); }; }
   for (const name of ['Warehouse', 'AuditLog']) { const create = s[name].create; s[name].create = async value => { if (!value.id) return create(value); const row = { ...value }; if (db) await db.query('INSERT INTO fixture_entity VALUES($1,$2,$3)', [name, row.id, JSON.stringify(row)]); else f.rows[name].push(row); return structuredClone(row); }; }
@@ -25,13 +26,73 @@ async function setup(db, { allocated = 2, total = 7, vehicle = false } = {}) {
   await s.PostingRule.create({ rule_key: 'marketing_degustation_expense', account_id: 'expense', is_active: true });
   const actor = { id: 'cashier-login', role: 'user' };
   const issueBody = { action: 'issueDistributionStock', commercialId: 'cashier', driverId: '', vehicleId: vehicle ? 'vehicle-a' : '', warehouseId: 'factory', requestKey: crypto.randomUUID(), date, lines: [{ product_id: 'product-a', quantity: total, degustation_quantity: allocated }] };
-  const issue = () => distributionControlAction(f.client, gm, issueBody);
+  // Historical loads reserved giveaways without expensing them. Construct that
+  // old state explicitly, so the remaining manual workflow stays covered.
+  const issue = async () => {
+    const result = await distributionControlAction(f.client, gm, legacy ? { ...issueBody, lines: issueBody.lines.map(row => ({ ...row, degustation_quantity: 0 })) } : issueBody);
+    if (legacy) for (const line of await s.DispatchLine.filter({ dispatch_id: result.dispatch.id })) await s.DispatchLine.update(line.id, { degustation_quantity: issueBody.lines.find(row => row.product_id === line.product_id).degustation_quantity });
+    return result;
+  };
   const give = dispatchId => ({ action: 'recordDegustation', requestKey: crypto.randomUUID(), date, dispatchId, customerId: 'customer-a', lines: [{ product_id: 'product-a', quantity: 1 }], notes: 'Customer tasting' });
   return { ...f, s, actor, issueBody, issue, give };
 }
 async function count(f, warehouse) { return (await f.s.StockBalance.filter({ warehouse_id: warehouse })).reduce((n, b) => n + b.quantity, 0); }
 
-test('mixed sale and Dégustation load: reserve, give at cost, sell, return unused allocation and reconcile', async () => {
+test('new mixed issues immediately expense giveaway cost and synchronize every saleable-stock view', async () => {
+  for (const vehicle of [false,true]) {
+    const f = await setup(undefined,{legacy:false,vehicle});
+    const financial = Object.fromEntries(await Promise.all(['Invoice','SalesOrder','FieldSale','CashCollection','TreasuryTransaction'].map(async entity=>[entity,await f.s[entity].list()])));
+    const {dispatch} = await f.issue();
+    assert.equal(await count(f,'factory'),13);assert.equal(await count(f,dispatch.vehicle_warehouse_id),5);
+    assert.equal((await f.s.JournalEntry.list()).length,1);
+    const debit=(await f.s.JournalLine.list()).find(row=>row.account_id==='expense');assert.equal(debit.debit,400);
+    const movements=await f.s.StockMovement.filter({document_type:'Degustation'});assert.equal(movements.reduce((n,m)=>n+m.quantity,0),2);assert.ok(movements.every(m=>m.degustation_at_issue&&m.employee_id==='cashier'&&m.recorded_by===gm.id));
+    const context=await currentSupplyRun(f.client.asServiceRole,'cashier',dispatch.id,date,true);
+    assert.equal((await salesSourceProducts(f.client.asServiceRole,context))[0].available,5);
+    const own=await employeeStockAction(f.client,f.actor,{action:'employeeStockSnapshot'});assert.equal(own.balances.reduce((n,b)=>n+b.usable_quantity,0),5);assert.equal(own.balances.reduce((n,b)=>n+b.degustation_quantity,0),0);
+    const report=await fieldInventory(f.s,{id:'cashier',role:'commercial',status:'active'});assert.equal(report.runs[0].error,'');assert.equal(report.runs[0].rows[0].on_hand,5);assert.equal(report.runs[0].rows[0].usable,5);assert.equal(report.runs[0].rows[0].supplied,0);assert.equal(report.runs[0].rows[0].degustation_given,2);
+    const before=structuredClone(f.rows);assert.equal((await f.issue()).dispatch.id,dispatch.id);assert.deepEqual(f.rows,before);
+    await assert.rejects(employeeStockAction(f.client,f.actor,f.give(dispatch.id)),/exceeds/);assert.deepEqual(f.rows,before,'manual giveaway cannot consume sale stock or post twice');
+    await assert.rejects(distributionControlAction(f.client,gm,{...f.issueBody,lines:[{...f.issueBody.lines[0],degustation_quantity:3}]}),/already issued/);
+    for(const [entity,rows] of Object.entries(financial))assert.deepEqual(await f.s[entity].list(),rows);
+    await dispatchAction(f.client,gm,{action:'returnDispatchStock',dispatchId:dispatch.id,countedLines:[{product_id:'product-a',quantity:5}]});
+    assert.equal(await count(f,'factory'),18);const recon=await dispatchReconciliationData(f.client.asServiceRole,await f.s.Dispatch.get(dispatch.id));assert.equal(recon.hasVariance,false);assert.equal(recon.degustationCost,400);assert.equal((await f.s.JournalEntry.list()).length,1);
+  }
+});
+
+test('new giveaway-only issues auto-configure Degustations once and do not leave saleable stock', async () => {
+  const f=await setup(undefined,{legacy:false,allocated:3,total:3});await f.s.PostingRule.deleteMany({rule_key:'marketing_degustation_expense'});
+  // Exercise actual Account and PostingRule required fields/defaults too.
+  for(const name of ['Account','PostingRule']){const create=f.s[name].create;f.s[name].create=async value=>{const {record,extra}=splitRecord(value,catalog[name],{creating:true});return create({...record,...extra});};}
+  const {dispatch}=await f.issue(),accounts=await f.s.Account.filter({account_number:'DEGUSTATIONS'});assert.equal(accounts.length,1);assert.equal(accounts[0].name,'Degustations');assert.equal(accounts[0].balance,600);assert.equal(accounts[0].account_type,'expense');
+  assert.equal(await count(f,dispatch.vehicle_warehouse_id),0);assert.equal((await f.s.PostingRule.filter({rule_key:'marketing_degustation_expense'}))[0].account_id,accounts[0].id);
+  assert.equal((await f.issue()).dispatch.id,dispatch.id);assert.equal((await f.s.Account.filter({account_number:'DEGUSTATIONS'})).length,1);
+  const report=await dispatchReconciliationData(f.client.asServiceRole,dispatch);assert.equal(report.hasVariance,false);assert.equal(report.rows[0].degustation_given,3);assert.equal(report.totalSales,0);
+});
+
+test('new issue preserves exact lot carrying value rather than rounded unit cost or selling price', async () => {
+  const f=await setup(undefined,{legacy:false,allocated:3,total:3}),lot=(await f.s.StockBalance.filter({warehouse_id:'factory'}))[0];
+  await f.s.StockBalance.update(lot.id,{quantity:3,unit_cost:0.03,total_value:0.10});
+  const {dispatch}=await f.issue();assert.equal(await count(f,'factory'),0);assert.equal(await count(f,dispatch.vehicle_warehouse_id),0);
+  const movement=(await f.s.StockMovement.filter({document_type:'Degustation'}))[0];assert.equal(movement.total_value,0.10);assert.equal((await f.s.JournalEntry.list())[0].total_debit,0.10);
+});
+
+test('closed period, invalid account and late audit failure roll back the entire new issue in the API transaction', async () => {
+  for(const kind of ['closed-period','invalid-account','audit']){
+    const db=new PGlite();try{
+      const f=await setup(db,{legacy:false}),route=await functionRoute();f.client.auth.me=async()=>gm;
+      if(kind==='closed-period')await f.s.AccountingPeriod.update('period',{status:'closed'});
+      if(kind==='invalid-account')await f.s.Account.update('expense',{account_type:'revenue'});
+      if(kind==='audit'){const create=f.s.AuditLog.create;f.s.AuditLog.create=async value=>{if(value.action==='record_degustation')throw Error('Simulated giveaway audit failure');return create(value);};}
+      const before=Object.fromEntries(await Promise.all(['StockBalance','StockMovement','Dispatch','DispatchLine','DispatchRequest','JournalEntry','JournalLine','Account','PostingRule'].map(async entity=>[entity,await f.s[entity].list()])));
+      globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+      const response=await route(request(f.issueBody),{params:Promise.resolve({name:'fieldOps'})});assert.equal(response.status,400);assert.match((await response.json()).error,kind==='closed-period'?/period.*closed/:kind==='invalid-account'?/account/:/Simulated giveaway audit failure/);
+      for(const [entity,rows] of Object.entries(before))assert.deepEqual(await f.s[entity].list(),rows,entity+' must roll back');
+    }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+  }
+});
+
+test('legacy mixed load: give at cost, sell, return unused allocation and reconcile', async () => {
   const f = await setup(), { dispatch } = await f.issue();
   assert.equal((await f.issue()).dispatch.id, dispatch.id);
   assert.equal((await f.s.JournalEntry.list()).length, 0);
@@ -88,11 +149,11 @@ test('forged quantities, spending sale stock, changed retries and other employee
   await assert.rejects(employeeStockAction(f.client,f.actor,{...input,requestKey:crypto.randomUUID(),lines:[{product_id:'product-a',quantity:2}]}),/exceeds/);
   await f.s.Employee.update('cashier',{role:'hotesse'});await assert.rejects(employeeStockAction(f.client,f.actor,{...input,requestKey:crypto.randomUUID()}),/Not permitted/);
   assert.equal(isReadOnlyFunction('fieldOps','recordDegustation'),false);assert.equal(isReadOnlyFunction('fieldOps','degustationWorkspace'),true);
-  const g=await setup();g.issueBody.lines[0].degustation_quantity=8;await assert.rejects(g.issue(),/cannot exceed/);assert.equal((await g.s.StockMovement.list()).length,0);
+  const g=await setup();g.issueBody.lines[0].degustation_quantity=8;await assert.rejects(distributionControlAction(g.client,gm,g.issueBody),/cannot exceed/);assert.equal((await g.s.StockMovement.list()).length,0);
 });
 
 test('marketing account setup and saleable lot checks block invalid giveaway posting',async()=>{
-  for(const kind of ['missing','inactive','wrong-type','expired','quarantine']){
+  for(const kind of ['inactive','wrong-type','expired','quarantine']){
     const f=await setup(),{dispatch}=await f.issue();
     if(kind==='missing')await f.s.PostingRule.deleteMany({rule_key:'marketing_degustation_expense'});
     if(kind==='inactive')await f.s.Account.update('expense',{is_active:false});
