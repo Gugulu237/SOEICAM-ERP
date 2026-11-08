@@ -14,9 +14,13 @@ import { Undo2, AlertTriangle, RefreshCw } from "lucide-react";
 import { Input } from '@/components/ui/input';
 import DegustationHistory from './DegustationHistory';
 import ProductThumb from '@/components/shared/ProductThumb';
+import DegustationAppropriation from './DegustationAppropriation';
+import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {Link} from '@/lib/router';
 
 export default function DispatchReconciliation({ dispatch, userName, onChanged, canManage = false, snapshot, products=[] }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const {principalRole,role}=useCurrentUser();
 
   const { toast } = useToast();
   const [data, setData] = useState(null);
@@ -24,6 +28,8 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [counts,setCounts]=useState({});
+  const [expenseOpened,setExpenseOpened]=useState(false);
+  const [refreshError,setRefreshError]=useState('');
   useEffect(()=>{setCounts({});},[dispatch?.id]);
 
   useEffect(() => {
@@ -57,6 +63,8 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
   const counted=data.rows.every(row=>counts[row.product_id]!==undefined&&counts[row.product_id]!==''&&Number.isFinite(Number(counts[row.product_id]))&&Number(counts[row.product_id])>=0);
   const countsMatch=counted&&data.rows.every(row=>Math.round(Number(counts[row.product_id])*1000)===Math.round(Number(row.actual)*1000));
   const supplyCount = (data.orders || []).length + (data.fieldSales || []).length;
+  const appropriation=data.degustationAppropriation||dispatch.degustation_appropriation;
+  const reservedQuantity=data.rows.reduce((sum,row)=>sum+Number(row.degustation_remaining||0),0);
 
   return (
     <div className="space-y-4">
@@ -67,6 +75,9 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
         <Stat label={ui("Unpaid / credit balance")} value={formatXAF(data.creditSales)} />
       </div>
       <Stat label={ui('Marketing expense · Dégustation')} value={formatXAF(data.degustationCost || 0)} />
+      {appropriation&&<p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">{ui('Expensed promotional stock still held')}: <strong>{formatNumber(reservedQuantity,3)}</strong>. {ui('These quantities are reserved for Dégustation and cannot be sold. Actual customer giveaways remain separately recorded.')}{appropriation.journal_id&&<Link className="ml-2 underline" to={'/accounting/journals/'+encodeURIComponent(appropriation.journal_id)}>{appropriation.journal_number}</Link>}</p>}
+      {!appropriation&&reservedQuantity>0&&canReturn&&!dispatch.unsold_return_request_id&&(principalRole||role)==='admin'&&<details className="rounded-lg border bg-white px-3" onToggle={e=>{if(e.currentTarget.open)setExpenseOpened(true);}}><summary className="cursor-pointer py-3 text-sm font-semibold">{ui('Expense reserved Dégustation')}</summary>{expenseOpened&&<DegustationAppropriation key={dispatch.id} dispatch={dispatch} onPosted={async()=>{setRefreshKey(key=>key+1);try{await onChanged?.();}catch{setRefreshError('Expense recorded. Refresh the reconciliation to see the updated balances.');}}}/>}</details>}
+      {refreshError&&<p role="status" className="text-sm text-amber-900">{ui(refreshError)}</p>}
       {data.hasVariance && (
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
           <AlertTriangle size={16} />{ui(" Physical stock on the vehicle does not match expected quantities - investigate before closing.")}</div>

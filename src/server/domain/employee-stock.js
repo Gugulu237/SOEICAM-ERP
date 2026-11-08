@@ -1,6 +1,6 @@
 import {recordDegustation} from './degustation.js';
 import {degustationHistory} from './degustation-stock.js';
-import {requireStaff,today,round3} from './field-ops.js';
+import {requireStaff,today,round3,appropriatedDegustation} from './field-ops.js';
 import {eligibleStockRecipient,STOCK_RECIPIENT_ROLES} from './employee-custody.js';
 import {salesOrderAction} from './sales-orders.js';
 import {commercialRunInventory,runManifest,supplyRun} from './commercial-runs.js';
@@ -58,6 +58,7 @@ async function ownStockSnapshot(svc,employee){
     const [remaining,reconciliation]=await Promise.all([runManifest(svc,run.id,warehouse.id),dispatchReconciliationData(svc,run)]);
     manifest=remaining;giveaway=new Map(reconciliation.rows.map(row=>[row.product_id,row.degustation_remaining]));
     view.rows=reconciliation.rows.map(row=>({...pick(row,'product_id product_name loaded replaced returned expected variance degustation_allocated degustation_given degustation_returned degustation_remaining'),on_hand:row.actual,supplied:round3(row.consumed-row.replaced-row.degustation_given)}));
+    if(reconciliation.degustationAppropriation)view.degustation_appropriation=pick(reconciliation.degustationAppropriation,'id date total_quantity remaining_quantity');
     view.has_variance=reconciliation.hasVariance;
     if(reconciliation.hasVariance)warnings.push('The recorded load and current stock differ. Ask warehouse management to review the difference.');
    }catch(error){warnings.push(error.message);}
@@ -87,14 +88,17 @@ async function ownStockSnapshot(svc,employee){
  for(const entry of rawBalances.sort((a,b)=>String(a.row.expiry_date||'9999-12-31').localeCompare(String(b.row.expiry_date||'9999-12-31')))){
   const {row,kind,run,warehouse}=entry,product=byId.get(row.product_id),quantity=round3(row.quantity),key=run?.id+':'+row.product_id;
   if(seenBalances.has(row.id))continue;seenBalances.add(row.id);
-  let usable=0,degustation=0;
-  if(kind==='issued'&&finishedProduct(product)&&product.is_active!==false&&!product.item_removed_at&&product.configuration_status!=='draft'&&(row.qc_status||'approved')==='approved'&&(!row.expiry_date||row.expiry_date>=date)){
+  let usable=0,degustation=0;const appropriation=appropriatedDegustation(row);
+  if(appropriation){
+   if(kind!=='issued'||appropriation.dispatch_id!==run?.id)throw Error('Reconcile the expensed Dégustation custody quantities and original costs before moving this stock.');
+   degustation=quantity;
+  }else if(kind==='issued'&&finishedProduct(product)&&product.is_active!==false&&!product.item_removed_at&&product.configuration_status!=='draft'&&(row.qc_status||'approved')==='approved'&&(!row.expiry_date||row.expiry_date>=date)){
    if(!saleRemaining.has(key))saleRemaining.set(key,Math.max(0,entry.manifest.get(row.product_id)||0));
    if(!giveRemaining.has(key))giveRemaining.set(key,Math.max(0,entry.giveaway.get(row.product_id)||0));
    usable=Math.min(quantity,saleRemaining.get(key));saleRemaining.set(key,round3(saleRemaining.get(key)-usable));
    degustation=Math.min(round3(quantity-usable),giveRemaining.get(key));giveRemaining.set(key,round3(giveRemaining.get(key)-degustation));
   }
-  balances.push({...pick(row,'id warehouse_id product_id qc_status expiry_date lot_number'),warehouse_name:warehouse.name,quantity,usable_quantity:usable,degustation_quantity:degustation,held_quantity:round3(quantity-usable-degustation),dispatch_id:run?.id||'',stock_kind:kind});
+  balances.push({...pick(row,'id warehouse_id product_id qc_status expiry_date lot_number'),warehouse_name:warehouse.name,quantity,usable_quantity:usable,degustation_quantity:degustation,degustation_expensed_quantity:appropriation?quantity:0,held_quantity:round3(quantity-usable-degustation),dispatch_id:run?.id||'',stock_kind:kind});
   if(!product)byId.set(row.product_id,{id:row.product_id,name:row.product_name||'Unregistered product',is_active:false});
  }
  return {runs,balances,products:[...byId.values()].map(product=>({...pick(product,productFields),unit:stockUnit(product)})),legacy,employeeName:employee.full_name,employee:pick(employee,'id full_name'),date,updated_at:new Date().toISOString()};

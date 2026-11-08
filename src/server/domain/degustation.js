@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { stockIssue, postJournal, audit, today, round2 } from './field-ops.js';
+import { stockIssue, postJournal, audit, today, round2,round3,appropriatedDegustation } from './field-ops.js';
 import { currentSupplyRun } from './commercial-runs.js';
 import { readRecords } from './commercial-workspace.js';
 import { finishedProduct } from './commercial-rules.js';
@@ -70,7 +70,9 @@ export async function recordDegustation(svc, user, employee, body) {
     degustationMovements(svc, context.dispatch_id, context.stock_warehouse_id), readRecords(s.Product, { id: { $in: lines.map(l => l.product_id) } }),
   ]);
   if (!customer || customer.is_active === false || customer.customer_removed_at) throw Error('Choose an active customer receiving the giveaway.');
-  const reserved = degustationState(manifest, movements), expense = await expenseAccount(s);
+  const stock=await readRecords(s.StockBalance,{warehouse_id:context.stock_warehouse_id,product_id:{$in:lines.map(line=>line.product_id)}});
+  const previouslyExpensed=lines.every(line=>{const lots=stock.filter(row=>row.product_id===line.product_id&&Number(row.quantity)>0);return lots.length&&round3(lots.reduce((sum,row)=>sum+Number(row.quantity),0))>=line.quantity&&lots.every(row=>appropriatedDegustation(row)?.dispatch_id===context.dispatch_id);});
+  const reserved = degustationState(manifest, movements), expense = previouslyExpensed?null:await expenseAccount(s);
   const checked = [];
   for (const line of lines) {
     const product = products.find(p => p.id === line.product_id);
@@ -93,6 +95,7 @@ async function postGiveaway(svc, user, employee, context, { id, date, notes, fin
     total = round2(total + issue.totalValue);
     credits.set(row.inventory.id, round2((credits.get(row.inventory.id) || 0) + issue.totalValue));
   }
+  if(total>0&&!expense)throw Error('Reconcile the expensed Dégustation custody quantities and original costs before moving this stock.');
   let journal = null;
   if (total > 0) ({ journal } = await postJournal(svc, { entryDate: date, description: 'Dégustation ' + reference + ' · ' + recipient,
     sourceModule: 'degustation', sourceDocumentType: 'Degustation', sourceDocumentId: id, userId: user.id,
@@ -103,6 +106,6 @@ async function postGiveaway(svc, user, employee, context, { id, date, notes, fin
     employee_id: employee.id, employee_name: employee.full_name, recorded_by: user.id, recorded_at: recordedAt, journal_id: journal?.id || '', journal_number: journal?.journal_number || '' };
   for (const movement of issued) await s.StockMovement.update(movement.id, evidence);
   await audit(svc, { action: 'record_degustation', module: 'distribution', entityType: 'Dispatch', entityId: context.dispatch_id, userId: user.id,
-    description: reference + ' · ' + employee.full_name + ' · ' + (atIssue ? 'Warehouse giveaway issue' : customer.business_name) + ' · ' + checked.map(l => l.quantity + ' ' + l.product.name).join(', ') + ' · marketing cost ' + total + ' XAF' });
+    description: reference + ' · ' + employee.full_name + ' · ' + (atIssue ? 'Warehouse giveaway issue' : customer.business_name) + ' · ' + checked.map(l => l.quantity + ' ' + l.product.name).join(', ') + ' · marketing cost ' + total + ' XAF'+(issued.some(m=>m.degustation_already_expensed)?' · Includes previously expensed promotional custody':'') });
   return { record: degustationHistory(issued.map(m => ({ ...m, ...evidence })), { costs: false })[0] };
 }

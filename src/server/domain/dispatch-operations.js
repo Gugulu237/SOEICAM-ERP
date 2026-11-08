@@ -1,13 +1,14 @@
 import {degustationQuantity,degustationState,degustationHistory} from './degustation-stock.js';
 import {issueDegustation} from './degustation.js';
 import {stockStaff,eligibleStockRecipient,ensureEmployeeStockLocation,validEmployeeStockLocation} from './employee-custody.js';
-import { requireStaff, stockTransfer, audit, round2, round3, today } from './field-ops.js';
+import { requireStaff, stockTransfer, audit, round2, round3, today, appropriatedDegustation, postJournal } from './field-ops.js';
 import { finishedProduct, periodDates } from './commercial-rules.js';
 import { normalizeRole } from './roles.js';
 import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { ensureVehicleStockLocation } from './vehicle-locations.js';
 import { receiveVehicleExpiredReturns } from './commercial-returns.js';
 import { DISPATCH_MANAGER_ROLES, canIssueDeliveryStock } from '../../lib/operations-access.js';
+import {validPostingRuleAccount} from '../../lib/posting-rule-types.js';
 
 // These operations execute inside the function route's serializable transaction.
 // All validation is completed before the first stock write. A load is custody,
@@ -16,6 +17,25 @@ const managers = DISPATCH_MANAGER_ROLES;
 const openStates = ['loaded', 'in_transit'];
 const storageTypes = ['finished_goods', 'cold_room', 'general'];
 const present = value => value !== undefined && value !== null && value !== '';
+function appropriationReconciliation(dispatch,balances,giveaways,returns){
+  const summary=dispatch.degustation_appropriation,marked=balances.map(balance=>({balance,marker:appropriatedDegustation(balance)})).filter(row=>row.marker);
+  const given=giveaways.filter(m=>m.degustation_appropriation_id),returned=returns.filter(m=>m.degustation_appropriation_id);
+  const fail=()=>{throw Error('Reconcile the expensed Dégustation custody quantities and original costs before moving this stock.');};
+  if(!summary){if(marked.length||given.length||returned.length)fail();return null;}
+  const exact=(value,round)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&round(value)===value&&Number.isSafeInteger(Math.round(value*(round===round3?1000:100)));
+  if(!summary.id||summary.policy!=='legacy-degustation-appropriation-v1'||!summary.expense_account_id||!exact(summary.total_quantity,round3)||!exact(summary.total_value,round2))fail();
+  const products=new Map(),add=(id,quantity,value,kind)=>{const row=products.get(id)||{remaining_quantity:0,remaining_value:0,given_quantity:0,given_value:0,returned_quantity:0,returned_value:0};row[kind+'_quantity']=round3(row[kind+'_quantity']+quantity);row[kind+'_value']=round2(row[kind+'_value']+value);products.set(id,row);};
+  for(const {balance,marker} of marked){if(marker.id!==summary.id||marker.dispatch_id!==dispatch.id||marker.expense_account_id!==summary.expense_account_id)fail();add(balance.product_id,marker.quantity,marker.value,'remaining');}
+  for(const [kind,movements] of [['given',given],['returned',returned]])for(const movement of movements){
+    if(movement.degustation_appropriation_id!==summary.id||movement.dispatch_id!==dispatch.id||movement.degustation_appropriation_expense_account_id!==summary.expense_account_id||!movement.degustation_appropriation_inventory_account_id||movement.degustation_already_expensed!==true||!exact(movement.degustation_appropriation_quantity,round3)||movement.degustation_appropriation_quantity!==Number(movement.quantity)||!exact(movement.degustation_appropriation_value,round2)||Number(movement.total_value)!==0||kind==='returned'&&movement.degustation_restored_value!==movement.degustation_appropriation_value)fail();
+    add(movement.product_id,movement.degustation_appropriation_quantity,movement.degustation_appropriation_value,kind);
+  }
+  const totals=[...products.values()].reduce((sum,row)=>Object.fromEntries(Object.keys(sum).map(key=>[key,(key.endsWith('quantity')?round3:round2)(sum[key]+row[key])])),{remaining_quantity:0,remaining_value:0,given_quantity:0,given_value:0,returned_quantity:0,returned_value:0});
+  if(round3(totals.remaining_quantity+totals.given_quantity+totals.returned_quantity)!==summary.total_quantity||round2(totals.remaining_value+totals.given_value+totals.returned_value)!==summary.total_value)fail();
+  const restoration=dispatch.degustation_appropriation_return;
+  if(restoration&&(restoration.total_quantity!==totals.returned_quantity||restoration.total_value!==totals.returned_value))fail();
+  return {...summary,...totals,products};
+}
 const number = (value, label) => {
   if (!present(value) || !['string', 'number'].includes(typeof value) || !String(value).trim() || !Number.isFinite(Number(value))) throw new Error(`Enter a valid ${label}`);
   return Number(value);
@@ -222,6 +242,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
     dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'Degustation', dispatch_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'promotional_issue', status: 'approved' }) : [],
   ]);
   const giveaways = degustationState(lines, giveawayMovements);
+  const appropriation=appropriationReconciliation(dispatch,balances,giveawayMovements,returnMovements);
   const delivered = orders.filter(order => ['delivered', 'invoiced'].includes(order.status));
   const approvedFields = fieldSales.filter(sale => sale.status === 'approved_posted');
   const orderIds = new Set(orders.map(order => order.id)), fieldIds = new Set(fieldSales.map(sale => sale.id));
@@ -276,7 +297,8 @@ export async function dispatchReconciliationData(svc, dispatch) {
     const line = lineMap.get(productId), loaded = round3(line?.loaded_quantity || 0), returned = round3(line?.returned_quantity ?? returns.get(productId) ?? 0);
     const confirmedSold = sold.get(productId) || 0, physicalSupplies = consumed.get(productId) || 0;
     const expected = round3(loaded - returned - physicalSupplies), onHand = actual.get(productId) || 0;
-    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: giveaways.get(productId)?.remaining || 0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
+    const expensed=appropriation?.products.get(productId);
+    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: giveaways.get(productId)?.remaining || 0,degustation_expensed_quantity:expensed?round3(expensed.remaining_quantity+expensed.given_quantity):0,degustation_expensed_value:expensed?round2(expensed.remaining_value+expensed.given_value):0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
   });
   let cashSales = 0, creditSales = 0, totalSales = 0;
   for (const sale of [...postedFieldSales, ...postedOrders]) {
@@ -285,7 +307,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
     creditSales = round2(creditSales + (present(sale.amount_due) ? amount(sale.amount_due) : Math.max(0, total - collected)));
     totalSales = round2(totalSales + total);
   }
-  return { rows, degustations: degustationHistory(giveawayMovements), degustationCost: round2(giveawayMovements.reduce((sum,m) => sum + Number(m.total_value || 0),0)), orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
+  return { rows, degustations: degustationHistory(giveawayMovements),degustationAppropriation:appropriation?Object.fromEntries(Object.entries(appropriation).filter(([key])=>key!=='products')):null, degustationCost: round2(giveawayMovements.reduce((sum,m) => sum + Number(m.total_value || 0),0)+(appropriation?appropriation.total_value-appropriation.returned_value:0)), orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
 }
 
 async function returnStock(svc, user, dispatch, body={}, {returnRequestId}={}) {
@@ -312,17 +334,35 @@ async function returnStock(svc, user, dispatch, body={}, {returnRequestId}={}) {
   }
   const productMap = new Map(products.map(product => [product.id, product]));
   for (const productId of quantities.keys()) if (!finishedProduct(productMap.get(productId))) throw new Error('The vehicle contains non-finished stock. Reconcile the vehicle before returning this run.');
-  let totalValue = 0;
+  const appropriated=balances.map(appropriatedDegustation).filter(Boolean);
+  for(const marker of appropriated){
+    const [expense,inventory]=await Promise.all([svc.entities.Account.get(marker.expense_account_id),svc.entities.Account.get(marker.inventory_account_id)]);
+    if(!validPostingRuleAccount(expense,'marketing_degustation_expense')||!validPostingRuleAccount(inventory,'finished_goods_inventory'))throw Error('Review the original Dégustation expense and inventory accounts before receiving this return.');
+  }
+  if(appropriated.some(marker=>marker.value>0)){
+    const periods=await records(svc.entities.AccountingPeriod,{start_date:{$lte:today()},end_date:{$gte:today()}});
+    if(!periods.length||periods.some(period=>period.status!=='open'))throw Error('Return expensed Dégustation in an open accounting period.');
+  }
+  let totalValue = 0;const restored=[];
   for (const [productId, quantity] of quantities) {
     const product = productMap.get(productId);
-    const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, preserveRecordedValue:true, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}` });
+    const result = await stockTransfer(svc, { productId, productName: product.name, fromWarehouseId: destination.id, toWarehouseId: source.id, toWarehouseName: source.name, quantity, preserveRecordedValue:true,restoreAppropriatedValue:true,dispatchId:dispatch.id, movementType: 'warehouse_transfer', documentType: 'Dispatch', documentId: dispatch.id, movementDate: today(), reason: `Unsold stock returned from ${vehicle?.name || destination.name} - ${dispatch.dispatch_number || ''}` });
+    restored.push(...result.layers.filter(layer=>layer.appropriation).map(layer=>({...layer.appropriation,quantity:layer.quantity,value:layer.restoredValue})));
     totalValue = round2(totalValue + result.totalValue);
     const line = lines.find(row => row.product_id === productId);
     if (line) await svc.entities.DispatchLine.update(line.id, { returned_quantity: round3((line.returned_quantity || 0) + quantity), degustation_returned_quantity: round3((line.degustation_returned_quantity || 0) + (beforeReturn.rows.find(row=>row.product_id===productId)?.degustation_remaining || 0)) });
   }
+  let restoration=null;
+  if(restored.length){
+    const values=new Map(),add=(id,value)=>values.set(id,round2((values.get(id)||0)+value));
+    for(const row of restored){add(row.inventory_account_id,row.value);add(row.expense_account_id,-row.value);}
+    const total=round2(restored.reduce((sum,row)=>sum+row.value,0));let journal=null;
+    if(total>0)({journal}=await postJournal(svc,{entryDate:today(),description:'Return of expensed Dégustation / '+(dispatch.dispatch_number||dispatch.id),sourceModule:'degustation',sourceDocumentType:'DegustationReturn',sourceDocumentId:'DEG-RETURN-'+dispatch.id,userId:user.id,lines:[...values].filter(([,value])=>value!==0).map(([account_id,value])=>({account_id,debit:Math.max(0,value),credit:Math.max(0,-value)}))}));
+    restoration={id:'DEG-RETURN-'+dispatch.id,date:today(),total_quantity:round3(restored.reduce((sum,row)=>sum+row.quantity,0)),total_value:total,journal_id:journal?.id||'',journal_number:journal?.journal_number||''};
+  }
   const expiredReturned = await receiveVehicleExpiredReturns(svc, dispatch, source, user);
   const recon = await dispatchReconciliationData(svc, dispatch);
-  await svc.entities.Dispatch.update(dispatch.id, { status: 'returned', total_returned_value: totalValue, total_delivered_value: recon.totalSales, total_cash_collected: recon.cashSales, total_credit_sales: recon.creditSales, return_date: new Date().toISOString(),...(returnRequestId?{unsold_return_request_id:'',unsold_return_received_request_id:returnRequestId}:{}),...(body.countedLines?{return_counted_by:user.id,return_counted_lines:body.countedLines}: {}) });
+  await svc.entities.Dispatch.update(dispatch.id, { status: 'returned', total_returned_value: totalValue, total_delivered_value: recon.totalSales, total_cash_collected: recon.cashSales, total_credit_sales: recon.creditSales, return_date: new Date().toISOString(),...(restoration?{degustation_appropriation_return:restoration}:{}),...(returnRequestId?{unsold_return_request_id:'',unsold_return_received_request_id:returnRequestId}:{}),...(body.countedLines?{return_counted_by:user.id,return_counted_lines:body.countedLines}: {}) });
   await audit(svc, { action: 'return_dispatch_stock', module: 'distribution', entityType: 'Dispatch', entityId: dispatch.id, userId: user.id, description: `Returned unsold stock from ${dispatch.dispatch_number || dispatch.id}; ${quantities.size} finished products${recon.hasVariance ? '; reconciliation variance requires review' : ''}` });
   return { totalValue, expiredReturned };
 }

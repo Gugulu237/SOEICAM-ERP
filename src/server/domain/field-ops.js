@@ -125,7 +125,32 @@ export async function stockOnHand(base44, productId, warehouseId) {
   return round3(balances.reduce((s, b) => s + (b.quantity || 0), 0));
 }
 
-export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true }) {
+const appropriationFields=['id','dispatch_id','expense_account_id','inventory_account_id','quantity','value'].map(key=>'degustation_appropriation_'+key);
+const appropriationError=()=>Error('Reconcile the expensed Dégustation custody quantities and original costs before moving this stock.');
+const exactAppropriation=(value,round,scale)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&round(value)===value&&Number.isSafeInteger(Math.round(value*scale));
+export function appropriatedDegustation(balance) {
+  const marked=Object.keys(balance||{}).filter(key=>key.startsWith('degustation_appropriation_')&&balance[key]!=null);
+  if(!marked.length)return null;
+  if(marked.some(key=>!appropriationFields.includes(key))||appropriationFields.some(key=>balance[key]==null))throw appropriationError();
+  const result=Object.fromEntries(appropriationFields.map(key=>[key.slice('degustation_appropriation_'.length),balance[key]]));
+  if(['id','dispatch_id','expense_account_id','inventory_account_id'].some(key=>typeof result[key]!=='string'||!result[key])||!exactAppropriation(result.quantity,round3,1000)||result.quantity<=0||result.quantity!==Number(balance.quantity)||!exactAppropriation(result.value,round2,100)||balance.total_value==null||balance.unit_cost==null||Number(balance.total_value)!==0||Number(balance.unit_cost)!==0)throw appropriationError();
+  return result;
+}
+async function verifyAppropriatedCustody(base44,dispatchId,warehouseId){
+  const dispatch=await base44.entities.Dispatch.get(dispatchId),summary=dispatch?.degustation_appropriation;
+  if(!summary||summary.policy!=='legacy-degustation-appropriation-v1'||typeof summary.id!=='string'||!summary.id||typeof summary.expense_account_id!=='string'||!summary.expense_account_id||dispatch.vehicle_warehouse_id!==warehouseId||!exactAppropriation(summary.total_quantity,round3,1000)||summary.total_quantity<=0||!exactAppropriation(summary.total_value,round2,100))throw appropriationError();
+  const read=async(store,query)=>{const rows=[];for(let skip=0;;skip+=200){const page=await store.filter(query,'id',200,skip);rows.push(...page);if(page.length<200)return rows;}};
+  const [stock,movements]=await Promise.all([read(base44.entities.StockBalance,{warehouse_id:warehouseId}),read(base44.entities.StockMovement,{dispatch_id:dispatchId,source_warehouse_id:warehouseId,status:'approved',document_type:{$in:['Degustation','Dispatch']},movement_type:{$in:['promotional_issue','warehouse_transfer']}})]);
+  let quantity=0,value=0;
+  for(const balance of stock){const marker=appropriatedDegustation(balance);if(!marker)continue;if(marker.id!==summary.id||marker.dispatch_id!==dispatchId||marker.expense_account_id!==summary.expense_account_id)throw appropriationError();quantity=round3(quantity+marker.quantity);value=round2(value+marker.value);}
+  for(const movement of movements.filter(row=>row.degustation_appropriation_id)){
+    if(movement.degustation_appropriation_id!==summary.id||movement.degustation_appropriation_expense_account_id!==summary.expense_account_id||!movement.degustation_appropriation_inventory_account_id||movement.degustation_already_expensed!==true||!exactAppropriation(movement.degustation_appropriation_quantity,round3,1000)||movement.degustation_appropriation_quantity<=0||movement.degustation_appropriation_quantity!==Number(movement.quantity)||!exactAppropriation(movement.degustation_appropriation_value,round2,100)||Number(movement.total_value)!==0)throw appropriationError();
+    quantity=round3(quantity+movement.degustation_appropriation_quantity);value=round2(value+movement.degustation_appropriation_value);
+  }
+  if(quantity!==summary.total_quantity||value!==summary.total_value)throw appropriationError();
+}
+
+export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true, restoreAppropriatedValue = false }) {
   let remaining = round3(quantity);
   if (remaining <= 0) throw new Error("Quantity must be greater than zero");
 
@@ -139,8 +164,13 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     all.push(...page);
     if (page.length<200) break;
   }
+  const marked=new Map(all.map(balance=>[balance.id,appropriatedDegustation(balance)]));
+  const giveaway=movementType==='promotional_issue'&&documentType==='Degustation'&&typeof dispatchId==='string'&&!!dispatchId;
+  const restoration=restoreAppropriatedValue===true&&movementType==='warehouse_transfer'&&documentType==='Dispatch'&&documentId===dispatchId&&typeof dispatchId==='string'&&!!dispatchId;
+  if(restoreAppropriatedValue&&!restoration)throw appropriationError();
   const usable = all
     .filter((b) => (b.quantity || 0) > 0)
+    .filter(b=>{const appropriation=marked.get(b.id);if(!appropriation)return true;if((giveaway||restoration)&&appropriation.dispatch_id!==dispatchId)throw appropriationError();return (giveaway||restoration)&&preserveRecordedValue===true;})
     .filter((b) => !saleableOnly || ((b.qc_status || "approved") === "approved" && (!b.expiry_date || b.expiry_date >= dateStr)))
     .sort((a, b) => String(a.expiry_date || "9999-12-31").localeCompare(String(b.expiry_date || "9999-12-31")));
 
@@ -151,6 +181,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
   if (available < remaining) {
     throw new Error(`Insufficient stock for ${productName || "product"}: ${available} available, ${remaining} required`);
   }
+  for(const warehouse of new Set(usable.filter(balance=>marked.get(balance.id)).map(balance=>balance.warehouse_id)))await verifyAppropriatedCustody(base44,dispatchId,warehouse);
 
   const layers = [];
   for (const b of usable) {
@@ -161,10 +192,12 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     // Rounded or stale unit costs must never revalue the remaining stock or
     // inflate COGS. A final issue consumes the lot's complete residual value.
     const layerValue = preserveRecordedValue ? round2(newQty===0?Number(b.total_value):Number(b.total_value)*take/Number(b.quantity)) : undefined;
+    const appropriation=marked.get(b.id),appropriatedValue=appropriation?round2(newQty===0?appropriation.value:appropriation.value*take/Number(b.quantity)):0;
     await base44.entities.StockBalance.update(b.id, {
       quantity: newQty,
       total_value: preserveRecordedValue ? round2(Number(b.total_value)-layerValue) : round2(newQty * (b.unit_cost || 0)),
       ...(preserveRecordedValue?{unit_cost:newQty>0?round2((Number(b.total_value)-layerValue)/newQty):0}:{}),
+      ...(appropriation?newQty>0?{degustation_appropriation_quantity:newQty,degustation_appropriation_value:round2(appropriation.value-appropriatedValue)}:Object.fromEntries(appropriationFields.map(key=>[key,null])):{}),
     });
     layers.push({
       ...(multiple?{warehouseId:b.warehouse_id}:{}),
@@ -176,6 +209,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       qcStatus: b.qc_status || "approved",
       ...(b.production_order_id ? { productionOrderId: b.production_order_id } : {}),
       ...(b.batch_number ? { batchNumber: b.batch_number } : {}),
+      ...(appropriation?{appropriation:{...appropriation,quantity:take,value:appropriatedValue},...(restoration?{restoredValue:appropriatedValue}:{})}:{}),
     });
     remaining = round3(remaining - take);
   }
@@ -196,6 +230,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       document_type: documentType || "",
       document_id: documentId || "",
       ...(dispatchId ? { dispatch_id: dispatchId } : {}),
+      ...(l.appropriation?{degustation_appropriation_id:l.appropriation.id,degustation_appropriation_quantity:l.quantity,degustation_appropriation_value:l.appropriation.value,degustation_appropriation_expense_account_id:l.appropriation.expense_account_id,degustation_appropriation_inventory_account_id:l.appropriation.inventory_account_id,degustation_already_expensed:true,...(restoration?{degustation_restored_value:l.restoredValue}:{})}:{}),
       reason: reason || "",
       movement_date: movementDate || dateStr,
       status: "approved",
@@ -219,6 +254,7 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   })).find(row => (row.expiry_date || '') === (expiryDate || '') && (row.production_order_id || '') === (productionOrderId || '') && (row.batch_number || '') === (batchNumber || ''));
 
   if (existing) {
+    if(appropriatedDegustation(existing))throw appropriationError();
     const preserving=totalValue!==undefined,oldQty=Number(preserving?existing.quantity:existing.quantity||0),oldValue=Number(preserving?existing.total_value:existing.total_value||0);
     if(preserving&&(!Number.isFinite(oldQty)||oldQty<0||!Number.isFinite(oldValue)||oldValue<0||oldQty===0&&oldValue!==0))throw Error('Reconcile the receiving lot quantity and value before accepting returned stock.');
     const newQty = round3(oldQty + qty);
@@ -269,25 +305,25 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   });
 }
 
-export async function stockTransfer(base44, { productId, productName, fromWarehouseId, toWarehouseId, toWarehouseName, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue = true }) {
+export async function stockTransfer(base44, { productId, productName, fromWarehouseId, toWarehouseId, toWarehouseName, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue = true, restoreAppropriatedValue = false, dispatchId }) {
   if (!fromWarehouseId || !toWarehouseId) throw new Error("Both source and destination locations are required");
   if (fromWarehouseId === toWarehouseId) throw new Error("Source and destination locations must differ");
 
   const { layers, totalValue } = await stockIssue(base44, {
     productId, productName, warehouseId: fromWarehouseId, quantity,
-    movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue,
+    movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue, restoreAppropriatedValue, dispatchId,
   });
 
   for (const l of layers) {
     await stockReceive(base44, {
       productId, productName, warehouseId: toWarehouseId, warehouseName: toWarehouseName,
-      quantity: l.quantity, unitCost: l.unitCost, totalValue:l.totalValue, lotNumber: l.lotNumber, expiryDate: l.expiryDate,
+      quantity: l.quantity, unitCost: l.restoredValue!==undefined?l.restoredValue/l.quantity:l.unitCost, totalValue:l.restoredValue??l.totalValue, lotNumber: l.lotNumber, expiryDate: l.expiryDate,
       movementType, documentType, documentId, movementDate, reason, qcStatus: l.qcStatus,
       productionOrderId: l.productionOrderId, batchNumber: l.batchNumber,
     });
   }
 
-  return { layers, totalValue };
+  return { layers, totalValue:round2(totalValue+layers.reduce((sum,layer)=>sum+(layer.restoredValue||0),0)) };
 }
 
 // A Commercial's custody is a warehouse of its own, so the existing inventory
