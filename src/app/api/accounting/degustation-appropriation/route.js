@@ -15,5 +15,12 @@ export async function POST(request){
    return body.action==='preview'?previewDegustationAppropriation(serviceEntities,context,body):postDegustationAppropriation(serviceEntities,context,body);
   });
   return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});
- }catch(error){return apiError(error);}
+ }catch(error){
+  const response=apiError(error);
+  // Only the principal-admin domain can attach this scoped, verified read-only
+  // diagnostic. Preserve normal error sanitization and never disclose it for
+  // authorization failures or unexpected database errors.
+  if(response.status===409&&error.degustation_appropriation_diagnostics)return Response.json({...await response.json(),diagnostics:error.degustation_appropriation_diagnostics},{status:response.status,headers:{'Cache-Control':'private, no-store'}});
+  return response;
+ }
 }

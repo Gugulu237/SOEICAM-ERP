@@ -42,9 +42,11 @@ const marketing={id:'marketing',account_number:'6970',name:'Marketing & Advertis
 const expense={id:'degustation',account_number:'6971',name:'Degustation',parent_id:marketing.id,account_type:'expense',normal_balance:'debit',is_active:true,is_posting:true};
 const otherExpense={...expense,id:'other-promo',account_number:'6972',name:'Other marketing promotions'};
 const accounts=[marketing,expense,otherExpense,{id:'finished-goods',account_number:'1320',name:'Finished Goods Inventory',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true},{...expense,id:'top-level',parent_id:''},{...expense,id:'cogs',account_type:'cogs'},{...expense,id:'inactive',is_active:false},{...expense,id:'header',is_posting:false},{...expense,id:'credit',normal_balance:'credit'},{...expense,id:'cash',is_treasury:true},{...expense,id:'control',is_control_account:true},{...expense,id:'orphan',parent_id:'missing'}];
+const manufacturingCogs={id:'manufacturing-cogs',account_number:'6100',name:'Cost of Goods Sold',account_type:'cogs',normal_balance:'debit',is_active:true,is_posting:true};
 const dispatch={id:'legacy-run',dispatch_number:'DSP-PROMO',salesperson_name:'Stock holder',status:'loaded',total_loaded_value:500};
 const preview=body=>({token:'verified-'+body.expenseAccountId+'-'+body.reference,dispatch:{...dispatch,employee_name:'Stock holder'},expense_account:accounts.find(a=>a.id===body.expenseAccountId),date,reference:body.reference,lots:[{id:'lot-1',product_id:'yogurt',product_name:'YOLA yogurt',lot_number:'PRODUCTION-1',quantity:13,value:260,inventory_account_id:'finished-goods'}],total_quantity:13,total_value:260,journal_lines:[{account_id:body.expenseAccountId,debit:260,credit:0},{account_id:'finished-goods',debit:0,credit:260}],stock_quantity_change:0,inventory_value_change:-260,cash_change:0});
 const saved={journal_id:'promo-journal',journal_number:'JV-PROMO',total_quantity:13,total_value:260,reused:false};
+const blockedDiagnostics={dispatch_id:dispatch.id,stock_warehouse_id:'custody',source_journals_verified:true,source_journals:[{id:'source-journal',journal_number:'JV-SALE',date:'2026-11-07',source_document_type:'Invoice',source_document_id:'source-invoice',inventory_cost:300}],mismatches:[{product_id:'yogurt',product_name:'YOLA yogurt',lot_number:'PRODUCTION-1',expiry_date:'2026-12-01',qc_status:'approved',production_order_id:'production-1',batch_number:'batch-1',balance_ids:['lot-1'],load_movement_ids:['load-1'],issue_movement_ids:['sale-issue-1'],loaded_quantity:100,loaded_value:500,released_quantity:87,released_value:300,expected_quantity:13,expected_value:200,current_quantity:13,current_value:260,quantity_delta:0,value_delta:60,loaded_unit_costs:[5],released_unit_costs:[3.45],current_unit_costs:[20]}]};
 const snapshot={rows:[{id:'load-line',product_id:'yogurt',product_name:'YOLA yogurt',loaded:100,sold:87,replaced:0,returned:0,expected:13,actual:13,variance:0,degustation_allocated:13,degustation_given:0,degustation_remaining:13,degustation_returned:0,sales_value:1000}],orders:[{id:'sale'}],fieldSales:[],totalSales:1000,cashSales:0,creditSales:1000,hasVariance:false,remainingQty:13,degustationCost:0,degustations:[]};
 const control=(r,label)=>r.controls.find(element=>element['aria-label']===label);
 const button=(r,label)=>r.buttons.find(element=>element.label===label);
@@ -151,4 +153,82 @@ test('an expensed reserved load keeps all 13 units in custody and distinct from 
  const f=await environment({kind:'reconciliation',data:{...snapshot,degustationAppropriation:appropriation,degustationCost:260}});
  try{const html=f.draw();assert.match(html,/Expensed promotional stock still held: <strong>13/);assert.match(html,/These quantities are reserved for Dégustation and cannot be sold/);assert.match(html,/Actual customer giveaways remain separately recorded/);assert.match(html,/Given away[^<]*<!-- -->[^<]*0|Given away[^<]*: [\s\S]*?0/);assert.match(html,/Remaining[\s\S]*?13/);assert.match(html,/href="\/accounting\/journals\/promo-journal"/);assert.doesNotMatch(html,/Expense reserved Dégustation/);assert.equal(f.r.calls.length,0);assert.equal(f.r.children.length,0);}
  finally{f.close();}
+});
+
+test('a blocked preview displays lot carrying-value evidence and verified source journals without authorizing a post',async()=>{
+ const f=await environment({run:{...dispatch,vehicle_warehouse_id:'custody'}}),{r,draw}=f;
+ r.request=async(area,body)=>{r.calls.push({area,body:structuredClone(body)});throw Object.assign(Error('Remaining lot values do not reconcile.'),{status:409,diagnostics:structuredClone(blockedDiagnostics)});};
+ try{
+  const html=await review(r,draw);assert.match(html,/Inventory carrying-value differences/);assert.match(html,/No expense has been posted/);assert.match(html,/Source sale journals verified/);assert.match(html,/Expected remaining/);assert.match(html,/Currently recorded/);assert.match(html,/200 XAF/);assert.match(html,/260 XAF/);assert.match(html,/60 XAF/);assert.match(html,/100\.000/);assert.match(html,/87\.000/);assert.match(html,/load-1/);assert.match(html,/sale-issue-1/);assert.match(html,/production-1/);assert.match(html,/batch-1/);assert.match(html,/Current unit costs/);assert.match(html,/20 XAF/);assert.match(html,/href="\/accounting\/journals\/source-journal"/);assert.match(html,/JV-SALE/);assert.match(html,/300 XAF/);
+  assert.equal(button(r,'Confirm reserved Dégustation expense'),undefined);assert.equal(control(r,'Confirm reserved Dégustation review'),undefined);assert.deepEqual(r.calls.map(call=>call.body.action),['preview']);assert.equal(r.posted.length,0);
+ }finally{f.close();}
+});
+
+test('diagnostic text is escaped and journal links stay within the encoded journal route',async()=>{
+ const f=await environment(),{r,draw}=f,diagnostics=structuredClone(blockedDiagnostics),journalId='source/id?next=<script>';
+ diagnostics.mismatches[0].product_name='<script>unsafe()</script>';diagnostics.mismatches[0].lot_number='<img src=x onerror=unsafe()>';diagnostics.source_journals[0].id=journalId;diagnostics.source_journals[0].journal_number='<b>JV-SALE</b>';
+ r.request=async()=>{throw Object.assign(Error('<img src=x onerror=unsafe()>'),{status:409,diagnostics});};
+ try{const html=await review(r,draw);assert.doesNotMatch(html,/<script>|<img|<b>JV-SALE/);assert.match(html,/&lt;script&gt;unsafe\(\)&lt;\/script&gt;/);assert.match(html,/&lt;img src=x onerror=unsafe\(\)&gt;/);assert.match(html,/&lt;b&gt;JV-SALE&lt;\/b&gt;/);assert.ok(html.includes('href="/accounting/journals/'+encodeURIComponent(journalId)+'"'));assert.equal(button(r,'Confirm reserved Dégustation expense'),undefined);}finally{f.close();}
+});
+
+test('diagnostics cannot claim another run or warehouse and unverified evidence is not labelled verified',async()=>{
+ for(const changes of [{dispatch_id:'another-run'},{stock_warehouse_id:'another-custody'},{source_journals_verified:false}]){
+  const f=await environment({run:{...dispatch,vehicle_warehouse_id:'custody'}}),{r,draw}=f,diagnostics={...structuredClone(blockedDiagnostics),...changes};
+  r.request=async()=>{throw Object.assign(Error('Review stock values.'),{status:409,diagnostics});};
+  try{const html=await review(r,draw);if(changes.source_journals_verified===false){assert.match(html,/Inventory carrying-value differences/);assert.doesNotMatch(html,/Source sale journals verified|Verified source journals|href="\/accounting\/journals\/source-journal"/);}else assert.doesNotMatch(html,/Inventory carrying-value differences|source-journal|200 XAF/);assert.match(html,/Review stock values/);assert.equal(button(r,'Confirm reserved Dégustation expense'),undefined);}finally{f.close();}
+ }
+});
+
+test('editing the review or starting a new preview removes old lot diagnostics',async()=>{
+ const f=await environment(),{r,draw}=f;
+ const reject=async()=>{throw Object.assign(Error('Review stock values.'),{status:409,diagnostics:structuredClone(blockedDiagnostics)});};r.request=reject;
+ try{
+  await review(r,draw);change(r,'Review reference','New physical count');assert.doesNotMatch(draw(),/Inventory carrying-value differences/);await button(r,'Preview reserved Dégustation expense').onClick();assert.match(draw(),/Inventory carrying-value differences/);
+  change(r,'Degustation expense account',otherExpense.id);assert.doesNotMatch(draw(),/Inventory carrying-value differences/);await button(r,'Preview reserved Dégustation expense').onClick();assert.match(draw(),/Inventory carrying-value differences/);
+  let resolvePreview,payload;r.request=(_area,body)=>new Promise(resolve=>{resolvePreview=resolve;payload=body;});const pending=button(r,'Preview reserved Dégustation expense').onClick();assert.doesNotMatch(draw(),/Inventory carrying-value differences/);assert.equal(button(r,'Preparing expense preview...').disabled,true);resolvePreview(preview(payload));await pending;const html=draw();assert.doesNotMatch(html,/Inventory carrying-value differences/);assert.match(html,/Physical units retained/);assert.equal(control(r,'Confirm reserved Dégustation review').checked,false);
+ }finally{f.close();}
+});
+
+test('a posting conflict discards its old confirmation whether or not structured diagnostics are returned',async()=>{
+ for(const diagnostics of [null,structuredClone(blockedDiagnostics)]){
+  const f=await environment(),{r,draw}=f;const request=r.request;
+  r.request=async(area,body)=>{if(body.action==='post'){r.calls.push({area,body:structuredClone(body)});throw Object.assign(Error('Preview the changed stock again.'),{status:409,...(diagnostics?{diagnostics}:{})});}return request(area,body);};
+  try{await review(r,draw);change(r,'Confirm reserved Dégustation review',true);draw();await button(r,'Confirm reserved Dégustation expense').onClick();const html=draw();assert.match(html,/Preview the changed stock again/);assert.equal(button(r,'Confirm reserved Dégustation expense'),undefined);assert.equal(control(r,'Confirm reserved Dégustation review'),undefined);assert.equal(button(r,'Preview reserved Dégustation expense').disabled,false);assert.equal(r.calls.filter(call=>call.body.action==='post').length,1);assert.equal(r.posted.length,0);assert.equal(html.includes('Inventory carrying-value differences'),!!diagnostics);}finally{f.close();}
+ }
+});
+
+test('the accounting client exposes diagnostics only for appropriation conflicts and preserves ordinary success invalidation',async()=>{
+ const output=await build({entryPoints:['src/lib/accounting-controls-client.js'],bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'accounting-client-test',setup(b){b.onResolve({filter:/^@\/api\/erpClient$/},()=>({path:'erp',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const invalidateERPReads=()=>globalThis.__accountingClientInvalidations++;'}));}}]});
+ const module={exports:{}};new Function('module','exports',output.outputFiles[0].text)(module,module.exports);const request=module.exports.accountingControlRequest,nativeFetch=globalThis.fetch,calls=[];globalThis.__accountingClientInvalidations=0;
+ try{
+  for(const sample of [{area:'degustation-appropriation',status:409,diagnostics:blockedDiagnostics,attached:true},{area:'setup-stock-correction',status:409,diagnostics:blockedDiagnostics,attached:false},{area:'degustation-appropriation',status:400,diagnostics:blockedDiagnostics,attached:false},{area:'degustation-appropriation',status:409,diagnostics:[],attached:false}]){
+   globalThis.fetch=async(url,options)=>{calls.push({url,options});return {ok:false,status:sample.status,json:async()=>({error:'Inventory values need review.',diagnostics:sample.diagnostics})};};
+   await assert.rejects(request(sample.area,{action:'preview'}),error=>{assert.equal(error.message,'Inventory values need review.');assert.equal(error.status,sample.status);assert.equal(Object.hasOwn(error,'diagnostics'),sample.attached);if(sample.attached)assert.deepEqual(error.diagnostics,blockedDiagnostics);return true;});
+  }
+  assert.equal(globalThis.__accountingClientInvalidations,0);assert.equal(calls[0].url,'/api/accounting/degustation-appropriation');assert.equal(calls[0].options.credentials,'same-origin');assert.equal(calls[0].options.cache,'no-store');assert.equal(calls[0].options.body,JSON.stringify({action:'preview'}));
+  globalThis.fetch=async()=>({ok:true,status:200,json:async()=>saved});assert.deepEqual(await request('degustation-appropriation',{action:'post'}),saved);assert.equal(globalThis.__accountingClientInvalidations,1);await request('other-control');assert.equal(globalThis.__accountingClientInvalidations,1);
+ }finally{globalThis.fetch=nativeFetch;delete globalThis.__accountingClientInvalidations;}
+});
+
+test('legacy rounding is reviewed as a separate balanced correction before the promotional expense and both journals link on success',async()=>{
+ const f=await environment({accountRows:[...accounts,manufacturingCogs]}),{r,draw}=f,roundedSaved={...saved,rounding_journal_id:'rounding/journal',rounding_journal_number:'JV-ROUND'};
+ r.request=async(area,body)=>{r.calls.push({area,body:structuredClone(body)});if(body.action==='post')return roundedSaved;return {...preview(body),inventory_value_change:-260.11,lots:preview(body).lots.map(lot=>({...lot,recorded_value_before:260.15})),legacy_rounding:{required:true,policy:'verified-legacy-rounded-unit-cost-v1',cogs_change:0.11,inventory_value_change:-0.11,cache_value_change:-0.15,journal_lines:[{account_id:manufacturingCogs.id,debit:0.11,credit:0},{account_id:'finished-goods',debit:0,credit:0.11}],lots:[{...blockedDiagnostics.mismatches[0],current_value:260.15,receipt_unit_cost:5,legacy_remaining_value:260.11,reconciled_value:260,cache_value_change:-0.15,exhausted:false,cogs_adjustment:0.11,rounding_bound:0.5}]}};};
+ try{
+  const html=await review(r,draw),plain=html.replace(/<[^>]*>/g,'');assert.match(plain,/Marketing expense: 260 XAF/);assert.match(plain,/Combined inventory journal change: -260.11 XAF/);assert.match(plain,/COGS adjustment0.11 XAF/);assert.match(plain,/Inventory journal adjustment-0.11 XAF/);assert.match(plain,/Recorded inventory value correction-0.15 XAF/);assert.match(plain,/Original sale journals remain unchanged/);assert.match(plain,/Recorded inventory valueLegacy remaining costReconciled carrying value260.15 XAF260.11 XAF260 XAF/);assert.match(html,/<details class="min-w-0"><summary[^>]*>Lot rounding evidence<\/summary>/);assert.doesNotMatch(html,/<details[^>]*open/);
+  const correction=html.match(/<table aria-label="Rounding correction journal"[\s\S]*?<\/table>/)[0].replace(/<[^>]*>/g,'');assert.match(correction,/6100 \/ Cost of Goods Sold0.11 XAF0 XAF/);assert.match(correction,/1320 \/ Finished Goods Inventory0 XAF0.11 XAF/);const appropriation=html.match(/<table aria-label="Proposed journal"[\s\S]*?<\/table>/)[0].replace(/<[^>]*>/g,'');assert.match(appropriation,/6971 \/ Degustation260 XAF0 XAF/);assert.doesNotMatch(appropriation,/6100/);
+  assert.match(html,/I reviewed the reserved quantities, reconciled costs, expense account, employee custody and both proposed journals/);assert.ok(html.indexOf('Rounding correction journal')<html.indexOf('Confirm reserved D\u00e9gustation review'));assert.equal(button(r,'Confirm reserved D\u00e9gustation expense').disabled,true);assert.equal(r.calls.filter(call=>call.body.action==='post').length,0);
+  change(r,'Confirm reserved D\u00e9gustation review',true);draw();await button(r,'Confirm reserved D\u00e9gustation expense').onClick();const success=draw();assert.match(success,/href="\/accounting\/journals\/promo-journal"/);assert.match(success,/href="\/accounting\/journals\/rounding%2Fjournal"/);assert.match(success,/Rounding correction<!-- -->: <!-- -->JV-ROUND|Rounding correction: JV-ROUND/);assert.deepEqual(r.posted,[roundedSaved]);assert.equal(r.calls.filter(call=>call.body.action==='post').length,1);assert.equal(r.calls.find(call=>call.body.action==='post').body.roundingReviewPolicy,'verified-legacy-rounded-unit-cost-v1');
+ }finally{f.close();}
+});
+
+test('a zero-value promotional lot still identifies its required rounding journal precisely',async()=>{
+ const f=await environment({accountRows:[...accounts,manufacturingCogs]}),{r,draw}=f;
+ r.request=async(_area,body)=>({...preview(body),total_value:0,journal_lines:[],inventory_value_change:-0.11,lots:preview(body).lots.map(lot=>({...lot,value:0})),legacy_rounding:{required:true,policy:'verified-legacy-rounded-unit-cost-v1',cogs_change:0.11,inventory_value_change:-0.11,cache_value_change:0,journal_lines:[{account_id:manufacturingCogs.id,debit:0.11,credit:0},{account_id:'finished-goods',debit:0,credit:0.11}],lots:[{...blockedDiagnostics.mismatches[0],current_value:0,legacy_remaining_value:0.11,reconciled_value:0,cache_value_change:0,exhausted:true,cogs_adjustment:0.11}]}});
+ try{const html=await review(r,draw);assert.match(html,/Zero promotional carrying value; no appropriation journal will be posted/);assert.doesNotMatch(html,/Zero carrying value; no journal will be posted/);assert.match(html,/Fully issued lot/);assert.match(html,/I reviewed the reserved quantities, reconciled costs, expense account, employee custody and the rounding correction journal/);assert.doesNotMatch(html,/and both proposed journals/);assert.equal(button(r,'Confirm reserved D\u00e9gustation expense').disabled,true);}finally{f.close();}
+});
+
+test('a recorded-value-only rounding correction requires review without claiming a second journal or a COGS change',async()=>{
+ const f=await environment(),{r,draw}=f;
+ r.request=async(_area,body)=>({...preview(body),legacy_rounding:{required:true,policy:'verified-legacy-rounded-unit-cost-v1',cogs_change:0,inventory_value_change:0,cache_value_change:-0.15,journal_lines:[],lots:[{...blockedDiagnostics.mismatches[0],current_value:260.15,legacy_remaining_value:260,reconciled_value:260,cache_value_change:-0.15,exhausted:false,cogs_adjustment:0}]}});
+ try{const html=await review(r,draw);assert.match(html,/No rounding journal is required; only the recorded lot value is reconciled/);assert.match(html,/without changing COGS or posting another journal/);assert.match(html,/I reviewed the reserved quantities, reconciled costs, expense account, employee custody and the recorded inventory value correction/);assert.doesNotMatch(html,/aria-label="Rounding correction journal"|and both proposed journals|separate rounding journal changes COGS/);assert.match(html,/aria-label="Proposed journal"/);assert.equal(button(r,'Confirm reserved D\u00e9gustation expense').disabled,true);}finally{f.close();}
 });

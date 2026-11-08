@@ -6,6 +6,8 @@ import {employeeStockAction} from '../src/server/domain/employee-stock.js';
 import {dispatchAction,dispatchReconciliationData} from '../src/server/domain/dispatch-operations.js';
 import {stockIssue,stockTransfer,postJournal,appropriatedDegustation} from '../src/server/domain/field-ops.js';
 import {guardMutation} from '../src/server/access.js';
+import {journalLifecycle} from '../src/server/domain/journal-lifecycle.js';
+import {canReverseManualJournal} from '../src/lib/journal-reversal.js';
 import {splitRecord} from '../src/server/query.js';
 import catalog from '../src/server/generated/schema.json' with {type:'json'};
 const gm={id:'gm',role:'admin'},actor={id:'cashier-login',role:'user'};
@@ -105,5 +107,14 @@ test('a complete customer giveaway consumes final original-cost residual and cre
 
 test('generic mutations cannot forge or detach appropriation metadata, return evidence or custody markers',()=>{
  const context={user:gm,employee:null};
- for(const [entity,payload,existing]of [['StockBalance',{degustation_appropriation_value:1},{}],['StockBalance',{notes:'erase custody'},{degustation_appropriation_id:'DGA-1'}],['Dispatch',{degustation_appropriation:{id:'forged'}},{}],['Dispatch',{degustation_appropriation_return:{total_value:9}},{}],['Dispatch',{status:'returned'},{degustation_appropriation:{id:'DGA-1'}}],['AuditLog',{document_type:'DegustationAppropriation'},{}]])assert.throws(()=>guardMutation(context,entity,'update',payload,existing),/checked Distribution/);
+ for(const [entity,payload,existing]of [['StockBalance',{degustation_appropriation_value:1},{}],['StockBalance',{notes:'erase custody'},{degustation_appropriation_id:'DGA-1'}],['Dispatch',{degustation_appropriation:{id:'forged'}},{}],['Dispatch',{degustation_appropriation_return:{total_value:9}},{}],['Dispatch',{status:'returned'},{degustation_appropriation:{id:'DGA-1'}}],['AuditLog',{document_type:'DegustationAppropriation'},{}],['AuditLog',{source_document_type:'DegustationRoundingCorrection'},{}],['AuditLog',{entity_type:'DegustationRoundingCacheRepair'},{}],['Dispatch',{rounding_cogs_change:0.11},{}],['AuditLog',{description:'erase proof'},{rounding_cache_value_before:3849.02}]])assert.throws(()=>guardMutation(context,entity,'update',payload,existing),/checked Distribution/);
+});
+
+test('automatic appropriation, restoration and rounding journals cannot be reversed independently of their custody workflow',async()=>{
+ const context={user:gm,role:'admin'};
+ for(const [type,module]of [['DegustationAppropriation','degustation'],['DegustationReturn','degustation'],['DegustationRoundingCorrection','accounting_corrections'],['DegustationRoundingCacheRepair','accounting_corrections']]){
+  const journal={id:'managed',status:'posted',entry_date:date,source_document_type:type,source_module:module,source_document_id:'DGA-proof'};
+  assert.equal(canReverseManualJournal(journal),false);
+  for(const action of ['previewReversal','reverse','deleteDraft','postDraft'])await assert.rejects(journalLifecycle({JournalEntry:{get:async()=>journal}},context,{action,journalId:journal.id,reversalDate:date,reason:'Independent reversal is unsafe'}),/original business workflow/);
+ }
 });

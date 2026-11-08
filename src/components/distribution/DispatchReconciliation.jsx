@@ -9,7 +9,7 @@ import React, { useState, useEffect } from "react";
 import { getDispatchReconciliation, returnDispatchStock } from "@/lib/dispatch";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { formatXAF, formatNumber } from "@/lib/formatters";
+import { formatXAF, formatNumber, formatAccountingXAF } from "@/lib/formatters";
 import { Undo2, AlertTriangle, RefreshCw } from "lucide-react";
 import { Input } from '@/components/ui/input';
 import DegustationHistory from './DegustationHistory';
@@ -74,8 +74,8 @@ export default function DispatchReconciliation({ dispatch, userName, onChanged, 
         <Stat label={ui("Cash collected")} value={formatXAF(data.cashSales)} />
         <Stat label={ui("Unpaid / credit balance")} value={formatXAF(data.creditSales)} />
       </div>
-      <Stat label={ui('Marketing expense · Dégustation')} value={formatXAF(data.degustationCost || 0)} />
-      {appropriation&&<p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">{ui('Expensed promotional stock still held')}: <strong>{formatNumber(reservedQuantity,3)}</strong>. {ui('These quantities are reserved for Dégustation and cannot be sold. Actual customer giveaways remain separately recorded.')}{appropriation.journal_id&&<Link className="ml-2 underline" to={'/accounting/journals/'+encodeURIComponent(appropriation.journal_id)}>{appropriation.journal_number}</Link>}</p>}
+      <Stat label={ui('Marketing expense · Dégustation')} value={formatAccountingXAF(data.degustationCost || 0)} />
+      {appropriation&&<p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">{ui('Expensed promotional stock still held')}: <strong>{formatNumber(reservedQuantity,3)}</strong>. {ui('These quantities are reserved for Dégustation and cannot be sold. Actual customer giveaways remain separately recorded.')}{appropriation.journal_id&&<Link className="ml-2 underline" to={'/accounting/journals/'+encodeURIComponent(appropriation.journal_id)}>{appropriation.journal_number}</Link>}{appropriation.rounding_journal_id&&<span className="ml-2">{ui('COGS adjustment')}: {formatAccountingXAF(appropriation.rounding_cogs_change)}. <Link className="underline" to={'/accounting/journals/'+encodeURIComponent(appropriation.rounding_journal_id)}>{ui('Rounding correction journal')}: {appropriation.rounding_journal_number}</Link></span>}</p>}
       {!appropriation&&reservedQuantity>0&&canReturn&&!dispatch.unsold_return_request_id&&(principalRole||role)==='admin'&&<details className="rounded-lg border bg-white px-3" onToggle={e=>{if(e.currentTarget.open)setExpenseOpened(true);}}><summary className="cursor-pointer py-3 text-sm font-semibold">{ui('Expense reserved Dégustation')}</summary>{expenseOpened&&<DegustationAppropriation key={dispatch.id} dispatch={dispatch} onPosted={async()=>{setRefreshKey(key=>key+1);try{await onChanged?.();}catch{setRefreshError('Expense recorded. Refresh the reconciliation to see the updated balances.');}}}/>}</details>}
       {refreshError&&<p role="status" className="text-sm text-amber-900">{ui(refreshError)}</p>}
       {data.hasVariance && (

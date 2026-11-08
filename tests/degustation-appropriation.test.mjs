@@ -37,6 +37,10 @@ async function setup(db){
  return{...f,s,dispatch,custody,inventoryId,cogsId,revenueId,receivableId,expense,marketing,body,preview:()=>previewDegustationAppropriation(s,context,body)};
 }
 const snapshot=async(s,names)=>Object.fromEntries(await Promise.all(names.map(async name=>[name,await s[name].list()])));
+async function apiRoute(){
+ const output=await build({entryPoints:['src/app/api/accounting/degustation-appropriation/route.js'],bundle:true,format:'esm',platform:'node',write:false,plugins:[{name:'appropriation-fixture',setup(builder){builder.onResolve({filter:/^@\/server\/(auth|db|entities)$/},args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:{auth:'export const checkOrigin=()=>{},authenticateRequest=async()=>globalThis.__dgaContext,apiError=e=>Response.json({error:e.message},{status:e.status||400});',db:'export const database=()=>({unsafe:async()=>[]}),transaction=fn=>globalThis.__dgaTx(fn);',entities:'export const serviceEntities=new Proxy({},{get:(_,key)=>globalThis.__dgaStores[key]});'}[args.path]}));}}]});
+ return(await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'))).POST;
+}
 test('legacy appropriation expenses exact carrying value while preserving physical custody, sales and original records',async()=>{
  const f=await setup(),before=await snapshot(f.s,['StockBalance','StockMovement','JournalEntry','JournalLine','SalesOrder','Invoice','Customer','CashCollection','TreasuryTransaction']),preview=await f.preview();
  assert.equal(preview.total_quantity,2);assert.equal(preview.total_value,400);assert.equal(preview.stock_quantity_change,0);assert.equal(preview.cash_change,0);assert.equal(preview.inventory_value_change,-400);assert.equal(preview.expense_account.parent_id,f.marketing.id);assert.deepEqual(preview.journal_lines,[{account_id:f.expense.id,debit:400,credit:0},{account_id:f.inventoryId,debit:0,credit:400}]);
@@ -111,9 +115,48 @@ test('review token binds quantities, cost evidence, accounts and reference; conf
  }
  const f=await setup(),preview=await f.preview();await assert.rejects(postDegustationAppropriation(f.s,context,{...f.body,token:preview.token,requestKey:crypto.randomUUID(),confirmed:false}),/Preview and confirm/);
 });
+test('blocked lot diagnostics expose exact identity and deltas only after original cost journals verify',async()=>{
+ const f=await setup(),balance=(await f.s.StockBalance.filter({warehouse_id:f.custody.id}))[0];
+ await f.s.StockBalance.update(balance.id,{total_value:401});
+ let error;try{await f.preview();}catch(caught){error=caught;}
+ assert.equal(error?.status,409);assert.match(error.message,/remaining lot quantities or carrying values/);
+ const diagnostic=error.degustation_appropriation_diagnostics;assert.equal(diagnostic.dispatch_id,f.dispatch.id);assert.equal(diagnostic.stock_warehouse_id,f.custody.id);assert.equal(diagnostic.source_journals_verified,true);assert.equal(diagnostic.source_journals.length,1);assert.equal(diagnostic.source_journals[0].inventory_cost,1000);
+ assert.deepEqual(diagnostic.mismatches.map(row=>({product_id:row.product_id,lot_number:row.lot_number,expiry_date:row.expiry_date,qc_status:row.qc_status,production_order_id:row.production_order_id,batch_number:row.batch_number,balance_ids:row.balance_ids,loaded_quantity:row.loaded_quantity,loaded_value:row.loaded_value,released_quantity:row.released_quantity,released_value:row.released_value,expected_quantity:row.expected_quantity,expected_value:row.expected_value,current_quantity:row.current_quantity,current_value:row.current_value,quantity_delta:row.quantity_delta,value_delta:row.value_delta})),[{product_id:'product-a',lot_number:'LOT',expiry_date:'',qc_status:'approved',production_order_id:'',batch_number:'',balance_ids:[balance.id],loaded_quantity:7,loaded_value:1400,released_quantity:5,released_value:1000,expected_quantity:2,expected_value:400,current_quantity:2,current_value:401,quantity_delta:0,value_delta:1}]);
+ assert.deepEqual(diagnostic.mismatches[0].current_unit_costs,[200]);assert.equal(diagnostic.mismatches[0].load_movement_ids.length,1);assert.equal(diagnostic.mismatches[0].issue_movement_ids.length,1);
+ // A provenance discrepancy produces two separate identities; it must never
+ // disappear through a product-only quantity total.
+ await f.s.StockBalance.update(balance.id,{total_value:400,production_order_id:'changed-origin',batch_number:'changed-batch'});
+ try{await f.preview();}catch(caught){error=caught;}
+ assert.equal(error.degustation_appropriation_diagnostics.mismatches.length,2);assert.ok(error.degustation_appropriation_diagnostics.mismatches.some(row=>row.production_order_id==='changed-origin'&&row.batch_number==='changed-batch'&&row.quantity_delta===2&&row.value_delta===400));assert.ok(error.degustation_appropriation_diagnostics.mismatches.some(row=>row.production_order_id===''&&row.quantity_delta===-2&&row.value_delta===-400));
+ const journal=(await f.s.JournalEntry.list()).find(row=>row.source_document_type==='Invoice');await f.s.JournalEntry.update(journal.id,{total_debit:3501});
+ await assert.rejects(f.preview(),caught=>{assert.match(caught.message,/original sale and stock journals/);assert.equal(caught.degustation_appropriation_diagnostics,undefined);return true;});
+});
+test('duplicate ledger-bearing source journals block appropriation even when their account caches agree with the ledger',async()=>{
+ const f=await setup(),original=(await f.s.JournalEntry.list()).find(row=>row.source_document_type==='Invoice'),duplicate=await f.s.JournalEntry.create({...original,id:undefined,journal_number:'JV-DUPLICATE'});
+ for(const line of await f.s.JournalLine.filter({journal_id:original.id})){
+  await f.s.JournalLine.create({...line,id:undefined,journal_id:duplicate.id});
+  const account=await f.s.Account.get(line.account_id),delta=account.normal_balance==='debit'?line.debit-line.credit:line.credit-line.debit;await f.s.Account.update(account.id,{balance:Number(account.balance)+delta});
+ }
+ const before=await snapshot(f.s,['Account','StockBalance','StockMovement','JournalEntry','JournalLine','Dispatch','AuditLog']);
+ await assert.rejects(f.preview(),error=>{assert.match(error.message,/original sale and stock journals/);assert.equal(error.degustation_appropriation_diagnostics,undefined);return true;});assert.deepEqual(await snapshot(f.s,Object.keys(before)),before);
+});
+
+test('API mismatch diagnostics remain admin-only and never permit a blocked appropriation post',async()=>{
+ const f=await setup(),route=await apiRoute(),preview=await f.preview(),body={action:'post',...f.body,token:preview.token,requestKey:crypto.randomUUID(),confirmed:true},balance=(await f.s.StockBalance.filter({warehouse_id:f.custody.id}))[0];await f.s.StockBalance.update(balance.id,{total_value:401});
+ const before=await snapshot(f.s,['Account','StockBalance','StockMovement','JournalEntry','JournalLine','Dispatch','AuditLog']);
+ globalThis.__dgaStores=f.s;globalThis.__dgaTx=fn=>fn();
+ try{
+  const call=body=>route(new Request('http://localhost/api/accounting/degustation-appropriation',{method:'POST',body:JSON.stringify(body)}));
+  globalThis.__dgaContext={user:{id:'cashier-login',role:'user'},role:'admin',employee:{role:'cashier',status:'active',[FEATURE_AUTHORITY]:{module:'accounting',role:'admin'}}};
+  let response=await call({action:'preview',...f.body});assert.equal(response.status,403);assert.equal((await response.json()).diagnostics,undefined);
+  globalThis.__dgaContext=context;
+  for(const input of [{action:'preview',...f.body},body]){response=await call(input);assert.equal(response.status,409);assert.equal(response.headers.get('Cache-Control'),'private, no-store');const result=await response.json();assert.equal(result.token,undefined);assert.equal(result.diagnostics.source_journals_verified,true);assert.equal(result.diagnostics.mismatches[0].value_delta,1);}
+  assert.deepEqual(await snapshot(f.s,Object.keys(before)),before);
+ }finally{delete globalThis.__dgaContext;delete globalThis.__dgaStores;delete globalThis.__dgaTx;}
+});
 test('the actual API transaction rolls back a late audit failure and identical retry commits one appropriation',async()=>{
  const db=new PGlite();try{
-  const f=await setup(db),output=await build({entryPoints:['src/app/api/accounting/degustation-appropriation/route.js'],bundle:true,format:'esm',platform:'node',write:false,plugins:[{name:'appropriation-fixture',setup(builder){builder.onResolve({filter:/^@\/server\/(auth|db|entities)$/},args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:{auth:'export const checkOrigin=()=>{},authenticateRequest=async()=>globalThis.__dgaContext,apiError=e=>Response.json({error:e.message},{status:e.status||400});',db:'export const database=()=>({unsafe:async()=>[]}),transaction=fn=>globalThis.__dgaTx(fn);',entities:'export const serviceEntities=new Proxy({},{get:(_,key)=>globalThis.__dgaStores[key]});'}[args.path]}));}}]}),route=(await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'))).POST;
+  const f=await setup(db),route=await apiRoute();
   globalThis.__dgaContext=context;globalThis.__dgaStores=f.s;globalThis.__dgaTx=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(error){await db.exec('ROLLBACK');throw error;}};
   const preview=await f.preview(),body={action:'post',...f.body,token:preview.token,requestKey:crypto.randomUUID(),confirmed:true},call=()=>route(new Request('http://localhost/api/accounting/degustation-appropriation',{method:'POST',body:JSON.stringify(body)}));
   const names=['Account','StockBalance','StockMovement','JournalEntry','JournalLine','Dispatch','AuditLog'],before=await snapshot(f.s,names),create=f.s.AuditLog.create;let failed=true;
