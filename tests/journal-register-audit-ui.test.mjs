@@ -48,3 +48,13 @@ test('CSV journal export treats descriptive formula text as text rather than exe
  globalThis.document={createElement:()=>({click(){}})};URL.createObjectURL=b=>{blob=b;return 'blob:fixture';};URL.revokeObjectURL=()=>{};
  try{assert.equal(await ui.exportJournalsCsv({}),1);const csv=await blob.text();assert.match(csv,/'=HYPERLINK/);assert.match(csv,/100.01/);}finally{globalThis.document=oldDocument;URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;r.cleanup();delete globalThis.__register;}
 });
+
+test('integrity findings link every repeated source journal without hiding posted amounts',async()=>{
+ const ui=await compiled(),r=runtime(),oldFetch=globalThis.fetch;globalThis.__register=r;
+ const draw=()=>{r.beforeRender();return ui.render();};
+ globalThis.fetch=async()=>Response.json({issue_count:1,counts:{duplicate_source_journal:1},issues:[{code:'duplicate_source_journal',reference:'sales / Invoice / invoice-a'}],duplicate_source_journals:[{source_module:'sales',source_document_type:'Invoice',source_document_id:'invoice-a',journal_count:2,journals:[{id:'first',journal_number:'JV-FIRST',date:'2026-11-01',status:'posted'},{id:'second',journal_number:'JV-SECOND',date:'2026-11-02',status:'reversed'}]}]});
+ try{
+  draw();await r.flush();draw();await r.buttons.find(button=>button.label==='Check accounting').onClick();
+  const html=draw();assert.match(html,/Several posted journals use the same source document/);assert.match(html,/Review repeated source postings/);assert.match(html,/href="\/accounting\/journals\/first"/);assert.match(html,/href="\/accounting\/journals\/second"/);assert.match(html,/All posted amounts remain included/);assert.match(html,/No records were changed/);
+ }finally{globalThis.fetch=oldFetch;r.cleanup();delete globalThis.__register;}
+});

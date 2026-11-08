@@ -24,12 +24,12 @@ const active=p=>p && p.is_active!==false && p.configuration_status!=='draft';
 const denied=()=>{throw Object.assign(Error('This action requires the assigned production or warehouse role.'),{status:403});};
 async function checkedAccount(stores,number,type='asset') {
   const ref=await getAccountByNumber({entities:stores},number),account=await stores.Account.get(ref.id);
-  if(!account || account.is_active===false || account.is_posting===false || account.account_type!==type)throw Error('Configure active posting account '+number+'.');
+  if(!account || account.is_active===false || account.is_posting===false || account.account_type!==type || account.normal_balance!=='debit')throw Error('Configure active posting account '+number+'.');
   return ref;
 }
 async function materialAccount(svc) {
   const ref=await getRuleAccount(svc,'raw_material_inventory'),account=await svc.entities.Account.get(ref.id);
-  if(!account || account.is_active===false || account.is_posting===false || account.account_type!=='asset')throw Error('Configure an active material-inventory posting account.');
+  if(!account || account.is_active===false || account.is_posting===false || account.account_type!=='asset' || account.normal_balance!=='debit')throw Error('Configure an active material-inventory posting account.');
   return ref;
 }
 function measuredFormula(line,source,measureUnit){
@@ -398,7 +398,7 @@ async function completePackaging(svc,user,body,order,materials,role,employee) {
     }
   }
   let lossAccount=null;
-  if(lossCost>0) {lossAccount=await s.Account.get(body.lossAccountId);if(!lossAccount || lossAccount.account_type!=='expense' || lossAccount.is_active===false || lossAccount.is_posting===false)throw Error('Choose an active process-loss expense account.');}
+  if(lossCost>0) {lossAccount=await s.Account.get(body.lossAccountId);if(!lossAccount || lossAccount.account_type!=='expense' || lossAccount.normal_balance!=='debit' || lossAccount.is_active===false || lossAccount.is_posting===false)throw Error('Choose an active process-loss expense account.');}
   const positive=report.outputs.filter(o=>o.quantity>0),finishedCost=round2(positive.reduce((sum,o)=>sum+o.total_cost,0));
   if(round2(finishedCost+lossCost)!==consumed)throw Error('Finished output and process loss must reconcile to consumed material value.');
   let journalId='';

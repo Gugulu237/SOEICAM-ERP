@@ -25,6 +25,23 @@ export async function accountingIntegrity(stores,context){
  }
  for(const r of rules.filter(r=>r.is_active!==false))if(!validPostingRuleAccount(byAccount.get(r.account_id),r.rule_key))issue("invalid_posting_rule",r.label||r.rule_key);
  const numbers=new Set();for(const j of journals){if(j.journal_number&&numbers.has(j.journal_number))issue('duplicate_journal_number',j.journal_number);numbers.add(j.journal_number);}
+ // Unique journal numbers do not prove unique business postings. Imports and
+ // earlier workflows can duplicate a complete, balanced source document while
+ // keeping every account cache in balance. Report those groups for review;
+ // never hide their real ledger effect or choose a journal to remove here.
+ const sources=new Map();
+ for(const j of journals.filter(j=>ledgerStatuses.includes(j.status))){
+  if(![j.source_module,j.source_document_type,j.source_document_id].every(value=>typeof value==='string'&&value.trim()))continue;
+  const key=JSON.stringify([j.source_module,j.source_document_type,j.source_document_id]),group=sources.get(key)||[];
+  group.push(j);sources.set(key,group);
+ }
+ const duplicate_source_journals=[];
+ for(const group of sources.values())if(group.length>1){
+  group.sort((a,b)=>String(a.entry_date||'').localeCompare(String(b.entry_date||''))||String(a.id).localeCompare(String(b.id)));
+  const source=group[0];
+  issue('duplicate_source_journal',source.source_module+' / '+source.source_document_type+' / '+source.source_document_id+' : '+group.slice(0,20).map(j=>j.journal_number||j.id).join(', '));
+  if(duplicate_source_journals.length<100)duplicate_source_journals.push({source_module:source.source_module,source_document_type:source.source_document_type,source_document_id:source.source_document_id,journal_count:group.length,journals:group.slice(0,100).map(j=>({id:j.id,journal_number:j.journal_number||'',date:j.entry_date||'',status:j.status,reversal_of:j.reversal_of||'',reversed_by_journal:j.reversed_by_journal||''})),truncated:group.length>100});
+ }
  for(const a of accounts){const net=(nets.get(a.id)||0)*(a.normal_balance==='credit'?-1:1);if(!Number.isFinite(Number(a.balance||0))||Math.abs(Number(a.balance||0)*100-net)>0.001)issue('account_cache_mismatch',a.account_number||a.id);}
  const mapped=new Set();for(const t of treasury){
   if(!byAccount.has(t.gl_account_id))issue('treasury_missing_account',t.name||t.id);
@@ -47,5 +64,5 @@ export async function accountingIntegrity(stores,context){
  for(const row of supplier_payable_mismatches.mismatches)issue('supplier_payment_account_mismatch',row.payment_number||row.payment_id);
  for(const row of supplier_payable_mismatches.blocked)issue('supplier_payment_evidence_unverified',row.payment_number||row.payment_id);
  const safe=!invalid&&Number.isSafeInteger(totalDebit)&&Number.isSafeInteger(totalCredit);
- return {checked_at:new Date().toISOString(),journal_count:journals.length,line_count:lines.length,issue_count:Object.values(counts).reduce((n,v)=>n+v,0),counts,issues,truncated:Object.values(counts).reduce((n,v)=>n+v,0)>issues.length,totals:safe?{debit:totalDebit/100,credit:totalCredit/100,difference:(totalDebit-totalCredit)/100}:null,supplier_payable_mismatches};
+ return {checked_at:new Date().toISOString(),journal_count:journals.length,line_count:lines.length,issue_count:Object.values(counts).reduce((n,v)=>n+v,0),counts,issues,truncated:Object.values(counts).reduce((n,v)=>n+v,0)>issues.length,totals:safe?{debit:totalDebit/100,credit:totalCredit/100,difference:(totalDebit-totalCredit)/100}:null,duplicate_source_journals,supplier_payable_mismatches};
 }

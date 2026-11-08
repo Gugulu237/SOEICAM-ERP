@@ -11,11 +11,11 @@ async function postingContext(stores, fallback) {
       return products.get(id);
     },
     account: async (product, field) => {
-      const id = product[field];
-      if (!id) return reference(await fallback(field, product));
+      const selected = product[field] ? null : await fallback(field, product);
+      const id = product[field] || selected?.id || selected?.account_id;
       if (!accounts.has(id)) accounts.set(id, await stores.Account.get(id));
       const account = accounts.get(id), definition = ITEM_ACCOUNT_FIELDS.find(value => value.field === field);
-      if (!availableItemAccount(account, definition.types)) throw new Error('Review the ' + definition.label + ' for ' + product.name);
+      if (!availableItemAccount(account, definition.types) || account.normal_balance !== (field==='revenue_account_id'?'credit':'debit') || account.currency&&account.currency!=='XAF') throw new Error('Review the ' + definition.label + ' for ' + product.name);
       return reference(account);
     },
   };

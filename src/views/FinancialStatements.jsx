@@ -49,7 +49,7 @@ export default function FinancialStatements() {
   const [journalsById, setJournalsById] = useState({});
   const [lines, setLines] = useState([]);
   const [error, setError] = useState('');
-  const {isAdmin}=useCurrentUser();
+  const {isAdmin,principalRole}=useCurrentUser();
   const [depreciation,setDepreciation]=useState(null),[version,setVersion]=useState(0);
   useEffect(()=>{const refresh=()=>setVersion(v=>v+1);window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[]);
   const [fromDate, setFromDate] = useState(() => businessDate().slice(0,4) + '-01-01');
@@ -113,7 +113,7 @@ export default function FinancialStatements() {
           <TabsTrigger value="cashflow">{ui("Cash Flow")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pnl" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} journalsById={journalsById} lines={lines} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} canCorrectSetup={principalRole==='admin'} />}
         </TabsContent>
         <TabsContent value="balance" className="mt-4">
           {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} />}

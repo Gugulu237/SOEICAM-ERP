@@ -1,6 +1,7 @@
 import {journalCents,journalDate,checkedJournalLines,journalPayload,ledgerStatuses} from './journal-validation.js';
 import { effectiveRole, hasRoleAccess } from './roles.js';
 import { businessDate } from '../../lib/business-date.js';
+import { validPostingRuleAccount } from '../../lib/posting-rule-types.js';
 export { effectiveRole };
 
 // Server-side engine for field operations: stock custody, field sales and cash handovers.
@@ -48,13 +49,17 @@ export async function getRuleAccount(base44, ruleKey) {
   if (!rules.length) {
     throw new Error(`Posting rule "${ruleKey}" is not configured — set it in Accounting → Posting Rules`);
   }
+  if (rules.length !== 1) throw new Error(`Posting rule "${ruleKey}" is duplicated - reconcile its mappings before posting`);
   const rule = rules[0];
-  return { id: rule.account_id, account_number: rule.account_number, account_name: rule.account_name };
+  const account = await base44.entities.Account.get(rule.account_id);
+  if (!validPostingRuleAccount(account,ruleKey)) throw new Error(`Review the account mapped to posting rule "${ruleKey}" before posting`);
+  return { id: account.id, account_number: account.account_number || '', account_name: account.name || '' };
 }
 
 export async function getAccountByNumber(base44, accountNumber) {
   const found = await base44.entities.Account.filter({ account_number: accountNumber });
   if (!found.length) throw new Error(`Account ${accountNumber} is not in the chart of accounts`);
+  if (found.length !== 1) throw new Error(`Account ${accountNumber} is duplicated in the chart of accounts`);
   return { id: found[0].id, account_number: found[0].account_number, account_name: found[0].name };
 }
 
@@ -120,7 +125,7 @@ export async function stockOnHand(base44, productId, warehouseId) {
   return round3(balances.reduce((s, b) => s + (b.quantity || 0), 0));
 }
 
-export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = false }) {
+export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true }) {
   let remaining = round3(quantity);
   if (remaining <= 0) throw new Error("Quantity must be greater than zero");
 
@@ -140,7 +145,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     .sort((a, b) => String(a.expiry_date || "9999-12-31").localeCompare(String(b.expiry_date || "9999-12-31")));
 
   if (usable.some(b=>!Number.isFinite(Number(b.quantity)) || !Number.isFinite(Number(b.unit_cost || 0)) || Number(b.unit_cost || 0)<0)) throw new Error('Reconcile invalid lot quantities or costs before issuing stock');
-  if (preserveRecordedValue && usable.some(b=>!Number.isFinite(Number(b.total_value)) || Number(b.total_value)<0)) throw new Error('Reconcile invalid recorded lot values before returning stock.');
+  if (preserveRecordedValue && usable.some(b=>b.total_value==null || !['number','string'].includes(typeof b.total_value) || String(b.total_value).trim()==='' || !Number.isFinite(Number(b.total_value)) || Number(b.total_value)<0)) throw new Error('Reconcile invalid recorded lot values before issuing stock.');
 
   const available = round3(usable.reduce((s, b) => s + Number(b.quantity || 0), 0));
   if (available < remaining) {
@@ -152,19 +157,21 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
     if (remaining <= 0) break;
     const take = Math.min(round3(b.quantity), remaining);
     const newQty = round3(b.quantity - take);
-    // Whole-load returns carry the exact recorded value, including rounding
-    // left by weighted-average unit costs. No value is lost between locations.
+    // Sales, material issues and transfers all release recorded carrying value.
+    // Rounded or stale unit costs must never revalue the remaining stock or
+    // inflate COGS. A final issue consumes the lot's complete residual value.
     const layerValue = preserveRecordedValue ? round2(newQty===0?Number(b.total_value):Number(b.total_value)*take/Number(b.quantity)) : undefined;
     await base44.entities.StockBalance.update(b.id, {
       quantity: newQty,
       total_value: preserveRecordedValue ? round2(Number(b.total_value)-layerValue) : round2(newQty * (b.unit_cost || 0)),
+      ...(preserveRecordedValue?{unit_cost:newQty>0?round2((Number(b.total_value)-layerValue)/newQty):0}:{}),
     });
     layers.push({
       ...(multiple?{warehouseId:b.warehouse_id}:{}),
       lotNumber: b.lot_number || "",
       expiryDate: b.expiry_date || "",
       quantity: take,
-      unitCost: b.unit_cost || 0,
+      unitCost: preserveRecordedValue ? layerValue/take : b.unit_cost || 0,
       ...(preserveRecordedValue?{totalValue:layerValue}:{}),
       qcStatus: b.qc_status || "approved",
       ...(b.production_order_id ? { productionOrderId: b.production_order_id } : {}),
@@ -212,7 +219,7 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   })).find(row => (row.expiry_date || '') === (expiryDate || '') && (row.production_order_id || '') === (productionOrderId || '') && (row.batch_number || '') === (batchNumber || ''));
 
   if (existing) {
-    const preserving=totalValue!==undefined,oldQty=preserving?Number(existing.quantity):(existing.quantity||0),oldValue=preserving?Number(existing.total_value):(existing.total_value||0);
+    const preserving=totalValue!==undefined,oldQty=Number(preserving?existing.quantity:existing.quantity||0),oldValue=Number(preserving?existing.total_value:existing.total_value||0);
     if(preserving&&(!Number.isFinite(oldQty)||oldQty<0||!Number.isFinite(oldValue)||oldValue<0||oldQty===0&&oldValue!==0))throw Error('Reconcile the receiving lot quantity and value before accepting returned stock.');
     const newQty = round3(oldQty + qty);
     const newValue = round2(oldValue + value);
@@ -262,7 +269,7 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   });
 }
 
-export async function stockTransfer(base44, { productId, productName, fromWarehouseId, toWarehouseId, toWarehouseName, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue = false }) {
+export async function stockTransfer(base44, { productId, productName, fromWarehouseId, toWarehouseId, toWarehouseName, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, preserveRecordedValue = true }) {
   if (!fromWarehouseId || !toWarehouseId) throw new Error("Both source and destination locations are required");
   if (fromWarehouseId === toWarehouseId) throw new Error("Source and destination locations must differ");
 

@@ -136,7 +136,7 @@ export async function productionAction(client, user, body) {
       const inventory=await purchaseItemPostings(stores,issuedMaterials.map(m=>({product_id:m.material_id,total:Number(m.total_cost || 0)})),{total:totalCost,fallback:()=>getRuleAccount(svc,'raw_material_inventory')});
       for (const id of new Set([wip.id,...inventory.map(l=>l.account_id)])) {
         const account=await stores.Account.get(id);
-        if (!account?.is_active || account.is_posting===false || account.account_type && account.account_type!=='asset') throw Error('Configure active inventory and work-in-progress posting accounts before issuing materials');
+        if (!account?.is_active || account.is_posting===false || account.account_type!=='asset' || account.normal_balance!=='debit' || account.currency&&account.currency!=='XAF') throw Error('Configure active inventory and work-in-progress posting accounts before issuing materials');
       }
       if (inventory.some(l=>l.account_id===wip.id)) throw Error('Material inventory and work-in-progress must use separate posting accounts');
       ({journal}=await postJournal(svc,{entryDate:businessDate(),description:`Materials issued ${order.order_number}`,sourceModule:'manufacturing',sourceDocumentType:'ProductionMaterialIssue',sourceDocumentId:'production-issue:'+order.id,userId:user.id,lines:[{account_id:wip.id,account_number:wip.account_number,account_name:wip.account_name,debit:totalCost,credit:0},...inventory.map(l=>({...l,debit:0,credit:l.debit,description:'Materials issued to production'}))]}));
@@ -230,13 +230,14 @@ export async function productionAction(client, user, body) {
   if (!materials.length || materials.some(m => !(Number(m.issued_quantity) > 0) || round3(m.issued_quantity)!==round3(m.standard_quantity) || !Number.isFinite(Number(m.consumed_quantity ?? m.issued_quantity)) || Number(m.consumed_quantity ?? m.issued_quantity)<0 || Number(m.consumed_quantity ?? m.issued_quantity)>Number(m.issued_quantity) || !Number.isFinite(Number(m.unit_cost)) || Number(m.unit_cost) < 0)) throw Error('Every component needs its full recorded issued quantity and valid consumption costs before completion');
   const actualCost = round2(materials.reduce((sum, m) => sum + Number(m.consumed_quantity ?? m.issued_quantity) * Number(m.unit_cost), 0)), cpu = actualCost / qty;
   if (!Number.isFinite(actualCost) || actualCost < 0) throw Error('Recorded material costs are invalid');
+  const fg = await getAccountByNumber(svc, '1320'), wip = await getAccountByNumber(svc, '1315');
+  if(fg.id===wip.id)throw Error('Finished goods and work-in-progress must use separate posting accounts');
+  for (const row of [fg, wip]) { const a = await stores.Account.get(row.id); if (a.is_active !== true || a.is_posting === false || a.account_type!=='asset' || a.normal_balance!=='debit' || a.currency&&a.currency!=='XAF') throw Error('Configure active finished-goods and work-in-progress posting accounts'); }
   const existingJournal = await readRecords(stores.JournalEntry, { source_document_id: order.id, status: 'posted' });
   if (existingJournal.length) throw Error('This production already has a ledger entry; reconcile it before receiving stock again');
   await stockReceive(svc, { productId: order.product_id, productName: order.product_name, warehouseId: destination.id, warehouseName: destination.name, quantity: round3(qty), unitCost: cpu, lotNumber: batch, expiryDate: expiry, movementType: 'production_output', documentType: 'ProductionOrder', documentId: order.id, movementDate: order.production_date, reason: `Batch ${batch} produced`, qcStatus: 'quarantine', productionOrderId: order.id });
   let journal = null;
   if (actualCost > 0) {
-    const fg = await getAccountByNumber(svc, '1320'), wip = await getAccountByNumber(svc, '1315');
-    for (const row of [fg, wip]) { const a = await stores.Account.get(row.id); if (a.is_active !== true || a.is_posting === false) throw Error('Configure active finished-goods and work-in-progress posting accounts'); }
     ({ journal } = await postJournal(svc, { entryDate: order.production_date, description: `Production output ${order.order_number} - batch ${batch}`, sourceModule: 'manufacturing', sourceDocumentType: 'ProductionOrder', sourceDocumentId: order.id, userId: user.id, lines: [{ account_id: fg.id, account_number: fg.account_number, account_name: fg.account_name, debit: actualCost, credit: 0 }, { account_id: wip.id, account_number: wip.account_number, account_name: wip.account_name, debit: 0, credit: actualCost }] }));
   }
   const saved = await stores.ProductionOrder.update(order.id, { batch_number: batch, expiry_date: expiry, status: 'awaiting_qc', actual_output: round3(qty), actual_cost_per_unit: cpu, total_material_cost: actualCost, output_journal_id: journal?.id || '', output_warehouse_id:destination.id, output_warehouse_name:destination.name });

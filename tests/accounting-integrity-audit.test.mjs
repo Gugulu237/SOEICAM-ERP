@@ -83,6 +83,48 @@ test('read-only integrity scan finds ledger/header/cash/mapping and allocation d
  await assert.rejects(accountingIntegrity(s,{...context,role:'cashier',user:{id:'cashier',role:'user'},employee:{role:'cashier',status:'active'}}),{status:403});
 });
 
+test('integrity exposes balanced duplicate source postings with different journal numbers without changing their ledger effect',async()=>{
+ const f=await fixture(),s=f.entities,first=await postJournal({entities:s},body());
+ const second=await postJournal({entities:s},{...body(),sourceDocumentId:'another-source'});
+ // Model historical/imported duplication that predates checked source retries.
+ await s.JournalEntry.update(second.journal.id,{source_document_id:body().sourceDocumentId});
+ const before=structuredClone(f.rows),report=await accountingIntegrity(s,context);
+ assert.equal(report.counts.duplicate_source_journal,1);assert.equal(report.counts.duplicate_journal_number,undefined);
+ assert.equal(report.duplicate_source_journals.length,1);
+ assert.deepEqual(report.duplicate_source_journals[0],{source_module:'test',source_document_type:'Expense',source_document_id:'same-source',journal_count:2,journals:[first.journal,second.journal].sort((a,b)=>a.id.localeCompare(b.id)).map(j=>({id:j.id,journal_number:j.journal_number,date,status:'posted',reversal_of:'',reversed_by_journal:''})),truncated:false});
+ assert.match(report.issues.find(issue=>issue.code==='duplicate_source_journal').reference,/JV-000001.*JV-000002|JV-000002.*JV-000001/);
+ assert.equal((await s.Account.get('expense')).balance,200);assert.deepEqual(f.rows,before);
+});
+
+test('source integrity keeps modules, document types, staged issues and separate settlement documents distinct',async()=>{
+ const f=await fixture(),s=f.entities;
+ for(const source of [
+  {sourceModule:'sales',sourceDocumentType:'Invoice',sourceDocumentId:'shared'},
+  {sourceModule:'procurement',sourceDocumentType:'Invoice',sourceDocumentId:'shared'},
+  {sourceModule:'sales',sourceDocumentType:'Payment',sourceDocumentId:'shared'},
+  {sourceModule:'payments',sourceDocumentType:'Payment',sourceDocumentId:'payment-one'},
+  {sourceModule:'payments',sourceDocumentType:'Payment',sourceDocumentId:'payment-two'},
+  {sourceModule:'manufacturing',sourceDocumentType:'ProductionMaterialIssue',sourceDocumentId:'yogurt:order:issue:base'},
+  {sourceModule:'manufacturing',sourceDocumentType:'ProductionMaterialIssue',sourceDocumentId:'yogurt:order:issue:packaging'},
+  {sourceModule:'assets',sourceDocumentType:'DepreciationEntry',sourceDocumentId:'asset:2026-10'},
+  {sourceModule:'assets',sourceDocumentType:'DepreciationEntry',sourceDocumentId:'asset:2026-11'},
+ ])await postJournal({entities:s},{...body(),...source});
+ const before=structuredClone(f.rows),report=await accountingIntegrity(s,context);
+ assert.equal(report.counts.duplicate_source_journal,undefined);assert.deepEqual(report.duplicate_source_journals,[]);assert.deepEqual(f.rows,before);
+});
+
+test('source integrity retains reversed originals and ignores drafts, cancelled headers and missing source identities',async()=>{
+ const f=await fixture(),s=f.entities,first=await postJournal({entities:s},body());
+ await s.JournalEntry.update(first.journal.id,{status:'reversed',reversed_by_journal:'mirror'});
+ // Correct dated reversal uses its own documentary type and original journal ID.
+ await postJournal({entities:s},{...body(),sourceDocumentType:'reversal',sourceDocumentId:first.journal.id,lines:body().lines.map(l=>({account_id:l.account_id,debit:l.credit||0,credit:l.debit||0}))});
+ for(const status of ['draft','cancelled'])await s.JournalEntry.create({journal_number:'IGNORED-'+status,entry_date:date,status,source_module:'test',source_document_type:'Expense',source_document_id:'same-source'});
+ for(const field of ['source_module','source_document_type','source_document_id'])for(let n=0;n<2;n++)await s.JournalEntry.create({journal_number:'LEGACY-'+field+n,entry_date:date,status:'posted',source_module:'legacy',source_document_type:'LegacyEntry',source_document_id:'legacy-source',[field]:''});
+ const clean=await accountingIntegrity(s,context);assert.equal(clean.counts.duplicate_source_journal,undefined);assert.deepEqual(clean.duplicate_source_journals,[]);
+ const duplicate=await postJournal({entities:s},{...body(),sourceDocumentId:'historical-copy'});await s.JournalEntry.update(duplicate.journal.id,{source_document_id:'same-source'});
+ const report=await accountingIntegrity(s,context);assert.equal(report.counts.duplicate_source_journal,1);assert.deepEqual(new Set(report.duplicate_source_journals[0].journals.map(j=>j.status)),new Set(['posted','reversed']));
+});
+
 async function periodRoute(){
  const {build}=await import('esbuild');
  const mocks={

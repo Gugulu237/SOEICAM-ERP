@@ -7,6 +7,7 @@ import {postJournal} from '../src/server/domain/field-ops.js';
 import {openingBalancesWorkspace,saveAccountOpening} from '../src/server/domain/opening-balances.js';
 import {journalLifecycle} from '../src/server/domain/journal-lifecycle.js';
 import {warehouseAdjustmentAction} from '../src/server/domain/warehouse-adjustment.js';
+import {inventoryAuditAction} from '../src/server/domain/inventory-audit.js';
 import {guardMutation} from '../src/server/access.js';
 import {setupStockCorrectionWorkspace,previewSetupStockCorrection,postSetupStockCorrection} from '../src/server/domain/setup-stock-correction.js';
 
@@ -14,6 +15,7 @@ const context={user:{id:'gm',role:'admin',email:'gm@example.test'},role:'admin',
 async function setup(db){
   const f=await fixture(db),s=f.entities,create=s.AuditLog.create;
   s.AuditLog.create=async value=>{
+    value={...value,audit_source:value.audit_source==='client_reported'?'client_reported':'server_verified'};
     if(!value.id)return create(value);
     if(db)await db.query('INSERT INTO fixture_entity VALUES($1,$2,$3)',['AuditLog',value.id,JSON.stringify(value)]);
     else {if(f.rows.AuditLog.some(r=>r.id===value.id))throw Error('Duplicate audit');f.rows.AuditLog.push(structuredClone(value));}
@@ -42,10 +44,80 @@ async function bodyWithToken(f,patch={}){const body={...f.body,...patch},preview
 test('workspace shows source evidence and never assumes a count is opening stock',async()=>{
   const f=await setup(),s=f.s;await f.source(50,{sourceModule:'manual'});
   const before=structuredClone(f.rows),workspace=await setupStockCorrectionWorkspace(s,context);
-  assert.deepEqual(f.rows,before);assert.equal(workspace.candidates.length,1);assert.equal(workspace.candidates[0].journal_id,f.first.id);assert.equal(workspace.candidates[0].profit_effect,300);assert.equal(workspace.candidates[0].eligible,true);assert.equal(workspace.candidates[0].source_reference,'COUNT-SOURCE');assert.equal(workspace.equity_accounts[0].id,f.equity.id);
+  const verified=workspace.candidates.find(row=>row.journal_id===f.first.id),unsupported=workspace.candidates.find(row=>row.source_module==='manual');
+  assert.deepEqual(f.rows,before);assert.equal(workspace.candidates.length,2);assert.equal(verified.profit_effect,300);assert.equal(verified.eligible,true);assert.equal(verified.source_reference,'COUNT-SOURCE');assert.equal(workspace.equity_accounts[0].id,f.equity.id);
+  assert.equal(unsupported.supported_source,false);assert.equal(unsupported.eligible,false);assert.match(unsupported.blocked_reasons.join(' '),/original workflow/);
+  await assert.rejects(previewSetupStockCorrection(s,context,{...f.body,journalIds:[unsupported.journal_id]}),/original workflow/);
   await assert.rejects(previewSetupStockCorrection(s,context,{...f.body,confirmSetup:false}),/Confirm/);
   await assert.rejects(previewSetupStockCorrection(s,context,{...f.body,lines:[{account_id:f.gain.id,debit:1}]}),/complete setup journals/);
   await assert.rejects(previewSetupStockCorrection(s,context,{...f.body,journalIds:[]}),/Select between/);
+});
+
+async function auditedCount(f){
+  const warehouse=await f.s.Warehouse.create({name:'Starting materials',warehouse_type:'raw_material',is_active:true});
+  await f.s.Product.update(f.product.id,{inventory_type:'raw_material',configuration_status:'configured',unit_of_measure:'kg',current_cost:10});
+  const lot=await f.s.StockBalance.create({product_id:f.product.id,warehouse_id:warehouse.id,product_name:'Setup yogurt',lot_number:'AUDITED-START',quantity:0,total_value:0,unit_cost:10,qc_status:'approved'});
+  const client={auth:{staff:async()=>({id:'staff',role:'admin',status:'active',allowed_modules:['accounting','inventory_adjustments']}),assertModule(){}},asServiceRole:{entities:f.s}};
+  const owner={id:'count-owner',role:'admin'},reviewer={id:'independent-reviewer',role:'admin'};
+  const call=async(actor,action,audit,extra={})=>(await inventoryAuditAction(client,actor,{action:'inventoryAudit'+action,requestKey:crypto.randomUUID(),...(audit?{auditId:audit.id,revision:audit.revision}:{}),...extra})).audit;
+  let audit=await call(owner,'Start',null,{title:'Reviewed opening material count',balanceIds:[lot.id]});
+  audit=await call(owner,'Save',audit,{rows:[{balance_id:lot.id,counted_quantity:2,reason:'Physically verified starting materials'}],evidenceReference:'SIGNED-OPENING-SHEET',lossAccountId:'expense',gainAccountId:f.gain.id});
+  audit=await call(owner,'Submit',audit);audit=await call(reviewer,'Approve',audit,{note:'Independent signed opening review'});audit=await call(owner,'Post',audit);
+  return {audit,lot,journal:await f.s.JournalEntry.get(audit.journal_id)};
+}
+
+test('verified InventoryAudit setup counts reclassify their exact P&L amount without another stock movement',async()=>{
+  const f=await setup(),{audit,journal}=await auditedCount(f),before=await protectedState(f.s),original=await f.s.JournalLine.filter({journal_id:journal.id});
+  const row=(await setupStockCorrectionWorkspace(f.s,context)).candidates.find(c=>c.journal_id===journal.id);
+  assert.equal(row.supported_source,true);assert.equal(row.source_document_type,'InventoryAudit');assert.equal(row.eligible,true,row.blocked_reasons.join(' '));assert.equal(row.source_reference,'SIGNED-OPENING-SHEET');assert.equal(row.profit_effect,20);
+  const {body,preview}=await bodyWithToken(f,{journalIds:[journal.id]});assert.equal(preview.total_profit_adjustment,-20);
+  const result=await postSetupStockCorrection(f.s,context,body);assert.equal(result.total_profit_adjustment,-20);assert.equal(result.journals[0].date,date);
+  assert.deepEqual(await protectedState(f.s),before);assert.deepEqual(await f.s.JournalLine.filter({journal_id:journal.id}),original);
+  assert.equal((await f.s.Account.get(f.gain.id)).balance,300);assert.equal((await f.s.Account.get(f.equity.id)).balance,20);
+  const postedEvent=(await f.s.AuditLog.filter({entity_id:audit.id,action:'inventoryAuditPost'}))[0];assert.equal(postedEvent.inventory_audit_state.status,'posted');
+  const snapshot=structuredClone(f.rows);assert.equal((await postSetupStockCorrection(f.s,context,body)).reused,true);assert.deepEqual(f.rows,snapshot);
+});
+
+test('unverified imported and manual inventory P&L chains remain visible but cannot be relabeled setup',async()=>{
+  const f=await setup(),legacy=await f.source(40,{sourceModule:'legacy_import'}),manual=await f.source(25,{sourceModule:'manual'});
+  await f.s.JournalEntry.update(legacy.id,{source_document_type:'StockAdjustment'});
+  const revenue=await f.s.Account.create({name:'Sale revenue',account_type:'revenue',normal_balance:'credit',balance:0,is_active:true,is_posting:true}),cogs=await f.s.Account.create({name:'Sale cost',account_type:'cogs',normal_balance:'debit',balance:0,is_active:true,is_posting:true});
+  const sale=(await postJournal({entities:f.s},{entryDate:date,description:'Ordinary supplied invoice',sourceModule:'sales',sourceDocumentType:'Invoice',sourceDocumentId:'normal-invoice',userId:'gm',lines:[{account_id:'till-gl',debit:200,credit:0},{account_id:revenue.id,debit:0,credit:200},{account_id:cogs.id,debit:80,credit:0},{account_id:f.inventory.id,debit:0,credit:80}]})).journal;
+  const snapshot=structuredClone(f.rows),workspace=await setupStockCorrectionWorkspace(f.s,context);
+  for(const id of [legacy.id,manual.id,sale.id]){
+    const candidate=workspace.candidates.find(row=>row.journal_id===id);assert.ok(candidate);assert.equal(candidate.eligible,false);assert.equal(candidate.supported_source,false);assert.match(candidate.blocked_reasons.join(' '),/original workflow/);
+    await assert.rejects(bodyWithToken(f,{journalIds:[id]}),/original workflow/);
+  }
+  assert.equal(workspace.candidates.find(row=>row.journal_id===sale.id).profit_effect,120,'blocked sources still display their complete P&L effect');
+  assert.deepEqual(f.rows,snapshot);
+});
+
+test('InventoryAudit correction rejects missing or changed approvals, lot evidence and posting plans',async()=>{
+  const scenarios=[
+    async(f,a)=>f.s.AuditLog.deleteMany({entity_id:a.id,action:'inventoryAuditApprove'}),
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditPost'}))[0];await f.s.AuditLog.update(event.id,{inventory_audit_state:{...event.inventory_audit_state,makers:[a.approved_by]}});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditApprove'}))[0];await f.s.AuditLog.update(event.id,{user_id:'unrelated-reviewer'});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditApprove'}))[0];await f.s.AuditLog.update(event.id,{audit_source:'client_reported'});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditPost'}))[0];await f.s.AuditLog.update(event.id,{audit_source:'client_reported'});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditPost'}))[0];await f.s.AuditLog.update(event.id,{audit_source:''});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditPost'}))[0];await f.s.AuditLog.update(event.id,{inventory_audit_state:{...event.inventory_audit_state,rows:event.inventory_audit_state.rows.map(row=>({...row,counted_quantity:3}))}});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditPost'}))[0];await f.s.AuditLog.update(event.id,{inventory_audit_state:{...event.inventory_audit_state,approved_plan:[]}});},
+    async(f,a)=>{const event=(await f.s.AuditLog.filter({entity_id:a.id,action:'inventoryAuditPost'}))[0];const copy=structuredClone(event);delete copy.id;await f.s.AuditLog.create(copy);},
+    async(f,a)=>{const movement=(await f.s.StockMovement.filter({document_id:a.id}))[0];await f.s.StockMovement.update(movement.id,{journal_id:'another-journal'});},
+    async(f,a)=>{const movement=(await f.s.StockMovement.filter({document_id:a.id}))[0];await f.s.StockMovement.update(movement.id,{inventory_audit_balance_id:'another-lot'});},
+    async(f,a)=>{const movement=(await f.s.StockMovement.filter({document_id:a.id}))[0];await f.s.StockMovement.update(movement.id,{quantity:3});},
+    async(f,a)=>{const movement=(await f.s.StockMovement.filter({document_id:a.id}))[0];await f.s.StockMovement.update(movement.id,{lot_number:'unrelated-lot'});},
+  ];
+  for(const change of scenarios){
+    const f=await setup(),{audit,journal}=await auditedCount(f);await change(f,audit);const before=structuredClone(f.rows),candidate=(await setupStockCorrectionWorkspace(f.s,context)).candidates.find(row=>row.journal_id===journal.id);
+    assert.equal(candidate.eligible,false);assert.ok(candidate.blocked_reasons.length);await assert.rejects(bodyWithToken(f,{journalIds:[journal.id]}));assert.deepEqual(f.rows,before);
+  }
+});
+
+test('the original InventoryAudit approval is included in stale-preview protection',async()=>{
+  const f=await setup(),{audit,journal}=await auditedCount(f),{body}=await bodyWithToken(f,{journalIds:[journal.id]});
+  const event=(await f.s.AuditLog.filter({entity_id:audit.id,action:'inventoryAuditApprove'}))[0];await f.s.AuditLog.update(event.id,{description:'Additional audit evidence was attached'});
+  const before=structuredClone(f.rows);await assert.rejects(postSetupStockCorrection(f.s,context,body),{status:409});assert.deepEqual(f.rows,before);
 });
 
 test('reviewed opening surplus moves its profit effect into equity without changing inventory, debt or cash',async()=>{

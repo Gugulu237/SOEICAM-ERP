@@ -69,7 +69,7 @@ test('approval rechecks current usable stock and leaves all records unchanged wh
 test('approval requires an unambiguous source store and saves the checked selection for warehouse issue',async()=>{
   const f=await setup(),s=f.entities;await pending(f);
   const other=await s.Warehouse.create({name:'Second ingredients store',warehouse_type:'raw_material',is_active:true});
-  await s.StockBalance.create({product_id:f.milk.id,warehouse_id:other.id,quantity:2,unit_cost:10,qc_status:'approved'});
+  await s.StockBalance.create({product_id:f.milk.id,warehouse_id:other.id,quantity:2,unit_cost:10,total_value:20,qc_status:'approved'});
   await s.ProductionOrder.update(f.order.id,{material_warehouses:{}});
   const blocked=await action(f,{action:'approveProductionOrder'});assert.equal(blocked.blocked,true);assert.equal(blocked.shortages[0].warehouse_id,'');
   const approved=await action(f,{action:'approveProductionOrder',sourceWarehouses:{[f.milk.id]:other.id}});
@@ -139,6 +139,15 @@ test('lot issuance reads beyond the first 200 rows and uses the same stock set a
   assert.equal((await action(f,{action:'checkProductionMaterials'})).shortages.length,0);
   assert.equal((await action(f,{action:'issueProductionMaterials'})).order.status,'materials_issued');
   assert.ok((await s.StockMovement.list()).some(m=>m.lot_number==='LONG-204'));
+});
+
+test('production output rejects expense-classified or credit-normal inventory before creating stock',async()=>{
+ for(const change of [{account_type:'cogs',normal_balance:'debit'},{account_type:'asset',normal_balance:'credit'}]){
+  const f=await setup(),s=f.entities;await action(f,{action:'issueProductionMaterials'});await s.Employee.update('cashier',{role:'production_manager'});await finishFermentation(f);
+  await s.Account.update(f.finished.id,change);const before=structuredClone(f.rows);
+  await assert.rejects(action(f,{action:'completeProduction',quantity:20,warehouseId:f.cold.id}),/finished-goods and work-in-progress posting accounts/);
+  assert.deepEqual(f.rows,before,'invalid output mapping cannot manufacture a COGS debit or stock');
+ }
 });
 
 test('ambiguous ingredient stores require a selected source; changing the recipe never rewrites an approved order’s saved requirements',async()=>{

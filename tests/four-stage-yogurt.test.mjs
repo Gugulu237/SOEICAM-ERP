@@ -36,7 +36,7 @@ test('four phase production consumes ingredients in order and records actual uni
  assert.equal(order.actual_output,522);assert.equal(order.status,'awaiting_qc');assert.equal(await quantity(f,f.cups),originalPacks-522);
  assert.equal(Number((await s.Account.get(f.wip.id)).balance),0);
  assert.equal(order.total_material_cost,Math.round((order.yogurt_finished_cost+order.yogurt_loss_cost)*100)/100);
- for(const entry of await s.JournalEntry.filter({})){const lines=await s.JournalLine.filter({journal_entry_id:entry.id});assert.equal(Math.round(lines.reduce((n,row)=>n+Number(row.debit)-Number(row.credit),0)*100),0);}
+ for(const entry of await s.JournalEntry.filter({})){const lines=await s.JournalLine.filter({journal_id:entry.id});assert.ok(lines.length>=2,'every production journal has actual debit and credit lines');assert.equal(Math.round(lines.reduce((n,row)=>n+Number(row.debit)-Number(row.credit),0)*100),0);}
  const before=await s.StockMovement.filter({document_id:f.order.id});assert.equal((await act(f,'completeYogurtPackaging',body)).reused,true);assert.deepEqual(await s.StockMovement.filter({document_id:f.order.id}),before);
 });
 test('unsweetened-only batches skip flavouring after common additives and still reconcile actual packaging',async()=>{
@@ -103,4 +103,20 @@ test('the HTTP transaction rolls additive costs, packaging, finished stock and p
   assert.equal((await submit()).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
   f.entities.AuditLog.create=create;assert.equal((await submit()).status,200);
  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+});
+
+test('credit-normal manufacturing assets or process-loss expenses cannot post or leave partial stock movements',async()=>{
+ for(const invalid of ['wip','inventory','finished','loss']){
+  const db=new PGlite();try{
+   const f=await fourStageFixture({db,flavors:['Nature'],bucketsPerProduct:1});
+   if(invalid==='finished'||invalid==='loss')await readyToPack(f);
+   else {await asRole(f,'admin');await act(f,'approveProductionOrder');await asRole(f,'warehouse_manager');}
+   await f.entities.Account.update(invalid==='loss'?'expense':f[invalid].id,{normal_balance:'credit'});
+   const route=await functionRoute(),body=invalid==='finished'||invalid==='loss'?{action:'completeYogurtPackaging',orderId:f.order.id,outputs:f.plan.outputs,warehouseId:f.cold.id,lossReason:'Synthetic filling residue',lossAccountId:'expense'}:{action:'issueYogurtStage',orderId:f.order.id,stage:'fermentation'};
+   globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(error){await db.exec('ROLLBACK');throw error;}};
+   const before=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows;
+   const response=await route(request(body),{params:Promise.resolve({name:'fieldOps'})});
+   assert.equal(response.status,400,invalid);assert.match((await response.json()).error,/account/);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before,invalid+' must roll back the full issue or completion');
+  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+ }
 });

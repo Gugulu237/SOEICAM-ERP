@@ -2,10 +2,10 @@ export function postingRuleType(key){
  if(key==='supplier_prepayment')return {types:['asset'],normal:'debit'};
  if(/accum.*depreciation/.test(key))return {types:['asset'],normal:'credit'};
  if(/payable|liability/.test(key))return {types:['liability'],normal:'credit'};
- if(/receivable|inventory|work_in_progress|wip|cash|bank/.test(key))return {types:['asset'],normal:'debit'};
  if(/revenue|sales_income/.test(key))return {types:['revenue','other_income'],normal:'credit'};
- if(/cogs|cost_of_goods/.test(key))return {types:['cogs','expense'],normal:'debit'};
+ if(/cogs|cost_of_goods/.test(key))return {types:['cogs'],normal:'debit'};
  if(/expense|depreciation/.test(key))return {types:['expense','other_expense'],normal:'debit'};
+ if(/receivable|inventory|work_in_progress|wip|cash|bank/.test(key))return {types:['asset'],normal:'debit'};
  return null;
 }
 export function validPostingRuleAccount(account,key){

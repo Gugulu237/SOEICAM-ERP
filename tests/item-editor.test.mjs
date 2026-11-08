@@ -7,10 +7,10 @@ import { validateProductComponents } from '../src/server/domain/assembly-compone
 import { saleItemPostings, purchaseItemPostings } from '../src/lib/item-posting.js';
 
 const accounts = [
-  { id: 'cogs', account_number: '5101', name: 'Product costs', account_type: 'cogs', balance: 999 },
-  { id: 'income', account_number: '4101', name: 'Yogurt sales', account_type: 'revenue', balance: 999 },
-  { id: 'asset', account_number: '1321', name: 'Yogurt stock', account_type: 'asset', balance: 999 },
-  { id: 'other-income', account_type: 'other_income' }, { id: 'inactive', account_type: 'asset', is_active: false },
+  { id: 'cogs', account_number: '5101', name: 'Product costs', account_type: 'cogs', normal_balance:'debit', balance: 999 },
+  { id: 'income', account_number: '4101', name: 'Yogurt sales', account_type: 'revenue', normal_balance:'credit', balance: 999 },
+  { id: 'asset', account_number: '1321', name: 'Yogurt stock', account_type: 'asset', normal_balance:'debit', balance: 999 },
+  { id: 'other-income', account_type: 'other_income', normal_balance:'credit' }, { id: 'inactive', account_type: 'asset', is_active: false },
   { id: 'heading', account_type: 'cogs', is_posting: false },
 ];
 const fields = { cogs_account_id: 'cogs', revenue_account_id: 'income', inventory_account_id: 'asset' };
@@ -149,12 +149,12 @@ test('sales split income, COGS and inventory by item account and keep tax out of
 test('legacy items keep configured defaults; supplier bills debit the selected inventory assets', async () => {
   const { stores, products } = fixture();
   products.push({ id: 'legacy', name: 'Legacy' });
-  const fallback = async () => ({ account_id: 'default', account_number: '1320', account_name: 'Legacy default' });
+  const fallback = async field => ({ account_id: fields[field], account_name: 'Configured default' });
   const sale = await saleItemPostings(stores, [{ product_id: 'legacy', total: 100, line_cost: 25 }], { netTotal: 100, costTotal: 25, fallback });
-  assert.ok(sale.every(line => line.account_id === 'default'));
+  assert.deepEqual(new Set(sale.map(line=>line.account_id)),new Set(['income','cogs','asset']));
   const lines = [{ product_id: 'milk', total: 100 }, { product_id: 'legacy', total: 50 }];
   const plan = await purchaseItemPostings(stores, lines, { total: 150, fallback });
-  assert.equal(plan.find(line => line.account_id === 'asset').debit, 100); assert.equal(plan.find(line => line.account_id === 'default').debit, 50);
+  assert.equal(plan.find(line => line.account_id === 'asset').debit, 150);
   await assert.rejects(purchaseItemPostings(stores, lines, { total: 999, fallback }), /Purchase total/);
 });
 

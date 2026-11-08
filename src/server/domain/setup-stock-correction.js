@@ -4,6 +4,7 @@ import {readRecords} from './commercial-workspace.js';
 import {postJournal} from './field-ops.js';
 import {checkedJournalLines,journalCents,journalDate,journalPayload,ledgerStatuses} from './journal-validation.js';
 import {businessDate} from '../../lib/business-date.js';
+import {countVariance} from '../../lib/inventory-audit.js';
 
 const policy='reviewed-setup-stock-equity-v1';
 const profitTypes=new Set(['revenue','other_income','expense','other_expense','cogs']);
@@ -14,14 +15,16 @@ const hash=value=>createHash('sha256').update(JSON.stringify(canonical(value))).
 const ordered=rows=>[...rows].sort((a,b)=>String(a.id).localeCompare(String(b.id)));
 const accountView=a=>({id:a.id,account_number:a.account_number||'',name:a.name||''});
 const active=a=>a&&a.is_active!==false&&a.is_posting!==false&&(!a.currency||a.currency==='XAF');
-const eligibleSource=j=>j.source_module==='inventory_adjustment'&&j.source_document_type==='WarehouseAdjustment';
+const warehouseSource=j=>j.source_module==='inventory_adjustment'&&j.source_document_type==='WarehouseAdjustment';
+const auditSource=j=>j.source_module==='inventory_audit'&&j.source_document_type==='InventoryAudit';
+const eligibleSource=j=>warehouseSource(j)||auditSource(j);
 const add=(a,b)=>{const result=a+b;if(!Number.isSafeInteger(result))throw fail('Ledger totals exceed the supported precision.');return result;};
 
 async function state(s){
   const [accounts,journals,lines,treasury,periods,products,rules,audits,movements]=await Promise.all([
     readRecords(s.Account),readRecords(s.JournalEntry),readRecords(s.JournalLine),readRecords(s.TreasuryAccount),readRecords(s.AccountingPeriod),
-    readRecords(s.Product),readRecords(s.PostingRule),readRecords(s.AuditLog,{module:'inventory_adjustment',action:'warehouse_quantity_adjusted'}),
-    readRecords(s.StockMovement,{document_type:'WarehouseAdjustment'}),
+    readRecords(s.Product),readRecords(s.PostingRule),readRecords(s.AuditLog,{$or:[{module:'inventory_adjustment',action:'warehouse_quantity_adjusted'},{module:'inventory_audit',entity_type:'InventoryAudit'}]}),
+    readRecords(s.StockMovement,{document_type:{$in:['WarehouseAdjustment','InventoryAudit']}}),
   ]);
   const byAccount=new Map(accounts.map(a=>[a.id,a])),byJournal=new Map(journals.map(j=>[j.id,j]));
   const treasuryIds=new Set(treasury.map(t=>t.gl_account_id));
@@ -32,20 +35,74 @@ const isCash=(t,a)=>a?.is_treasury||t.treasuryIds.has(a?.id)||a?.account_number=
 const validEquity=(t,a)=>active(a)&&a.account_type==='equity'&&a.normal_balance==='credit'&&!a.is_control_account&&!isCash(t,a);
 const lineView=(t,l)=>({account_id:l.account_id,account_number:t.byAccount.get(l.account_id)?.account_number||l.account_number||'',account_name:t.byAccount.get(l.account_id)?.name||l.account_name||'',account_type:t.byAccount.get(l.account_id)?.account_type||'',debit:Number(l.debit||0),credit:Number(l.credit||0)});
 
+function discoverable(t,j){
+  if(eligibleSource(j))return true;
+  const lines=t.lines.filter(l=>l.journal_id===j.id&&(Number(l.debit)||Number(l.credit)));
+  return lines.some(l=>t.inventoryIds.has(l.account_id)&&t.byAccount.get(l.account_id)?.account_type==='asset'&&t.byAccount.get(l.account_id)?.normal_balance==='debit')&&lines.some(l=>profitTypes.has(t.byAccount.get(l.account_id)?.account_type));
+}
+function countEvidence(t,j){
+  if(!auditSource(j)){
+    const audit=t.audits.find(a=>a.id===j.source_document_id&&a.module==='inventory_adjustment'&&a.action==='warehouse_quantity_adjusted');
+    return {audit,record:audit?.warehouse_adjustment_result,balanceKey:'warehouse_adjustment_balance_id',date:audit?.warehouse_adjustment_result?.date,reference:audit?.warehouse_adjustment_result?.reference||'',approval:null};
+  }
+  const history=t.audits.filter(a=>a.module==='inventory_audit'&&a.entity_type==='InventoryAudit'&&a.entity_id===j.source_document_id);
+  const posted=history.filter(a=>a.action==='inventoryAuditPost'&&a.inventory_audit_state?.status==='posted'&&a.inventory_audit_state?.journal_id===j.id);
+  const audit=posted.length===1?posted[0]:null,record=audit?.inventory_audit_state;
+  const approvals=history.filter(a=>a.action==='inventoryAuditApprove'&&a.inventory_audit_state?.revision===record?.revision-1);
+  const approval=approvals.length===1?approvals[0]:null;
+  const latest=history.reduce((n,a)=>Math.max(n,Number(a.inventory_audit_state?.revision)||0),0);
+  return {audit,record,approval,latest,history,balanceKey:'inventory_audit_balance_id',date:record?.posting_date,reference:record?.evidence_reference||''};
+}
+function financialShape(lines){
+  const amounts=new Map();
+  for(const l of checkedJournalLines(lines).lines)for(const side of ['debit','credit']){
+    const value=journalCents(l[side]);if(value){const key=l.account_id+':'+side;amounts.set(key,add(amounts.get(key)||0,value));}
+  }
+  return [...amounts].sort(([a],[b])=>a.localeCompare(b));
+}
+function verifyAuditEvidence(t,j,evidence,sourceLines){
+  const {audit,record,approval,history,latest}=evidence,approved=approval?.inventory_audit_state;
+  const invalid='The posted inventory audit and its independent approval do not match this journal.';
+  if(!audit||!record||!approval||!approved||audit.audit_source!=='server_verified'||approval.audit_source!=='server_verified'||record.id!==j.source_document_id||record.status!=='posted'||record.managed_location!==false
+    ||!Number.isSafeInteger(record.revision)||record.revision!==latest||record.revision<2||history.filter(a=>a.inventory_audit_state?.revision===record.revision).length!==1
+    ||history.filter(a=>a.inventory_audit_state?.revision===approved.revision).length!==1||approved.status!=='approved'
+    ||!record.posted_by||audit.user_id!==record.posted_by||j.posted_by!==record.posted_by||!record.approved_by||approval.user_id!==record.approved_by
+    ||!Array.isArray(record.makers)||!record.makers.length||record.makers.includes(record.approved_by)
+    ||!record.evidence_reference||record.evidence_reference.length<5||!record.approved_at||!record.posted_at)throw fail(invalid);
+  for(const key of ['id','warehouse_id','warehouse_name','managed_location','rows','makers','approved_by','approved_at','approved_plan','evidence_reference','loss_account_id','gain_account_id'])if(JSON.stringify(canonical(approved[key]))!==JSON.stringify(canonical(record[key])))throw fail(invalid);
+  if(!Array.isArray(record.approved_plan)||!Array.isArray(record.rows)||!record.rows.length)throw fail('An inventory-audit correction requires its original approved posting plan.');
+  const expected=[],ids=new Set();
+  for(const row of record.rows){
+    if(!row.balance_id||ids.has(row.balance_id)||!row.product_id||row.warehouse_id!==record.warehouse_id||!row.inventory_account_id||!t.inventoryIds.has(row.inventory_account_id))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
+    ids.add(row.balance_id);
+    const variance=countVariance(row,row.counted_quantity);
+    if(['difference','value_difference','value_after'].some(key=>Number(row[key])!==variance[key]))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
+    if(!variance.difference)continue;
+    const value=Math.abs(variance.value_difference);if(!value)continue;
+    const inventory=t.byAccount.get(row.inventory_account_id),profit=t.byAccount.get(variance.value_difference<0?record.loss_account_id:record.gain_account_id);
+    if(!inventory||inventory.account_type!=='asset'||inventory.normal_balance!=='debit'||!active(profit)||isCash(t,profit)||profit.normal_balance!==(variance.value_difference<0?'debit':'credit')||!(variance.value_difference<0?['expense','other_expense','cogs']:['other_income']).includes(profit.account_type))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
+    expected.push({account_id:inventory.id,debit:variance.value_difference>0?value:0,credit:variance.value_difference<0?value:0},{account_id:profit.id,debit:variance.value_difference<0?value:0,credit:variance.value_difference>0?value:0});
+  }
+  if(hash(financialShape(expected))!==hash(financialShape(record.approved_plan))||hash(financialShape(record.approved_plan))!==hash(financialShape(sourceLines)))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
+}
+
 function candidate(t,j){
-  const reasons=[],sourceLines=t.lines.filter(l=>l.journal_id===j.id),audit=t.audits.find(a=>a.id===j.source_document_id);
-  const moves=t.movements.filter(m=>m.document_id===j.source_document_id&&m.journal_id===j.id);
+  const reasons=[],sourceLines=t.lines.filter(l=>l.journal_id===j.id),evidence=countEvidence(t,j),{audit,record}=evidence;
+  const moves=t.movements.filter(m=>m.document_type===j.source_document_type&&m.document_id===j.source_document_id);
   const prior=t.journals.filter(r=>r.source_document_type==='SetupStockCorrection'&&r.source_document_id===j.id);
   const corrected=!!j.setup_stock_correction_id||!!j.setup_stock_correction_journal_id||prior.length>0;
-  if(!eligibleSource(j)||!j.source_document_id)reasons.push('Only verified warehouse count journals can use this correction.');
+  if(!eligibleSource(j)||!j.source_document_id)reasons.push('This inventory and profit-and-loss journal requires review through its original workflow. Setup correction supports only verified warehouse adjustments and inventory audits.');
   if(j.status!=='posted'||j.reversal_of||j.reversed_by_journal||j.reversed_at||t.journals.some(r=>r.reversal_of===j.id&&ledgerStatuses.includes(r.status)))reasons.push('A reversed or unposted source cannot be reclassified.');
   if(corrected)reasons.push('This source already has a setup correction.');
   try{journalDate(j.entry_date);if(j.entry_date>businessDate())throw Error();}catch{reasons.push('The source journal needs a valid date no later than today.');}
   const periods=t.periods.filter(p=>p.start_date<=j.entry_date&&p.end_date>=j.entry_date);
   if(!periods.length||periods.some(p=>p.status!=='open'))reasons.push('The original journal date must be in an open accounting period.');
-  if(!audit||audit.warehouse_adjustment_result?.journal_id!==j.id||audit.warehouse_adjustment_result?.date!==j.entry_date)reasons.push('The original stock-count audit does not match this journal.');
-  if(!moves.length||moves.some(m=>m.movement_type!=='stock_count_variance'||m.status!=='approved'||m.movement_date!==j.entry_date))reasons.push('The source needs matching approved stock-count movements.');
+  if(!audit||record?.journal_id!==j.id||evidence.date!==j.entry_date)reasons.push('The original stock-count audit does not match this journal.');
+  if(!moves.length||moves.some(m=>m.journal_id!==j.id||m.movement_type!=='stock_count_variance'||m.status!=='approved'||m.movement_date!==j.entry_date))reasons.push('The source needs matching approved stock-count movements.');
   const inventory=[],profit=[];let profitCents=0;
+  // Unsupported sources can also contain receivables or other asset lines.
+  // Show their complete P&L effect even though those sources cannot be corrected.
+  try{for(const l of sourceLines)if(profitTypes.has(t.byAccount.get(l.account_id)?.account_type))profitCents=add(profitCents,journalCents(l.credit)-journalCents(l.debit));}catch{profitCents=0;}
   try{
     if(sourceLines.some(l=>l.status&&l.status!=='posted'||l.party_type||l.party_id||l.opening_party_allocations?.length))throw fail('Party allocations or non-posted source lines require separate reconciliation.');
     const checked=checkedJournalLines(sourceLines);
@@ -58,14 +115,15 @@ function candidate(t,j){
       if(a.account_type==='asset'&&a.normal_balance==='debit'&&t.inventoryIds.has(a.id))inventory.push(l);
       else if(profitTypes.has(a.account_type)&&active(a)&&!a.is_control_account){
         if(!['debit','credit'].includes(a.normal_balance))throw fail('A source account has an invalid normal balance.');
-        profit.push(l);profitCents=add(profitCents,journalCents(l.credit)-journalCents(l.debit));
+        profit.push(l);
       }else throw fail('Only mapped inventory assets and active profit-and-loss accounts are eligible.');
     }
     if(!inventory.length||!profit.length)throw fail('The source must contain inventory and profit-and-loss entries.');
+    if(auditSource(j))verifyAuditEvidence(t,j,evidence,sourceLines);
     const stockNet=inventory.reduce((sum,l)=>add(sum,journalCents(l.debit)-journalCents(l.credit)),0);
     // A physical count can reduce quantity while increasing carrying value.
     // Movement direction follows quantity; signed value comes from its audited row.
-    const auditRows=audit?.warehouse_adjustment_result?.rows;
+    const auditRows=record?.rows;
     if(!Array.isArray(auditRows))throw fail('The count audit, inventory movements and journal values do not reconcile.');
     const usedMoves=new Set();let movementNet=0;
     for(const row of auditRows){
@@ -73,23 +131,24 @@ function candidate(t,j){
       if(row.difference==null||row.value_difference==null||!Number.isFinite(difference)||!Number.isFinite(valueDifference))throw fail('The count audit, inventory movements and journal values do not reconcile.');
       const valueCents=journalCents(Math.abs(valueDifference))*(valueDifference<0?-1:1);
       if(!difference&&!valueCents)continue;
-      const matches=moves.filter(m=>row.balance_id&&m.warehouse_adjustment_balance_id===row.balance_id&&m.product_id===row.product_id);
+      const matches=moves.filter(m=>row.balance_id&&m[evidence.balanceKey]===row.balance_id&&m.product_id===row.product_id);
       if(matches.length!==1||usedMoves.has(matches[0].id))throw fail('The count audit, inventory movements and journal values do not reconcile.');
       const m=matches[0],incoming=(difference||valueDifference)>0;
       if(!row.warehouse_id||m[incoming?'destination_warehouse_id':'source_warehouse_id']!==row.warehouse_id||m[incoming?'source_warehouse_id':'destination_warehouse_id'])throw fail('The count movement direction needs reconciliation.');
       if(Number(m.quantity)!==Math.abs(difference)||journalCents(m.total_value)!==Math.abs(valueCents))throw fail('The count audit, inventory movements and journal values do not reconcile.');
+      if(auditSource(j)&&['lot_number','batch_number','expiry_date','production_order_id'].some(key=>(row[key]||'')!==(m[key]||'')))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
       usedMoves.add(m.id);movementNet=add(movementNet,valueCents);
     }
-    const value=Number(audit?.warehouse_adjustment_result?.value_difference);
+    const value=auditSource(j)?auditRows.reduce((n,row)=>n+Number(row.value_difference),0):Number(record?.value_difference);
     if(usedMoves.size!==moves.length||!Number.isFinite(value)||Math.abs(value*100-Math.round(value*100))>0.0001||stockNet!==Math.round(value*100)||stockNet!==movementNet)throw fail('The count audit, inventory movements and journal values do not reconcile.');
   }catch(error){reasons.push(error.message);}
-  return {journal_id:j.id,journal_number:j.journal_number||j.id,date:j.entry_date||'',description:j.description||'',source_reference:audit?.warehouse_adjustment_result?.reference||j.source_document_id||'',profit_effect:profitCents/100,eligible:reasons.length===0,blocked_reasons:[...new Set(reasons)],corrected,lines:sourceLines.map(l=>lineView(t,l)),source:j,sourceLines,audit,moves,profit,periods};
+  return {journal_id:j.id,journal_number:j.journal_number||j.id,date:j.entry_date||'',description:j.description||'',source_module:j.source_module||'',source_document_type:j.source_document_type||'',supported_source:eligibleSource(j),source_reference:evidence.reference||j.source_document_id||'',profit_effect:profitCents/100,eligible:reasons.length===0,blocked_reasons:[...new Set(reasons)],corrected,lines:sourceLines.map(l=>lineView(t,l)),source:j,sourceLines,audit:auditSource(j)?{posted:audit,approval:evidence.approval}:audit,moves,profit,periods};
 }
 function publicCandidate(c){const {source,sourceLines,audit,moves,profit,periods,...result}=c;return result;}
 
 export async function setupStockCorrectionWorkspace(s,context){
   requireOpeningAccess(context);const t=await state(s);
-  return {date:businessDate(),candidates:t.journals.filter(eligibleSource).sort((a,b)=>String(b.entry_date).localeCompare(String(a.entry_date))||String(a.id).localeCompare(String(b.id))).map(j=>publicCandidate(candidate(t,j))),equity_accounts:t.accounts.filter(a=>validEquity(t,a)).map(accountView)};
+  return {date:businessDate(),candidates:t.journals.filter(j=>discoverable(t,j)).sort((a,b)=>String(b.entry_date).localeCompare(String(a.entry_date))||String(a.id).localeCompare(String(b.id))).map(j=>publicCandidate(candidate(t,j))),equity_accounts:t.accounts.filter(a=>validEquity(t,a)).map(accountView)};
 }
 function selection(body){
   if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['action','journalIds','offsetAccountId','accountingStartDate','reference','confirmSetup','token','requestKey','confirmed'].includes(k)))throw fail('Choose complete setup journals using the correction form.');

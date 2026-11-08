@@ -11,6 +11,7 @@ import StatementSection from "@/components/accounting/StatementSection";
 import {useRecurringExpenseReview} from './useRecurringExpenseReview';
 import {recurringExpenseRequest} from '@/lib/recurring-expense-client';
 import {Link} from '@/lib/router';
+import IncomeStatementSources from './IncomeStatementSources';
 
 function summarizeIncome(accounts, activity) {
   const sum = (rows) => round2(rows.reduce((s, r) => s + r.amount, 0));
@@ -40,7 +41,7 @@ function incomeDocument({summary,fromDate,toDate,depreciation,recurring}) {
   ]};
 }
 
-export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation, refreshStatement }) {
+export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation, refreshStatement, journalsById, lines, canCorrectSetup = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const recurring=useRecurringExpenseReview(fromDate,toDate);
   const summary=summarizeIncome(accounts,activity);
@@ -75,6 +76,7 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate, 
       <div className={`flex justify-between py-3 font-bold px-3 rounded ${net >= 0 ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
         <span>{ui("Net ")}{net >= 0 ? ui("Profit") : ui("Loss")}</span><span>{formatXAF(net)}</span>
       </div>
+      {journalsById && Array.isArray(lines) && <IncomeStatementSources accounts={accounts} activity={activity} journalsById={journalsById} lines={lines} fromDate={fromDate} toDate={toDate} canCorrectSetup={canCorrectSetup} />}
     </div>
   );
 }
