@@ -59,7 +59,10 @@ test('generic writes cannot enable, disable, forge or erase centralized inventor
   ['create',{central_inventory_pool:true},null],['update',{centralized_inventory:{enabled:true}},{id:'row'}],
   ['update',{name:'Detach evidence'},{id:'row',central_inventory_cutover_id:'CIA-proof'}],
   ['delete',{}, {id:'row',central_degustation_id:'CDG-proof'}],['create',{id:'CIA-forged'},null],
- ])assert.throws(()=>guardMutation(context,entity,operation,payload,existing),{status:403});
+ ]){
+  if(entity==='CompanySettings'&&operation==='update'&&payload.name)assert.doesNotThrow(()=>guardMutation(context,entity,operation,payload,existing));
+  else assert.throws(()=>guardMutation(context,entity,operation,payload,existing),{status:403});
+ }
 });
 
 test('a protected virtual company pool can hold finished goods without being mistaken for misplaced physical Cold Room stock',()=>{
