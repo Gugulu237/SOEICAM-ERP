@@ -13,3 +13,5 @@ A cancelled sale whose goods have not returned reverses the sale and moves its o
 Financial statements continue to reconcile to the posted ledger, including dated returns, reversals and sold-lot rounding corrections. Filtering reports to invoice sources alone would hide genuine corrections and break the ledger reconciliation.
 
 Historical valuation errors require separate evidence. A sale can consume the correct quantity yet carry the wrong cost because an opening lot was entered incorrectly. Reconstruct the original receipt and subsequent issues before adjusting it; a later batch's manufacturing cost is not automatically the opening batch's cost. For a fully sold opening lot, correct the original opening clearing/equity and COGS together rather than debiting an inventory asset for nonexistent remaining goods. Preserve the original records and append the supported correction with an audit trail.
+
+Reviewed opening-cost corrections retain protected source pointers and restricted financial evidence. A later sale cancellation or return must verify that evidence and use the corrected carrying basis. Generic record edits cannot forge or remove a correction marker.

@@ -8248,5 +8248,8 @@
   "Review and confirm the operating expense for goods that have not returned.": "Vérifiez et confirmez la charge d’exploitation liée aux marchandises qui n’ont pas été retournées.",
   "Choose a supported non-sale inventory expense posting rule.": "Choisissez une règle de comptabilisation prise en charge pour les charges de stock non liées à une vente.",
   "Recorded field-sale costs do not match actual delivered stock. Reconcile the stock movements, lines and original journal before posting or retrying.": "Les coûts enregistrés de la vente terrain ne correspondent pas au stock réellement livré. Rapprochez les mouvements de stock, les lignes de vente et l’écriture d’origine avant de comptabiliser ou de réessayer.",
-  "The operating expense for unreturned goods needs accounting review.": "La charge d’exploitation liée aux marchandises non retournées doit être vérifiée par la comptabilité."
+  "The operating expense for unreturned goods needs accounting review.": "La charge d’exploitation liée aux marchandises non retournées doit être vérifiée par la comptabilité.",
+  "Reconcile the confirmed opening-stock cost correction before reversing this sale.": "Rapprochez la correction confirmée du coût du stock d’ouverture avant d’annuler cette vente.",
+  "This sale includes a confirmed opening-stock cost correction. Returns and cancellations use the corrected carrying cost.": "Cette vente comporte une correction confirmée du coût du stock d’ouverture. Les retours et les annulations utilisent le coût comptable corrigé.",
+  "Corrected carrying cost": "Coût comptable corrigé"
 }

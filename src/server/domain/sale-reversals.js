@@ -7,6 +7,7 @@ import {postedInvoiceStatuses} from '../../lib/company-sales.js';
 import {resolveAccountConsolidations} from '../../lib/account-consolidation.js';
 import {canReadManagementAccounting} from '../../lib/management-access.js';
 import {resolveNonSaleInventoryExpense,nonSaleInventoryExpenseAccount} from './non-sale-inventory-expense.js';
+import {openingSaleCostBasis,OPENING_COST_MARKER} from './opening-cost-basis.js';
 
 export const SALE_REVERSAL_ACTIONS=['previewSaleReversal','reverseSale'];
 const retainedCostPolicy='unreturned-goods-operating-expense-v1';
@@ -52,6 +53,7 @@ async function plan(ctx){
   if(original.debit!==round2(journal.total_debit)||original.credit!==round2(journal.total_credit))throw Error('The original sale journal totals need reconciliation.');
   const accounts=await readRecords(s.Account),aliases=resolveAccountConsolidations(accounts),postingAccounts=new Map(original.lines.map(line=>[line.account_id,aliases.byId.get(aliases.canonicalId(line.account_id))]));
   for(const account of postingAccounts.values())if(!account||account.is_active===false||account.is_posting===false||!['debit','credit'].includes(account.normal_balance)||account.currency&&account.currency!=='XAF')throw Error('Review the active posting accounts and currency before reversal.');
+  for(const account of [...postingAccounts.values()])postingAccounts.set(account.id,account);
   const [lines,customer,pending,warehouses,moves]=await Promise.all([
     readRecords(s[field?'FieldSaleLine':'InvoiceLine'],{[field?'field_sale_id':'invoice_id']:record.id}),s.Customer.get(source.customer_id),
     readRecords(s.Payment,{party_id:source.customer_id,payment_type:'customer_payment',status:{$in:['awaiting_cashier','pending_approval','approved']}}),
@@ -71,22 +73,25 @@ async function plan(ctx){
       if(sum(collections,'amount_collected')!==cash||sum(collections,'received_amount')!==cash||collections.some(c=>Number(c.outstanding_amount)>0||c.status!=='received'))throw Error('Complete the cashier handover of this sale’s collected cash before reversal. The money will remain in company funds as customer credit.');
     }else if(round2(invoice.balance)!==0||round2(invoice.amount_paid)!==total)throw Error('Deposit and approve this cash invoice’s receipt before reversal. The money will remain in company funds as customer credit.');
   }
-  const cost=round2(lines.reduce((n,l)=>n+Number(field?l.line_cost:l.cogs_total||0),0));
+  let cost=round2(lines.reduce((n,l)=>n+Number(field?l.line_cost:l.cogs_total||0),0));
   const costLines=original.lines.filter(l=>['Cost of goods sold','Inventory released'].includes(l.description));
   if(sum(costLines,'debit')!==cost||sum(costLines,'credit')!==cost)throw Error('The original item cost postings need reconciliation before reversal.');
-  const cogsLines=costLines.filter(line=>line.description==='Cost of goods sold'),inventoryLines=costLines.filter(line=>line.description==='Inventory released');
+  let cogsLines=costLines.filter(line=>line.description==='Cost of goods sold');const inventoryLines=costLines.filter(line=>line.description==='Inventory released');
   if(cogsLines.some(line=>Number(line.credit)!==0||postingAccounts.get(line.account_id)?.account_type!=='cogs'||postingAccounts.get(line.account_id)?.normal_balance!=='debit')||inventoryLines.some(line=>Number(line.debit)!==0||postingAccounts.get(line.account_id)?.account_type!=='asset'||postingAccounts.get(line.account_id)?.normal_balance!=='debit')||sum(cogsLines,'debit')!==cost||sum(inventoryLines,'credit')!==cost)throw Error('The original item cost postings need reconciliation before reversal.');
+  let issues=moves.filter(m=>m.source_warehouse_id&&!m.destination_warehouse_id&&Number(m.quantity)>0),openingBasis=null;
+  if(!field)openingBasis=await openingSaleCostBasis(s,{invoice,order:ctx.order,journal,invoiceLines:lines,issues,originalLines:original.lines,accounts});
+  else if([source,invoice,journal,...issues].some(row=>row&&Object.hasOwn(row,OPENING_COST_MARKER)))throw Error('Reconcile the confirmed opening-stock cost correction before reversing this sale.');
+  if(openingBasis){cost=openingBasis.cost;issues=openingBasis.issues;cogsLines=openingBasis.effectiveCogsLines;}
   let retainedExpense=null,retainedExpenseError='';
   if(cost)try{retainedExpense=await resolveNonSaleInventoryExpense(s,'unreturned_goods_expense');}catch(error){retainedExpenseError=error.message;}
   const retainedCostReview={policy:retainedCostPolicy,amount:cost,available:!retainedExpenseError,expense_account:retainedExpense?.account?{id:retainedExpense.account.id,account_number:retainedExpense.account.account_number,name:retainedExpense.account.name}:cost?{id:'',account_number:retainedExpense?.account_number||'',name:retainedExpense?.name||''}:null,will_create_account:retainedExpense?.needs_account===true,error:retainedExpenseError};
-  const issues=moves.filter(m=>m.source_warehouse_id&&!m.destination_warehouse_id&&Number(m.quantity)>0);
   const quantities=rows=>{const out={};for(const r of rows)out[r.product_id]=round3((out[r.product_id]||0)+Number(r.quantity));return Object.entries(out).sort(([a],[b])=>a.localeCompare(b));};
   const canRestore=hash(quantities(issues))===hash(quantities(lines))&&sum(issues,'total_value')===cost;
   const period=(await readRecords(s.AccountingPeriod)).find(p=>p.start_date<=today()&&today()<=p.end_date&&['closed','locked'].includes(p.status));
   if(period)throw Error('The current accounting period is closed or locked. Reopen an authorized period before recording the correction.');
   const affectedIds=new Set([...postingAccounts.keys(),...[...postingAccounts.values()].map(account=>account.id)]);
-  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy};
-  return {journal,original,postingAccounts,lines,customer,total,due,paid,cash,clearing,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
+  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(openingBasis?{openingCostBasis:openingBasis.proof}:{})};
+  return {journal,original,postingAccounts,lines,customer,total,due,paid,cash,clearing,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
 }
 
 export async function saleReversalAction(client,user,body){
@@ -103,7 +108,7 @@ export async function saleReversalAction(client,user,body){
   const p=await plan(ctx);
   if(body.action==='previewSaleReversal'){
     const retainedReview={policy:retainedCostPolicy,available:p.retainedCostReview.available,requires_expense:p.cost>0,costs_visible:ctx.costsVisible,...(ctx.costsVisible?p.retainedCostReview:p.retainedCostReview.error?{error:'The operating expense for unreturned goods needs accounting review.'}:{error:''})};
-    return {number:invoice?.invoice_number||field.sale_number,customer_name:source.customer_name,date:p.snapshot.date,total:p.total,unpaid_cancelled:p.due,customer_credit:p.paid,reviewToken:p.reviewToken,can_restore_stock:p.canRestore,retained_cost_review:retainedReview,warehouses:p.warehouses.map(w=>({id:w.id,name:w.name})),items:p.lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit})),has_replacements:Boolean(source.stock_replacements?.length),can_reverse:true};
+    return {number:invoice?.invoice_number||field.sale_number,customer_name:source.customer_name,date:p.snapshot.date,total:p.total,unpaid_cancelled:p.due,customer_credit:p.paid,reviewToken:p.reviewToken,can_restore_stock:p.canRestore,retained_cost_review:retainedReview,...(p.openingBasis?{opening_cost_review:{...p.openingBasis.review,costs_visible:ctx.costsVisible,...(ctx.costsVisible?{effective_cost:p.cost,original_cost:sum(p.costLines,'debit'),cost_reduction:p.openingBasis.proof.correction.cost_reduction}:{})}}:{}),warehouses:p.warehouses.map(w=>({id:w.id,name:w.name})),items:p.lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit})),has_replacements:Boolean(source.stock_replacements?.length),can_reverse:true};
   }
   if(request.reason.length<3||request.reason.length>1000)throw Error('Enter a reversal reason of 3 to 1000 characters.');
   if(!['retain_stock','return_stock'].includes(request.stock))throw Error('Choose what happened to the goods.');
@@ -112,7 +117,8 @@ export async function saleReversalAction(client,user,body){
   const restoring=request.stock==='return_stock',warehouse=p.warehouses.find(w=>w.id===request.warehouse);
   if(restoring&&(!p.canRestore||!warehouse))throw Error('Choose an active company return warehouse; all original stock issue layers must reconcile.');
   if(!restoring&&p.cost&&(body.costTreatmentPolicy!==retainedCostPolicy||!p.retainedCostReview.available))throw Error(p.retainedCostReview.error?(ctx.costsVisible?p.retainedCostReview.error:'The operating expense for unreturned goods needs accounting review.'):'Review and confirm the operating expense for goods that have not returned.');
-  const financial=p.original.lines.filter(l=>restoring||!p.costLines.some(c=>c.id===l.id)).map(l=>({account_id:p.postingAccounts.get(l.account_id).id,party_type:l.party_type,party_id:l.party_id,debit:l.credit,credit:l.debit,description:'Sale reversal: '+(l.description||'Original posting')}));
+  const financial=p.original.lines.filter(l=>restoring&&!p.openingBasis||!p.costLines.some(c=>c.id===l.id)).map(l=>({account_id:p.postingAccounts.get(l.account_id).id,party_type:l.party_type,party_id:l.party_id,debit:l.credit,credit:l.debit,description:'Sale reversal: '+(l.description||'Original posting')}));
+  if(restoring&&p.openingBasis)financial.push(...[...p.openingBasis.effectiveCogsLines,...p.openingBasis.effectiveInventoryLines].map(line=>({account_id:line.account_id,debit:line.credit,credit:line.debit,description:'Sale reversal using confirmed opening-stock basis: '+line.description})));
   let retainedCostExpense=null;
   if(!restoring&&p.cost){
     const expense=await nonSaleInventoryExpenseAccount(s,'unreturned_goods_expense'),credits=new Map();
