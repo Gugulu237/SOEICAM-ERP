@@ -11,7 +11,7 @@ export function useCurrentUser() {
   const principalRole=profileLoading || error ? null : getEffectiveRole(user, employee);
   const fullAccessModules=employee?.full_access_modules || [];
   const nativeRole=feature==='commercial'?'commercial':feature==='outlets'?'hotesse':pathname==='/driver'?'driver':'admin';
-  const mayUseFeatureRole=!['driver','commercial'].includes(principalRole)||nativeRole===principalRole||feature==='sales_reports';
+  const mayUseFeatureRole=(!['driver','commercial'].includes(principalRole)||nativeRole===principalRole||feature==='sales_reports')&&!(principalRole==='hotesse'&&['sales','commercial'].includes(feature));
   const role=principalRole&&principalRole!=='admin'&&mayUseFeatureRole&&fullAccessModules.includes(feature)?nativeRole:principalRole;
   const departmentId = employee?.department_id || null;
   const assignedRole = employee?.assigned_role || employee?.role || role;

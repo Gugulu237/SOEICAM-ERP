@@ -83,6 +83,7 @@ async function saveClientDefaults(stores,customerId,options) {
 export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) {
   const allowed=ownIssuedStock?STOCK_RECIPIENT_ROLES:body.action==='saveInvoiceCompany'?['admin']:CASHIER_INVOICE_ACTIONS.includes(body.action)?['admin','employee','cashier']:['admin','employee'];
   const {role,employee}=await requireStaff(client,user,allowed,'customer invoicing');
+  if(body.action==='createSalesInvoice'&&principalRole(user,employee)==='hotesse')throw Object.assign(Error('Hotesses cannot record customer sales.'),{status:403});
   if(role!=='admin' && employee?.status!=='active')throw Error('An active sales staff account is required.');
   const centralPolicy=ownIssuedStock||body.action==='createSalesInvoice'&&body.sourceType==='order'?await centralizedInventoryPolicy(client.asServiceRole.entities):null;
   const feature=user[FEATURE_AUTHORITY]?.module;

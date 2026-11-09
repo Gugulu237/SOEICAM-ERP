@@ -8465,5 +8465,6 @@
   "Sales & outlets": "Ventes et points de vente",
   "Accounting & finance": "Comptabilité et finances",
   "Records sales against centralized company stock.": "Enregistre les ventes sur le stock centralisé de l’entreprise.",
-  "Choose an active employee as the salesperson.": "Choisissez un employé actif comme vendeur."
+  "Choose an active employee as the salesperson.": "Choisissez un employé actif comme vendeur.",
+  "Hotesses cannot record customer sales.": "Les hôtesses ne peuvent pas enregistrer de ventes clients."
 }

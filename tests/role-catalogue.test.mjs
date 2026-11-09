@@ -17,6 +17,11 @@ test('Accountant combines inventory and accounting with scoped feature grants an
  assert.throws(()=>assertEntityAccess(accounting,'Employee','update'),{status:403});assert.equal(featureContext(context,'employees'),context);assert.equal(featureContext(context,'admin'),context);
 });
 
+test('Hotesse sales and commercial module selections cannot elevate the reporting role into a customer seller',()=>{
+ const roleCatalogue=catalogueFromStored({roles:{hotesse:{template_role:'hotesse',modules:['outlets','sales','commercial','sales_reports'],module_permissions_version:5}}}),user={id:'hotesse-login',role:'user'},employee=decorateEmployee(user,{id:'hotesse',user_id:user.id,role:'hotesse',status:'active'},roleCatalogue),context={user,employee,role:'hotesse',roleCatalogue};
+ assert.equal(featureContext(context,'sales'),context);assert.equal(featureContext(context,'commercial','commercial'),context);assert.notEqual(featureContext(context,'outlets','hotesse'),context);assert.notEqual(featureContext(context,'sales_reports'),context);
+});
+
 test('organigram places production support with Operations, field partners together, and GM at the root', () => {
   const custom = [
     { key:'route_coordinator',label:'Route Coordinator',category:'Operations',template_role:'driver' },

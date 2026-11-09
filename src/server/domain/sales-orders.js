@@ -21,7 +21,7 @@ const text=(value,max=1000)=>typeof value==='string'?value.trim().slice(0,max):'
 const saleDate=(value,current=today())=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||value>current)throw Error('Choose a valid sale date on or before today.');periodDates(value,value);return value;};
 const number=(value,label,max=1e9)=>{if(value==null||value===''||!['number','string'].includes(typeof value)||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>max)throw Error('Enter a valid '+label+'.');return Number(value);};
 // Attribution describes who sold the goods, independently of their job or login.
-const selectableSeller=staff=>Boolean(staff?.id&&staff.status==='active'&&!staff.employee_removed_at);
+const selectableSeller=staff=>Boolean(staff?.id&&staff.status==='active'&&!staff.employee_removed_at&&principalRole({role:'user'},staff)!=='hotesse');
 function selectedSellerId(body,currentSeller,user,canChooseSeller){
   const id=body.sellerId==null||body.sellerId===''||body.sellerId==='user:'+user.id?currentSeller.id:body.sellerId;
   if(typeof id!=='string')throw Error('Choose an active employee as the salesperson.');
@@ -45,6 +45,7 @@ function companySource(body,policy){
 
 export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={}){
   const {role,employee}=await requireStaff(client,user,ownIssuedStock?STOCK_RECIPIENT_ROLES:['admin','employee'],'recording customer supplies');
+  if(principalRole(user,employee)==='hotesse')throw Object.assign(Error('Hotesses cannot record customer sales.'),{status:403});
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active sales staff account is required.');
   if(ownIssuedStock){if(!eligibleStockRecipient(employee))throw Error('An active employee other than Hotesse is required.');}
   else client.auth.assertModule?.('sales');

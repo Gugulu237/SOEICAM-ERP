@@ -72,7 +72,7 @@ test('central profile rejects unknown sellers, issued sources, warehouses, old o
 });
 
 test('central staff attribute sales to any active employee without a login while retaining recorder, acquisition and exact stock cost',async()=>{
- for(const role of ['hotesse','production_manager','warehouse_manager','employee']){
+ for(const role of ['production_manager','warehouse_manager','employee']){
   const f=await setup(),seller=await f.s.Employee.create({role,status:'active',full_name:'Offline '+role,user_id:''});
   const inactive=await f.s.Employee.create({role,status:'inactive',full_name:'Inactive'}),removed=await f.s.Employee.create({role,status:'active',full_name:'Removed',employee_removed_at:date});
   const workspace=await f.call({action:'employeeSalesWorkspace'});
@@ -92,6 +92,15 @@ test('central self sales require real Sales or Commercial module permission befo
    calls.length=0;await assert.rejects(f.call(body),error=>error.status===403);assert.deepEqual(calls,expectedCalls);assert.deepEqual(await f.state(),before);
   }
  }
+});
+
+test('Hotesses and custom Hotesse roles cannot be selected as sellers or record customer sales through feature grants',async()=>{
+ const f=await setup(),hotesse=await f.s.Employee.create({role:'hotesse',status:'active',full_name:'Outlet reporter'}),custom=await f.s.Employee.create({role:'outlet_reporter',status:'active',full_name:'Custom outlet reporter'});
+ await f.s.CompanySettings.update('settings',{staff_role_catalogue:{roles:{outlet_reporter:{key:'outlet_reporter',template_role:'hotesse',label:'Outlet reporter',modules:['outlets','sales','commercial'],module_permissions_version:5}}}});
+ const workspace=await f.call({action:'employeeSalesWorkspace'});for(const id of [hotesse.id,custom.id])assert.ok(!workspace.sellers.some(row=>row.id===id));
+ const before=await f.state();for(const sellerId of [hotesse.id,custom.id])await assert.rejects(f.call({...f.body,sellerId}),/active employee/);assert.deepEqual(await f.state(),before);
+ const actor={...user,[FEATURE_AUTHORITY]:{role:'admin',module:'sales'}};await moduleRole(f,'hotesse',['outlets','sales','commercial'],actor);const unchanged=await f.state();
+ await assert.rejects(salesOrderAction(f.client,actor,{action:'salesOrderWorkspace'}),/Hotesses cannot/);await assert.rejects(invoiceAction(f.client,actor,{action:'createSalesInvoice',sourceType:'order',sourceId:'anything'}),/Hotesses cannot/);assert.deepEqual(await f.state(),unchanged);
 });
 
 test('commercial-only PM and Supply Chain staff can record their own central sales without Sales reporting permission',async()=>{
