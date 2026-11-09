@@ -53,6 +53,16 @@ test('physical count edits distinguish cleared values from zero and require save
   } finally { s.close(); }
 });
 
+test('count account choices keep non-sale shortages out of COGS and preserve surplus income',async()=>{
+ const account=(id,account_type,normal_balance)=>({id,name:id,account_number:id,account_type,normal_balance});
+ const s=await screen({}, {accounts:[account('expense','expense','debit'),account('other-loss','other_expense','debit'),account('cogs','cogs','debit'),account('surplus','other_income','credit')]});
+ try{
+  const html=s.paint();
+  assert.match(html,/<option value="expense">/);assert.match(html,/<option value="other-loss">/);assert.match(html,/<option value="surplus">/);
+  assert.doesNotMatch(html,/<option value="cogs">/);
+ }finally{s.close();}
+});
+
 test('independent review requires a note, and stale counts cannot be approved', async () => {
   const s = await screen({ status: 'submitted' }, { role: 'admin', user_id: 'gm' }); try {
     s.paint(); assert.equal(s.button('Save counts'), undefined); assert.equal(s.button('Approve variance').disabled, true); assert.equal(s.r.elements.find(e => e.tag === 'fieldset').props.disabled, true);

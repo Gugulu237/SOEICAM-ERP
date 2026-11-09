@@ -23,7 +23,8 @@ for (const paymentType of ['cash', 'credit']) test(`${paymentType} sale exchange
   assert.equal(tables.Customer[0].balance, paymentType === 'cash' ? 0 : 1000);
   assert.equal(tables.CashCollection.length, paymentType === 'cash' ? 1 : 0);
   assert.equal(tables.Account.find(row => row.id === 'revenue').balance, 1000);
-  assert.equal(tables.Account.find(row => row.id === 'cogs').balance, 1000);
+  assert.equal(tables.Account.find(row => row.id === 'cogs').balance, 400);
+  assert.equal(tables.Account.find(row => row.account_number === 'CUSTOMER-REPLACEMENTS').balance, 600);
   assert.equal(tables.SpoilageRecord.length, 1);
   const record = tables.SpoilageRecord[0];
   assert.equal(record.source_sale_id, result.sale.id); assert.equal(record.posting_basis, 'sale_exchange');
@@ -101,12 +102,23 @@ test('replacement-only Commercial receipt posts an exchange cost without revenue
   assert.equal(companySalesRegister({invoices:[],fieldSales:tables.FieldSale,from:date,to:date}).totals.count,0);
   const report=salesStatusDocument('field',tables.FieldSale,{from:date,to:date});assert.equal(report.sections[0].rows[0][0],'Exchange');assert.equal(report.sections[1].rows.length,0);
   assert.equal(tables.FieldSaleLine.length,0);assert.equal(tables.CashCollection.length,0);assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.Customer[0].balance,900);
-  assert.equal(tables.Account.find(a=>a.id==='revenue').balance||0,0);assert.equal(tables.Account.find(a=>a.id==='cogs').balance,600);
+  assert.equal(tables.Account.find(a=>a.id==='revenue').balance||0,0);assert.equal(tables.Account.find(a=>a.id==='cogs').balance,0);assert.equal(tables.Account.find(a=>a.account_number==='CUSTOMER-REPLACEMENTS').balance,600);
   assert.equal(tables.SpoilageRecord.length,1);assert.equal(tables.JournalEntry.length,1);assert.equal(tables.JournalEntry[0].source_document_type,'SpoilageRecord');
   const returned=tables.StockBalance.find(b=>b.qc_status==='quarantine');assert.equal(returned.quantity,3);assert.equal(returned.total_value,0);
   const before=structuredClone(tables),retry=await submit(client,args);assert.equal(retry.reused,true);assert.deepEqual(tables,before);
   const preview=await submit(client,{action:'proposedJournal',saleId:result.sale.id});assert.equal(preview.status,200,preview.error);assert.equal(preview.posts,true);assert.equal(preview.lines.reduce((n,l)=>n+Number(l.debit||0),0),600);
   const changed=await submit(client,{...args,stockReplacements:[exchange({quantity:4,reason:'damaged',expiry_date:''})]});assert.equal(changed.status,400);assert.deepEqual(tables,before);
+});
+
+test('free replacements expense exact recorded carrying value through the configured expense and product inventory accounts',async()=>{
+ const {client,tables}=fixture();tables.StockBalance[0].total_value=100;tables.StockBalance[0].unit_cost=1000;
+ tables.Account.push({id:'item-inventory',account_number:'ITEM-STOCK',name:'Item inventory',account_type:'asset',normal_balance:'debit',currency:'XAF',is_active:true,is_posting:true,balance:100},{id:'replacement-expense',account_number:'CUSTOM-REPLACEMENT',name:'Configured customer replacement expense',account_type:'other_expense',normal_balance:'debit',currency:'XAF',is_active:true,is_posting:true,balance:0});
+ Object.assign(tables.Product[0],{inventory_account_id:'item-inventory',cogs_account_id:'revenue'});
+ tables.PostingRule.push({id:'replacement-rule',rule_key:'customer_replacement_expense',account_id:'replacement-expense',is_active:true});
+ const args=validSupply({lines:[],paymentType:'exchange',amountCollected:0,stockReplacements:[exchange({reason:'damaged',expiry_date:''})]}),result=await submit(client,args);assert.equal(result.status,200,result.error);
+ assert.equal(tables.SpoilageRecord[0].replacement_cost,30);assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.StockBalance[0].total_value,70);assert.equal(tables.Account.find(a=>a.id==='replacement-expense').balance,30);assert.equal(tables.Account.find(a=>a.id==='item-inventory').balance,70);assert.equal(tables.Account.find(a=>a.id==='cogs').balance,0);
+ assert.deepEqual(tables.JournalLine.map(row=>({account_id:row.account_id,debit:row.debit,credit:row.credit})),[{account_id:'replacement-expense',debit:30,credit:0},{account_id:'item-inventory',debit:0,credit:30}]);assert.equal(tables.Account.some(a=>a.account_number==='CUSTOMER-REPLACEMENTS'),false);
+ const before=structuredClone(tables);assert.equal((await submit(client,args)).reused,true);assert.deepEqual(tables,before);
 });
 
 test('exchange-only drafts do not move stock; cash, empty replacements, malformed lines and shortages reject before writes', async () => {

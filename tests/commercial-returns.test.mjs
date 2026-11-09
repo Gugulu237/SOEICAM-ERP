@@ -32,7 +32,7 @@ test('a like-for-like expired exchange quarantines the collection, consumes fres
     assert.equal(bin.vehicle_id, 'vehicle-a'); assert.equal(bin.warehouse_type, 'quarantine');
     assert.equal(expired.quantity, 2); assert.equal(expired.qc_status, 'quarantine'); assert.equal(expired.expiry_date, '2000-01-01'); assert.equal(expired.total_value, 0);
     assert.equal(tables.Customer[0].balance, 0); assert.equal(tables.FieldSale.length, 0); assert.equal(tables.CashCollection.length, 0);
-    assert.equal(tables.JournalLine.find(row => row.account_id === 'cogs').debit, 400); assert.equal(tables.JournalLine.find(row => row.account_id === 'inventory').credit, 400);
+    const replacementExpense=tables.Account.find(row=>row.account_number==='CUSTOMER-REPLACEMENTS');assert.equal(tables.JournalLine.find(row => row.account_id === replacementExpense.id).debit, 400); assert.equal(tables.JournalLine.find(row => row.account_id === 'inventory').credit, 400);assert.equal(tables.JournalLine.some(row=>row.account_id==='cogs'),false);
     assert.equal(tables.JournalLine.some(row => ['revenue', 'receivable', 'clearing', 'tax'].includes(row.account_id)), false);
     const inventory = await commercialRunInventory(client.asServiceRole, staff.id, date);
     assert.equal(inventory.balances[0].usable_quantity, 8); assert.equal(inventory.balances.length, 1);

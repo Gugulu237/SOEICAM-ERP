@@ -427,6 +427,28 @@ async function simpleBody(f,counts=[8,6]){
  const {accountId,...body}=original;void accountId;
  return {...body,lossAccountId:'expense',gainAccountId:surplus.id,item_counts:[{product_id:f.product.id,item_fingerprint:workspace.items.find(p=>p.id===f.product.id).count_fingerprint,counted_quantity:counts.reduce((sum,n)=>sum+n,0),snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}]};
 }
+
+test('shortages and same-quantity write-downs reject COGS before any write in both count workflows',async()=>{
+ for(const mode of ['legacy-shortage','item-shortage','value-write-down']){
+  const f=await setup(),s=f.entities;
+  await s.Account.update('cogs',{account_type:'cogs',normal_balance:'debit',is_active:true,is_posting:true});
+  if(mode==='value-write-down')await s.Product.update(f.product.id,{purchase_price:8});
+  const body=mode==='item-shortage'?await simpleBody(f,[8,5]):await f.body(mode==='value-write-down'?[10,5]:[8,5]);
+  if(mode==='item-shortage')body.lossAccountId='cogs';else body.accountId='cogs';
+  if(mode==='value-write-down')body.rows=[{...body.rows[0],use_current_cost:true}];
+  assert.ok(!(await f.workspace()).accounts.some(account=>account.id==='cogs'));
+  const before=structuredClone(f.rows);
+  await assert.rejects(f.call(body),/inventory (loss|adjustment) expense account/);
+  assert.deepEqual(f.rows,before,mode);
+  const result=await f.call({...body,...(mode==='item-shortage'?{lossAccountId:'expense'}:{accountId:'expense'})});
+  const journalLines=await s.JournalLine.filter({journal_id:result.journal_id});
+  assert.ok(!journalLines.some(line=>line.account_id==='cogs'));
+  assert.equal(journalLines.find(line=>line.account_id==='expense').debit,20);
+  assert.equal(journalLines.find(line=>line.account_id===f.inventory.id).credit,20);
+  assert.equal((await s.StockBalance.get(f.lots[0].id)).quantity,mode==='value-write-down'?10:8);
+ }
+});
+
 async function automaticShortageFixture(){
  const f=await setup(),s=f.entities;
  await s.StockBalance.update(f.lots[1].id,{unit_cost:20,total_value:100,expiry_date:'2027-02-01'});

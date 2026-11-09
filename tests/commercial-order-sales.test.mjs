@@ -159,7 +159,7 @@ test('the checked sale posting workflow supplies the exact proof expected by the
  assert.deepEqual(f.rows,before);assert.equal(f.rows.FieldSale.length,0);assert.equal(f.rows.CashCollection.filter(r=>r.field_sale_id===report.sales[0].id).length,0);
  const credit=await salesOrderAction(f.client,admin,{...body,requestKey:crypto.randomUUID(),paymentType:'credit'});
  const preview=await saleReversalAction(f.client,admin,{action:'previewSaleReversal',invoiceId:credit.invoiceId});
- await saleReversalAction(f.client,admin,{action:'reverseSale',invoiceId:credit.invoiceId,reviewToken:preview.reviewToken,reason:'Correct recorded supply',stockDisposition:'retain_stock',confirmed:true});
+ await saleReversalAction(f.client,admin,{action:'reverseSale',invoiceId:credit.invoiceId,reviewToken:preview.reviewToken,reason:'Correct recorded supply',stockDisposition:'retain_stock',costTreatmentPolicy:preview.retained_cost_review.policy,confirmed:true});
  const afterCorrection=structuredClone(f.rows),corrected=await commercialOrderSales(f.client.asServiceRole,{commercialId:seller.id,from:date,to:date});
  const reversed=corrected.sales.find(sale=>sale.source_id===credit.order.id);
  assert.equal(corrected.sales.length,2);assert.equal(reversed.sale_reversal.total,1000);assert.equal(reversed.amount_due,1000);

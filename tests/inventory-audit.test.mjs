@@ -135,6 +135,40 @@ test('stock changes after approval block posting; recount resets quantities and 
   } finally { await env.close(); }
 });
 
+test('non-sale count losses exclude COGS and legacy reviews must be recounted and independently approved with an expense account',async()=>{
+  const env=await environment();try{
+    const e=env.entities;
+    await e.Account.create({id:'cogs',account_number:'5100',name:'Cost of goods sold',account_type:'cogs',normal_balance:'debit',balance:0,is_active:true,is_posting:true});
+    const workspace=await env.ok({action:'inventoryAuditWorkspace'});
+    assert.ok(workspace.accounts.some(a=>a.id==='loss'));assert.ok(workspace.accounts.some(a=>a.id==='gain'));assert.ok(!workspace.accounts.some(a=>a.id==='cogs'));
+    const snapshot=async()=>Object.fromEntries(await Promise.all(['Account','Product','StockBalance','StockMovement','JournalEntry','JournalLine','AuditLog','CompanySettings'].map(async name=>[name,(await e[name].list()).sort((a,b)=>a.id.localeCompare(b.id))])));
+    let a=await env.save(await env.start(),[8,6],{lossAccountId:'cogs'});
+    let before=await snapshot(),blocked=await env.call(env.write('Submit',a));
+    assert.equal(blocked.status,400);assert.match(blocked.error,/inventory loss account/);assert.deepEqual(await snapshot(),before);
+
+    // Reproduce append-only snapshots saved by the earlier policy without
+    // rewriting any preceding count or manufacturing a new physical movement.
+    const seedLegacy=async(state,status,extra={})=>{
+      const next={...structuredClone(state),...extra,status,revision:state.revision+1};
+      const event=await e.AuditLog.create({id:'legacy-'+crypto.randomUUID(),action:'inventoryAudit'+(status==='submitted'?'Submit':'Approve'),module:'inventory_audit',entity_type:'InventoryAudit',entity_id:next.id,user_id:'legacy-reviewer',description:'Previously saved count under legacy loss-account policy',inventory_audit_state:next,inventory_audit_payload:'legacy-policy-fixture'});
+      return {state:next,event};
+    };
+    const submitted=await seedLegacy(a,'submitted');a=submitted.state;env.actAs('gm','admin');
+    before=await snapshot();blocked=await env.call(env.write('Approve',a,{note:'Independently reviewed old count'}));
+    assert.equal(blocked.status,400);assert.match(blocked.error,/inventory loss account/);assert.deepEqual(await snapshot(),before);
+    const approved=await seedLegacy(a,'approved',{approved_by:'legacy-reviewer',approved_at:new Date().toISOString(),approved_plan:[{account_id:'cogs',debit:20,credit:0},{account_id:'inventory',debit:0,credit:20},{account_id:'inventory',debit:10,credit:0},{account_id:'gain',debit:0,credit:10}]});a=approved.state;
+    before=await snapshot();blocked=await env.call(env.write('Post',a));
+    assert.equal(blocked.status,400);assert.match(blocked.error,/inventory loss account/);assert.deepEqual(await snapshot(),before);
+
+    env.actAs('accountant');a=await env.change('Recount',a,{note:'Replace legacy loss coding with operating expense'});
+    assert.equal(a.status,'draft');assert.equal(a.approved_by,'');assert.equal(a.approved_plan,null);assert.ok(a.rows.every(r=>r.counted_quantity===null));
+    a=await env.change('Submit',await env.save(a));a=await env.approve(a);a=await env.change('Post',a);
+    assert.equal(a.status,'posted');assert.equal((await e.Account.get('cogs')).balance,0);assert.equal((await e.Account.get('loss')).balance,20);assert.equal((await e.Account.get('inventory')).balance,140);
+    assert.ok(!(await e.JournalLine.list()).some(line=>line.account_id==='cogs'));
+    assert.deepEqual(await e.AuditLog.get(submitted.event.id),submitted.event);assert.deepEqual(await e.AuditLog.get(approved.event.id),approved.event);
+  }finally{await env.close();}
+});
+
 test('closed or missing periods block posting and late failures roll back stock, movements, GL and audit event', async () => {
   const env = await environment(); try {
     const e = env.entities, a = await env.approve(await env.change('Submit', await env.save(await env.start()))), body = env.write('Post', a);

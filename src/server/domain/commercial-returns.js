@@ -5,7 +5,8 @@ import { readRecords } from './commercial-workspace.js';
 import { reportScope, periodDates, finishedProduct } from './commercial-rules.js';
 import { requireStaff, stockIssue, stockReceive, stockTransfer, postJournal, getRuleAccount, audit, today, round2, round3 } from './field-ops.js';
 import { stockUnit } from '../../lib/item-units.js';
-import { saleItemPostings } from '../../lib/item-posting.js';
+import { validPostingRuleAccount } from '../../lib/posting-rule-types.js';
+import { nonSaleInventoryExpenseAccount } from './non-sale-inventory-expense.js';
 import { driverReturnRun, driverReturnWorkspace, assertDriverReturnCustomer } from './driver-returns.js';
 import {recoverSaleExchangePackaging,receiveTransferredExchangePackaging} from './exchange-packaging.js';
 
@@ -44,14 +45,16 @@ async function customerLocation(stores, customer, locationId) {
 async function replace(stores, record, context, date, actorId) {
   if(context.dispatch_id)await assertRunSupplyStock({ entities: stores }, context, [{ product_id: record.product_id, quantity: record.quantity }], date);
   else if(!['company','warehouse'].includes(context.source_type))throw Error('Choose a verified replacement stock source.');
+  const product=await stores.Product.get(record.product_id),inventory=product?.inventory_account_id?await stores.Account.get(product.inventory_account_id):await stores.Account.get((await getRuleAccount({entities:stores},'finished_goods_inventory')).id),treasury=await readRecords(stores.TreasuryAccount);
+  if(!validPostingRuleAccount(inventory,'finished_goods_inventory')||inventory.is_control_account||inventory.is_treasury||inventory.account_number==='1050'||treasury.some(row=>row.gl_account_id===inventory.id))throw Error('Review the inventory account for '+record.product_name+' before recording a customer replacement.');
+  const expense=await nonSaleInventoryExpenseAccount(stores,'customer_replacement_expense');
   const issue = await stockIssue({ entities: stores }, { productId: record.product_id, productName: record.product_name,
     warehouseId: context.stock_warehouse_id, warehouseIds: context.stock_warehouse_ids, quantity: record.quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
     documentId: record.id, dispatchId: context.dispatch_id, movementDate: date, saleableOnly: true,
     reason: `No-charge customer-product replacement for ${record.customer_name} (${record.record_number})` });
   let journal = null;
   if (issue.totalValue > 0) {
-    const lines = await saleItemPostings(stores, [{ product_id: record.product_id, quantity: record.quantity, line_total: 0, line_cost: issue.totalValue }],
-      { netTotal: 0, costTotal: issue.totalValue, fallback: field => getRuleAccount({ entities: stores }, field === 'cogs_account_id' ? 'direct_material_cogs' : 'finished_goods_inventory') });
+    const lines = [{account_id:expense.id,debit:issue.totalValue,credit:0},{account_id:inventory.id,debit:0,credit:issue.totalValue}];
     const posted = await postJournal({ entities: stores }, { entryDate: date, sourceModule: 'field_returns', sourceDocumentType: 'SpoilageRecord', sourceDocumentId: record.id,
       description: `Customer-product replacement ${record.record_number} - ${record.customer_name}`, userId: actorId,
       lines: lines.map(line => ({ ...line, description: line.debit ? 'Cost of no-charge replacement' : 'Fresh inventory issued for replacement' })) });

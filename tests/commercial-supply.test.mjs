@@ -216,16 +216,17 @@ test('legacy submitted deliveries still approve once without deducting their sto
   const handler = await fieldHandler(), { client, tables } = fixture();
   tables.FieldSale.push({ id: 'old-sale', sale_number: 'FS-OLD', commercial_id: staff.id, commercial_name: staff.full_name,
     customer_id: 'customer-a', customer_name: 'Customer A', status: 'submitted', stock_moved_at: '2026-10-17T08:00:00Z',
-    pending_warehouse_id: 'pending', transaction_date: date, payment_type: 'cash', subtotal: 1000, tax_total: 0, total: 1000,
+    pending_warehouse_id: 'pending', custodian_warehouse_id:'van-stock', transaction_date: date, payment_type: 'cash', subtotal: 1000, tax_total: 0, total: 1000,
     amount_collected: 400, amount_due: 600, cost_of_goods: 400 });
   tables.FieldSaleLine.push({ id: 'old-line', field_sale_id: 'old-sale', product_id: 'product-a', quantity: 2,
     unit_cost: 200, line_cost: 400, line_total: 1000, tax_amount: 0 });
+  tables.StockMovement.push({id:'old-delivery',document_type:'FieldSale',document_id:'old-sale',movement_type:'field_delivery',status:'approved',source_warehouse_id:'van-stock',product_id:'product-a',quantity:2,total_value:400,movement_date:date});
   client.auth.me = async () => ({ id: 'manager', role: 'admin', full_name: 'Manager' }); client.entities.Employee.filter = async () => [];
   globalThis.__dailySupplyClient = client;
   try {
     const response = await handler(request({ action: 'approveSale', saleId: 'old-sale' })), result = await response.json();
     assert.equal(response.status, 200, result.error); assert.equal(result.sale.status, 'approved_posted');
-    assert.equal(tables.JournalEntry.length, 1); assert.equal(tables.Customer[0].balance, 600); assert.equal(tables.StockMovement.length, 0);
+    assert.equal(tables.JournalEntry.length, 1); assert.equal(tables.Customer[0].balance, 600); assert.equal(tables.StockMovement.length, 1);
     const retry = await handler(request({ action: 'approveSale', saleId: 'old-sale' })); assert.equal((await retry.json()).alreadyPosted, true);
     assert.equal(tables.JournalEntry.length, 1); assert.equal(tables.Customer[0].balance, 600);
   } finally { delete globalThis.__dailySupplyClient; }

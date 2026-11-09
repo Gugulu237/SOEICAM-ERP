@@ -74,6 +74,15 @@ test('expired-stock disposal posts the net loss and packaging recovery once, pre
   await assert.rejects(f.call({...body,quantity:5}),/different disposal/);
   const moves=await s.StockMovement.list();assert.equal(moves.filter(m=>m.movement_type==='expired_disposal').length,1);assert.equal(moves.filter(m=>m.movement_type==='packaging_recovery').length,1);
 });
+test('expired-stock losses cannot be coded to COGS through the workspace or a forged disposal request',async()=>{
+  const f=await setup(),s=f.entities;
+  const cogs=await s.Account.create({account_number:'5100',name:'Cost of goods sold',account_type:'cogs',normal_balance:'debit',balance:0,is_active:true,is_posting:true});
+  const workspace=await f.call({action:'workspace'});
+  assert.ok(workspace.accounts.some(a=>a.id==='expense'));assert.ok(!workspace.accounts.some(a=>a.id===cogs.id));
+  const body={...await f.body(),lossAccountId:cogs.id},before=structuredClone(f.rows);
+  await assert.rejects(f.call(body),/inventory asset and loss expense accounts/);
+  assert.deepEqual(f.rows,before);assert.equal((await s.Account.get(cogs.id)).balance,0);assert.equal((await s.StockBalance.get(f.lot.id)).quantity,10);
+});
 test('partial disposal preserves the last cent and zero-value customer returns do not create a second loss journal',async()=>{
   const f=await setup(),s=f.entities;
   await s.StockBalance.update(f.lot.id,{quantity:3,total_value:1,unit_cost:1/3});

@@ -23,7 +23,7 @@ export async function expiryRecoveryAction(client,user,body) {
   const [products,warehouses,balances,accounts,treasury]=await Promise.all([readRecords(s.Product),readRecords(s.Warehouse),readRecords(s.StockBalance),readRecords(s.Account),readRecords(s.TreasuryAccount)]);
   const pmap=new Map(products.map(p=>[p.id,p])),wmap=new Map(warehouses.map(w=>[w.id,w]));
   const treasuryIds=new Set(treasury.map(t=>t.gl_account_id));
-  const account=(id,asset=false)=>{const a=accounts.find(a=>a.id===id);if(!a || a.is_active===false || a.is_posting===false || a.is_treasury || treasuryIds.has(id) || a.account_number==='1050' || a.normal_balance!=='debit' || !(asset?a.account_type==='asset':['expense','other_expense','cogs'].includes(a.account_type)))throw Error('Configure active inventory asset and loss expense accounts.');return a;};
+  const account=(id,asset=false)=>{const a=accounts.find(a=>a.id===id);if(!a || a.is_active===false || a.is_posting===false || a.is_treasury || treasuryIds.has(id) || a.account_number==='1050' || a.normal_balance!=='debit' || !(asset?a.account_type==='asset':['expense','other_expense'].includes(a.account_type)))throw Error('Configure active inventory asset and loss expense accounts.');return a;};
   if(body.action==='workspace') {
     const access=await adjustmentAccess(client,role,employee,{user,requirePermission:false});
     return {can_post:role==='cashier' || ['admin','warehouse_manager'].includes(role) && access.can_adjust,can_receive:role==='admin' || role==='warehouse_manager' && employee?.assigned_role!=='production_manager',can_release:(role==='admin' || role==='production_manager') && (role==='admin' || !employee?.allowed_modules || employee.allowed_modules.includes('quality')),

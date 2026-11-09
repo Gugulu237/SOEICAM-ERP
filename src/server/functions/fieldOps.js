@@ -42,6 +42,7 @@ import { commercialReturnAction, postSaleReplacements } from '../domain/commerci
 import { companySalesAction } from '../domain/company-sales.js';
 import { invoiceAction, INVOICE_ACTIONS, CASHIER_INVOICE_ACTIONS } from '../domain/sales-invoices.js';
 import { customerDeliveryAction,CUSTOMER_DELIVERY_ACTIONS } from '../domain/customer-delivery.js';
+import {fieldSaleDeliveredCost,postedFieldSaleCost} from '../domain/field-sale-cost-proof.js';
 import {
   round2, round3, today, requireStaff, getRuleAccount, getAccountByNumber,
   nextSequence, postJournal, stockIssue,
@@ -65,22 +66,27 @@ async function loadProducts(client, ids) {
 // Used both to preview the journal and to post it, so the preview cannot drift
 // from what actually gets posted.
 async function buildSaleJournal(client, sale, lines) {
+  const delivered = await fieldSaleDeliveredCost(client.entities,sale,lines);
+  const posted=sale.status==='approved_posted';
+  const net = round2(sale.subtotal);
+  const tax = round2(sale.tax_total);
+  const cost = delivered.cost;
+  // FieldSaleLine stores its net value, unlike invoice lines whose total
+  // includes tax. Present the shared posting engine with its gross contract.
+  // Posted retries inspect original money postings rather than rebuilding them
+  // from today's cash/revenue configuration. Only the delivered cost mapping
+  // needs canonical validation here.
+  const postingLines = lines.map(line => ({ ...line, line_total:posted?0:round2(Number(line.line_total) + Number(line.tax_amount || 0)),...(posted?{tax_amount:0}:{}) }));
+  const itemLines = await saleItemPostings(client.entities, postingLines, { netTotal:posted?0:net, costTotal: cost,
+    fallback: field => getRuleAccount(client, { revenue_account_id: 'sales_revenue', cogs_account_id: 'direct_material_cogs', inventory_account_id: 'finished_goods_inventory' }[field]),
+  });
+  if(posted)return postedFieldSaleCost(client.entities,sale,itemLines);
   const receivable = await getRuleAccount(client, 'customer_receivable');
   const taxPayable = Number(sale.tax_total) > 0 ? await getRuleAccount(client, 'tax_payable') : null;
   // Cash collected in the field is company money held by the Commercial, not yet
   // in a treasury account: it clears through the cash-in-transit account.
   const clearing = await getAccountByNumber(client, '1050');
-
-  const net = round2(sale.subtotal);
-  const tax = round2(sale.tax_total);
-  const cost = round2(sale.cost_of_goods);
   const payment = fieldSupplyPayment(sale);
-  // FieldSaleLine stores its net value, unlike invoice lines whose total
-  // includes tax. Present the shared posting engine with its gross contract.
-  const postingLines = lines.map(line => ({ ...line, line_total: round2(Number(line.line_total) + Number(line.tax_amount || 0)) }));
-  const itemLines = await saleItemPostings(client.entities, postingLines, { netTotal: net, costTotal: cost,
-    fallback: field => getRuleAccount(client, { revenue_account_id: 'sales_revenue', cogs_account_id: 'direct_material_cogs', inventory_account_id: 'finished_goods_inventory' }[field]),
-  });
 
   const plan = [
     {
@@ -113,8 +119,8 @@ async function buildSaleJournal(client, sale, lines) {
 // The request route wraps each write in one serializable transaction. Stock,
 // customer receivables, collected cash and this journal commit together.
 async function recordSaleAccounting(svc, sale, lines, actor, automatic = false) {
-  if (sale.status === 'approved_posted') return { journal: { id: sale.journal_id, journal_number: sale.journal_number }, reused: true };
   const plan = await buildSaleJournal(svc, sale, lines);
+  if (sale.status === 'approved_posted') return { journal: { id: sale.journal_id, journal_number: sale.journal_number }, reused: true };
   const result = await postJournal(svc, {
     entryDate: sale.transaction_date,
     description: `Field sale ${sale.sale_number} - ${sale.customer_name} (${sale.commercial_name})`,
@@ -267,10 +273,11 @@ export default async function (req) {
       if (!sale && body.idempotencyKey) sale = (await readRecords(svc.entities.FieldSale, { commercial_id: employee.id, idempotency_key: body.idempotencyKey }))[0] || null;
       if (sale && (sale.stock_moved_at || !['draft', 'returned'].includes(sale.status))) {
         if (body.idempotencyKey && sale.idempotency_key === body.idempotencyKey) {
+          const savedLines = await readRecords(svc.entities.FieldSaleLine, { field_sale_id: sale.id });
           if (sale.request_fingerprint) {
-            const savedLines = await readRecords(svc.entities.FieldSaleLine, { field_sale_id: sale.id });
             if (sale.request_fingerprint !== supplyRequestFingerprint(body, sale, savedLines)) throw new Error('This supply reference was already used with different details. Open the recorded sale before continuing.');
           }
+          if(sale.supply_kind!=='exchange'&&sale.stock_moved_at)await buildSaleJournal(svc,sale,savedLines);
           return Response.json({ sale, reused: true });
         }
         throw new Error('A submitted or stock-moved supply is locked. Contact an administrator for corrections.');
@@ -559,6 +566,7 @@ export default async function (req) {
         throw new Error('You cannot approve a sale you submitted — a different approver is required');
       }
       if (sale.status === 'approved_posted') {
+        if(sale.supply_kind!=='exchange')await buildSaleJournal(svc,sale,await readRecords(svc.entities.FieldSaleLine,{field_sale_id:sale.id}));
         return Response.json({ sale, alreadyPosted: true, journalId: sale.journal_id });
       }
       if (!['submitted', 'under_review', 'posting_failed'].includes(sale.status)) {

@@ -92,7 +92,7 @@ function journalPlan(state, c) {
     if(row.difference>0)requireFinishedStorage(product,c.warehouses.get(row.warehouse_id),{isolation:true});
     const inventory = validAccount(c, row.inventory_account_id, ['asset'], 'debit', 'inventory asset'), value = Math.abs(row.value_difference);
     if (!value) continue;
-    if (row.value_difference < 0) { add(validAccount(c, state.loss_account_id, ['expense', 'other_expense', 'cogs'], 'debit', 'inventory loss'), value, 0); add(inventory, 0, value); }
+    if (row.value_difference < 0) { add(validAccount(c, state.loss_account_id, ['expense', 'other_expense'], 'debit', 'inventory loss'), value, 0); add(inventory, 0, value); }
     else { add(inventory, value, 0); add(validAccount(c, state.gain_account_id, ['other_income'], 'credit', 'inventory surplus'), 0, value); }
   }
   return [...groups.values()];
@@ -117,7 +117,7 @@ export async function inventoryAuditAction(client, user, body) {
     if (historyOnly) return { audits, page, total: starts.total, has_more: starts.has_more };
     const rows = balances.map(b => { try { const row=snapshot(b,c),state=warehouseCountState(row);return {...row,unit_cost:state.carrying_cost ?? row.unit_cost,...(state.count_issue || state.requires_reconciliation?{issue:state.count_issue || 'Use Adjust quantity to verify and correct this lot valuation before starting an audited count.'}: {})}; } catch (error) { return { balance_id: b.id, product_name: b.product_name || b.product_id, warehouse_id: b.warehouse_id, book_quantity: b.quantity, book_value: b.total_value, issue: error.message }; } });
     return { role, can_post_adjustments:permissions.can_adjust, user_id: user.id, rows, warehouses: [...c.warehouses.values()].map(w => view(w, 'id name warehouse_type is_active')),
-      accounts: [...c.accounts.values()].filter(a => a.is_active !== false && a.is_posting !== false && ['expense', 'other_expense', 'cogs', 'other_income'].includes(a.account_type)).map(a => view(a, 'id account_number name account_type normal_balance')),
+      accounts: [...c.accounts.values()].filter(a => a.is_active !== false && a.is_posting !== false && ['expense', 'other_expense', 'other_income'].includes(a.account_type)).map(a => view(a, 'id account_number name account_type normal_balance')),
       audits, page, total: starts.total, has_more: starts.has_more };
   }
   if (body.action === 'inventoryAuditMovements') {

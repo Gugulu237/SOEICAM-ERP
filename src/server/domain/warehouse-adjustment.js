@@ -78,7 +78,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const inGroup=p=>configured(p)&&countGroupMatches(p,itemGroup);
   const cashIds=new Set(treasury.map(t=>t.gl_account_id));
   const validAccount=(a,inventory=false)=>a && a.is_active!==false && a.is_posting!==false && (!a.currency||a.currency==='XAF') && !a.is_treasury && a.account_number!=='1050' && !cashIds.has(a.id) &&
-    (inventory?a.account_type==='asset' && a.normal_balance==='debit':['expense','other_expense','cogs'].includes(a.account_type) && a.normal_balance==='debit');
+    (inventory?a.account_type==='asset' && a.normal_balance==='debit':['expense','other_expense'].includes(a.account_type) && a.normal_balance==='debit');
   const validGain=a=>a&&a.is_active!==false&&a.is_posting!==false&&(!a.currency||a.currency==='XAF')&&!a.is_treasury&&a.account_number!=='1050'&&!cashIds.has(a.id)&&a.account_type==='other_income'&&a.normal_balance==='credit';
   const inventoryFor=p=>accounts.find(a=>a.id===(p.inventory_account_id||rules.find(r=>r.rule_key===(isAssemblyInventoryType(p.inventory_type)?'finished_goods_inventory':'raw_material_inventory'))?.account_id));
   const itemFingerprint=p=>hash([p.id,stockUnit(p),itemUnitCost(p),inventoryFor(p)?.id||'',p.inventory_type,stockCountGroup(p),p.configuration_status,p.is_active,p.item_removed_at,warehouse.id,warehouse.is_active,warehouse.warehouse_type]);

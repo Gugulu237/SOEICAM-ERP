@@ -47,7 +47,7 @@ export function fixtureRows() {
       { id: 'pending', name: 'Pending', warehouse_type: 'field_delivery_pending' }],
     StockBalance: [{ id: 'stock', warehouse_id: 'van-stock', product_id: 'product-a', quantity: 10, unit_cost: 200, total_value: 2000, qc_status: 'approved', lot_number: 'LOT' },
       { id: 'legacy-custody', warehouse_id: 'custody', product_id: 'product-a', quantity: 50, unit_cost: 200, total_value: 10000, qc_status: 'approved', lot_number: 'LEGACY' }],
-    FieldSale: [], FieldSaleLine: [], SalesOrder: [], SalesOrderLine: [], CashCollection: [], CashHandover: [], StockMovement: [], AuditLog: [], JournalEntry: [], JournalLine: [], AccountingPeriod: [],
+    FieldSale: [], FieldSaleLine: [], SalesOrder: [], SalesOrderLine: [], CashCollection: [], CashHandover: [], StockMovement: [], AuditLog: [], JournalEntry: [], JournalLine: [], AccountingPeriod: [], TreasuryAccount: [], ProductionOrder: [], ProductionMaterial: [],
     Account: ['clearing', 'receivable', 'revenue', 'tax', 'cogs', 'inventory'].map(id => ({ id, account_type:({clearing:'asset',receivable:'asset',revenue:'revenue',tax:'liability',cogs:'cogs',inventory:'asset'})[id],
       account_number: id === 'clearing' ? '1050' : id, normal_balance: ['revenue', 'tax'].includes(id) ? 'credit' : 'debit', balance: 0 })),
     PostingRule: Object.entries({ sales_revenue: 'revenue', customer_receivable: 'receivable', tax_payable: 'tax',

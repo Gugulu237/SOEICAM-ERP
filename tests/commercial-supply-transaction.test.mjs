@@ -55,6 +55,19 @@ async function databaseFixture(db) {
     asServiceRole: { entities }, validateReceiptPhotos: receiptValidator } };
 }
 
+test('automatic field-sale cost proof rolls back a mismatched physical issue and retries the exact request once',async()=>{
+ const db=new PGlite();
+ try{
+  const{entities,client}=await databaseFixture(db),route=await functionRoute();globalThis.__dailySupplyClient=client;
+  globalThis.__supplyTransaction=async callback=>{await db.exec('BEGIN');try{const result=await callback();await db.exec('COMMIT');return result;}catch(error){await db.exec('ROLLBACK');throw error;}};
+  const before=(await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows,create=entities.StockMovement.create;let mismatch=true,reachedCostProof=false;
+  entities.StockMovement.create=async value=>{const row=await create(mismatch&&value.document_type==='FieldSale'?{...value,total_value:Number(value.total_value)+1}:value);if(mismatch&&value.document_type==='FieldSale')reachedCostProof=(await entities.StockBalance.get('stock')).quantity===8;return row;};
+  const args=validSupply(),failed=await route(request(args),{params:Promise.resolve({name:'fieldOps'})});assert.equal(failed.status,400);assert.match((await failed.json()).error,/Recorded field-sale costs do not match actual delivered stock/);assert.equal(reachedCostProof,true);assert.deepEqual((await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows,before);
+  mismatch=false;const response=await route(request(args),{params:Promise.resolve({name:'fieldOps'})}),result=await response.json();assert.equal(response.status,200,result.error);assert.equal(result.sale.cost_of_goods,400);assert.equal((await entities.StockBalance.get('stock')).quantity,8);assert.equal((await entities.StockBalance.get('stock')).total_value,1600);assert.equal((await entities.JournalEntry.list()).length,1);
+  const committed=(await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows,retry=await route(request(args),{params:Promise.resolve({name:'fieldOps'})});assert.equal((await retry.json()).reused,true);assert.deepEqual((await db.query('SELECT entity,id,data FROM fixture_entity ORDER BY entity,id')).rows,committed);
+ }finally{delete globalThis.__dailySupplyClient;delete globalThis.__supplyTransaction;await db.close();}
+});
+
 test('a late ledger failure rolls back the entire submitted supply, then the same request retries successfully once', async () => {
   const db = new PGlite();
   try {

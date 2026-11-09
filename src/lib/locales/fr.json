@@ -1,4 +1,9 @@
 {
+  "Configure one active {0} posting rule before recording non-sale inventory costs.": "Configurez une seule règle de comptabilisation {0} active avant d’enregistrer des coûts de stock non liés à une vente.",
+  "Review the expense account mapped to {0} before recording non-sale inventory costs.": "Vérifiez le compte de charges affecté à {0} avant d’enregistrer des coûts de stock non liés à une vente.",
+  "Review duplicate {0} accounts before recording non-sale inventory costs.": "Vérifiez les comptes {0} en double avant d’enregistrer des coûts de stock non liés à une vente.",
+  "Review the {0} expense account before recording non-sale inventory costs.": "Vérifiez le compte de charges {0} avant d’enregistrer des coûts de stock non liés à une vente.",
+  "Review the inventory account for {0} before recording a customer replacement.": "Vérifiez le compte de stock de {0} avant d’enregistrer un remplacement de produit pour un client.",
   "Reversed on {0}": "Extournée le {0}",
   "Recorded through Sales": "Enregistrée dans Ventes",
   "Choose a valid Commercial report scope.": "Choisissez un périmètre valide pour le rapport commercial.",
@@ -8233,5 +8238,15 @@
   "No rounding journal is required; only the recorded lot value is reconciled.": "Aucune écriture d’arrondi n’est nécessaire ; seule la valeur enregistrée du lot est rapprochée.",
   "Marketing expense uses the reconciled remaining cost. The recorded lot value is corrected without changing COGS or posting another journal. Cash, sales, customer balances and physical quantities remain unchanged.": "La charge de marketing utilise le coût résiduel rapproché. La valeur enregistrée du lot est corrigée sans modifier le coût des ventes ni comptabiliser une autre écriture. La trésorerie, les ventes, les soldes clients et les quantités physiques restent inchangés.",
   "I reviewed the reserved quantities, reconciled costs, expense account, employee custody and the recorded inventory value correction.": "J’ai vérifié les quantités réservées, les coûts rapprochés, le compte de charges, la garde du stock par l’employé et la correction de la valeur de stock enregistrée.",
-  "Marketing expense uses the reconciled remaining cost. The separate rounding journal changes COGS and is included in the combined inventory value change. Cash, sales, customer balances and physical quantities remain unchanged.": "La charge de marketing utilise le coût résiduel rapproché. L’écriture d’arrondi séparée ajuste le coût des ventes et est comprise dans la variation cumulée de la valeur du stock. La trésorerie, les ventes, les soldes clients et les quantités physiques restent inchangés."
+  "Marketing expense uses the reconciled remaining cost. The separate rounding journal changes COGS and is included in the combined inventory value change. Cash, sales, customer balances and physical quantities remain unchanged.": "La charge de marketing utilise le coût résiduel rapproché. L’écriture d’arrondi séparée ajuste le coût des ventes et est comprise dans la variation cumulée de la valeur du stock. La trésorerie, les ventes, les soldes clients et les quantités physiques restent inchangés.",
+  "Goods have not returned; record their cost as an operating expense": "Les marchandises ne sont pas revenues ; comptabiliser leur coût en charges d’exploitation",
+  "Reload the preview to review the operating expense for unreturned goods.": "Rechargez l’aperçu pour vérifier la charge d’exploitation liée aux marchandises non retournées.",
+  "Cost moved from COGS to operating expense": "Coût reclassé du coût des ventes en charges d’exploitation",
+  "Operating expense account": "Compte de charges d’exploitation",
+  "Goods that have not returned are not restored to inventory. Their cost remains an operating expense instead of cost of goods sold.": "Les marchandises non retournées ne sont pas réintégrées au stock. Leur coût reste comptabilisé en charges d’exploitation, au lieu du coût des ventes.",
+  "The dedicated operating expense account will be created when this correction is confirmed.": "Le compte de charges d’exploitation dédié sera créé à la confirmation de cette correction.",
+  "Review and confirm the operating expense for goods that have not returned.": "Vérifiez et confirmez la charge d’exploitation liée aux marchandises qui n’ont pas été retournées.",
+  "Choose a supported non-sale inventory expense posting rule.": "Choisissez une règle de comptabilisation prise en charge pour les charges de stock non liées à une vente.",
+  "Recorded field-sale costs do not match actual delivered stock. Reconcile the stock movements, lines and original journal before posting or retrying.": "Les coûts enregistrés de la vente terrain ne correspondent pas au stock réellement livré. Rapprochez les mouvements de stock, les lignes de vente et l’écriture d’origine avant de comptabiliser ou de réessayer.",
+  "The operating expense for unreturned goods needs accounting review.": "La charge d’exploitation liée aux marchandises non retournées doit être vérifiée par la comptabilité."
 }
