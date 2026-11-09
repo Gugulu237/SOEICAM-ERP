@@ -10,7 +10,7 @@ export const MANAGEMENT_HIERARCHY = {
 const aliases = {
   'general manager': 'admin', general_manager: 'admin', 'managing director': 'admin', gm: 'admin',
   'super admin': 'admin', super_admin: 'admin', superadmin: 'admin',
-  accountant: 'cashier', treasurer: 'cashier',
+  accountant: 'warehouse_manager', comptable: 'warehouse_manager', treasurer: 'cashier',
   'procurement officer': 'procurement', buyer: 'procurement',
   'warehouse manager': 'warehouse_manager', storekeeper: 'warehouse_manager', 'store keeper': 'warehouse_manager',
   'production manager': 'production_manager', 'quality-control officer': 'production_manager', 'quality control officer': 'production_manager', 'quality officer': 'production_manager',

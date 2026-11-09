@@ -109,7 +109,7 @@ test('invalid quantities, prices, customer branches, source locations and credit
   await assert.rejects(f.call({...f.body,sourceType:'warehouse',dispatchId:'',warehouseId:'van-stock'}),/finished-goods warehouse/);
   await assert.rejects(f.call({...f.body,warehouseId:'factory'}),/does not match/);
   await assert.rejects(f.call({...f.body,date:'2099-01-01'}),/valid sale date/);
-  await assert.rejects(f.call({...f.body,sellerId:'missing'}),/active Commercial salesperson/);
+  await assert.rejects(f.call({...f.body,sellerId:'missing'}),/active employee as the salesperson/);
   await assert.rejects(f.call({...f.body,expectedTotal:900}),/sale total changed/);
   assert.deepEqual(f.rows,before);
   await f.s.Customer.update('customer-a',{credit_limit:500});await assert.rejects(f.call({...f.body,paymentType:'credit'}),/credit limit/);
@@ -171,7 +171,7 @@ test('historical sale dates retain the signed-in seller regardless of stock cust
   assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,admin.id);
   assert.equal(result.order.sales_supply_stockholder_id,'');assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,18);assert.equal((await f.s.StockBalance.get('stock')).quantity,10);
   await f.s.Employee.update('cashier',{status:'inactive'});
-  await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active Commercial salesperson/);
+  await assert.rejects(f.call({...f.body,requestKey:crypto.randomUUID()}),/active employee as the salesperson/);
 });
 
 test('multiple customer delivery points require an explicit current selection before stock moves',async()=>{
@@ -395,11 +395,11 @@ for(const sourceType of ['company','warehouse','issued'])for(const exchangeOnly 
  const snapshot=structuredClone(f.rows);assert.equal((await f.call(args)).reused,true);assert.deepEqual(f.rows,snapshot);
 });
 
-test('only principal administrators can choose active Commercial sellers, including staff without sign-in accounts',async()=>{
+test('legacy administrators can choose every active employee, including staff without sign-in accounts',async()=>{
  const f=await setup(),inactive=await f.s.Employee.create({role:'commercial',status:'inactive',full_name:'Inactive seller'}),removed=await f.s.Employee.create({role:'commercial',status:'active',full_name:'Removed seller',employee_removed_at:date}),unrelated=await f.s.Employee.create({role:'employee',status:'active',full_name:'Unrelated employee'});
  const workspace=await f.call({action:'salesOrderWorkspace'});assert.equal(workspace.canChooseSeller,true);assert.equal(workspace.sellers[0].id,workspace.currentSellerId);
  assert.ok(workspace.sellers.some(s=>s.id===f.agent.id&&s.name==='Agent A'&&s.user_id===''));
- for(const id of [f.driver.id,inactive.id,removed.id,unrelated.id])assert.ok(!workspace.sellers.some(s=>s.id===id));
+ for(const id of [inactive.id,removed.id])assert.ok(!workspace.sellers.some(s=>s.id===id)); for(const id of [f.driver.id,unrelated.id])assert.ok(workspace.sellers.some(s=>s.id===id));
  assert.equal(workspace.runs.find(run=>run.id==='run-a').salesperson_id,f.agent.id);
  await f.s.Employee.update('cashier',{role:'employee'});
  for(const actor of [{id:'cashier-login',role:'user'},{id:'cashier-login',role:'user',[FEATURE_AUTHORITY]:{module:'sales',role:'admin'}}]){
@@ -425,7 +425,7 @@ test('an admin recording an offline Commercial sale preserves seller, stock hold
  await f.s.Employee.update(f.agent.id,{role:'procurement',status:'inactive',full_name:'Renamed after posting'});
  const committed=structuredClone(f.rows),retry=await f.call({...body,sales_supply_seller_role:'driver'});assert.equal(retry.reused,true);assert.equal(retry.order.sales_supply_seller_role,'commercial');assert.deepEqual(f.rows,committed);
  await assert.rejects(f.call({...body,sellerId:'cashier'}),/different supply details/);
- await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/active Commercial salesperson/);
+ await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/active employee as the salesperson/);
 });
 
 test('on-behalf issued stock must belong to the selected seller while company and warehouse supplies remain explicit options',async()=>{
@@ -440,13 +440,13 @@ test('on-behalf issued stock must belong to the selected seller while company an
  assert.equal((await f.s.StockBalance.get('stock')).quantity,10);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,16);
 });
 
-test('seller validation is fresh and respects custom Commercial roles without accepting other staff or user identities',async()=>{
+test('seller validation is fresh and accepts all registered employees while rejecting unrelated user identities',async()=>{
  const f=await setup(),custom=await f.s.Employee.create({role:'field_representative',status:'active',full_name:'Offline representative'});
  await f.s.CompanySettings.update('settings',{staff_role_catalogue:{roles:{field_representative:{key:'field_representative',template_role:'commercial',label:'Field representative',modules:['commercial']}}}});
  const workspace=await f.call({action:'salesOrderWorkspace'});assert.ok(workspace.sellers.some(s=>s.id===custom.id));
  const company={...f.body,sourceType:'company',dispatchId:''};
- for(const sellerId of [f.driver.id,'user:another-admin','missing',true])await assert.rejects(f.call({...company,sellerId}),/active Commercial salesperson/);
- await f.s.Employee.update(custom.id,{status:'inactive'});await assert.rejects(f.call({...company,sellerId:custom.id}),/active Commercial salesperson/);
+ for(const sellerId of ['user:another-admin','missing',true])await assert.rejects(f.call({...company,sellerId}),/active employee as the salesperson/);
+ await f.s.Employee.update(custom.id,{status:'inactive'});await assert.rejects(f.call({...company,sellerId:custom.id}),/active employee as the salesperson/);
  await f.s.Employee.update(custom.id,{status:'active'});const result=await f.call({...company,sellerId:custom.id});assert.equal(result.order.salesperson_id,custom.id);assert.equal(result.order.salesperson_name,'Offline representative');assert.equal(result.order.sales_supply_seller_role,'commercial');
 });
 

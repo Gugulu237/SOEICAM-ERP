@@ -352,6 +352,15 @@ test('central inventory keeps company stock automatic when an administrator attr
  }finally{f.close();}
 });
 
+test('central employee profile selects another registered employee and keeps that attribution in stock checks and posting',async()=>{
+ const {render}=await bundle(),workspace={...adminOptions,centralized_inventory:{enabled:true},defaultSource:'company',runs:[],warehouses:[],sellers:[...adminOptions.sellers,{id:'offline-hotesse',name:'Hotesse without login',user_id:''}]},f=setup(()=>render({ownIssuedStock:true}),workspace);
+ f.r.invoke=async body=>{f.calls.push(body);if(body.action==='employeeSalesWorkspace')return {data:workspace};if(body.action==='employeeSalesStock')return {data:stock};if(body.action==='employeeSalesDeliveryPoints')return {data:{points:[]}};if(body.action==='employeeRecordSupply')return {data:{order:{id:'attributed'},invoiceId:'attributed-invoice'}};throw Error('Unscoped action '+body.action);};
+ try{
+  await f.ready();assert.equal(f.control('Person making the sale').tag,'select');changeSeller(f,'offline-hotesse');await settle(f);await productsStep(f);assert.equal(f.r.sourcePicker,undefined);quantity(f,2);reviewStep(f,'CENTRAL-EMPLOYEE-001');await f.button('Record sale & deduct stock').onClick();
+  const lookup=f.calls.filter(call=>call.action==='employeeSalesStock').at(-1),posted=f.calls.find(call=>call.action==='employeeRecordSupply');for(const body of [lookup,posted]){assert.equal(body.sellerId,'offline-hotesse');assert.equal(body.sourceType,'company');assert.equal(body.dispatchId,undefined);assert.equal(body.warehouseId,undefined);}assert.equal(f.r.navigation.at(-1),'/my-stock');
+ }finally{f.close();}
+});
+
 test('central activation converts only an unposted draft stock choice while retaining the entered quantities and receipt',async()=>{
  const {render}=await bundle(),f=setup(render,{...adminOptions,centralized_inventory:{enabled:true},defaultSource:'company'});f.r.routeId='draft';
  f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',dispatch_id:'run-b',warehouse_id:'old-custody',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',receipt_reference:'CENTRAL-DRAFT'})};f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'line',product_id:'yola',product_name:'YOLA 500 g',quantity:3,unit_price:500,tax_rate:0,discount_pct:0}]};

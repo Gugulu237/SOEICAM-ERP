@@ -38,9 +38,10 @@ function DistributionMenu({sections,onOpen}){
 
 export default function Distribution(){
   useInterfaceLanguage();
-  const {role:featureRole,principalRole,loading}=useCurrentUser(),[params]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/distribution');
+  const {user,role:featureRole,principalRole,loading}=useCurrentUser(),[params]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/distribution');
   const role=principalRole||featureRole;
   if(loading)return <p role="status">{ui('Loading distribution...')}</p>;
+  if(user?.centralized_inventory?.enabled)return <Navigate to="/inventory" replace/>;
   if(role==='driver'){
     if(params.get('tab')==='stock')return <div className="space-y-4"><PageHeader title={ui('My current stock')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><OwnFieldStock embedded/></div>;
     if(params.get('tab')==='deliveries')return <div className="space-y-4"><PageHeader title={ui('My deliveries')} back={{onClick:backToMenu,label:ui('Distribution menu')}}/><DriverWorkspace/></div>;

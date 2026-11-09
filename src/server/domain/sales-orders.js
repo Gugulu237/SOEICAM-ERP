@@ -20,17 +20,18 @@ const hash=value=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v &
 const text=(value,max=1000)=>typeof value==='string'?value.trim().slice(0,max):'';
 const saleDate=(value,current=today())=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||value>current)throw Error('Choose a valid sale date on or before today.');periodDates(value,value);return value;};
 const number=(value,label,max=1e9)=>{if(value==null||value===''||!['number','string'].includes(typeof value)||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>max)throw Error('Enter a valid '+label+'.');return Number(value);};
-const selectableSeller=staff=>eligibleStockRecipient(staff)&&principalRole({role:'user'},staff)==='commercial';
+// Attribution describes who sold the goods, independently of their job or login.
+const selectableSeller=staff=>Boolean(staff?.id&&staff.status==='active'&&!staff.employee_removed_at);
 function selectedSellerId(body,currentSeller,user,canChooseSeller){
   const id=body.sellerId==null||body.sellerId===''||body.sellerId==='user:'+user.id?currentSeller.id:body.sellerId;
-  if(typeof id!=='string')throw Error('Choose an active Commercial salesperson.');
+  if(typeof id!=='string')throw Error('Choose an active employee as the salesperson.');
   if(id!==currentSeller.id&&!canChooseSeller)throw Error('The salesperson must be your signed-in account. Reload this sale to use the current user.');
   return id;
 }
 async function resolveSeller(stores,id,currentSeller,currentRole){
   if(id===currentSeller.id)return {id:id.startsWith('user:')?'':id,name:currentSeller.name,role:currentRole};
   const [staff]=await stockStaff(stores,[await stores.Employee.get(id)]);
-  if(!selectableSeller(staff))throw Error('Choose an active Commercial salesperson.');
+  if(!selectableSeller(staff))throw Error('Choose an active employee as the salesperson.');
   return {id:staff.id,name:staff.full_name,role:principalRole({role:'user'},staff)};
 }
 function checkSellerSource(context,id,currentSeller){
@@ -51,7 +52,7 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   const centralPolicy=await centralizedInventoryPolicy(s);
   const currentSellerId=employee?.id&&employee.status==='active'&&!employee.employee_removed_at?employee.id:'user:'+user.id;
   const currentSeller={id:currentSellerId,name:(currentSellerId===employee?.id?employee.full_name:'')||user.full_name||user.email||'Current user',user_id:user.id};
-  const currentSellerRole=principalRole(user,employee),canChooseSeller=!ownIssuedStock&&currentSellerRole==='admin';
+  const currentSellerRole=principalRole(user,employee),canChooseSeller=Boolean(centralPolicy)||!ownIssuedStock&&currentSellerRole==='admin';
   if(ownIssuedStock&&centralPolicy)await assertCentralSalesAccess(client,user,employee);
   if(ownIssuedStock&&!centralPolicy&&['salesOrderStock','recordSuppliedOrder'].includes(body.action)){
     const run=body.dispatchId?await s.Dispatch.get(body.dispatchId):null;
@@ -94,7 +95,7 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   if(prior){
     if(prior.sales_supply_payload!==payload)throw Error('This save reference was already used for different supply details.');
     const order=await s.SalesOrder.get(prior.entity_id);
-    if(ownIssuedStock&&centralPolicy&&(!order||order.salesperson_id!==employee.id||order.sales_supply_recorded_by!==user.id))throw Error('You may review only sales recorded under your own profile.');
+    if(ownIssuedStock&&centralPolicy&&(!order||order.sales_supply_recorded_by!==user.id))throw Error('You may review only sales recorded under your own profile.');
     return {order,invoiceId:prior.sales_supply_invoice_id,reused:true};
   }
   companySource(input,centralPolicy);

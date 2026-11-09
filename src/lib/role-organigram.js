@@ -4,15 +4,15 @@ import {ui} from './i18n.js';
 export const ORGANIGRAM_GROUPS = [
   { key:'leadership', get title(){return ui("Operations leadership");}, detail:'Operations and Supply Chain coordinate daily work.' },
   { key:'production', get title(){return ui("Production team");}, detail:'Production planning, material use, fermentation and finished output.' },
-  { key:'stock', get title(){return ui("Purchasing & warehouse");}, detail:'Materials, stock control and vehicle loading.' },
-  { key:'field', get title(){return ui("Sales, delivery & outlets");}, detail:'Commercial Agents and Drivers supply customers; Hotesses report outlet stock and sales.' },
-  { key:'finance', get title(){return ui("Cash & finance");}, detail:'Cash collection, handovers and payments.' },
+  { key:'stock', get title(){return ui("Purchasing & inventory");}, detail:'Purchasing and materials.' },
+  { key:'field', get title(){return ui("Sales & outlets");}, detail:'Commercial Agents record customer sales; Hotesses report outlet stock and sales.' },
+  { key:'finance', get title(){return ui("Accounting & finance");}, detail:'Centralized inventory, journals, financial reports and cash collection.' },
 ];
 const groupKeys = new Set(ORGANIGRAM_GROUPS.map(group => group.key));
 const fixed = {
   production_manager:'leadership', supply_chain_manager:'leadership',
   employee:'production', hotesse:'field',
-  procurement:'stock', warehouse_manager:'stock',
+  procurement:'stock', warehouse_manager:'finance',
   commercial:'field', driver:'field', cashier:'finance',
 };
 

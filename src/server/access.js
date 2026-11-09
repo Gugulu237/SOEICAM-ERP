@@ -99,6 +99,7 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if([value,existing].some(row=>row&&(Object.keys(row).some(key=>key.startsWith('central_promotional_'))||row.document_type==='CentralPromotionalHandoff'||row.action==='handoff_expensed_degustation')))throw forbidden('Promotional stock handoff evidence is immutable.');
   const acquisitionEvidence=row=>row&&(Object.keys(row).some(key=>key.startsWith('customer_acquisition_'))||String(row.id||'').startsWith('CAA-'));
   if(acquisitionEvidence(value)||acquisitionEvidence(existing)&&(entity!=='Customer'||['delete','deleteMany'].includes(operation)))throw forbidden('Customer acquisition assignments and their evidence use the checked customer review workflow.');
   const centralEvidence=row=>row&&(Object.keys(row).some(key=>key==='centralized_inventory'||key.startsWith('central_inventory_')||key.startsWith('centralized_inventory_')||key.startsWith('central_degustation_'))||['activate_central_inventory','record_central_degustation'].includes(row.action)||['CentralInventoryCutover','CentralDegustation'].includes(row.document_type)||/^CIA-|^CDG-/.test(row.id||''));

@@ -13,6 +13,7 @@ import {createHash} from 'node:crypto';
 import {journalCents,checkedJournalLines,journalPayload} from './journal-validation.js';
 import {centralInventoryMode} from './centralized-inventory-policy.js';
 import {centralCutoverQuantities} from './central-cutover-reconciliation.js';
+import {centralPromotionalHandoff} from './central-promotional-handoff.js';
 
 // These operations execute inside the function route's serializable transaction.
 // All validation is completed before the first stock write. A load is custody,
@@ -361,7 +362,8 @@ export async function dispatchReconciliationData(svc, dispatch) {
     centralCutoverQuantities(svc.entities,dispatch),
   ]);
   const giveaways = degustationState(lines, giveawayMovements);
-  const appropriation=appropriationReconciliation(dispatch,balances,giveawayMovements,returnMovements);
+  const manual=await centralPromotionalHandoff(svc.entities,dispatch);
+  const appropriation=appropriationReconciliation(dispatch,[...balances,...manual.balances],giveawayMovements,returnMovements);
   const delivered = orders.filter(order => ['delivered', 'invoiced'].includes(order.status));
   const approvedFields = fieldSales.filter(sale => sale.status === 'approved_posted');
   const orderIds = new Set(orders.map(order => order.id)), fieldIds = new Set(fieldSales.map(sale => sale.id));
@@ -416,9 +418,9 @@ export async function dispatchReconciliationData(svc, dispatch) {
     const line = lineMap.get(productId), loaded = round3(line?.loaded_quantity || 0), returned = round3(line?.returned_quantity ?? returns.get(productId) ?? 0);
     const confirmedSold = sold.get(productId) || 0, physicalSupplies = consumed.get(productId) || 0;
     const centralizedQuantity=centralized.get(productId)||0;
-    const expected = round3(loaded - returned - physicalSupplies - centralizedQuantity), onHand = actual.get(productId) || 0;
+    const expected = round3(loaded - returned - physicalSupplies - centralizedQuantity - (manual.quantities.get(productId)||0)), onHand = actual.get(productId) || 0;
     const expensed=appropriation?.products.get(productId);
-    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, centralized_quantity:centralizedQuantity, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: giveaways.get(productId)?.remaining || 0,degustation_expensed_quantity:expensed?round3(expensed.remaining_quantity+expensed.given_quantity):0,degustation_expensed_value:expensed?round2(expensed.remaining_value+expensed.given_value):0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
+    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, centralized_quantity:centralizedQuantity, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: round3((giveaways.get(productId)?.remaining || 0)-(manual.quantities.get(productId)||0)),manual_tracking_quantity:manual.quantities.get(productId)||0,degustation_expensed_quantity:expensed?round3(expensed.remaining_quantity+expensed.given_quantity):0,degustation_expensed_value:expensed?round2(expensed.remaining_value+expensed.given_value):0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
   });
   let cashSales = 0, creditSales = 0, totalSales = 0;
   for (const sale of [...postedFieldSales, ...postedOrders]) {
@@ -427,7 +429,7 @@ export async function dispatchReconciliationData(svc, dispatch) {
     creditSales = round2(creditSales + (present(sale.amount_due) ? amount(sale.amount_due) : Math.max(0, total - collected)));
     totalSales = round2(totalSales + total);
   }
-  return { rows, degustations: degustationHistory(giveawayMovements),degustationAppropriation:appropriation?Object.fromEntries(Object.entries(appropriation).filter(([key])=>key!=='products')):null, degustationCost: round2(giveawayMovements.reduce((sum,m) => sum + Number(m.total_value || 0),0)+(appropriation?appropriation.total_value-appropriation.returned_value:0)), orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
+  return { rows, degustations: degustationHistory(giveawayMovements),degustationAppropriation:appropriation?{...Object.fromEntries(Object.entries(appropriation).filter(([key])=>key!=='products')),remaining_quantity:round3(appropriation.remaining_quantity-manual.quantity),remaining_value:round2(appropriation.remaining_value-manual.value),manual_tracking_quantity:manual.quantity,manual_tracking_value:manual.value}:null, degustationCost: round2(giveawayMovements.reduce((sum,m) => sum + Number(m.total_value || 0),0)+(appropriation?appropriation.total_value-appropriation.returned_value:0)), orders: postedOrders, fieldSales: postedFieldSales, cashSales, creditSales, totalSales, hasVariance: rows.some(row => row.variance !== 0), manualTrackingQuantity:manual.quantity, remainingQty: round3(rows.reduce((sum, row) => sum + row.actual, 0)) };
 }
 
 async function returnStock(svc, user, dispatch, body={}, {returnRequestId}={}) {

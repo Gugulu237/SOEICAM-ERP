@@ -91,8 +91,8 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     const order=await client.asServiceRole.entities.SalesOrder.get(body.sourceId);
     const run=order?.dispatch_id?await client.asServiceRole.entities.Dispatch.get(order.dispatch_id):null;
     const central=order?.sales_supply_centralized_inventory;
-    const centralOwn=centralPolicy&&principalRole(user,employee)!=='driver'&&order?.sales_supply_source==='company'&&!order.dispatch_id&&central?.policy===centralPolicy.policy&&central.activation_id===centralPolicy.activation_id&&central.employee_id===employee.id&&central.recorded_by===user.id;
-    if(!order||order.sales_supply_recorded_by!==user.id||order.salesperson_id!==employee.id||(!centralOwn&&run?.salesperson_id!==employee.id))throw Error('Only your own checked sale can be invoiced here.');
+    const centralOwn=centralPolicy&&principalRole(user,employee)!=='driver'&&order?.sales_supply_source==='company'&&!order.dispatch_id&&central?.policy===centralPolicy.policy&&central.activation_id===centralPolicy.activation_id&&central.employee_id===order.salesperson_id&&central.recorded_by===user.id;
+    if(!order||order.sales_supply_recorded_by!==user.id||(!centralOwn&&(order.salesperson_id!==employee.id||run?.salesperson_id!==employee.id)))throw Error('Only your own checked sale can be invoiced here.');
   }
   else client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;

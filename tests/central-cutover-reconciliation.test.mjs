@@ -4,6 +4,8 @@ import {fixture,date,user} from './helpers/cashier.mjs';
 import {centralCutoverQuantities} from '../src/server/domain/central-cutover-reconciliation.js';
 import {dispatchReconciliationData,dispatchAction,topUpDispatchStock} from '../src/server/domain/dispatch-operations.js';
 import {CENTRAL_INVENTORY_POLICY} from '../src/server/domain/centralized-inventory-policy.js';
+import {centralPromotionalHandoff,PROMOTIONAL_HANDOFF_POLICY} from '../src/server/domain/central-promotional-handoff.js';
+import {guardMutation} from '../src/server/access.js';
 
 async function setup({zero=false}={}){
  const f=await fixture(),s=f.entities;
@@ -29,6 +31,20 @@ async function setup({zero=false}={}){
 test('company-stock cutover is disclosed separately and never rewrites loaded, sold or physically returned quantities',async()=>{
  const f=await setup(),before=structuredClone(f.rows),quantities=await centralCutoverQuantities(f.s,f.dispatch),reconciliation=await dispatchReconciliationData(f.client.asServiceRole,f.dispatch),row=reconciliation.rows[0];
  assert.deepEqual([...quantities],[['product-a',10]]);assert.equal(row.loaded,10);assert.equal(row.centralized_quantity,10);assert.equal(row.returned,0);assert.equal(row.sold,0);assert.equal(row.expected,0);assert.equal(row.actual,0);assert.equal(row.variance,0);assert.equal(reconciliation.hasVariance,false);assert.deepEqual(f.rows,before);assert.equal(f.rows.JournalEntry.length,0);
+});
+
+test('manual promotional handoff removes employee custody without inventing a sale, return, giveaway or second expense',async()=>{
+ const f=await setup({zero:true}),id='CPH-test',appropriation={id:'DGA-test',policy:'legacy-degustation-appropriation-v1',expense_account_id:'marketing',total_quantity:10,total_value:2000},original={...await f.s.StockBalance.get('stock'),unit_cost:0,total_value:0,degustation_appropriation_id:'DGA-test',degustation_appropriation_dispatch_id:'run-a',degustation_appropriation_quantity:10,degustation_appropriation_value:2000,degustation_appropriation_expense_account_id:'marketing',degustation_appropriation_inventory_account_id:'inventory'};
+ const manifest=(await f.s.DispatchLine.filter({dispatch_id:'run-a'}))[0];await f.s.DispatchLine.update(manifest.id,{degustation_quantity:10});
+ await f.s.StockBalance.update('stock',{quantity:0,unit_cost:0,total_value:0,central_promotional_handoff_id:id});
+ const proof={policy:PROMOTIONAL_HANDOFF_POLICY,date,activation_id:f.config.activation_id,dispatch_id:'run-a',source_warehouse_id:'van-stock',appropriation_id:'DGA-test',total_quantity:10,original_cost:2000,balances:[original]};
+ await f.s.AuditLog.create({id,action:'handoff_expensed_degustation',module:'inventory',entity_type:'Dispatch',entity_id:'run-a',audit_source:'server_verified',user_id:'gm',central_promotional_handoff:proof});
+ const movement=await f.s.StockMovement.create({id:'handoff-movement',product_id:'product-a',quantity:10,unit_cost:0,total_value:0,lot_number:'LOT',document_type:'CentralPromotionalHandoff',document_id:id,movement_type:'promotional_issue',movement_date:date,status:'approved',source_warehouse_id:'van-stock',dispatch_id:'run-a',central_promotional_source_balance_id:'stock',central_promotional_handoff_id:id,central_promotional_original_cost:2000});
+ const dispatch=await f.s.Dispatch.update('run-a',{status:'completed',central_promotional_handoff_id:id,degustation_appropriation:appropriation});
+ const before=structuredClone(f.rows),result=await dispatchReconciliationData(f.client.asServiceRole,dispatch),row=result.rows[0];
+ assert.equal(result.hasVariance,false);assert.equal(row.expected,0);assert.equal(row.actual,0);assert.equal(row.sold,0);assert.equal(row.returned,0);assert.equal(row.degustation_given,0);assert.equal(row.degustation_remaining,0);assert.equal(row.manual_tracking_quantity,10);assert.equal(result.degustationCost,2000);assert.equal(result.manualTrackingQuantity,10);assert.equal(result.degustationAppropriation.remaining_quantity,0);assert.equal(result.degustationAppropriation.manual_tracking_quantity,10);assert.deepEqual(f.rows,before);assert.equal(f.rows.JournalEntry.length,0);
+ for(const update of [{total_value:1},{central_promotional_original_cost:1999},{quantity:9}]){await f.s.StockMovement.update(movement.id,update);await assert.rejects(centralPromotionalHandoff(f.s,dispatch),/Reconcile/);await f.s.StockMovement.update(movement.id,movement);}
+ assert.throws(()=>guardMutation({user:{role:'admin'},role:'admin'},'StockMovement','delete',{},movement),/immutable/);
 });
 
 test('historical cutover proof remains valid after company stock is sold or replenished',async()=>{

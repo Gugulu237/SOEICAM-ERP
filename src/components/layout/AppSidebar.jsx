@@ -48,7 +48,7 @@ export default function AppSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingHref,setPendingHref] = useState('');
   const location = useLocation();
-  const { role, principalRole, assignedRole, allowedModules } = useCurrentUser();
+  const { user, role, principalRole, assignedRole, allowedModules } = useCurrentUser();
   const { logout } = useAuth();
 
   // Keep the drawer's Back entry until Next commits the selected route. Closing
@@ -64,7 +64,7 @@ export default function AppSidebar() {
 
   const targetPath=path=>role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
-  const visibleItems = navItems.filter(item => (!item.personalCommercial || role === 'commercial' || (principalRole||role)!=='admin'&&allowedModules?.includes('commercial')) && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && (hasRoleAccess(role, item.roles) || hasWorkspaceGrant(role,targetPath(item.path),allowedModules)) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
+  const visibleItems = navItems.filter(item => (!user?.centralized_inventory?.enabled || item.path!=='/distribution') && (!item.personalCommercial || role === 'commercial' || (principalRole||role)!=='admin'&&allowedModules?.includes('commercial')) && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && (hasRoleAccess(role, item.roles) || hasWorkspaceGrant(role,targetPath(item.path),allowedModules)) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
 
   const isActive = (path) => {
     if (path === "/") return location.pathname === "/";

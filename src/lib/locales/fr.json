@@ -8456,5 +8456,14 @@
   "Review the original customer registration date before assigning acquisition.": "Vérifiez la date d’enregistrement initiale du client avant d’attribuer son acquisition.",
   "Customer acquisition assignments use the checked customer review workflow.": "Les attributions d’acquisition de clients utilisent la procédure contrôlée de vérification des clients.",
   "An active linked sales staff account is required.": "Un profil commercial actif lié à votre compte est requis.",
-  "Customer acquisition assignments and their evidence use the checked customer review workflow.": "Les attributions d’acquisition de clients et leurs justificatifs utilisent la procédure contrôlée de vérification des clients."
+  "Customer acquisition assignments and their evidence use the checked customer review workflow.": "Les attributions d’acquisition de clients et leurs justificatifs utilisent la procédure contrôlée de vérification des clients.",
+  "Accountant": "Comptable",
+  "Manages centralized inventory and company accounting.": "Gère le stock centralisé et la comptabilité de l’entreprise.",
+  "Inventory and accounting": "Stock et comptabilité",
+  "Manage company stock, record journals and reconcile accounts. Follow delivery stock manually.": "Gérez le stock de l’entreprise, les écritures et le rapprochement des comptes. Suivez manuellement les produits emportés en livraison.",
+  "Purchasing & inventory": "Achats et stock",
+  "Sales & outlets": "Ventes et points de vente",
+  "Accounting & finance": "Comptabilité et finances",
+  "Records sales against centralized company stock.": "Enregistre les ventes sur le stock centralisé de l’entreprise.",
+  "Choose an active employee as the salesperson.": "Choisissez un employé actif comme vendeur."
 }

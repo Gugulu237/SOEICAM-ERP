@@ -19,7 +19,7 @@ export const MODULES = [
 export const TEMPLATE_MODULES = {
   admin: MODULES.map(m => m.key),
   procurement:['purchases','inventory','expenses','approvals'],
-  warehouse_manager:['purchases','inventory','manufacturing','quality','distribution','expenses','approvals'],
+  warehouse_manager:['purchases','inventory','inventory_adjustments','manufacturing','quality','accounting','sales','sales_reports','customers','expenses','approvals','payroll'],
   production_manager:['accounting','purchases','inventory','manufacturing','quality','distribution','sales','commercial','cashier','expenses','approvals'],
   cashier:['purchases','cashier','payroll','accounting','expenses'],
   employee:['purchases','inventory','distribution','sales','customers','expenses'],
@@ -32,12 +32,15 @@ export const SUPPLY_CHAIN_MANAGER = {
   key:'supply_chain_manager', label:'Supply Chain Manager', category:'Management',
   summary:'Coordinates suppliers, purchasing, receiving, inventory, quality and deliveries.',
   duties:['Maintains suppliers and plans replenishment orders','Oversees receiving, stock and batch quality','Coordinates vehicle loads, returns and deliveries'],
-  template_role:'warehouse_manager', modules:[...TEMPLATE_MODULES.warehouse_manager,'sales_reports','sales','accounting'],
+  template_role:'warehouse_manager', modules:['purchases','inventory','manufacturing','quality','distribution','expenses','approvals','sales_reports','sales','accounting'],
 };
 const keyPattern = /^[a-z][a-z0-9_]{2,39}$/;
 const categories = ['Management','Finance','Operations','Commercial'];
-const defaults = Object.fromEntries(ROLE_KEYS.map(key => [key,{ template_role:key, modules:[...TEMPLATE_MODULES[key]] }]));
-const baseLabels = { admin:'General Manager',procurement:'Procurement Officer',warehouse_manager:'Warehouse Manager',production_manager:'Operations / Production Manager',cashier:'Cashier',employee:'Employee',commercial:'Commercial Agent',driver:'Driver',hotesse:'Hotesse' };
+// Keep the historical warehouse_manager key so staff, approvals and journals
+// retain their identities as the position becomes Accountant.
+export const ACCOUNTANT_ROLE={key:'warehouse_manager',label:'Accountant',category:'Finance',template_role:'warehouse_manager',summary:'Manages centralized inventory and company accounting.',duties:['Controls company stock, receiving, counts and inventory adjustments','Follows goods taken for delivery manually outside the ERP','Records journals and maintains the chart of accounts','Reconciles receivables, payables, expenses and assets','Prepares financial statements and accounting reports'],modules:[...TEMPLATE_MODULES.warehouse_manager],module_permissions_version:5};
+const defaults = Object.fromEntries(ROLE_KEYS.map(key => [key,{ template_role:key, modules:[...TEMPLATE_MODULES[key]],...(key==='warehouse_manager'?{...ACCOUNTANT_ROLE,full_access_modules:[...ACCOUNTANT_ROLE.modules]}:{}) }]));
+const baseLabels = { admin:'General Manager',procurement:'Procurement Officer',warehouse_manager:'Accountant',production_manager:'Operations / Production Manager',cashier:'Cashier',employee:'Employee',commercial:'Commercial Agent',driver:'Driver',hotesse:'Hotesse' };
 
 export function parseStoredRoleCatalogue(value) {
   if (typeof value === 'string') {

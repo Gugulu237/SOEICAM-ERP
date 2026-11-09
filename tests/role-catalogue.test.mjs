@@ -5,6 +5,17 @@ import { effectiveRole } from '../src/server/domain/roles.js';
 import { purchasePermissions, purchaseSections } from '../src/lib/purchase-workspace.js';
 import { ROLE_DEFINITIONS, roleLabel } from '../src/lib/permissions.js';
 import { organizeRoles, moveOrganigramRole, validateOrganigramLayout } from '../src/lib/role-organigram.js';
+import {featureContext} from '../src/server/feature-access.js';
+import {assertEntityAccess} from '../src/server/access.js';
+
+test('Accountant combines inventory and accounting with scoped feature grants and cannot change General Manager access',()=>{
+ const roleCatalogue=catalogueFromStored({deleted_roles:['driver']}),user={id:'accountant-login',role:'user'},employee=decorateEmployee(user,{id:'accountant',user_id:user.id,role:'warehouse_manager',status:'active'},roleCatalogue),context={user,employee,role:'warehouse_manager',roleCatalogue};
+ assert.equal(employee.role_label,'Accountant');assert.equal(roleLabel('accountant'),'Accountant');assert.equal(roleCatalogue.roles.driver,undefined);
+ for(const module of ['inventory','inventory_adjustments','accounting','sales','sales_reports','payroll'])assert.ok(employee.allowed_modules.includes(module));
+ assert.ok(!employee.allowed_modules.includes('distribution'));assert.ok(!employee.allowed_modules.includes('admin'));assert.ok(!employee.allowed_modules.includes('employees'));
+ const accounting=featureContext(context,'accounting');assert.equal(accounting.role,'admin');assert.doesNotThrow(()=>assertEntityAccess(accounting,'JournalEntry','create'));assert.doesNotThrow(()=>assertEntityAccess(accounting,'JournalLine','create'));assert.doesNotThrow(()=>assertEntityAccess(accounting,'Account','filter'));
+ assert.throws(()=>assertEntityAccess(accounting,'Employee','update'),{status:403});assert.equal(featureContext(context,'employees'),context);assert.equal(featureContext(context,'admin'),context);
+});
 
 test('organigram places production support with Operations, field partners together, and GM at the root', () => {
   const custom = [
@@ -19,8 +30,8 @@ test('organigram places production support with Operations, field partners toget
   assert.deepEqual(group('leadership'),['production_manager','supply_chain_manager','stock_controller']);
   assert.deepEqual(group('production'),['employee','productionassistants']);
   assert.deepEqual(group('field'),['commercial','driver','hotesse','route_coordinator']);
-  assert.deepEqual(group('stock'),['procurement','warehouse_manager']);
-  assert.deepEqual(group('finance'),['cashier','payments_clerk']);
+  assert.deepEqual(group('stock'),['procurement']);
+  assert.deepEqual(group('finance'),['cashier','warehouse_manager','payments_clerk']);
   const shown = [chart.generalManager.key,...chart.groups.flatMap(group => group.roles.map(role => role.key))];
   assert.equal(new Set(shown).size,shown.length);
   assert.deepEqual(new Set(shown),new Set([...ROLE_DEFINITIONS,...custom].map(role => role.key)));
@@ -69,7 +80,7 @@ test('GM changes narrow existing and custom roles immediately; invalid privilege
   assert.throws(() => validateRoleProfile({ ...narrowed,key:'admin',template_role:'admin' }));
   const custom = validateRoleProfile({ key:'logistics_coordinator', label:'Logistics Coordinator', category:'Operations', summary:'Coordinate stock', duties:[], template_role:'warehouse_manager',modules:['inventory','distribution'] });
   assert.deepEqual(custom.modules,['inventory','distribution']);
-  assert.ok(!TEMPLATE_MODULES.warehouse_manager.includes('accounting'));
+  assert.ok(TEMPLATE_MODULES.warehouse_manager.includes('accounting'));
   assert.equal(moduleForPath('/purchases/new'),'purchases');
   assert.equal(purchasePermissions('warehouse_manager','supply_chain_manager').suppliers,true);
   assert.equal(purchasePermissions('warehouse_manager','supply_chain_manager').pay,false);

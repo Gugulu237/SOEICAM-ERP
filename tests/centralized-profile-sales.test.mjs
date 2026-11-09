@@ -42,7 +42,7 @@ async function moduleRole(f,role,modules,actor=user){
 test('profile sales use the activated company pool without an issued load and post exact FEFO cost once',async()=>{
  const f=await setup(),beforeCustody=await f.s.StockBalance.get('stock');
  const workspace=await f.call({action:'employeeSalesWorkspace'});
- assert.equal(workspace.centralized_inventory.enabled,true);assert.equal(workspace.defaultSource,'company');assert.deepEqual(workspace.runs,[]);assert.deepEqual(workspace.warehouses,[]);assert.equal(workspace.canChooseSeller,false);assert.deepEqual(workspace.sellers.map(row=>row.id),['cashier']);
+ assert.equal(workspace.centralized_inventory.enabled,true);assert.equal(workspace.defaultSource,'company');assert.deepEqual(workspace.runs,[]);assert.deepEqual(workspace.warehouses,[]);assert.equal(workspace.canChooseSeller,true);assert.deepEqual(workspace.sellers.map(row=>row.id),['cashier']);
  const stock=await f.call({action:'employeeSalesStock'});assert.equal(stock.source.source_type,'company');assert.equal(stock.products[0].available,15);assert.equal('unit_cost'in stock.products[0],false);
  const result=await f.call(f.body),retry=await f.call(f.body),invoice=await f.s.Invoice.get(result.invoiceId),line=(await f.s.InvoiceLine.filter({invoice_id:invoice.id}))[0];
  assert.equal(retry.reused,true);assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,user.id);assert.equal(result.order.dispatch_id,'');assert.equal(invoice.salesperson_id,'cashier');assert.equal(invoice.recorded_by,user.id);assert.equal(invoice.sales_supply_acquisition_agent_id,'cashier');assert.equal(invoice.sales_supply_registration_user_id,user.id);assert.equal(line.cogs_total,953.31);
@@ -63,12 +63,26 @@ test('authorized central sellers can supply all active company customers while p
  assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_acquisition_agent_id,'other-agent');assert.equal(invoice.sales_supply_acquisition_agent_id,'other-agent');assert.equal(invoice.sales_supply_registration_user_id,'original-registrar');assert.deepEqual(await f.s.Customer.get(stranger.id),stranger);
 });
 
-test('central profile cannot choose a different seller, issued source, warehouse, old order or driver role',async()=>{
+test('central profile rejects unknown sellers, issued sources, warehouses, old orders and driver actors',async()=>{
  for(const change of [{sellerId:'another-agent'},{sourceType:'issued',dispatchId:'run-a'},{sourceType:'warehouse',warehouseId:'factory'},{sourceType:'company',warehouseId:'factory'},{orderId:'foreign-draft'}]){
   const f=await setup(),before=await f.state();await assert.rejects(f.call({...f.body,...change}));assert.deepEqual(await f.state(),before);
  }
  const driver=await setup();await driver.s.Employee.update('cashier',{role:'driver'});const before=await driver.state();await assert.rejects(driver.call(driver.body),/Drivers cannot record/);assert.deepEqual(await driver.state(),before);
  const admin=await setup();await assert.rejects(salesOrderAction(admin.client,gm,{...admin.body,action:'recordSuppliedOrder',sourceType:'issued',dispatchId:'run-a'}),/Centralized sales/);
+});
+
+test('central staff attribute sales to any active employee without a login while retaining recorder, acquisition and exact stock cost',async()=>{
+ for(const role of ['hotesse','production_manager','warehouse_manager','employee']){
+  const f=await setup(),seller=await f.s.Employee.create({role,status:'active',full_name:'Offline '+role,user_id:''});
+  const inactive=await f.s.Employee.create({role,status:'inactive',full_name:'Inactive'}),removed=await f.s.Employee.create({role,status:'active',full_name:'Removed',employee_removed_at:date});
+  const workspace=await f.call({action:'employeeSalesWorkspace'});
+  assert.equal(workspace.canChooseSeller,true);assert.ok(workspace.sellers.some(row=>row.id===seller.id));assert.ok(!workspace.sellers.some(row=>[inactive.id,removed.id].includes(row.id)));
+  const before=await f.state();for(const sellerId of [inactive.id,removed.id,'user:other'])await assert.rejects(f.call({...f.body,sellerId}),/active employee/);assert.deepEqual(await f.state(),before);
+  const body={...f.body,sellerId:seller.id},result=await f.call(body),invoice=await f.s.Invoice.get(result.invoiceId),audit=(await f.s.AuditLog.list()).find(row=>row.action==='record_supplied_order');
+  assert.equal(result.order.salesperson_id,seller.id);assert.equal(invoice.salesperson_id,seller.id);assert.equal(invoice.salesperson_name,seller.full_name);assert.equal(invoice.recorded_by,user.id);assert.equal(audit.sales_supply_recorded_by,user.id);assert.equal(audit.sales_supply_on_behalf,true);assert.equal(invoice.sales_supply_acquisition_agent_id,'cashier');
+  assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,953.31);assert.equal((await f.s.StockBalance.get(f.pooled.id)).quantity,0);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,9);
+  const committed=await f.state();assert.equal((await f.call(body)).reused,true);assert.deepEqual(await f.state(),committed);
+ }
 });
 
 test('central self sales require real Sales or Commercial module permission before serving lookups or writing stock',async()=>{
@@ -84,7 +98,7 @@ test('commercial-only PM and Supply Chain staff can record their own central sal
  for(const role of ['production_manager','supply_chain_manager']){
   const f=await setup(),{context,calls}=await moduleRole(f,role,['inventory','commercial']);
   assert.throws(()=>assertModule(context,'sales'),error=>error.status===403);assert.throws(()=>assertModule(context,'sales_reports'),error=>error.status===403);
-  const workspace=await f.call({action:'employeeSalesWorkspace'});assert.equal(workspace.canChooseSeller,false);assert.deepEqual(calls,['sales','commercial']);calls.length=0;
+  const workspace=await f.call({action:'employeeSalesWorkspace'});assert.equal(workspace.canChooseSeller,true);assert.deepEqual(calls,['sales','commercial']);calls.length=0;
   const result=await f.call(f.body),invoice=await f.s.Invoice.get(result.invoiceId);
   assert.equal(invoice.salesperson_id,'cashier');assert.equal(invoice.recorded_by,user.id);assert.deepEqual(calls,['sales','commercial']);assert.equal((await f.s.StockBalance.get(f.pooled.id)).quantity,0);
  }
