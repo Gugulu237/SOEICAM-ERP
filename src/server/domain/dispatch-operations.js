@@ -9,6 +9,8 @@ import { ensureVehicleStockLocation } from './vehicle-locations.js';
 import { receiveVehicleExpiredReturns } from './commercial-returns.js';
 import { DISPATCH_MANAGER_ROLES, canIssueDeliveryStock } from '../../lib/operations-access.js';
 import {validPostingRuleAccount} from '../../lib/posting-rule-types.js';
+import {createHash} from 'node:crypto';
+import {journalCents,checkedJournalLines,journalPayload} from './journal-validation.js';
 
 // These operations execute inside the function route's serializable transaction.
 // All validation is completed before the first stock write. A load is custody,
@@ -46,6 +48,119 @@ const nonnegative = (value, label) => {
   return result;
 };
 const amount = value => present(value) && Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
+
+export const DISPATCH_TOP_UP_POLICY='add-to-current-stock-v1';
+const additionError=()=>Error('Reconcile the current load and its original stock movements before adding more goods.');
+const additionCanonical=value=>Array.isArray(value)?value.map(additionCanonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,additionCanonical(value[key])])):value;
+const additionHash=value=>createHash('sha256').update(JSON.stringify(additionCanonical(value))).digest('hex');
+const additionQuantity=value=>{const n=Number(value),scaled=Math.round(n*1000);if(!['number','string'].includes(typeof value)||String(value).trim()===''||!Number.isFinite(n)||n<0||n>1e9||!Number.isSafeInteger(scaled)||Math.abs(n*1000-scaled)>0.0001)throw additionError();return scaled;};
+const additionValue=value=>{if(value==null)throw additionError();try{return journalCents(value);}catch{throw additionError();}};
+const additionPick=(row,keys)=>Object.fromEntries(keys.split(' ').filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]]));
+const movementProof=row=>additionPick(row,'id product_id quantity movement_type source_warehouse_id destination_warehouse_id lot_number expiry_date unit_cost total_value document_type document_id movement_date status production_order_id batch_number dispatch_id dispatch_load_addition_id dispatch_load_addition_policy degustation_issue_event_id degustation_at_issue recorded_by journal_id journal_number');
+const journalProof=row=>additionPick(row,'id journal_number entry_date description source_module source_document_type source_document_id status total_debit total_credit posting_payload posted_by');
+const journalLineProof=row=>additionPick(row,'id journal_id status account_id debit credit description party_type party_id');
+const proofSort=rows=>rows.map(row=>Object.fromEntries(Object.entries(row).sort(([a],[b])=>a.localeCompare(b)))).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+const proofEqual=(left,right)=>JSON.stringify(proofSort(left))===JSON.stringify(proofSort(right));
+
+function additionTransfers(movements,dispatch,expected){
+ const outgoing=[],incoming=[];
+ for(const row of movements){
+  if(row.status!=='approved'||row.document_type!=='Dispatch'||row.document_id!==dispatch.id||row.movement_type!=='vehicle_load'||!additionQuantity(row.quantity))throw additionError();
+  additionValue(row.total_value);
+  if(row.source_warehouse_id===dispatch.warehouse_id&&!row.destination_warehouse_id)outgoing.push(row);
+  else if(row.destination_warehouse_id===dispatch.vehicle_warehouse_id&&!row.source_warehouse_id)incoming.push(row);
+  else throw additionError();
+ }
+ const shape=row=>JSON.stringify([row.product_id,row.lot_number||'',row.expiry_date||'',row.production_order_id||'',row.batch_number||'',additionQuantity(row.quantity),additionValue(row.total_value)]);
+ if(JSON.stringify(outgoing.map(shape).sort())!==JSON.stringify(incoming.map(shape).sort()))throw additionError();
+ const amounts=new Map();for(const row of outgoing){const sum=amounts.get(row.product_id)||{quantity:0,value:0};sum.quantity+=additionQuantity(row.quantity);sum.value+=additionValue(row.total_value);if(!Number.isSafeInteger(sum.quantity)||!Number.isSafeInteger(sum.value))throw additionError();amounts.set(row.product_id,sum);}
+ if(amounts.size!==expected.size||[...expected].some(([id,row])=>amounts.get(id)?.quantity!==row.quantity||amounts.get(id)?.value!==row.value))throw additionError();
+}
+
+async function additionGiveawayProof(svc,dispatch,eventId,lines,userId){
+ const id='DEG-ISSUE-'+eventId,movements=await records(svc.entities.StockMovement,{document_type:'Degustation',document_id:id}),expected=new Map(lines.filter(row=>row.degustation_quantity>0).map(row=>[row.product_id,additionQuantity(row.degustation_quantity)])),actual=new Map();let value=0;
+ for(const row of movements){
+  if(row.status!=='approved'||row.movement_type!=='promotional_issue'||row.source_warehouse_id!==dispatch.vehicle_warehouse_id||row.destination_warehouse_id||row.dispatch_id!==dispatch.id||row.degustation_issue_event_id!==eventId||row.degustation_at_issue!==true||row.recorded_by!==userId||row.degustation_already_expensed||!additionQuantity(row.quantity))throw additionError();
+  actual.set(row.product_id,(actual.get(row.product_id)||0)+additionQuantity(row.quantity));value+=additionValue(row.total_value);
+ }
+ if(actual.size!==expected.size||[...expected].some(([productId,qty])=>actual.get(productId)!==qty))throw additionError();
+ const journals=await records(svc.entities.JournalEntry,{source_module:'degustation',source_document_type:'Degustation',source_document_id:id});
+ if(!value){if(journals.length||movements.some(row=>row.journal_id))throw additionError();return {movements:proofSort(movements.map(movementProof)),journal:null,lines:[]};}
+ if(journals.length!==1)throw additionError();const journal=journals[0],journalLines=await records(svc.entities.JournalLine,{journal_id:journal.id});let checked;
+ try{checked=checkedJournalLines(journalLines);}catch{throw additionError();}
+ if(journal.status!=='posted'||journal.posted_by!==userId||additionValue(journal.total_debit)!==value||additionValue(journal.total_credit)!==value||additionValue(checked.debit)!==value||additionValue(checked.credit)!==value||journalLines.some(row=>row.status!=='posted')||movements.some(row=>row.journal_id!==journal.id)||journal.posting_payload!==journalPayload({entryDate:journal.entry_date,description:journal.description,sourceModule:journal.source_module,sourceDocumentType:journal.source_document_type,lines:checked.lines}))throw additionError();
+ return {movements:proofSort(movements.map(movementProof)),journal:journalProof(journal),lines:proofSort(journalLines.map(journalLineProof))};
+}
+
+async function retryAddition(svc,user,dispatch,event,payload,fingerprint){
+ const proof=event.dispatch_load_addition;
+ if(event.action!=='add_dispatch_stock'||event.module!=='distribution'||event.entity_type!=='Dispatch'||event.entity_id!==dispatch.id||event.user_id!==user.id||event.audit_source!=='server_verified'||!proof||proof.id!==event.id||proof.policy!==DISPATCH_TOP_UP_POLICY||proof.dispatch_id!==dispatch.id||proof.payload!==payload||proof.fingerprint!==fingerprint||event.dispatch_load_addition_checksum!==additionHash(proof))throw Error('This loading reference was already used for different goods. Reopen the issue form.');
+ const expected=new Map(proof.lines.map(row=>[row.product_id,{quantity:additionQuantity(row.quantity),value:additionValue(row.value)}]));
+ if(expected.size!==proof.lines.length||proof.lines.length===0||additionValue(proof.total_value)!==proof.lines.reduce((sum,row)=>sum+additionValue(row.value),0))throw additionError();
+ const movements=await records(svc.entities.StockMovement,{dispatch_load_addition_id:event.id});
+ if(!proofEqual(movements.map(movementProof),proof.transfers)||movements.some(row=>row.dispatch_load_addition_policy!==DISPATCH_TOP_UP_POLICY||row.movement_date!==proof.date))throw additionError();
+ additionTransfers(movements,dispatch,expected);
+ const current=await records(svc.entities.DispatchLine,{dispatch_id:dispatch.id});
+ for(const row of proof.lines){const line=current.find(line=>line.id===row.manifest_line_id);if(!line||line.product_id!==row.product_id||additionQuantity(line.loaded_quantity)<additionQuantity(row.after.loaded_quantity)||additionValue(line.loaded_value)<additionValue(row.after.loaded_value)||additionQuantity(line.degustation_quantity||0)<additionQuantity(row.after.degustation_quantity))throw additionError();}
+ const giveaway=await additionGiveawayProof(svc,dispatch,event.id,proof.lines,user.id);
+ if(additionHash(giveaway)!==additionHash(proof.giveaway))throw additionError();
+ return {dispatch,totalValue:proof.total_value,vehicleWarehouseId:dispatch.vehicle_warehouse_id,reused:true,addition:{id:event.id,policy:DISPATCH_TOP_UP_POLICY,date:proof.date}};
+}
+
+// A reviewed addition extends one custody run instead of forcing the holder to
+// return unsold goods merely to receive more. Its immutable delta is separate
+// from the original request and binds every transferred lot and giveaway.
+export async function topUpDispatchStock(svc,user,dispatch,body){
+ if(!user?.id||body.topUpPolicy!==DISPATCH_TOP_UP_POLICY||!dispatch?.id||body.existingDispatchId!==dispatch.id||!/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(body.requestKey||''))throw Error('Review the current load before adding more goods.');
+ const identity=[body.warehouseId,body.commercialId,body.driverId||'',body.vehicleId||''];
+ if(identity.some(value=>typeof value!=='string')||JSON.stringify(identity)!==JSON.stringify([dispatch.warehouse_id,dispatch.salesperson_id,dispatch.driver_id||'',dispatch.vehicle_id||'']))throw Error('Add goods only to the same warehouse, employee, driver and vehicle.');
+ if(!Array.isArray(body.lines)||!body.lines.length||body.lines.length>100||new Set(body.lines.map(row=>row?.product_id)).size!==body.lines.length)throw Error('Choose 1 to 100 distinct finished products');
+ const lines=body.lines.map(row=>{if(typeof row?.product_id!=='string'||!row.product_id||!additionQuantity(row.quantity))throw additionError();const gift=degustationQuantity(row.degustation_quantity??0);if(gift>Number(row.quantity))throw Error('Dégustation quantity cannot exceed the total issued quantity.');return {product_id:row.product_id,quantity:additionQuantity(row.quantity)/1000,degustation_quantity:gift};}).sort((a,b)=>a.product_id.localeCompare(b.product_id));
+ const date=body.date||today(),notes=String(body.notes||'').slice(0,2000),id='DLA-'+createHash('sha256').update(user.id+':'+body.requestKey).digest('hex'),payload=JSON.stringify([DISPATCH_TOP_UP_POLICY,dispatch.id,user.id,...identity,date,notes,lines]),fingerprint=additionHash(payload),previous=await svc.entities.AuditLog.get(id);
+ if(previous)return retryAddition(svc,user,dispatch,previous,payload,fingerprint);
+ if(date!==today())throw Error('New stock loading is recorded on the current business date');
+ if(!openStates.includes(dispatch.status)||!dispatch.dispatch_date||dispatch.dispatch_date>date||dispatch.unsold_return_request_id||dispatch.return_date||dispatch.unsold_return_received_request_id)throw Error('Resolve the pending or completed return before adding more goods.');
+ const s=svc.entities;
+ const [source,destination,vehicle,runs,manifestLines,balances,originalMoves,fieldSales,orders,activities,pendingExchanges,team]=await Promise.all([
+  s.Warehouse.get(dispatch.warehouse_id),s.Warehouse.get(dispatch.vehicle_warehouse_id),dispatch.vehicle_id?s.Vehicle.get(dispatch.vehicle_id):null,
+  records(s.Dispatch,{status:{$in:openStates}}),records(s.DispatchLine,{dispatch_id:dispatch.id}),records(s.StockBalance,{warehouse_id:dispatch.vehicle_warehouse_id}),
+  records(s.StockMovement,{document_type:'Dispatch',document_id:dispatch.id,movement_type:'vehicle_load'}),records(s.FieldSale,{dispatch_id:dispatch.id}),records(s.SalesOrder,{dispatch_id:dispatch.id}),records(s.DriverActivity,{dispatch_id:dispatch.id,type:'trip_returned'}),
+  records(s.SpoilageRecord,{record_type:'field_expired_request',...(dispatch.vehicle_id?{vehicle_id:dispatch.vehicle_id}:{dispatch_id:dispatch.id}),status:'pending_verification'}),validateTeam(svc,dispatch),
+ ]);
+ if(!source||source.is_active===false||!storageTypes.includes(source.warehouse_type)||!destination||destination.id===source.id||(vehicle?vehicle.is_active===false||vehicle.warehouse_id!==destination.id||destination.is_active===false||destination.warehouse_type!=='vehicle'||destination.vehicle_id&&destination.vehicle_id!==vehicle.id:dispatch.vehicle_id||!validEmployeeStockLocation(destination,dispatch.salesperson_id)))throw additionError();
+ if(runs.some(run=>run.id!==dispatch.id&&(run.salesperson_id===dispatch.salesperson_id||run.vehicle_warehouse_id===destination.id||dispatch.vehicle_id&&run.vehicle_id===dispatch.vehicle_id||dispatch.driver_id&&run.driver_id===dispatch.driver_id)))throw Error('More than one open load shares this stock or delivery team. Reconcile the assignments before adding goods.');
+ if(activities.length||pendingExchanges.length)throw Error('Resolve the recorded return or pending customer exchanges before adding more goods.');
+ if(fieldSales.some(sale=>sale.stock_moved_at&&sale.status!=='approved_posted')||orders.some(order=>order.stock_moved_at&&!['delivered','invoiced'].includes(order.status)))throw Error('Complete accounting for stock already supplied before adding more goods.');
+ const supplyMoves=await byIds(s.StockMovement,'document_id',[...fieldSales,...orders].map(row=>row.id));
+ if(supplyMoves.some(row=>row.status==='approved'&&row.source_warehouse_id===destination.id&&!row.destination_warehouse_id&&(row.document_type==='FieldSale'&&row.movement_type==='field_delivery'&&fieldSales.some(sale=>sale.id===row.document_id&&sale.status!=='approved_posted')||row.document_type==='SalesOrder'&&row.movement_type==='customer_delivery'&&orders.some(order=>order.id===row.document_id&&!['delivered','invoiced'].includes(order.status)))))throw Error('Complete accounting for stock already supplied before adding more goods.');
+ for(const balance of balances){const qty=additionQuantity(balance.quantity),value=additionValue(balance.total_value);if(!Number.isFinite(Number(balance.unit_cost))||Number(balance.unit_cost)<0||!qty&&value)throw additionError();appropriatedDegustation(balance);}
+ const expected=new Map();let originalValue=0;
+ for(const line of manifestLines){const qty=additionQuantity(line.loaded_quantity),value=additionValue(line.loaded_value);if(!line.product_id||expected.has(line.product_id)||!qty||additionQuantity(line.returned_quantity||0)||additionQuantity(line.degustation_returned_quantity||0)||additionQuantity(line.degustation_quantity||0)>qty)throw additionError();expected.set(line.product_id,{quantity:qty,value});originalValue+=value;}
+ if(!expected.size||additionValue(dispatch.total_loaded_value)!==originalValue)throw additionError();
+ additionTransfers(originalMoves,dispatch,expected);
+ const before=await dispatchReconciliationData(svc,dispatch);if(before.hasVariance)throw additionError();
+ const selected=await manifest(svc,lines.map(row=>({...row,loaded_quantity:row.quantity,requested_quantity:row.quantity}))),sourceBalances=await records(s.StockBalance,{warehouse_id:source.id});
+ for(const {product,quantity} of selected){const usable=sourceBalances.filter(row=>row.product_id===product.id&&Number(row.quantity)>0&&(row.qc_status||'approved')==='approved'&&(!row.expiry_date||row.expiry_date>=date)&&!appropriatedDegustation(row));let available=0;for(const row of usable){available+=additionQuantity(row.quantity);additionValue(row.total_value);if(!Number.isFinite(Number(row.unit_cost))||Number(row.unit_cost)<0)throw additionError();}if(additionQuantity(quantity)>available)throw Error(`Insufficient saleable stock for ${product.name}: ${available/1000} available, ${quantity} required`);}
+ const previousMovementIds=new Set(originalMoves.map(row=>row.id)),additions=[];let totalValue=0;
+ for(const {line,product,quantity} of selected){
+  const result=await stockTransfer(svc,{productId:product.id,productName:product.name,fromWarehouseId:source.id,toWarehouseId:destination.id,toWarehouseName:destination.name,quantity,movementType:'vehicle_load',documentType:'Dispatch',documentId:dispatch.id,movementDate:date,reason:'Additional goods / '+(dispatch.dispatch_number||dispatch.id),saleableOnly:true,preserveRecordedValue:true});
+  const prior=manifestLines.find(row=>row.product_id===product.id),loadedQuantity=round3(Number(prior?.loaded_quantity||0)+quantity),loadedValue=(additionValue(prior?.loaded_value??0)+additionValue(result.totalValue))/100,degustation=round3(Number(prior?.degustation_quantity||0)+line.degustation_quantity);
+  const after={loaded_quantity:loadedQuantity,loaded_value:loadedValue,degustation_quantity:degustation};
+  const saved=prior?await s.DispatchLine.update(prior.id,{...after,requested_quantity:round3(Number(prior.requested_quantity??prior.loaded_quantity)+quantity),unit_cost:round2(loadedValue/loadedQuantity)}):await s.DispatchLine.create({dispatch_id:dispatch.id,product_id:product.id,product_name:product.name,unit:stockUnit(product),requested_quantity:quantity,...after,unit_cost:round2(loadedValue/loadedQuantity),unit_price:amount(product.selling_price)});
+  totalValue=round2(totalValue+result.totalValue);additions.push({product_id:product.id,quantity,degustation_quantity:line.degustation_quantity,value:result.totalValue,manifest_line_id:saved.id,after});
+ }
+ const transferMoves=(await records(s.StockMovement,{document_type:'Dispatch',document_id:dispatch.id,movement_type:'vehicle_load'})).filter(row=>!previousMovementIds.has(row.id));
+ additionTransfers(transferMoves,dispatch,new Map(additions.map(row=>[row.product_id,{quantity:additionQuantity(row.quantity),value:additionValue(row.value)}])));
+ for(const row of transferMoves)await s.StockMovement.update(row.id,{dispatch_load_addition_id:id,dispatch_load_addition_policy:DISPATCH_TOP_UP_POLICY});
+ await issueDegustation(svc,user,team.commercial,dispatch,selected,date,{eventId:id});
+ const giveaway=await additionGiveawayProof(svc,dispatch,id,additions,user.id),now=new Date().toISOString();
+ const saved=await s.Dispatch.update(dispatch.id,{total_loaded_value:(originalValue+additionValue(totalValue))/100,dispatch_load_addition_id:id,dispatch_load_addition_policy:DISPATCH_TOP_UP_POLICY,dispatch_load_addition_at:now});
+ const after=await dispatchReconciliationData(svc,saved);if(after.hasVariance)throw additionError();
+ const transfers=await records(s.StockMovement,{dispatch_load_addition_id:id});
+ const proof={id,policy:DISPATCH_TOP_UP_POLICY,dispatch_id:dispatch.id,date,payload,fingerprint,total_value:totalValue,lines:additions,transfers:proofSort(transfers.map(movementProof)),giveaway};
+ await s.AuditLog.create({id,action:'add_dispatch_stock',module:'distribution',entity_type:'Dispatch',entity_id:dispatch.id,user_id:user.id,audit_source:'server_verified',description:'Additional goods issued to '+(dispatch.salesperson_name||team.commercial.full_name)+' / '+(dispatch.dispatch_number||dispatch.id),reason:notes,dispatch_load_addition:proof,dispatch_load_addition_checksum:additionHash(proof)});
+ return {dispatch:saved,totalValue,vehicleWarehouseId:destination.id,reused:false,addition:{id,policy:DISPATCH_TOP_UP_POLICY,date}};
+}
 
 async function records(entity, query = {}) {
   const result = [], seen = new Set();

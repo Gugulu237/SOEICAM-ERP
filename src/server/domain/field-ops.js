@@ -150,7 +150,7 @@ async function verifyAppropriatedCustody(base44,dispatchId,warehouseId){
   if(quantity!==summary.total_quantity||value!==summary.total_value)throw appropriationError();
 }
 
-export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true, restoreAppropriatedValue = false }) {
+export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true, restoreAppropriatedValue = false, excludeAppropriated = false }) {
   let remaining = round3(quantity);
   if (remaining <= 0) throw new Error("Quantity must be greater than zero");
 
@@ -170,7 +170,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
   if(restoreAppropriatedValue&&!restoration)throw appropriationError();
   const usable = all
     .filter((b) => (b.quantity || 0) > 0)
-    .filter(b=>{const appropriation=marked.get(b.id);if(!appropriation)return true;if((giveaway||restoration)&&appropriation.dispatch_id!==dispatchId)throw appropriationError();return (giveaway||restoration)&&preserveRecordedValue===true;})
+    .filter(b=>{const appropriation=marked.get(b.id);if(!appropriation)return true;if((giveaway||restoration)&&appropriation.dispatch_id!==dispatchId)throw appropriationError();return !excludeAppropriated&&(giveaway||restoration)&&preserveRecordedValue===true;})
     .filter((b) => !saleableOnly || ((b.qc_status || "approved") === "approved" && (!b.expiry_date || b.expiry_date >= dateStr)))
     .sort((a, b) => String(a.expiry_date || "9999-12-31").localeCompare(String(b.expiry_date || "9999-12-31")));
 
@@ -246,15 +246,19 @@ export async function stockReceive(base44, { productId, productName, warehouseId
   if(totalValue!==undefined&&(!Number.isFinite(Number(totalValue))||Number(totalValue)<0))throw Error('Reconcile invalid recorded lot values before receiving stock.');
   const value=totalValue===undefined?qty*unitCost:round2(totalValue);
 
-  const existing = (await base44.entities.StockBalance.filter({
-    product_id: productId,
-    warehouse_id: warehouseId,
-    lot_number: lotNumber || "",
-    qc_status: qcStatus || "approved",
-  })).find(row => (row.expiry_date || '') === (expiryDate || '') && (row.production_order_id || '') === (productionOrderId || '') && (row.batch_number || '') === (batchNumber || ''));
+  const matching=[];
+  for(let skip=0;;skip+=200){
+    const page=await base44.entities.StockBalance.filter({product_id:productId,warehouse_id:warehouseId,lot_number:lotNumber||'',qc_status:qcStatus||'approved'},'id',200,skip);
+    matching.push(...page.filter(row=>(row.expiry_date||'')===(expiryDate||'')&&(row.production_order_id||'')===(productionOrderId||'')&&(row.batch_number||'')===(batchNumber||'')));
+    if(page.length<200)break;
+  }
+  // Previously expensed promotional custody is a separate physical allocation.
+  // Receiving sale stock with the same printed lot must not merge its value
+  // into that allocation or clear any protected appropriation evidence.
+  let existing;
+  for(const row of matching){const marked=appropriatedDegustation(row);if(!marked&&!existing)existing=row;}
 
   if (existing) {
-    if(appropriatedDegustation(existing))throw appropriationError();
     const preserving=totalValue!==undefined,oldQty=Number(preserving?existing.quantity:existing.quantity||0),oldValue=Number(preserving?existing.total_value:existing.total_value||0);
     if(preserving&&(!Number.isFinite(oldQty)||oldQty<0||!Number.isFinite(oldValue)||oldValue<0||oldQty===0&&oldValue!==0))throw Error('Reconcile the receiving lot quantity and value before accepting returned stock.');
     const newQty = round3(oldQty + qty);

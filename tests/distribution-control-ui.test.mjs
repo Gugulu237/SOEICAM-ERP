@@ -14,7 +14,7 @@ async function ui(){
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__distributionUI.session||({role:'admin',principalRole:'admin',user:{id:'manager',role:'admin'}});`,
       '@/lib/AuthContext':`export const useAuth=()=>({logout:()=>{}});`,
       '@/lib/router':`import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);export const Navigate=({to})=>React.createElement('span',{'data-redirect':to});export const useLocation=()=>({pathname:'/distribution'});export const useNavigate=()=>path=>{globalThis.__distributionUI.navigation.push(path);globalThis.__distributionUI.query=path.split('?')[1]||'';};export const useSearchParams=()=>[new URLSearchParams(globalThis.__distributionUI.query||''),value=>{const next=typeof value==='function'?value(new URLSearchParams(globalThis.__distributionUI.query||'')):value;globalThis.__distributionUI.query=next.toString();}];`,
-      '@/api/erpClient':`export const erp={entities:new Proxy({},{get:(_,name)=>name})};`,
+      '@/api/erpClient':`export const erp={entities:new Proxy({},{get:(_,name)=>name})};export const invalidateERPReads=()=>{};`,
       '@/lib/sales-stock-refresh':`export const watchSalesStock=refresh=>{const entry={refresh,stopped:false};(globalThis.__distributionUI.watchers||=[]).push(entry);return()=>{entry.stopped=true;};};`,
       '@/lib/field-pos':`export const readAll=async entity=>{globalThis.__distributionUI.reads.push(entity);return globalThis.__distributionUI.records?.[entity]||[];};`,
       '@/lib/field-ops':`export const errorMessage=e=>e.message;export const invokeFieldOps=body=>globalThis.__distributionUI.invoke(body);export const receiptUrl=async uri=>uri,uploadReceipt=async()=>{throw Error('No upload expected in this test');};`,
@@ -101,7 +101,7 @@ test('management Deliveries shows active paired runs and opens their dispatch de
   const {render}=await ui(),r=runtime();globalThis.__distributionUI=r;
   try{const html=render('deliveries',{dispatches:[{id:'run-a',dispatch_number:'DSP-1',dispatch_date:'2026-10-18',status:'in_transit',route_name:'North',driver_name:'Driver A',salesperson_name:'Agent A',vehicle_name:'Van A'}]});assert.match(html,/Delivery runs/);assert.match(html,/Driver A/);assert.match(html,/Agent A/);assert.match(html,/On the road/);assert.match(html,/Open delivery and reports/);}finally{r.cleanup();delete globalThis.__distributionUI;}
 });
-function issueFixture(stock=2000){return {initialAgent:'agent',data:{products:[{id:'product',name:'YOLA',inventory_type:'assembly',is_active:true,unit:'ea'},{id:'other',name:'YOLA Nature',inventory_type:'assembly',is_active:true,unit:'ea'}],staff:[{id:'agent',full_name:'Agent',role:'commercial',status:'active'},{id:'driver',full_name:'Driver',role:'driver',status:'active'}],vehicles:[{id:'vehicle',name:'Van',is_active:true}],warehouses:[{id:'factory',name:'Factory'},{id:'other-factory',name:'Other factory'}],warehouse_stock:[{warehouse_id:'factory',product_id:'product',quantity:stock,qc_status:'approved',expiry_date:'2099-01-01'},{warehouse_id:'factory',product_id:'other',quantity:stock,qc_status:'approved',expiry_date:'2099-01-01'}]},onClose:()=>{},onSaved:()=>{}};}
+function issueFixture(stock=2000){return {initialAgent:'agent',data:{active_loads:[],products:[{id:'product',name:'YOLA',inventory_type:'assembly',is_active:true,unit:'ea'},{id:'other',name:'YOLA Nature',inventory_type:'assembly',is_active:true,unit:'ea'}],staff:[{id:'agent',full_name:'Agent',role:'commercial',status:'active'},{id:'driver',full_name:'Driver',role:'driver',status:'active'}],vehicles:[{id:'vehicle',name:'Van',is_active:true}],warehouses:[{id:'factory',name:'Factory'},{id:'other-factory',name:'Other factory'}],warehouse_stock:[{warehouse_id:'factory',product_id:'product',quantity:stock,qc_status:'approved',expiry_date:'2099-01-01'},{warehouse_id:'factory',product_id:'other',quantity:stock,qc_status:'approved',expiry_date:'2099-01-01'}]},onClose:()=>{},onSaved:()=>{}};}
 
 test('open issue form refreshes warehouse stock while preserving sale and giveaway entries',async()=>{
   const {render}=await ui(),r=runtime(),props=issueFixture(10),calls=[];globalThis.__distributionUI=r;let latest=props.data,failed=false;
@@ -120,25 +120,25 @@ test('open issue form refreshes warehouse stock while preserving sale and giveaw
 });
 test('normal Inventory issue asks about Dégustation before one combined, retry-safe confirmation',async()=>{
   const {render}=await ui(),r=runtime(),calls=[];let fail=true,saved=0;globalThis.__distributionUI=r;
-  r.invoke=async body=>{calls.push(body);if(fail)throw Error('Connection interrupted');return {data:{dispatch:{id:'run',salesperson_id:'agent'}}};};
+  r.invoke=async body=>{if(body.action==='distributionIssueWorkspace')return {data:props.data};calls.push(body);if(fail)throw Error('Connection interrupted');return {data:{dispatch:{id:'run',salesperson_id:'agent'}}};};
   const props={...issueFixture(),onSaved:()=>saved++},paint=()=>{r.beforeRender();return render('issue',props);};
   try{
-    let html=paint();assert.match(html,/Goods for sale/);assert.ok(!r.inputs.some(i=>String(i['aria-label']).startsWith('Dégustation:')));
-    r.selects[1].onChange({target:{value:'driver'}});paint();r.selects[2].onChange({target:{value:'vehicle'}});paint();r.selects[3].onChange({target:{value:'factory'}});paint();assert.equal(r.catalog.hidePrice,true);
+    let html=paint();await r.flush();paint();assert.match(html,/Goods for sale/);assert.ok(!r.inputs.some(i=>String(i['aria-label']).startsWith('Dégustation:')));
+    r.selects[1].onChange({target:{value:'driver'}});paint();r.selects[2].onChange({target:{value:'vehicle'}});paint();await r.flush();paint();r.selects[3].onChange({target:{value:'factory'}});paint();assert.equal(r.catalog.hidePrice,true);
     r.catalog.onQuantityChange(r.catalog.products[0],1500);paint();r.inputs.find(i=>i['aria-label']==='For sale: YOLA').onChange({target:{value:'2001'}});paint();assert.equal(r.buttons.find(b=>b.label==='Continue').disabled,true);
     r.catalog.onQuantityChange(r.catalog.products[0],1500);paint();r.buttons.find(b=>b.label==='Continue').onClick();html=paint();assert.match(html,/Are you also issuing Dégustation units/);assert.equal(calls.length,0);assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,true);
     r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();assert.equal(r.catalog.quantityLabel,'Dégustation');assert.equal(r.catalog.products.find(p=>p.id==='product').quantity,500);
     r.catalog.onQuantityChange(r.catalog.products.find(p=>p.id==='product'),501);paint();assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,true);
     r.inputs.find(i=>i['aria-label']==='Dégustation: YOLA').onChange({target:{value:'500'}});html=paint();assert.match(html,/Issue summary/);assert.match(html,/2000/);const button=r.buttons.find(b=>b.label==='Confirm & issue goods');assert.equal(button.disabled,false);
-    await button.onClick();assert.equal(saved,0);assert.match(paint(),/Connection interrupted/);fail=false;await r.buttons.find(b=>b.label==='Confirm & issue goods').onClick();assert.equal(saved,1);
+    await button.onClick();assert.equal(saved,0);assert.match(paint(),/Connection interrupted/);fail=false;await r.buttons.find(b=>b.label==='Retry issue').onClick();assert.equal(saved,1);
     assert.deepEqual(calls[0],calls[1]);assert.equal(calls[1].commercialId,'agent');assert.equal(calls[1].driverId,'driver');assert.equal(calls[1].vehicleId,'vehicle');assert.deepEqual(calls[1].lines,[{product_id:'product',quantity:2000,degustation_quantity:500}]);
   }finally{r.cleanup();delete globalThis.__distributionUI;}
 });
 
 test('No completes the normal issue and clears previously selected giveaway quantities',async()=>{
-  const {render}=await ui(),r=runtime(),calls=[];globalThis.__distributionUI=r;r.invoke=async body=>{calls.push(body);return {data:{dispatch:{id:'run'}}};};const props=issueFixture(),paint=()=>{r.beforeRender();return render('issue',props);};
+  const {render}=await ui(),r=runtime(),calls=[];globalThis.__distributionUI=r;r.invoke=async body=>{if(body.action==='distributionIssueWorkspace')return {data:props.data};calls.push(body);return {data:{dispatch:{id:'run'}}};};const props=issueFixture(),paint=()=>{r.beforeRender();return render('issue',props);};
   try{
-    paint();r.selects[3].onChange({target:{value:'factory'}});paint();r.catalog.onQuantityChange(r.catalog.products[0],5);paint();r.buttons.find(b=>b.label==='Continue').onClick();paint();r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();r.catalog.onQuantityChange(r.catalog.products[0],2);paint();
+    paint();await r.flush();paint();r.selects[3].onChange({target:{value:'factory'}});paint();r.catalog.onQuantityChange(r.catalog.products[0],5);paint();r.buttons.find(b=>b.label==='Continue').onClick();paint();r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();r.catalog.onQuantityChange(r.catalog.products[0],2);paint();
     r.buttons.find(b=>b.label==='No, sale goods only').onClick();paint();assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,false);
     r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();assert.equal(r.catalog.lines.length,0);assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,true);
     r.buttons.find(b=>b.label==='No, sale goods only').onClick();paint();await r.buttons.find(b=>b.label==='Confirm & issue goods').onClick();assert.equal(calls.length,1);assert.deepEqual(calls[0].lines,[{product_id:'product',quantity:5,degustation_quantity:0}]);assert.equal(calls[0].driverId,'');assert.equal(calls[0].vehicleId,'');
@@ -147,18 +147,18 @@ test('No completes the normal issue and clears previously selected giveaway quan
 
 test('Dégustation-only issues and different giveaway products use the same Inventory form',async()=>{
   const {render}=await ui();for(const sales of [0,5]){
-    const r=runtime(),calls=[];globalThis.__distributionUI=r;r.invoke=async body=>{calls.push(body);return {data:{dispatch:{id:'run'}}};};const props=issueFixture(10),paint=()=>{r.beforeRender();return render('issue',props);};
+    const r=runtime(),calls=[];globalThis.__distributionUI=r;r.invoke=async body=>{if(body.action==='distributionIssueWorkspace')return {data:props.data};calls.push(body);return {data:{dispatch:{id:'run'}}};};const props=issueFixture(10),paint=()=>{r.beforeRender();return render('issue',props);};
     try{
-      paint();r.selects[3].onChange({target:{value:'factory'}});paint();if(sales){r.catalog.onQuantityChange(r.catalog.products[0],sales);paint();}r.buttons.find(b=>b.label==='Continue').onClick();paint();r.buttons.find(b=>b.label==='No, sale goods only').onClick();paint();assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,!sales);
+      paint();await r.flush();paint();r.selects[3].onChange({target:{value:'factory'}});paint();if(sales){r.catalog.onQuantityChange(r.catalog.products[0],sales);paint();}r.buttons.find(b=>b.label==='Continue').onClick();paint();r.buttons.find(b=>b.label==='No, sale goods only').onClick();paint();assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,!sales);
       r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();r.catalog.onQuantityChange(r.catalog.products.find(p=>p.id==='other'),2);paint();await r.buttons.find(b=>b.label==='Confirm & issue goods').onClick();assert.equal(calls.length,1);assert.deepEqual(calls[0].lines,[...(sales?[{product_id:'product',quantity:sales,degustation_quantity:0}]:[]),{product_id:'other',quantity:2,degustation_quantity:2}]);
     }finally{r.cleanup();delete globalThis.__distributionUI;}
   }
 });
 
 test('going back preserves entries, rechecks the combined load and resets selections on a warehouse change',async()=>{
-  const {render}=await ui(),r=runtime();globalThis.__distributionUI=r;const props=issueFixture(10),paint=()=>{r.beforeRender();return render('issue',props);};
+  const {render}=await ui(),r=runtime();globalThis.__distributionUI=r;const props=issueFixture(10),paint=()=>{r.beforeRender();return render('issue',props);};r.invoke=async body=>{if(body.action==='distributionIssueWorkspace')return {data:props.data};throw Error('Unexpected issue write');};
   try{
-    paint();r.selects[3].onChange({target:{value:'factory'}});paint();r.catalog.onQuantityChange(r.catalog.products[0],5);paint();r.buttons.find(b=>b.label==='Continue').onClick();paint();r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();r.catalog.onQuantityChange(r.catalog.products[0],5);paint();r.buttons.find(b=>b.label==='Back').onClick();paint();assert.equal(r.catalog.lines[0].quantity,5);
+    paint();await r.flush();paint();r.selects[3].onChange({target:{value:'factory'}});paint();r.catalog.onQuantityChange(r.catalog.products[0],5);paint();r.buttons.find(b=>b.label==='Continue').onClick();paint();r.buttons.find(b=>b.label==='Yes, add Dégustation').onClick();paint();r.catalog.onQuantityChange(r.catalog.products[0],5);paint();r.buttons.find(b=>b.label==='Back').onClick();paint();assert.equal(r.catalog.lines[0].quantity,5);
     r.catalog.onQuantityChange(r.catalog.products[0],6);paint();r.buttons.find(b=>b.label==='Continue').onClick();paint();assert.equal(r.catalog.lines[0].quantity,5);assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,true);
     r.inputs.find(i=>i['aria-label']==='Dégustation: YOLA').onChange({target:{value:'4'}});paint();assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,false);
     r.buttons.find(b=>b.label==='Back').onClick();paint();r.selects[3].onChange({target:{value:'other-factory'}});paint();assert.equal(r.catalog.lines.length,0);r.buttons.find(b=>b.label==='Continue').onClick();const html=paint();assert.match(html,/Choose Yes or No/);assert.equal(r.buttons.find(b=>b.label==='Confirm & issue goods').disabled,true);

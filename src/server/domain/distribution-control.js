@@ -2,7 +2,7 @@ import {degustationQuantity} from './degustation-stock.js';
 import {stockStaff,eligibleStockRecipient} from './employee-custody.js';
 import {requireStaff,round2,round3,today,audit,stockTransfer} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
-import {dispatchAction,dispatchReconciliationData} from './dispatch-operations.js';
+import {dispatchAction,dispatchReconciliationData,topUpDispatchStock} from './dispatch-operations.js';
 import {finishedProduct,periodDates,validateCustodyLines} from './commercial-rules.js';
 import {principalRole,normalizeRole} from './roles.js';
 import {stockUnit} from '../../lib/item-units.js';
@@ -12,7 +12,7 @@ export const DISTRIBUTION_ACTIONS=['distributionControl','distributionIssueWorks
 const pick=(row,fields)=>Object.fromEntries(fields.split(' ').map(key=>[key,row?.[key]]));
 const open=['loaded','in_transit'];
 const storage=['finished_goods','cold_room','general'];
-async function byIds(entity,field,ids){const unique=[...new Set(ids)].filter(Boolean),result=[];for(let i=0;i<unique.length;i+=100)result.push(...await readRecords(entity,{[field]:{$in:unique.slice(i,i+100)}}));return result;}
+async function byIds(entity,field,ids,filters={}){const unique=[...new Set(ids)].filter(Boolean),result=[];for(let i=0;i<unique.length;i+=100)result.push(...await readRecords(entity,{...filters,[field]:{$in:unique.slice(i,i+100)}}));return result;}
 const keyOf=(user,body)=>{if(!/^[a-f\d-]{36}$/i.test(body.requestKey || ''))throw Error('Reopen the stock form for a valid request reference');return user.id+':'+body.requestKey;};
 
 // Reconciliation reuses the same checked engine as the run detail. This small
@@ -76,14 +76,26 @@ export async function distributionControlAction(client,user,body){
   const svc=client.asServiceRole,s=svc.entities;
   if(body.action==='distributionIssueWorkspace') {
     client.auth.assertModule?.('distribution');
-    const [rawStaff,vehicles,warehouses,products]=await Promise.all([readRecords(s.Employee,{status:'active'}),readRecords(s.Vehicle,{is_active:true}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:true})]);
+    const [rawStaff,vehicles,warehouses,products,runs]=await Promise.all([readRecords(s.Employee,{status:'active'}),readRecords(s.Vehicle,{is_active:true}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:true}),readRecords(s.Dispatch,{status:{$in:open}})]);
     const staff=await stockStaff(s,rawStaff);
-    const locations=warehouses.filter(w=>storage.includes(w.warehouse_type)),balances=await byIds(s.StockBalance,'warehouse_id',locations.map(w=>w.id));
-    return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.filter(eligibleStockRecipient).map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.access_template||e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date'))};
+    const locations=warehouses.filter(w=>storage.includes(w.warehouse_type));
+    const [balances,activities]=await Promise.all([byIds(s.StockBalance,'warehouse_id',locations.map(w=>w.id)),byIds(s.DriverActivity,'dispatch_id',runs.map(run=>run.id),{type:'trip_returned'})]);
+    const returned=new Set(activities.filter(row=>row.type==='trip_returned').map(row=>row.dispatch_id));
+    // Only assignment/return state is needed to choose a new issue or top-up.
+    // Do not load financial or performance reports for the issue form.
+    const activeLoads=runs.map(run=>({...pick(run,'id dispatch_number salesperson_id driver_id vehicle_id warehouse_id vehicle_warehouse_id status'),return_pending:Boolean(run.unsold_return_request_id),returned_to_base:Boolean(run.return_date||returned.has(run.id))}));
+    return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.filter(eligibleStockRecipient).map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.access_template||e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date')),active_loads:activeLoads};
   }
   if(body.action==='distributionControl'&&principalRole(user,employee)!=='admin')throw Error('Only top administrators can view reports across distribution teams.');
   if(body.action==='distributionControl'){const {from:date}=periodDates(body.date || today(),body.date || today());if(date>today())throw Error('Choose today or an earlier reporting date');return overview(svc,date);}
   if(body.action==='issueDistributionStock'){
+    if(body.existingDispatchId!==undefined||body.topUpPolicy!==undefined){
+      if(typeof body.existingDispatchId!=='string'||!body.existingDispatchId||body.topUpPolicy!=='add-to-current-stock-v1')throw Error('Refresh the issue form to review the existing load before adding goods.');
+      keyOf(user,body);
+      const dispatch=await s.Dispatch.get(body.existingDispatchId);
+      if(!dispatch)throw Error('Select the existing load before adding goods.');
+      return topUpDispatchStock(svc,user,dispatch,body);
+    }
     const key=keyOf(user,body),snapshot=JSON.stringify([body.commercialId,body.driverId,body.vehicleId,body.warehouseId,body.lines,String(body.notes || '').slice(0,2000)]);
     const previous=(await readRecords(s.DispatchRequest,{distribution_request_key:key}))[0];
     if(previous){if(previous.distribution_request_payload!==snapshot)throw Error('These goods were already issued. Open the recorded run before changing the load.');return dispatchAction(client,user,{action:'approveDispatchRequest',requestId:previous.id});}

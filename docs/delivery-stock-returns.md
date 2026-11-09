@@ -8,6 +8,14 @@ An active stock holder sees **My current stock** directly on their own dashboard
 
 The overview refreshes on focus, on returning to a visible tab, and every 30 seconds while visible. **Refresh** reloads it immediately. A failed refresh retains the last confirmed figures with a warning and timestamp. Unresolved stock records show a review warning instead of claiming that no stock is held. Management previews retain their existing read-only reports.
 
+## Adding goods to a current load
+
+Warehouse management can use **Inventory > Issue goods** to add more goods to the same employee's active load. The form shows the existing load reference and fills its warehouse, employee, driver and vehicle assignments before confirmation. An active load no longer requires an artificial return merely to receive more goods. A different source or team, a pending return, a reported return to base, or a stock discrepancy needs review first.
+
+Each addition has its own immutable request reference and stock evidence. Retrying a confirmed addition cannot move stock again, even after subsequent sales or a later return. The product manifest remains cumulative with one row per product; quantities, batches and exact carrying values continue through the existing sales and return workflows. Adding sale goods transfers inventory only and does not post COGS or revenue.
+
+New Dégustation quantities have a separate expense reference for each addition. Previously expensed Dégustation custody stays in a separate stock layer and cannot be mixed into the new sale goods or expensed again. The issue form uses a fresh stock/assignment snapshot and retains an interrupted submission for an exact retry.
+
 ## Returning unsold goods
 
 The holder opens **My issued stock → Return goods**. Drivers can open **Distribution → Return goods** for their assigned or paired delivery load. This works with vehicle stock and goods held by an employee without a vehicle.
@@ -19,6 +27,14 @@ Submission reserves the load and pauses further supplies. Stock stays with the h
 Warehouse management opens **Inventory → Receive inventory → Receive unsold goods**, independently enters the full count and confirms receipt. The system rechecks assignment, stock, lots, costs, quality status and collected customer returns. Changed evidence requires a new request. Successful receipt moves the stock back to its issuing warehouse and closes the load. Retrying the same request cannot receive it twice.
 
 Returns preserve batch, expiry, quality status and recorded carrying value. They create no sale, cash receipt or profit. Collected customer returns and recovered containers travel separately into quarantine; they do not become fresh saleable yogurt.
+
+After additions, the physical return count covers the entire remaining cumulative load, rather than just the first issue. Returning previously expensed promotional custody restores its evidenced inventory value and reverses its original Dégustation expense; it does not change COGS.
+
+## Company stock sales and manual custody
+
+Authorized administrators can already record a sale from **Company stock** and select the actual salesperson. This deducts saleable central stock once when the sale is recorded. Employee and vehicle locations are excluded from that source; their existing issued loads continue through their own sales and return workflows.
+
+A business process using only manual custody would display total company unsold stock, including goods physically outside the warehouse. It would require separate physical warehouse and holder reconciliations, a scoped central-stock sales option for Commercial accounts, and independent Dégustation recording. Deploying the additional-load fix does not activate that process or move existing issued balances into central stock.
 
 ## Packaging recovered during sales exchanges
 

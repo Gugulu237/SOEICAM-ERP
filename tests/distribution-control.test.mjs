@@ -82,10 +82,10 @@ test('legacy Custody bookmarks retain the selected agent in Distribution stock c
   const url=new URL(distributionPath('stock',{commercial:'agent / 1',mode:'return'}),'http://localhost');assert.equal(url.pathname,'/distribution');assert.equal(url.searchParams.get('tab'),'stock');assert.equal(url.searchParams.get('commercial'),'agent / 1');assert.equal(url.searchParams.get('mode'),'return');
 });
 
-test('inventory issue lookup reads only load setup and stock, with no performance scans or writes',async()=>{
+test('inventory issue lookup includes only safe open-load assignments without performance scans or writes',async()=>{
   const f=await setup();
   const before=structuredClone(f.rows);
-  for(const name of ['Dispatch','DispatchLine','FieldSale','FieldSaleLine','Customer','JournalEntry','SpoilageRecord']){
+  for(const name of ['DispatchLine','FieldSale','FieldSaleLine','Customer','JournalEntry','SpoilageRecord']){
     f.s[name].filter=()=>{throw Error('Unnecessary performance scan: '+name);};
   }
   const data=await f.run({action:'distributionIssueWorkspace'});
@@ -94,9 +94,22 @@ test('inventory issue lookup reads only load setup and stock, with no performanc
   assert.ok(data.warehouse_stock.some(b=>b.warehouse_id==='factory'&&b.product_id==='product-a'&&b.quantity===20));
   assert.ok(data.products.some(p=>p.id==='product-a'&&p.unit));
   assert.equal('salary' in data.staff[0],false);assert.equal('runs' in data,false);
+  assert.deepEqual(data.active_loads,[]);
   assert.deepEqual(f.rows,before);
   await f.s.Employee.update('cashier',{role:'commercial'});
   await assert.rejects(f.run({action:'distributionIssueWorkspace'}),/Not permitted/);
+});
+
+test('issue lookup shows pending and returned-to-base loads without exposing their financial evidence',async()=>{
+  const f=await setup(),{dispatch}=await f.run(f.body);
+  await f.s.Dispatch.update(dispatch.id,{unsold_return_request_id:'return-review',degustation_appropriation:{total_value:999},notes:'Private load note'});
+  await f.s.DriverActivity.create({dispatch_id:dispatch.id,type:'trip_returned'});
+  const before=structuredClone(f.rows),data=await f.run({action:'distributionIssueWorkspace'});
+  assert.deepEqual(data.active_loads,[{id:dispatch.id,dispatch_number:dispatch.dispatch_number,salesperson_id:f.agent.id,driver_id:f.driver.id,vehicle_id:'vehicle-a',warehouse_id:'factory',vehicle_warehouse_id:'van-stock',status:'loaded',return_pending:true,returned_to_base:true}]);
+  assert.ok(!Object.hasOwn(data.active_loads[0],'total_loaded_value'));
+  assert.ok(!Object.hasOwn(data.active_loads[0],'degustation_appropriation'));
+  assert.ok(!Object.hasOwn(data.active_loads[0],'notes'));
+  assert.deepEqual(f.rows,before);
 });
 
 test('delivery stock issuance belongs to warehouse management; production retains reporting but cannot issue through any endpoint',async()=>{
