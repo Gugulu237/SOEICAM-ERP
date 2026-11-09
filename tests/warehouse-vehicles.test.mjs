@@ -61,7 +61,7 @@ test('unassigned, inactive and legacy vehicle locations remain visible without i
 
 test('overview exposes the fleet register only to authorized roles and propagates actual read failures', async () => {
   let fleetReads = 0;
-  const stores = Object.fromEntries(Object.entries({ Warehouse: warehouses, Product: products, StockBalance: balances, Vehicle: vehicles }).map(([name, rows]) => [name, { filter: async (_query, _sort, limit, skip = 0) => { if (name === 'Vehicle') fleetReads++; return rows.slice(skip, skip + limit); } }]));
+  const stores = Object.fromEntries(Object.entries({ CompanySettings: [], Warehouse: warehouses, Product: products, StockBalance: balances, Vehicle: vehicles }).map(([name, rows]) => [name, { filter: async (_query, _sort, limit, skip = 0) => { if (name === 'Vehicle') fleetReads++; return rows.slice(skip, skip + limit); } }]));
   const gm = { user: { id: 'gm', role: 'admin' } };
   assert.equal((await inventoryOverview(gm, stores)).vehicles.length, 2);
   fleetReads = 0;

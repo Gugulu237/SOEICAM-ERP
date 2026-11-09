@@ -52,7 +52,7 @@ export async function issueDegustation(svc, user, employee, dispatch, loaded, da
 
 // Only called after employeeStockAction verifies the actual signed-in employee.
 // The enclosing API transaction commits custody, ledger and immutable evidence together.
-export async function recordDegustation(svc, user, employee, body) {
+export async function recordDegustation(svc, user, employee, body, {onlyPreviouslyExpensed=false}={}) {
   const s = svc.entities;
   if (typeof body.requestKey !== 'string' || !/^[a-f\d-]{36}$/i.test(body.requestKey)) throw Error('Reopen the Dégustation form for a valid request reference.');
   if (typeof body.dispatchId !== 'string' || !body.dispatchId || typeof body.customerId !== 'string' || !body.customerId) throw Error('Choose your issued goods and the customer receiving Dégustation.');
@@ -68,6 +68,7 @@ export async function recordDegustation(svc, user, employee, body) {
   const previous = await readRecords(s.StockMovement, { document_type: 'Degustation', document_id: id });
   if (previous.length) {
     if (previous.some(m => m.degustation_payload !== fingerprint || m.recorded_by !== user.id || m.status !== 'approved')) throw Error('This Dégustation reference was already recorded with different details.');
+    if(onlyPreviouslyExpensed&&previous.some(m=>m.degustation_already_expensed!==true||Number(m.total_value)!==0||m.journal_id))throw Error('Choose only previously expensed Dégustation stock.');
     return { record: degustationHistory(previous, { costs: false })[0], reused: true };
   }
   if (date !== today()) throw Error('Record Dégustation on the current business date.');
@@ -78,7 +79,8 @@ export async function recordDegustation(svc, user, employee, body) {
   ]);
   if (!customer || customer.is_active === false || customer.customer_removed_at) throw Error('Choose an active customer receiving the giveaway.');
   const stock=await readRecords(s.StockBalance,{warehouse_id:context.stock_warehouse_id,product_id:{$in:lines.map(line=>line.product_id)}});
-  const previouslyExpensed=lines.every(line=>{const lots=stock.filter(row=>row.product_id===line.product_id&&Number(row.quantity)>0);return lots.length&&round3(lots.reduce((sum,row)=>sum+Number(row.quantity),0))>=line.quantity&&lots.every(row=>appropriatedDegustation(row)?.dispatch_id===context.dispatch_id);});
+  const previouslyExpensed=lines.every(line=>{const lots=stock.filter(row=>row.product_id===line.product_id&&Number(row.quantity)>0&&(!onlyPreviouslyExpensed||appropriatedDegustation(row)));return lots.length&&round3(lots.reduce((sum,row)=>sum+Number(row.quantity),0))>=line.quantity&&lots.every(row=>appropriatedDegustation(row)?.dispatch_id===context.dispatch_id);});
+  if(onlyPreviouslyExpensed&&!previouslyExpensed)throw Error('Choose only previously expensed Dégustation stock.');
   const reserved = degustationState(manifest, movements), expense = previouslyExpensed?null:await expenseAccount(s);
   const checked = [];
   for (const line of lines) {
@@ -89,16 +91,16 @@ export async function recordDegustation(svc, user, employee, body) {
     if (!validPostingRuleAccount(inventory, 'finished_goods_inventory')) throw Error('Review the inventory account for ' + product.name + '.');
     checked.push({ ...line, product, inventory });
   }
-  return postGiveaway(svc, user, employee, context, { id, date, notes, fingerprint, customer, expense, checked });
+  return postGiveaway(svc, user, employee, context, { id, date, notes, fingerprint, customer, expense, checked,onlyPreviouslyExpensed });
 }
 
-async function postGiveaway(svc, user, employee, context, { id, date, notes, fingerprint, customer, expense, checked, atIssue = false,eventId }) {
+async function postGiveaway(svc, user, employee, context, { id, date, notes, fingerprint, customer, expense, checked, atIssue = false,eventId,onlyPreviouslyExpensed=false }) {
   const s = svc.entities, recipient = customer?.business_name || employee.full_name;
   const reference = atIssue ? id : 'DEG-' + id.slice(-12).toUpperCase(), recordedAt = new Date().toISOString(), credits = new Map();
   let total = 0;
   for (const row of checked) {
     const issue = await stockIssue(svc, { productId: row.product.id, productName: row.product.name, quantity: row.quantity, warehouseId: context.stock_warehouse_id, dispatchId: context.dispatch_id,
-      movementType: 'promotional_issue', documentType: 'Degustation', documentId: id, movementDate: date, saleableOnly: true, preserveRecordedValue: true,excludeAppropriated:atIssue, reason: 'Dégustation · ' + recipient + ' · ' + reference });
+      movementType: 'promotional_issue', documentType: 'Degustation', documentId: id, movementDate: date, saleableOnly: true, preserveRecordedValue: true,excludeAppropriated:atIssue,onlyAppropriated:onlyPreviouslyExpensed, reason: 'Dégustation · ' + recipient + ' · ' + reference });
     total = round2(total + issue.totalValue);
     credits.set(row.inventory.id, round2((credits.get(row.inventory.id) || 0) + issue.totalValue));
   }
@@ -116,3 +118,5 @@ async function postGiveaway(svc, user, employee, context, { id, date, notes, fin
     description: reference + ' · ' + employee.full_name + ' · ' + (atIssue ? 'Warehouse giveaway issue' : customer.business_name) + ' · ' + checked.map(l => l.quantity + ' ' + l.product.name).join(', ') + ' · marketing cost ' + total + ' XAF'+(issued.some(m=>m.degustation_already_expensed)?' · Includes previously expensed promotional custody':'') });
   return { record: degustationHistory(issued.map(m => ({ ...m, ...evidence })), { costs: false })[0] };
 }
+
+export {expenseAccount as degustationExpenseAccount};

@@ -341,3 +341,22 @@ test('multiple issued loads for the chosen salesperson require an explicit sourc
   f.r.sourcePicker.onChange('issued:run-b-older');await settle(f);assert.equal(f.r.productPicker.products[0].available,10);const read=f.calls.filter(c=>c.action==='salesOrderStock').at(-1);assert.equal(read.sellerId,'other');assert.equal(read.dispatchId,'run-b-older');
  }finally{f.close();}
 });
+
+test('central inventory keeps company stock automatic when an administrator attributes a sale to another agent',async()=>{
+ const {render}=await bundle(),f=setup(render,{...adminOptions,centralized_inventory:{enabled:true},defaultSource:'company'});
+ try{
+  await f.ready();changeSeller(f,'other');await settle(f);const html=await productsStep(f);
+  assert.match(html,/Company stock/);assert.equal(f.r.sourcePicker,undefined,'central mode does not mount an individual stock selector');
+  const lookup=f.calls.filter(call=>call.action==='salesOrderStock').at(-1);assert.equal(lookup.sourceType,'company');assert.equal(lookup.sellerId,'other');assert.equal(lookup.dispatchId,undefined);
+  quantity(f,2);reviewStep(f,'CENTRAL-001');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(call=>call.action==='recordSuppliedOrder');assert.equal(body.sourceType,'company');assert.equal(body.sellerId,'other');assert.equal(body.dispatchId,undefined);assert.equal(body.warehouseId,undefined);
+ }finally{f.close();}
+});
+
+test('central activation converts only an unposted draft stock choice while retaining the entered quantities and receipt',async()=>{
+ const {render}=await bundle(),f=setup(render,{...adminOptions,centralized_inventory:{enabled:true},defaultSource:'company'});f.r.routeId='draft';
+ f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',dispatch_id:'run-b',warehouse_id:'old-custody',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',receipt_reference:'CENTRAL-DRAFT'})};f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'line',product_id:'yola',product_name:'YOLA 500 g',quantity:3,unit_price:500,tax_rate:0,discount_pct:0}]};
+ try{
+  await f.ready();assert.equal(f.control('Person making the sale').value,'other');f.button('Continue to products').onClick();const html=f.paint();assert.match(html,/Company stock/);assert.equal(f.r.sourcePicker,undefined);assert.equal(f.control('Qty 1').value,3);
+  assert.equal(f.calls.filter(call=>call.action==='salesOrderStock').at(-1).sourceType,'company');reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'CENTRAL-DRAFT');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(call=>call.action==='recordSuppliedOrder');assert.equal(body.orderId,'draft');assert.equal(body.sourceType,'company');assert.equal(body.sellerId,'other');
+ }finally{f.close();}
+});

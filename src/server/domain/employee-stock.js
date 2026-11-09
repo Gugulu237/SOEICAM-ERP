@@ -9,10 +9,22 @@ import {finishedProduct} from './commercial-rules.js';
 import {principalRole} from './roles.js';
 import {stockUnit} from '../../lib/item-units.js';
 import {readRecords} from './commercial-workspace.js';
+import {centralInventoryMode,assertCentralSalesAccess} from './centralized-inventory-policy.js';
+import {salesStockSource,salesSourceProducts} from './sales-stock-source.js';
 const pick=(row,fields)=>Object.fromEntries(fields.split(' ').map(field=>[field,row?.[field]]));
 const open=['loaded','in_transit'];
 const productFields='id name sku image_url inventory_type category size flavor product_family storage_unit unit_of_measure sales_unit is_active configuration_status';
 const positiveStock=row=>Number.isFinite(Number(row.quantity))&&Number(row.quantity)>0;
+
+async function centralStockSnapshot(svc,employee,config){
+ const source=await salesStockSource(svc,{sourceType:'company'}),date=today();
+ const [products,stock]=await Promise.all([salesSourceProducts(svc,source,date),readRecords(svc.entities.StockBalance,{warehouse_id:{$in:source.stock_warehouse_ids}})]);
+ const balances=stock.filter(positiveStock).map(row=>{
+  const quantity=round3(row.quantity),usable=!(appropriatedDegustation(row))&&(row.qc_status||'approved')==='approved'&&(!row.expiry_date||row.expiry_date>=date)?quantity:0;
+  return {...pick(row,'id product_id product_name warehouse_id lot_number expiry_date qc_status'),warehouse_name:'Company stock',quantity,usable_quantity:usable,held_quantity:round3(quantity-usable),degustation_quantity:0,stock_kind:'company',dispatch_id:''};
+ });
+ return {centralized_inventory:config,products,balances,runs:[],legacy:[],employee:pick(employee,'id full_name'),employeeName:employee.full_name,date,updated_at:new Date().toISOString()};
+}
 
 async function ownMonthlySales(stores,employee,user){
  const sales=await readRecords(stores.SalesOrder,{salesperson_id:employee.id,order_date:{$gte:today().slice(0,8)+'01'}});
@@ -109,6 +121,12 @@ export async function employeeStockAction(client,user,body){
  const {employee}=await requireStaff(client,user,STOCK_RECIPIENT_ROLES,'your issued stock');
  if(!eligibleStockRecipient(employee))throw Error('An active employee other than Hotesse is required.');
  if(['employeeStockSnapshot','employeeStockWorkspace'].includes(body.action)&&['employeeId','commercialId','driverId'].some(key=>body[key]&&body[key]!==employee.id))throw Error('You can access only your own inventory');
+ const central=await centralInventoryMode(client.asServiceRole.entities);
+ if(central&&['employeeStockSnapshot','employeeStockWorkspace'].includes(body.action)){
+  const snapshot=await centralStockSnapshot(client.asServiceRole,employee,central);
+  try{await assertCentralSalesAccess(client,user,employee);snapshot.can_record_sales=true;}catch(error){if(error.status!==403)throw error;snapshot.can_record_sales=false;}
+  return body.action==='employeeStockWorkspace'?{...snapshot,sales:await ownMonthlySales(client.asServiceRole.entities,employee,user),degustations:[]}:snapshot;
+ }
  if(body.action==='employeeStockSnapshot')return ownStockSnapshot(client.asServiceRole,employee);
  if(body.action==='recordDegustation')return recordDegustation(client.asServiceRole,user,employee,body);
  if(body.action==='degustationWorkspace'){

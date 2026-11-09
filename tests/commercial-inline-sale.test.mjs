@@ -161,3 +161,10 @@ test('mobile Commercial records replacement-only exchange with receipt proof and
     assert.equal(tables.FieldSale.length,1);assert.equal(tables.FieldSale[0].supply_kind,'exchange');assert.equal(tables.StockBalance[0].quantity,7);assert.equal(tables.Customer[0].balance,0);assert.equal(tables.CashCollection.length,0);assert.equal(tables.SpoilageRecord.length,1);
   }finally{runtime.cleanup();globalThis.window=previous.window;globalThis.document=previous.document;delete globalThis.__commercialUI;delete globalThis.__dailySupplyClient;}
 });
+
+test('a known central-inventory profile opens company-stock sale entry while its dashboard report is unavailable',async()=>{
+  const render=await commercialUI(),runtime=hookRuntime();runtime.session={role:'commercial',principalRole:'commercial',isAdmin:false,user:{id:user.id,centralized_inventory:{enabled:true}},employee:staff,loading:false};runtime.client={entities:{},functions:{invoke:async()=>{throw Error('Legacy entry must not load');}}};globalThis.__commercialUI=runtime;
+  try{
+    const draw=()=>{runtime.beforeRender();return render({actorEmployee:staff,loading:true});};const html=draw();assert.match(html,/Company stock/);const sale=runtime.buttons.find(button=>button.label==='Record sale');assert.equal(sale.disabled,false);sale.onClick();assert.deepEqual(runtime.navigation,['/my-stock/new']);assert.equal(runtime.catalog,undefined);assert.equal(runtime.customer,undefined);
+  }finally{runtime.cleanup();delete globalThis.__commercialUI;}
+});

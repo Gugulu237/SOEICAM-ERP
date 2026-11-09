@@ -55,3 +55,21 @@ test('employee edits preserve the checked login link and require saving drafts b
     assert.equal(Object.hasOwn(updates[0].payload,'user_email'),false);
   }finally{close();}
 });
+
+test('employee commission settings are editable for supply-chain and custom roles without changing their role or inventing rates',async()=>{
+  for(const role of ['supply_chain_manager','productionassistants']){
+    const {r,draw,close}=await setup(),employee={...worker,role,job_title:'Operations',commission_rate_percent:null,new_customer_bonus:null},updates=[];
+    const props={open:true,onOpenChange(){},employee,employees:[employee],roleDefinitions:definitions,onSaved(){}};
+    r.client.entities.Employee.update=async(id,payload)=>{updates.push({id,payload});return{...employee,...payload};};
+    try{
+      draw('form',props);await r.flush();const html=draw('form',props);
+      assert.match(html,/Commission on net sales to acquired customers/);assert.match(html,/Bonus per verified new customer/);assert.doesNotMatch(html,/Monthly verified new customers|Monthly approved supplies/);
+      const rate=r.fields.find(field=>field.type==='number'&&field.max==='100'),bonus=r.fields.find(field=>field.type==='number'&&field.max==='1000000000');
+      assert.ok(rate);assert.ok(bonus);assert.equal(rate.value,'');assert.equal(bonus.value,'');
+      const originalRole=r.selects.find(select=>select.onValueChange&&['procurement','supply_chain_manager','productionassistants'].includes(select.value))?.value;assert.ok(originalRole);
+      rate.onChange({target:{value:'4.5'}});bonus.onChange({target:{value:'0'}});draw('form',props);
+      await r.buttons.find(row=>row.label.trim()==='Save changes').onClick();
+      assert.equal(updates.length,1);assert.equal(updates[0].id,employee.id);assert.equal(updates[0].payload.commission_rate_percent,4.5);assert.equal(updates[0].payload.new_customer_bonus,0);assert.equal(updates[0].payload.role,originalRole);
+    }finally{close();}
+  }
+});

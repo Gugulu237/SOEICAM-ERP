@@ -1,5 +1,7 @@
 # Delivery stock returns and exchange packaging
 
+This page describes the legacy issued-load workflow. When centralized company inventory is activated, profile sales and Dégustations use the [centralized model](centralized-inventory.md); new issues and top-ups are disabled. Historical loads and their evidence remain available for review.
+
 ## Viewing current stock
 
 An active stock holder sees **My current stock** directly on their own dashboard, with product quantities and **View all stock**. The full list is searchable and shows batch details. These dashboard controls do not add a main navigation tab.

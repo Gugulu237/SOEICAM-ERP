@@ -78,7 +78,7 @@ test('the ERP client batches table reads while sending writes directly and fetch
 
 const matches = (row, query) => Object.entries(query || {}).every(([key, value]) => key === '$and' ? value.every(query => matches(row, query)) : key === '$or' ? value.some(query => matches(row, query)) : value && typeof value === 'object' ? value.$in.includes(row[key]) : row[key] === value);
 function inventoryFixture() {
-  const rows = { Product: [{ id: 'part', inventory_type: 'raw_material' }, { id: 'finished', inventory_type: 'assembly' }], Warehouse: [{ id: 'mine', warehouse_type: 'commercial_custody', custodian_employee_id: 'agent' }, { id: 'other', warehouse_type: 'commercial_custody', custodian_employee_id: 'someone-else' }], StockBalance: [{ id: 'one', warehouse_id: 'mine', product_id: 'finished' }, { id: 'two', warehouse_id: 'other', product_id: 'finished' }] };
+  const rows = { CompanySettings: [], Product: [{ id: 'part', inventory_type: 'raw_material' }, { id: 'finished', inventory_type: 'assembly' }], Warehouse: [{ id: 'mine', warehouse_type: 'commercial_custody', custodian_employee_id: 'agent' }, { id: 'other', warehouse_type: 'commercial_custody', custodian_employee_id: 'someone-else' }], StockBalance: [{ id: 'one', warehouse_id: 'mine', product_id: 'finished' }, { id: 'two', warehouse_id: 'other', product_id: 'finished' }] };
   let reads = 0;
   const stores = Object.fromEntries(Object.entries(rows).map(([name, values]) => [name, { filter: async (query, sort, limit, skip = 0) => { reads++; return values.filter(row => matches(row, query)).slice(skip, limit ? skip + limit : undefined); } }]));
   return { stores, reads: () => reads };

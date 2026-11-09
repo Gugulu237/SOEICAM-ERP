@@ -1,6 +1,6 @@
 import {eligibleStockRecipient,STOCK_RECIPIENT_ROLES} from './employee-custody.js';
 import {splitIncludedVat} from '../../lib/sale-vat.js';
-import {FEATURE_AUTHORITY} from './roles.js';
+import {FEATURE_AUTHORITY,principalRole} from './roles.js';
 import {isOpeningRecord} from '../../lib/opening-records.js';
 import {salesStockSource} from './sales-stock-source.js';
 import {assertRunSupplyStock} from './commercial-runs.js';
@@ -12,6 +12,7 @@ import { stockUnit } from '../../lib/item-units.js';
 import { INVOICE_COMPANY_FIELDS, invoiceCompany, invoiceDefaults, cleanInvoiceOptions, safeInvoiceLogo } from '../../lib/invoice-documents.js';
 import { postedInvoiceStatuses } from '../../lib/company-sales.js';
 import {salesDeliveryPoints} from './sales-delivery-points.js';
+import {centralizedInventoryPolicy,assertCentralInventory} from './centralized-inventory-policy.js';
 
 export const CASHIER_INVOICE_ACTIONS=['invoiceWorkspace','invoiceDetail','customizeSalesInvoice'];
 export const INVOICE_ACTIONS = ['invoiceWorkspace','invoiceDetail','invoiceSource','createSalesInvoice','customizeSalesInvoice','saveInvoiceCompany'];
@@ -83,12 +84,15 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   const allowed=ownIssuedStock?STOCK_RECIPIENT_ROLES:body.action==='saveInvoiceCompany'?['admin']:CASHIER_INVOICE_ACTIONS.includes(body.action)?['admin','employee','cashier']:['admin','employee'];
   const {role,employee}=await requireStaff(client,user,allowed,'customer invoicing');
   if(role!=='admin' && employee?.status!=='active')throw Error('An active sales staff account is required.');
+  const centralPolicy=ownIssuedStock||body.action==='createSalesInvoice'&&body.sourceType==='order'?await centralizedInventoryPolicy(client.asServiceRole.entities):null;
   const feature=user[FEATURE_AUTHORITY]?.module;
   if(ownIssuedStock){
     if(!eligibleStockRecipient(employee)||body.action!=='createSalesInvoice'||body.sourceType!=='order')throw Error('Only your issued-stock sale can be invoiced here.');
     const order=await client.asServiceRole.entities.SalesOrder.get(body.sourceId);
     const run=order?.dispatch_id?await client.asServiceRole.entities.Dispatch.get(order.dispatch_id):null;
-    if(!order||order.sales_supply_recorded_by!==user.id||order.salesperson_id!==employee.id||run?.salesperson_id!==employee.id)throw Error('Only your issued-stock sale can be invoiced here.');
+    const central=order?.sales_supply_centralized_inventory;
+    const centralOwn=centralPolicy&&principalRole(user,employee)!=='driver'&&order?.sales_supply_source==='company'&&!order.dispatch_id&&central?.policy===centralPolicy.policy&&central.activation_id===centralPolicy.activation_id&&central.employee_id===employee.id&&central.recorded_by===user.id;
+    if(!order||order.sales_supply_recorded_by!==user.id||order.salesperson_id!==employee.id||(!centralOwn&&run?.salesperson_id!==employee.id))throw Error('Only your own checked sale can be invoiced here.');
   }
   else client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;
@@ -134,13 +138,19 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   const previous=(await readRecords(s.Invoice,{[sourceField]:body.sourceId})).find(i=>issued(i)||i.sale_reversal);
   if(previous)return {...await detail(s,previous.id),reused:true};
   const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');
+  if(centralPolicy&&body.sourceType==='order'){
+    const marker=source.sales_supply_centralized_inventory;
+    if(source.sales_supply_source!=='company'||source.dispatch_id||source.warehouse_id||marker?.policy!==centralPolicy.policy||marker.activation_id!==centralPolicy.activation_id||marker.employee_id!==source.salesperson_id||marker.recorded_by!==source.sales_supply_recorded_by)throw Error('Record this order through the centralized sales form before issuing stock.');
+    await assertCentralInventory(s,body.invoiceDate);
+  }
   const customer=await s.Customer.get(source.customer_id);if(!customer)throw Error('The billing customer is missing.');
   const invoiceDate=dateOf(body.invoiceDate),sourceDate=source.order_date || source.transaction_date,due=dateOf(body.dueDate);
   if(invoiceDate>today() || invoiceDate<sourceDate || due<invoiceDate)throw Error('Choose an invoice date from the sale date through today, and a due date on or after it.');
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);if(!company.company_name)throw Error('Set up the company letterhead before issuing invoices.');
   const billTo=await billing(s,source,customer,options),number=await uniqueNumber(svc);
   let invoice,lines;
-  const base={receipt_reference:source.receipt_reference||'',price_includes_vat:source.price_includes_vat===true,invoice_number:number,customer_id:customer.id,customer_name:customer.business_name,location_id:source.location_id || '',location_name:source.location_name || '',billing_mode:billTo.billing_mode,bill_to_location_id:billTo.bill_to_location_id,bill_to_location_name:billTo.bill_to_location_name,invoice_date:invoiceDate,due_date:due,invoice_document:{company,options},document_revision:1,document_created_by:user.id,source_number:source.order_number || source.sale_number};
+  const base={receipt_reference:source.receipt_reference||'',price_includes_vat:source.price_includes_vat===true,invoice_number:number,customer_id:customer.id,customer_name:customer.business_name,location_id:source.location_id || '',location_name:source.location_name || '',billing_mode:billTo.billing_mode,bill_to_location_id:billTo.bill_to_location_id,bill_to_location_name:billTo.bill_to_location_name,invoice_date:invoiceDate,due_date:due,invoice_document:{company,options},document_revision:1,document_created_by:user.id,source_number:source.order_number || source.sale_number,
+    ...(body.sourceType==='order'?{sales_supply_acquisition_agent_id:Object.hasOwn(source,'sales_supply_acquisition_agent_id')?source.sales_supply_acquisition_agent_id:customer.acquired_by_id||customer.registered_employee_id||'',sales_supply_registration_user_id:Object.hasOwn(source,'sales_supply_registration_user_id')?source.sales_supply_registration_user_id:customer.registered_by_id||'',...(source.sales_supply_centralized_inventory?{sales_supply_centralized_inventory:source.sales_supply_centralized_inventory}:{})}:{})};
   if(body.sourceType==='field') {
     if(source.status!=='approved_posted')throw Error('Generate a supply invoice only after the sale is posted.');
     await sourceJournal(s,source,'FieldSale');

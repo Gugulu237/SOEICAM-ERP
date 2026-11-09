@@ -59,7 +59,7 @@ export default function MyProfile(){
         <div className="min-w-0"><h2 className="break-words text-lg font-semibold text-slate-900">{profile.display_name || profile.employee_name}</h2><p className="text-sm text-slate-500">{profile.job_title || profile.role_label}</p></div>
       </section>
       <nav aria-label={ui('My profile')} className="flex flex-wrap gap-2">
-        {profile.employee_id && role && role!=='hotesse' && <Link to="/my-stock" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2 text-sm font-medium text-green-800 hover:bg-green-50"><Package size={17}/>{ui('My issued stock')}</Link>}
+        {profile.employee_id && role && role!=='hotesse' && <Link to="/my-stock" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2 text-sm font-medium text-green-800 hover:bg-green-50"><Package size={17}/>{ui('Stock & sales')}</Link>}
         <Link to="/approval-history" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><History size={17}/>{ui('Approval history')}</Link>
       </nav>
       <div className="grid items-start gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

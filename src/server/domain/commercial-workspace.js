@@ -27,7 +27,7 @@ export async function readRecords(entity, query = {}) {
 
 const customerView = (c) => Object.fromEntries(['id', 'customer_number', 'parent_id', 'parent_name', 'business_name', 'phone', 'contact_person', 'address', 'town', 'neighbourhood',
   'gps_lat', 'gps_lng', 'gps_accuracy_m', 'gps_captured_at', 'delivery_instructions', 'acquired_by_id', 'acquired_by_name', 'acquisition_date',
-  'acquisition_verified', 'acquisition_notes', 'acquisition_source', 'registered_by_id', 'registered_by_name', 'registered_at', 'is_active','delivery_zone_id','delivery_days','route_id','gps_capture_source','delivery_revision'].map((key) => [key, c[key]]));
+  'acquisition_verified', 'acquisition_notes', 'acquisition_source', 'registered_by_id', 'registered_employee_id', 'registered_by_name', 'registered_at', 'is_active','delivery_zone_id','delivery_days','route_id','gps_capture_source','delivery_revision'].map((key) => [key, c[key]]));
 
 async function rowsByIds(entity, field, ids) {
   const rows = [];
@@ -69,7 +69,7 @@ export async function commercialAction(base44, user, body) {
     const customerNumber = `FC-${body.requestKey.toUpperCase()}`;
     const existing = (await readRecords(svc.entities.Customer, { customer_number: customerNumber }))[0];
     if (existing) {
-      if (existing.acquired_by_id !== agent.id) throw new Error('This registration reference is already used');
+      if (existing.acquired_by_id !== agent.id || existing.registered_by_id !== user.id) throw new Error('This registration reference is already used');
       if (existing.registration_fingerprint && existing.registration_fingerprint !== fingerprint) throw new Error('This registration reference was already used with different customer details. Open the existing customer before continuing.');
       return { customer: customerView(existing), reused: true };
     }
@@ -84,6 +84,7 @@ export async function commercialAction(base44, user, body) {
       acquisition_notes: possibleDuplicate ? 'Shared phone number: check for an existing customer before verifying.' : '',
     }], { key: ['customer_number', 'acquired_by_id'] });
     const customer = result.records[0];
+    if(result.created)await audit(svc,{action:'register_field_customer',module:'customers',entityType:'Customer',entityId:customer.id,userId:user.id,description:'Registered '+customer.business_name+' for '+agent.full_name});
     return { customer: customerView(customer), reused: result.created === 0 };
   }
 

@@ -7,6 +7,7 @@ import {finishedProduct,periodDates,validateCustodyLines} from './commercial-rul
 import {principalRole,normalizeRole} from './roles.js';
 import {stockUnit} from '../../lib/item-units.js';
 import {DISPATCH_MANAGER_ROLES,canIssueDeliveryStock} from '../../lib/operations-access.js';
+import {centralInventoryMode} from './centralized-inventory-policy.js';
 
 export const DISTRIBUTION_ACTIONS=['distributionControl','distributionIssueWorkspace','issueDistributionStock','closeDistributionRun','recoverLegacyCustody'];
 const pick=(row,fields)=>Object.fromEntries(fields.split(' ').map(key=>[key,row?.[key]]));
@@ -48,7 +49,7 @@ async function overview(svc,date){
   const snapshot=snapshotStores({Dispatch:allOpen,DispatchLine:lines,SalesOrder:orders,FieldSale:fieldSales,StockBalance:balances,StockMovement:movements,SalesOrderLine:orderLines,FieldSaleLine:fieldLines});
   const views=await Promise.all(runs.map(async run=>{
     const view={...pick(run,'id dispatch_number dispatch_date status warehouse_id warehouse_name vehicle_id vehicle_name vehicle_warehouse_id driver_id driver_name salesperson_id salesperson_name route_name total_loaded_value total_returned_value return_date'),has_current_stock:holdsStock(run),customer_returns:expiredReturns.filter(r=>r.dispatch_id===run.id&&r.record_type==='field_expired_return').map(r=>pick(r,'id record_number customer_name product_id product_name quantity unit returned_lot_number returned_expiry_date status return_received_at'))};
-    try{const recon=await dispatchReconciliationData(snapshot,run);return {...view,reconciliation:{...recon,orders:recon.orders.map(o=>pick(o,'id order_number')),fieldSales:recon.fieldSales.map(v=>pick(v,'id sale_number'))},error:''};}catch(e){return {...view,error:e.message,reconciliation:null};}
+    try{const recon=await dispatchReconciliationData(run.central_inventory_cutover_id?svc:snapshot,run);return {...view,reconciliation:{...recon,orders:recon.orders.map(o=>pick(o,'id order_number')),fieldSales:recon.fieldSales.map(v=>pick(v,'id sale_number'))},error:''};}catch(e){return {...view,error:e.message,reconciliation:null};}
   }));
   const proven=new Set(views.flatMap(v=>v.reconciliation?.fieldSales.map(s=>s.id) || [])),posted=new Set(journals.filter(j=>j.status==='posted').map(j=>j.id));
   const provenOrders=new Set(views.flatMap(v=>v.reconciliation?.orders.map(o=>o.id)||[]));
@@ -74,6 +75,8 @@ export async function distributionControlAction(client,user,body){
   if(role!=='admin'&&employee?.status!=='active')throw Error('An active Distribution management staff account is required');
   if(['distributionIssueWorkspace','issueDistributionStock'].includes(body.action)&&!canIssueDeliveryStock(role))throw Error('Only warehouse management or the General Manager can issue delivery goods');
   const svc=client.asServiceRole,s=svc.entities;
+  const central=await centralInventoryMode(s);
+  if(central&&['distributionIssueWorkspace','issueDistributionStock','recoverLegacyCustody'].includes(body.action))throw Error('Use centralized company stock; goods issues are no longer required.');
   if(body.action==='distributionIssueWorkspace') {
     client.auth.assertModule?.('distribution');
     const [rawStaff,vehicles,warehouses,products,runs]=await Promise.all([readRecords(s.Employee,{status:'active'}),readRecords(s.Vehicle,{is_active:true}),readRecords(s.Warehouse,{is_active:true}),readRecords(s.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:true}),readRecords(s.Dispatch,{status:{$in:open}})]);
@@ -87,7 +90,7 @@ export async function distributionControlAction(client,user,body){
     return {products:products.map(p=>({...pick(p,'id name image_url inventory_type is_active configuration_status'),unit:stockUnit(p)})),staff:staff.filter(eligibleStockRecipient).map(e=>({...pick(e,'id full_name status'),role:normalizeRole(e.access_template||e.role)})),vehicles:vehicles.map(v=>pick(v,'id name registration warehouse_id is_active')),warehouses:locations.map(w=>pick(w,'id name warehouse_type')),warehouse_stock:balances.map(b=>pick(b,'warehouse_id product_id quantity qc_status expiry_date')),active_loads:activeLoads};
   }
   if(body.action==='distributionControl'&&principalRole(user,employee)!=='admin')throw Error('Only top administrators can view reports across distribution teams.');
-  if(body.action==='distributionControl'){const {from:date}=periodDates(body.date || today(),body.date || today());if(date>today())throw Error('Choose today or an earlier reporting date');return overview(svc,date);}
+  if(body.action==='distributionControl'){const {from:date}=periodDates(body.date || today(),body.date || today());if(date>today())throw Error('Choose today or an earlier reporting date');return {...await overview(svc,date),centralized_inventory:central||{enabled:false}};}
   if(body.action==='issueDistributionStock'){
     if(body.existingDispatchId!==undefined||body.topUpPolicy!==undefined){
       if(typeof body.existingDispatchId!=='string'||!body.existingDispatchId||body.topUpPolicy!=='add-to-current-stock-v1')throw Error('Refresh the issue form to review the existing load before adding goods.');

@@ -79,7 +79,7 @@ test('warehouse catalogue and stock reads continue through every page', async ()
   const products = Array.from({ length: 401 }, (_, index) => material(String(index)));
   const balances = products.map(p => ({ id: `b-${p.id}`, product_id: p.id, warehouse_id: 'raw', quantity: 1 }));
   const pages = [];
-  const stores = Object.fromEntries(Object.entries({ Product: products, Warehouse: [warehouse], StockBalance: balances, Vehicle: [] }).map(([name, rows]) => [name, {
+  const stores = Object.fromEntries(Object.entries({ CompanySettings: [], Product: products, Warehouse: [warehouse], StockBalance: balances, Vehicle: [] }).map(([name, rows]) => [name, {
     filter: async (_query, _sort, limit, skip) => { pages.push([name, skip]); return rows.slice(skip, skip + limit); },
   }]));
   const data = await inventoryOverview({ role: 'admin', user: { id: 'gm', role: 'admin' } }, stores);

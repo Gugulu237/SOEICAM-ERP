@@ -150,7 +150,7 @@ async function verifyAppropriatedCustody(base44,dispatchId,warehouseId){
   if(quantity!==summary.total_quantity||value!==summary.total_value)throw appropriationError();
 }
 
-export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true, restoreAppropriatedValue = false, excludeAppropriated = false }) {
+export async function stockIssue(base44, { productId, productName, warehouseId, warehouseIds, quantity, movementType, documentType, documentId, movementDate, reason, saleableOnly, dispatchId, preserveRecordedValue = true, restoreAppropriatedValue = false, excludeAppropriated = false, onlyAppropriated = false }) {
   let remaining = round3(quantity);
   if (remaining <= 0) throw new Error("Quantity must be greater than zero");
 
@@ -168,9 +168,10 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
   const giveaway=movementType==='promotional_issue'&&documentType==='Degustation'&&typeof dispatchId==='string'&&!!dispatchId;
   const restoration=restoreAppropriatedValue===true&&movementType==='warehouse_transfer'&&documentType==='Dispatch'&&documentId===dispatchId&&typeof dispatchId==='string'&&!!dispatchId;
   if(restoreAppropriatedValue&&!restoration)throw appropriationError();
+  if(onlyAppropriated&&(!giveaway||excludeAppropriated||!preserveRecordedValue))throw appropriationError();
   const usable = all
     .filter((b) => (b.quantity || 0) > 0)
-    .filter(b=>{const appropriation=marked.get(b.id);if(!appropriation)return true;if((giveaway||restoration)&&appropriation.dispatch_id!==dispatchId)throw appropriationError();return !excludeAppropriated&&(giveaway||restoration)&&preserveRecordedValue===true;})
+    .filter(b=>{const appropriation=marked.get(b.id);if(!appropriation)return !onlyAppropriated;if((giveaway||restoration)&&appropriation.dispatch_id!==dispatchId)throw appropriationError();return !excludeAppropriated&&(giveaway||restoration)&&preserveRecordedValue===true;})
     .filter((b) => !saleableOnly || ((b.qc_status || "approved") === "approved" && (!b.expiry_date || b.expiry_date >= dateStr)))
     .sort((a, b) => String(a.expiry_date || "9999-12-31").localeCompare(String(b.expiry_date || "9999-12-31")));
 

@@ -14,7 +14,7 @@ export function assertEmployeeActor(context, user, requestedId, expectedRole, ac
   return employee;
 }
 
-const acquisitionFields=['acquired_by_id','acquired_by_name','acquisition_date','acquisition_source','acquisition_verified','acquisition_verified_by','acquisition_verified_at','acquisition_notes','registered_by_id','registered_by_name','registered_at','registration_request_key','registration_request_hash'];
+const acquisitionFields=['acquired_by_id','acquired_by_name','acquisition_date','acquisition_source','acquisition_verified','acquisition_verified_by','acquisition_verified_at','acquisition_notes','registered_by_id','registered_employee_id','registered_by_name','registered_at','registration_request_key','registration_request_hash'];
 export function guardEmployeeAttribution(context, entity, operation, input, existing) {
   const creating=['create','bulkCreate'].includes(operation), removing=['delete','deleteMany'].includes(operation);
   if (entity==='Employee' && Object.keys(input).some(key=>key.startsWith('employee_signin_'))) throw denied('Employee sign-in evidence is managed by the checked staff identity workflow.');
@@ -73,7 +73,7 @@ export function authenticatedRecordChanges(context, entity, input, existing) {
     for(const key of ['recorded_at','prepared_at'])if(Object.hasOwn(out,key))out[key]=now;
   }
   if (entity==='AuditLog') Object.assign(out,{user_id:context.user.id,user_name:label,actor_employee_id:context.employee?.id || '',audit_source:'client_reported'});
-  if (entity==='Customer' && !existing) Object.assign(out,{registered_by_id:context.user.id,registered_by_name:label,registered_at:now,acquisition_source:'management_entry'});
+  if (entity==='Customer' && !existing) Object.assign(out,{registered_by_id:context.user.id,registered_employee_id:context.employee?.id || '',registered_by_name:label,registered_at:now,acquisition_source:'management_entry'});
   if (entity==='ExpenseRequest') {
     if (!existing) Object.assign(out,{requester_id:context.employee?.id || context.user.id,requester_name:label});
     if (out.status==='approved' && existing?.status!=='approved') Object.assign(out,{approved_by:label,approved_by_user_id:context.user.id,approved_at:now});

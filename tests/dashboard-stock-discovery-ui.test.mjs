@@ -30,7 +30,7 @@ const output = await build({stdin:{contents:`import React from 'react';import {r
     'next/dynamic':"export default ()=>()=>null;",
   };
   for(const name of ['ProductionHome','HotesseHome','ManagerHome','SupplyChainHome','OperationalStaffHome'])mocks['@/components/home/'+name]=`import React from 'react';export default ()=>React.createElement('section',{'data-workspace':'${name}'},'Workspace tasks');`;
-  for(const path of ['@/views/Employees','@/views/FieldSaleForm','@/components/field/FieldCustomerRegistration','@/components/field/CommercialDailySupplies','@/components/field/CommercialReturns','@/components/field/CommercialCashSettlement','@/components/shared/ProductCatalog','@/components/home/ReadOnlyWorkspaceNotice','./CommercialCustomerList','./DriverActivityForm','./DriverReceiveInventory'])mocks[path]='export default ()=>null;';
+  for(const path of ['@/views/Employees','@/views/FieldSaleForm','@/views/SalesOrderForm','@/components/distribution/CentralDegustationForm','@/components/employees/CustomerCommissionReport','@/components/field/FieldCustomerRegistration','@/components/field/CommercialDailySupplies','@/components/field/CommercialReturns','@/components/field/CommercialCashSettlement','@/components/shared/ProductCatalog','@/components/home/ReadOnlyWorkspaceNotice','./CommercialCustomerList','./DriverActivityForm','./DriverReceiveInventory'])mocks[path]='export default ()=>null;';
   mocks['./DriverDeliveryPlanner']='export default ()=>null;export const DriverLoadReceipt=()=>null;';
   b.onResolve({filter:/.*/},args=>Object.hasOwn(mocks,args.path)?{path:args.path,namespace:'mock'}:undefined);
   b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:mocks[args.path],resolveDir:process.cwd()}));

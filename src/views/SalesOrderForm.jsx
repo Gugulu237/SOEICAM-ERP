@@ -43,12 +43,13 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const locked=Boolean(order && !['draft','confirmed','ready'].includes(order.status));
   const wizard=!locked;
   const canChooseSeller=catalogue?.canChooseSeller===true&&!ownIssuedStock;
+  const central=catalogue?.centralized_inventory?.enabled===true;
   const stockKey=JSON.stringify([source,form.date,canChooseSeller?form.seller_id:""]);
   const sourceData=stockResult?.key===stockKey?stockResult.data:null;
   useEffect(()=>{
     let active=true;setLoading(true);setLoadError('');
     Promise.all([call({action:'salesOrderWorkspace'}),id?Promise.all([erp.entities.SalesOrder.get(id),readAll(erp.entities.SalesOrderLine,{order_id:id})]):null])
-      .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(saved.dispatch_id?'issued:'+saved.dispatch_id:saved.sales_supply_source==='company'?'company':'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',receipt_reference:saved.receipt_reference||'',date:saved.order_date||today,seller_id:['draft','confirmed','ready'].includes(saved.status)?data.canChooseSeller&&!ownIssuedStock?(saved.sales_supply_seller_id||saved.salesperson_id||data.currentSellerId||''):data.currentSellerId||'':saved.sales_supply_seller_id||saved.salesperson_id||''});setLines(rows);setReplacements(saved.stock_replacements||[]);setForm(f=>({...f,replacements_declared:saved.stock_replacements_declared??Boolean(saved.stock_replacements?.length)}));}
+      .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(data.centralized_inventory?.enabled&&['draft','confirmed','ready'].includes(saved.status)?'company':saved.dispatch_id?'issued:'+saved.dispatch_id:saved.sales_supply_source==='company'?'company':'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',receipt_reference:saved.receipt_reference||'',date:saved.order_date||today,seller_id:['draft','confirmed','ready'].includes(saved.status)?data.canChooseSeller&&!ownIssuedStock?(saved.sales_supply_seller_id||saved.salesperson_id||data.currentSellerId||''):data.currentSellerId||'':saved.sales_supply_seller_id||saved.salesperson_id||''});setLines(rows);setReplacements(saved.stock_replacements||[]);setForm(f=>({...f,replacements_declared:saved.stock_replacements_declared??Boolean(saved.stock_replacements?.length)}));}
         else{setOrder(null);setForm(f=>({...f,customer_id:f.customer_id||data.customers.find(c=>c.id===new URLSearchParams(typeof window==='undefined'?'':window.location.search).get('customer'))?.id||'',seller_id:data.currentSeller?.id||data.currentSellerId||''}));setSource(data.defaultSource==='company'?'company':data.runs.length===1?'issued:'+data.runs[0].id:data.warehouses.length===1?'warehouse:'+data.warehouses[0].id:'');}})
       .catch(e=>{if(active)setLoadError(e.message);}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
@@ -121,6 +122,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   function changeSeller(sellerId){
     if(saving||locked||!canChooseSeller)return;
     setForm(previous=>({...previous,seller_id:sellerId}));setStockResult(null);setSourceError('');setSaveError('');
+    if(central){setSource('company');return;}
     if(sellerId!==catalogue.currentSellerId){
       const matching=catalogue.runs.filter(run=>run.salesperson_id===sellerId&&(!run.dispatch_date||run.dispatch_date<=form.date));
       setSource(matching.length===1?'issued:'+matching[0].id:'');
@@ -172,12 +174,12 @@ export default function SalesOrderForm({ownIssuedStock=false}){
         </>}
         {(!wizard||step===1)&&<>
         <section className="space-y-2">
-          <div className="min-w-0 space-y-2"><p className="text-sm font-medium">{ui('Stock source *')}</p><SaleStockPicker open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} value={source} options={sourceOptions} onChange={setSource} disabled={saving||locked} fallbackLabel={source?sourceLabel:''}/></div>
-          <div className="flex flex-wrap items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui('Company stock combines available finished goods automatically, so you do not need to choose a warehouse. Goods already issued to a delivery team remain separate. Each sale deducts stock once and records its actual cost.')}</p></LearnMore>{source&&!locked&&<Button type="button" variant="ghost" size="sm" disabled={sourceLoading} onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</Button>}</div>
+          <div className="min-w-0 space-y-2"><p className="text-sm font-medium">{ui('Stock source *')}</p>{central&&!locked?<p className="rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">{ui('Company stock')}</p>:<SaleStockPicker open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} value={source} options={sourceOptions} onChange={setSource} disabled={saving||locked} fallbackLabel={source?sourceLabel:''}/>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui(central?'Your sale deducts from company stock when recorded. No goods issue or unsold-stock return is required.':'Company stock combines available finished goods automatically, so you do not need to choose a warehouse. Goods already issued to a delivery team remain separate. Each sale deducts stock once and records its actual cost.')}</p></LearnMore>{source&&!locked&&<Button type="button" variant="ghost" size="sm" disabled={sourceLoading} onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</Button>}</div>
           {selectedRun&&<p className="break-words text-xs text-slate-600">{ui('Stock held by')}: {selectedRun.commercial_name} · {ui('Driver')}: {selectedRun.driver_name}</p>}
           {sourceLoading&&<p role="status" className="text-xs text-slate-500">{ui('Checking available finished stock...')}</p>}
           {sourceError&&<p role="alert" className="text-sm text-red-700">{uiMessage(sourceError)} <button type="button" className="underline" onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</button></p>}
-          {sourceData&&!products.length&&<p role="status" className="text-xs text-slate-500">{ui('No saleable finished products remain at this source.')} {ui('Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.')}</p>}
+          {sourceData&&!products.length&&<p role="status" className="text-xs text-slate-500">{ui('No saleable finished products remain at this source.')} {ui(central?'Check that the finished stock is approved and unexpired. Previously expensed promotional products are tracked separately.':'Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.')}</p>}
         </section>
         {!locked&&<p className="text-xs text-slate-600">{ui('Selling prices already include VAT. The total will not have VAT added on top.')}</p>}
         <section className="space-y-3">

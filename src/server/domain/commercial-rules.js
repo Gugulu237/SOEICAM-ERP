@@ -43,7 +43,7 @@ export function registrationData(input, employee, userId, now) {
     ...gps, delivery_instructions: text('delivery_instructions', 1000),
     acquired_by_id: employee.id, acquired_by_name: employee.full_name, salesperson_id: employee.id,
     acquisition_date: businessDate(new Date(now)), acquisition_source: 'field_registration', acquisition_verified: 'pending',
-    registered_by_id: userId, registered_by_name: employee.full_name, registered_at: now, is_active: true,
+    registered_by_id: userId, registered_employee_id: employee.id, registered_by_name: employee.full_name, registered_at: now, is_active: true,
     credit_limit: 0, payment_terms_days: 0, balance: 0, credit_status: 'good',
   };
 }

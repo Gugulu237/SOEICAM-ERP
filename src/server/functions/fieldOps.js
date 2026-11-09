@@ -1,4 +1,7 @@
 import {employeeStockAction,EMPLOYEE_STOCK_ACTIONS} from '../domain/employee-stock.js';
+import {centralInventoryMode} from '../domain/centralized-inventory-policy.js';
+import {centralDegustationAction,CENTRAL_DEGUSTATION_ACTIONS} from '../domain/central-degustation.js';
+import {customerCommissionAction,CUSTOMER_COMMISSION_ACTIONS} from '../domain/customer-commission-report.js';
 import {unsoldStockReturnAction,UNSOLD_RETURN_ACTIONS} from '../domain/unsold-stock-returns.js';
 import {approvalHistory} from '../domain/approval-history.js';
 import {SALE_REVERSAL_ACTIONS,saleReversalAction} from '../domain/sale-reversals.js';
@@ -163,12 +166,14 @@ export default async function (req) {
     // role checks. Apply the GM's module selection before entering that code.
     const inActions = (actions) => actions.includes(action);
     const selectFeature=async(module,actorRole)=>{if(base44.auth.forFeature){base44=base44.auth.forFeature(module,actorRole,action);user=await base44.auth.me();}};
+    if(CENTRAL_DEGUSTATION_ACTIONS.includes(action))return Response.json(await centralDegustationAction(base44,user,body));
+    if(CUSTOMER_COMMISSION_ACTIONS.includes(action))return Response.json(await customerCommissionAction(base44,user,body));
     // Report-only Supply Chain grants use sales_reports, without opening the
     // agent's operational Commercial module. The report handler checks both.
     if (EMPLOYEE_STOCK_ACTIONS.includes(action)) return Response.json(await employeeStockAction(base44,user,body));
     if (UNSOLD_RETURN_ACTIONS.includes(action)) return Response.json(await unsoldStockReturnAction(base44,user,body));
     if (action === 'approvalHistory') return Response.json(await approvalHistory(base44,user,body));
-    if (action === 'commercialPerformance') return Response.json(await commercialAction(base44,user,body));
+    if (action === 'commercialPerformance') return Response.json({...await commercialAction(base44,user,body),centralized_inventory:await centralInventoryMode(base44.asServiceRole.entities)||{enabled:false}});
     if (CUSTOMER_REGISTRATION_ACTIONS.includes(action)){await selectFeature('customers');return Response.json(await customerRegistrationAction(base44, user, body));}
     if (action === 'fieldStockInventory') return Response.json(await fieldInventoryAction(base44, user, body));
     if (['expiredReturnReviewQueue', 'verifyExpiredReturn', 'rejectExpiredReturn', 'commercialReturns', 'driverReturnsWorkspace', 'recordExpiredReturn', 'replaceExpiredReturn'].includes(action)){const review=['expiredReturnReviewQueue','verifyExpiredReturn','rejectExpiredReturn'].includes(action);await selectFeature(review?'quality':action==='driverReturnsWorkspace'?'distribution':'commercial',review?'admin':action==='driverReturnsWorkspace'?'driver':'commercial');return Response.json(await commercialReturnAction(base44, user, body));}
@@ -231,7 +236,8 @@ export default async function (req) {
     if (['driverReceiveLoad', 'driverSaveDeliveryPlan'].includes(action)) return Response.json(await driverDeliveryAction(base44,user,body));
 
     if (['employeeDashboard', 'driverActivity', 'dispatchActivity'].includes(action)) {
-      return Response.json(await employeeWorkspaceAction(base44, user, body));
+      const result=await employeeWorkspaceAction(base44,user,body);
+      return Response.json(action==='employeeDashboard'?{...result,centralized_inventory:await centralInventoryMode(base44.asServiceRole.entities)||{enabled:false}}:result);
     }
 
     // ---------------------------------------------------------------- custody
@@ -241,6 +247,7 @@ export default async function (req) {
     // ------------------------------------------------------------- field sales
 
     if (action === 'saveSale') {
+      if(await centralInventoryMode(svc.entities))throw Error('Record this sale from your profile using centralized company stock.');
       const { employee, role } = await commercialActor(base44, user, body.commercialId, 'recording a field sale');
       if (!employee) throw new Error('Your login is not linked to a staff record — ask an administrator to link it');
       if (employee.status && employee.status !== 'active') throw new Error('An active linked commercial account is required');

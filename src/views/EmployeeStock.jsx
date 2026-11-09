@@ -12,11 +12,13 @@ import DegustationHistory from '@/components/distribution/DegustationHistory';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {RefreshCw} from 'lucide-react';
+import CentralStockWorkspace from '@/components/field/CentralStockWorkspace';
 
-export default function EmployeeStock({embedded = false}) {
+export default function EmployeeStock({embedded = false,initialTab='stock'}) {
   useLocaleRender();
   const navigate = useNavigate(), {data, error, busy, enabled, authLoading, role, refresh} = useMyStock({history:true});
   const [giveaway, setGiveaway] = useState(false), [search, setSearch] = useState('');
+  if(data?.centralized_inventory?.enabled)return <CentralStockWorkspace data={data} error={error} busy={busy} enabled={enabled} role={role} refresh={refresh} embedded={embedded} initialTab={initialTab}/>;
   const canRecord = enabled && role !== 'driver' && data?.runs.some(run => run.can_supply) && !error && !busy;
   const canGiveaway = canRecord && data.balances.some(balance => balance.degustation_quantity > 0 && data.runs.some(run => run.id === balance.dispatch_id && run.can_supply));
   const match = row => [row.product.name, row.product.sku, row.product.size].filter(Boolean).join(' ').toLowerCase().includes(search.trim().toLowerCase());

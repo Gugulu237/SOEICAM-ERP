@@ -11,6 +11,8 @@ import { DISPATCH_MANAGER_ROLES, canIssueDeliveryStock } from '../../lib/operati
 import {validPostingRuleAccount} from '../../lib/posting-rule-types.js';
 import {createHash} from 'node:crypto';
 import {journalCents,checkedJournalLines,journalPayload} from './journal-validation.js';
+import {centralInventoryMode} from './centralized-inventory-policy.js';
+import {centralCutoverQuantities} from './central-cutover-reconciliation.js';
 
 // These operations execute inside the function route's serializable transaction.
 // All validation is completed before the first stock write. A load is custody,
@@ -118,6 +120,7 @@ export async function topUpDispatchStock(svc,user,dispatch,body){
  const lines=body.lines.map(row=>{if(typeof row?.product_id!=='string'||!row.product_id||!additionQuantity(row.quantity))throw additionError();const gift=degustationQuantity(row.degustation_quantity??0);if(gift>Number(row.quantity))throw Error('Dégustation quantity cannot exceed the total issued quantity.');return {product_id:row.product_id,quantity:additionQuantity(row.quantity)/1000,degustation_quantity:gift};}).sort((a,b)=>a.product_id.localeCompare(b.product_id));
  const date=body.date||today(),notes=String(body.notes||'').slice(0,2000),id='DLA-'+createHash('sha256').update(user.id+':'+body.requestKey).digest('hex'),payload=JSON.stringify([DISPATCH_TOP_UP_POLICY,dispatch.id,user.id,...identity,date,notes,lines]),fingerprint=additionHash(payload),previous=await svc.entities.AuditLog.get(id);
  if(previous)return retryAddition(svc,user,dispatch,previous,payload,fingerprint);
+ if(svc.entities.CompanySettings&&await centralInventoryMode(svc.entities))throw Error('Use centralized company stock; goods issues are no longer required.');
  if(date!==today())throw Error('New stock loading is recorded on the current business date');
  if(!openStates.includes(dispatch.status)||!dispatch.dispatch_date||dispatch.dispatch_date>date||dispatch.unsold_return_request_id||dispatch.return_date||dispatch.unsold_return_received_request_id)throw Error('Resolve the pending or completed return before adding more goods.');
  const s=svc.entities;
@@ -348,13 +351,14 @@ export async function dispatchReconciliationData(svc, dispatch) {
     const runs = await records(svc.entities.Dispatch, { status: { $in: openStates } });
     if (runs.some(run => run.id !== dispatch.id && ((dispatch.vehicle_id && run.vehicle_id === dispatch.vehicle_id) || (dispatch.vehicle_warehouse_id && run.vehicle_warehouse_id === dispatch.vehicle_warehouse_id)))) throw new Error('Multiple open delivery runs share this vehicle. Reconcile the assignments before proceeding.');
   }
-  const [lines, orders, fieldSales, balances, returnMovements, replacementMovements, giveawayMovements] = await Promise.all([
+  const [lines, orders, fieldSales, balances, returnMovements, replacementMovements, giveawayMovements, centralized] = await Promise.all([
     records(svc.entities.DispatchLine, { dispatch_id: dispatch.id }), records(svc.entities.SalesOrder, { dispatch_id: dispatch.id }),
     records(svc.entities.FieldSale, { dispatch_id: dispatch.id }),
     ownsVehicleStock && dispatch.vehicle_warehouse_id ? records(svc.entities.StockBalance, { warehouse_id: dispatch.vehicle_warehouse_id }) : [],
     dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'Dispatch', document_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'warehouse_transfer', status: 'approved' }) : [],
     dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'SpoilageRecord', dispatch_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'promotional_issue', status: 'approved' }) : [],
     dispatch.vehicle_warehouse_id ? records(svc.entities.StockMovement, { document_type: 'Degustation', dispatch_id: dispatch.id, source_warehouse_id: dispatch.vehicle_warehouse_id, movement_type: 'promotional_issue', status: 'approved' }) : [],
+    centralCutoverQuantities(svc.entities,dispatch),
   ]);
   const giveaways = degustationState(lines, giveawayMovements);
   const appropriation=appropriationReconciliation(dispatch,balances,giveawayMovements,returnMovements);
@@ -407,13 +411,14 @@ export async function dispatchReconciliationData(svc, dispatch) {
   for (const balance of balances) { actual.set(balance.product_id, round3((actual.get(balance.product_id) || 0) + Number(balance.quantity || 0))); names.set(balance.product_id, balance.product_name || names.get(balance.product_id)); }
   for (const movement of returnMovements) { returns.set(movement.product_id, round3((returns.get(movement.product_id) || 0) + amount(movement.quantity))); names.set(movement.product_id, movement.product_name || names.get(movement.product_id)); }
   const lineMap = new Map(lines.map(line => [line.product_id, line]));
-  const ids = new Set([...lineMap.keys(), ...sold.keys(), ...consumed.keys(), ...actual.keys(), ...returns.keys()]);
+  const ids = new Set([...lineMap.keys(), ...sold.keys(), ...consumed.keys(), ...actual.keys(), ...returns.keys(),...centralized.keys()]);
   const rows = [...ids].map(productId => {
     const line = lineMap.get(productId), loaded = round3(line?.loaded_quantity || 0), returned = round3(line?.returned_quantity ?? returns.get(productId) ?? 0);
     const confirmedSold = sold.get(productId) || 0, physicalSupplies = consumed.get(productId) || 0;
-    const expected = round3(loaded - returned - physicalSupplies), onHand = actual.get(productId) || 0;
+    const centralizedQuantity=centralized.get(productId)||0;
+    const expected = round3(loaded - returned - physicalSupplies - centralizedQuantity), onHand = actual.get(productId) || 0;
     const expensed=appropriation?.products.get(productId);
-    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: giveaways.get(productId)?.remaining || 0,degustation_expensed_quantity:expensed?round3(expensed.remaining_quantity+expensed.given_quantity):0,degustation_expensed_value:expensed?round2(expensed.remaining_value+expensed.given_value):0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
+    return { ...line, product_id: productId, product_name: line?.product_name || names.get(productId) || '', loaded, returned, centralized_quantity:centralizedQuantity, degustation_allocated: giveaways.get(productId)?.allocated || 0, degustation_given: giveaways.get(productId)?.given || 0, degustation_returned: giveaways.get(productId)?.returned || 0, degustation_remaining: giveaways.get(productId)?.remaining || 0,degustation_expensed_quantity:expensed?round3(expensed.remaining_quantity+expensed.given_quantity):0,degustation_expensed_value:expensed?round2(expensed.remaining_value+expensed.given_value):0, sold: confirmedSold, replaced: replacements.get(productId) || 0, consumed: physicalSupplies, expected, actual: onHand, variance: round3(onHand - expected), sales_value: values.get(productId) || 0 };
   });
   let cashSales = 0, creditSales = 0, totalSales = 0;
   for (const sale of [...postedFieldSales, ...postedOrders]) {
@@ -488,6 +493,7 @@ export async function dispatchAction(base44, user, body, options={}) {
   if (!['approveDispatchRequest', 'approveDispatch', 'loadDispatch', 'returnDispatchStock', 'dispatchReconciliation'].includes(body.action)) throw new Error('Unknown dispatch stock action');
   if (['approveDispatchRequest','approveDispatch','loadDispatch'].includes(body.action) && !canIssueDeliveryStock(role)) throw new Error('Only warehouse management or the General Manager can issue delivery goods');
   const svc = base44.asServiceRole;
+  if(['approveDispatchRequest','approveDispatch','loadDispatch'].includes(body.action)&&svc.entities.CompanySettings&&await centralInventoryMode(svc.entities))throw Error('Use centralized company stock; goods issues are no longer required.');
   if (body.action === 'approveDispatchRequest') return approveRequest(svc, user, body);
   if (typeof body.dispatchId !== 'string' || !body.dispatchId.trim()) throw new Error('Choose a dispatch');
   const dispatch = await svc.entities.Dispatch.get(body.dispatchId);

@@ -9,7 +9,7 @@ let compiled;
 async function renderer(){
   if(compiled)return compiled;
   const result=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Overview from './src/components/field/MyStockOverview.jsx';import Full from './src/views/EmployeeStock.jsx';export {currentStockRows} from './src/components/field/IssuedStockRows.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='full'?Full:Overview,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',platform:'node',format:'cjs',write:false,plugins:[{name:'current-stock-ui',setup(b){
-    const owned=/(?:MyStockOverview|IssuedStockRows|EmployeeStock)\.jsx$|useMyStock\.js$/;
+    const owned=/(?:MyStockOverview|IssuedStockRows|EmployeeStock|CentralStockWorkspace|CompanyStockRows)\.jsx$|useMyStock\.js$/;
     b.onResolve({filter:/^react$/},a=>owned.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'hooks'},a=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;const key=${JSON.stringify(a.path)};export const useState=v=>globalThis.__currentStockUI.state(key,v),useRef=v=>globalThis.__currentStockUI.ref(key,v),useEffect=(f,d)=>globalThis.__currentStockUI.effect(key,f,d),useMemo=f=>f();export const useCallback=(fn,deps)=>{const slot=globalThis.__currentStockUI.ref(key,null);if(!slot.current||deps.some((v,i)=>!Object.is(v,slot.current.deps[i])))slot.current={fn,deps};return slot.current.fn;};`,resolveDir:process.cwd()}));
     b.onResolve({filter:/^react\/jsx-runtime$/},a=>owned.test(a.importer)?{path:'jsx',namespace:'capture'}:undefined);
@@ -17,7 +17,7 @@ async function renderer(){
     const mocks={
       '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__currentStockUI.session;',
       '@/lib/localization':'export const useLocaleRender=()=>{};',
-      '@/lib/field-ops':'export const invokeFieldOps=async body=>({data:await globalThis.__currentStockUI.action(body)});',
+      '@/lib/field-ops':'export const invokeFieldOps=async body=>({data:await globalThis.__currentStockUI.action(body)});export const errorMessage=error=>error.message;',
       '@/lib/sales-stock-refresh':'export const watchSalesStock=fn=>{const entry={refresh:fn,stopped:false};globalThis.__currentStockUI.watchers.push(entry);return()=>{entry.stopped=true;};};',
       '@/lib/router':"import React from 'react';export const useNavigate=()=>path=>globalThis.__currentStockUI.navigation.push(path);export const Link=({to,children,...p})=>React.createElement('a',{...p,href:to},children);",
       '@/components/ui/button':"import React from 'react';export const Button=({children,variant,size,...p})=>{globalThis.__currentStockUI.capture('button',p,children);return React.createElement('button',p,children);};",
@@ -26,6 +26,8 @@ async function renderer(){
       '@/components/shared/ProductThumb':"import React from 'react';export default ({product})=>React.createElement('span',{'data-product':product?.id});",
       '@/components/shared/DataTable':"import React from 'react';export default ({data,emptyMessage})=>React.createElement('div',null,data?.length?'History rows':emptyMessage);",
       '@/components/distribution/DegustationForm':"import React from 'react';export default ()=>React.createElement('div',null,'Giveaway form');",
+      '@/components/distribution/CentralDegustationForm':"import React from 'react';export default ()=>React.createElement('div',null,'Central giveaway form');",
+      '@/components/employees/CustomerCommissionReport':"import React from 'react';export default props=>{globalThis.__currentStockUI.commissionReport=props;return React.createElement('div',null,'Monthly customer commissions');};",
       '@/components/distribution/DegustationHistory':"import React from 'react';export default ()=>React.createElement('div',null,'Giveaway history');",
     };
     b.onResolve({filter:/.*/},a=>Object.hasOwn(mocks,a.path)?{path:a.path,namespace:'leaf'}:undefined);
@@ -137,4 +139,38 @@ test('a compact overview discloses omitted items and links to the complete stock
   const products=Array.from({length:6},(_,i)=>({...product,id:'item-'+i,name:'Item '+i})),data={...snapshot,products,balances:products.map(p=>({...snapshot.balances[0],id:'lot-'+p.id,product_id:p.id}))};
   const f=await fixture({data}),{draw,settle}=f;
   try{draw();const html=await settle();assert.match(html,/Showing 4 of 6 stock items/);assert.match(html,/Item 0/);assert.match(html,/Item 3/);assert.doesNotMatch(html,/Item 4|Item 5/);assert.match(html,/href="\/my-stock"/);}finally{f.close();}
+});
+
+test('centralized stock replaces personal custody and returns with company availability and profile sale entry',async()=>{
+  const data={...snapshot,centralized_inventory:{enabled:true},runs:[],balances:[],products:[{...product,available:8},{...product,id:'empty',name:'Empty item',available:0}]};
+  for(const kind of ['overview','full']){const f=await fixture({kind,data,role:'commercial'}),{r,draw,settle}=f;try{
+    draw();let html=await settle();assert.match(html,/Company stock/);assert.match(html,/Available for sale/);assert.match(html,/Vanilla yogurt/);assert.doesNotMatch(html,/Return goods|On hand|No goods currently assigned|LOAD-OLDER|Empty item/);
+    if(kind==='full'){
+      assert.equal(button(r,'Record sale').disabled,false);button(r,'Record sale').onClick();assert.equal(r.navigation.at(-1),'/my-stock/new');
+      button(r,'Record Dégustation').onClick();html=draw();assert.match(html,/Central giveaway form/);
+      button(r,'My customers & commissions').onClick();html=draw();assert.match(html,/Monthly customer commissions/);assert.equal(r.commissionReport.selectedAgentId,data.employee.id);
+    }else {assert.match(html,/href="\/my-stock"/);assert.doesNotMatch(html,/href="\/my-stock\/new"/,'dashboard overview does not duplicate the primary sale action');}
+  }finally{f.close();}}
+});
+
+test('centralized inventory keeps a driver read-only and disables spending on a failed stock refresh',async()=>{
+  const data={...snapshot,centralized_inventory:{enabled:true},runs:[],balances:[],products:[{...product,available:8}]};
+  const driver=await fixture({kind:'full',data,role:'driver'});try{driver.draw();const html=await driver.settle();assert.match(html,/Company stock/);for(const label of ['Record sale','Record Dégustation','My customers & commissions','Return goods'])assert.equal(button(driver.r,label),undefined);}finally{driver.close();}
+  const f=await fixture({kind:'full',data,role:'commercial'});try{f.draw();await f.settle();f.r.action=async()=>{throw Error('Current pool unavailable');};await f.r.watchers[0].refresh();const html=f.draw();assert.match(html,/Current pool unavailable/);assert.match(html,/Vanilla yogurt/);assert.equal(button(f.r,'Record sale').disabled,true);assert.equal(button(f.r,'Record Dégustation').disabled,true);assert.doesNotMatch(html,/No saleable company stock is currently available/);}finally{f.close();}
+});
+
+test('inventory-only staff can view company stock without a sale action when the server denies sales',async()=>{
+  const data={...snapshot,centralized_inventory:{enabled:true},can_record_sales:false,runs:[],balances:[],products:[{...product,available:8}]};
+  const f=await fixture({kind:'full',data,role:'employee'});try{
+    f.draw();let html=await f.settle();assert.match(html,/Vanilla yogurt/);assert.equal(button(f.r,'Record sale'),undefined);assert.deepEqual(f.r.navigation,[]);
+    assert.equal(button(f.r,'Record Dégustation').disabled,false);button(f.r,'Record Dégustation').onClick();html=f.draw();assert.match(html,/Central giveaway form/);
+  }finally{f.close();}
+});
+
+test('an inventory-only manager opens their own customer commission report with an explicit employee scope',async()=>{
+  const data={...snapshot,centralized_inventory:{enabled:true},can_record_sales:false,runs:[],balances:[],products:[{...product,available:8}]};
+  const f=await fixture({kind:'full',data,role:'production_manager'});try{
+    f.draw();await f.settle();button(f.r,'My customers & commissions').onClick();assert.match(f.draw(),/Monthly customer commissions/);
+    assert.equal(f.r.commissionReport.selectedAgentId,data.employee.id);assert.equal(f.r.commissionReport.embedded,true);
+  }finally{f.close();}
 });

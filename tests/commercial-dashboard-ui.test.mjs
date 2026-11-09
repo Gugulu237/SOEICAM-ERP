@@ -15,6 +15,7 @@ test('own Commercial dashboard exposes entry while management reports remain rea
       builder.onResolve({ filter: /^@\/api\/erpClient$/ }, () => ({ path: 'client', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/components\/ui\/button$/ }, () => ({ path: 'button', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/views\/FieldSaleForm$/ }, () => ({ path: 'form', namespace: 'commercial-ui' }));
+      builder.onResolve({ filter: /^@\/(views\/SalesOrderForm|components\/distribution\/CentralDegustationForm|components\/employees\/CustomerCommissionReport)$/ }, () => ({ path: 'form', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/hooks\/useCurrentUser$/ }, () => ({ path: 'auth', namespace: 'commercial-ui' }));
       builder.onResolve({ filter: /^@\/(components\/field\/MyStockOverview|views\/EmployeeStock)$/ }, () => ({ path: 'form', namespace: 'commercial-ui' }));
       builder.onLoad({ filter: /.*/, namespace: 'commercial-ui' }, ({ path }) => ({ contents: {
@@ -58,6 +59,13 @@ test('own Commercial dashboard exposes entry while management reports remain rea
     globalThis.__commercialButtons = [];
     module.exports.render({ data, preview: true });
     assert.equal(globalThis.__commercialButtons.find(button => label(button.children) === 'Record sale').disabled, true);
+    globalThis.__commercialButtons = [];
+    const centralized=module.exports.render({data:{...data,centralized_inventory:{enabled:true}}});
+    assert.match(centralized,/Company stock|Monthly customer commissions/);
+    assert.match(centralized,/Record Dégustation/);
+    globalThis.__commercialButtons.find(button=>label(button.children)==='Record sale').onClick();
+    assert.equal(globalThis.__commercialNavigation,'/my-stock/new');
+    delete globalThis.__commercialNavigation;
     const posData = { ...data, products: [
       { id: 'finished', name: 'YOLA finished', inventory_type: 'assembly', is_active: true, selling_price: 500, unit_of_measure: 'ea' },
       { id: 'raw', name: 'Raw material', inventory_type: 'raw_material', is_active: true, selling_price: 100 },

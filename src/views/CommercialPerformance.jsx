@@ -23,6 +23,7 @@ import { formatXAF } from '@/lib/formatters';
 import { Download } from 'lucide-react';
 import { canViewAllCommercialReports } from '@/lib/operations-access';
 import { businessDate } from '@/lib/business-date';
+import CustomerCommissionReport from '@/components/employees/CustomerCommissionReport';
 
 const today = businessDate;
 const statusLabel = (value) => (value || 'pending').replaceAll('_', ' ');
@@ -60,6 +61,7 @@ export default function CommercialPerformance({ embedded = false, selectedAgentI
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [reviewError, setReviewError] = useState('');
+  const [showCommissions,setShowCommissions]=useState(false);
   useEffect(() => { if (embedded && isAdmin) setCommercialId(selectedAgentId); }, [embedded, isAdmin, selectedAgentId]);
   useEffect(() => {
     if (authLoading) return;
@@ -89,6 +91,7 @@ export default function CommercialPerformance({ embedded = false, selectedAgentI
     {!embedded && isAdmin && commercialId && <Link to={'/commercial?employee=' + encodeURIComponent(commercialId)} className="mb-4 inline-block text-sm font-medium text-emerald-700 underline">{ui("Back to agent dashboard")}</Link>}
     <PageHeader title={canReview ? ui('Customer acquisition review') : allAgents ? ui("Commercial performance") : ui("My performance")} subtitle={canReview ? ui('Verify reported customer acquisitions as General Manager. The review records your own account and does not create employee sales or operations.') : ui("Customer acquisition and approved supplies for bonus review.")}
       actions={<div className="flex flex-wrap gap-2"><ReportExport disabled={!data || loading || !!error || from>to || data.from!==from || data.to!==to} getReport={()=>commercialPerformanceDocument(data)}/><Button variant="outline" disabled={!data || loading} onClick={() => download(data)}><Download size={16} className="mr-2" />{ui("Export report")}</Button></div>} />
+    {!canReview&&<section className="mb-5 space-y-4"><Button variant="outline" aria-expanded={showCommissions} onClick={()=>setShowCommissions(value=>!value)}>{ui('Monthly customer commissions')}</Button>{showCommissions&&<CustomerCommissionReport embedded selectedAgentId={allAgents?selectedAgentId||commercialId:''}/>}</section>}
     <div className="mb-5 grid gap-4 rounded-xl border bg-white p-4 sm:grid-cols-3">
       <label className="space-y-1.5 text-sm font-medium">{ui("From")}<Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
       <label className="space-y-1.5 text-sm font-medium">{ui("To")}<Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>

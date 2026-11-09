@@ -10,13 +10,15 @@ test('Commercial performance and rewards appear only in their dedicated task vie
     sales: [{ customer_id: 'customer', status: 'approved_posted', transaction_date: '2026-10-21', subtotal: 10000, total: 11925 }] };
   try {
     runtime.beforeRender(); let html = render({ data });
-    assert.doesNotMatch(html, /Commission estimate this month|Monthly goals|Cash awaiting clearance|To follow up/);
+    assert.doesNotMatch(html, /data-customer-commission-report|Commission estimate this month|Monthly goals|Cash awaiting clearance|To follow up/);
     const button = runtime.buttons.find(row => row.label === 'Performance & rewards'); assert.ok(button); button.onClick();
     runtime.beforeRender(); html = render({ data });
-    assert.match(html, /Commission estimate this month/); assert.match(html, /1,500/);
-    assert.match(html, /Tax and free replacements are excluded/); assert.match(html, /management must review and approve payment/);
+    assert.match(html, /Monthly customer commissions/); assert.match(html, /data-customer-commission-report="true"/);
+    // The authoritative customer-portfolio report loads its own scoped data.
+    // Dashboard sales must never produce the old seller-only estimate here.
+    assert.doesNotMatch(html, /Commission estimate this month|1,500/);
     runtime.buttons.find(row => row['data-page-back'] !== undefined).onClick(); runtime.beforeRender(); html = render({ data });
-    assert.doesNotMatch(html, /Commission estimate this month|Monthly goals/);
+    assert.doesNotMatch(html, /data-customer-commission-report|Commission estimate this month|Monthly goals/);
   } finally { runtime.cleanup(); delete globalThis.__commercialUI; }
 });
 test('Hotesse starts at the assigned outlet task grid and opens performance separately', async () => {

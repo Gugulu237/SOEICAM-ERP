@@ -51,12 +51,14 @@ export default function Inventory() {
   const navigate = useNavigate(), [params, setParams] = useSearchParams();
   const workspace = inventoryWorkspaceState(params);
   const backToMenu = useMenuBack('/inventory');
-  const { role, principalRole, employee, allowedModules, loading: authLoading } = useCurrentUser(), { toast } = useToast();
+  const { user,role, principalRole, employee, allowedModules, loading: authLoading } = useCurrentUser(), { toast } = useToast();
   const hasModule=key=>role==='admin' || !allowedModules || allowedModules.includes(key);
   const canReceive = purchasePermissions(role, employee?.assigned_role).receive && hasModule('purchases');
   const canEdit = ["admin", "warehouse_manager", "procurement", "production_manager"].includes(role);
   const canMoveStock = ["admin", "warehouse_manager", "production_manager"].includes(role);
-  const canIssueStock = canIssueDeliveryStock(role) && hasModule('distribution');
+  const [centralizedInventory,setCentralizedInventory]=useState(()=>user?.centralized_inventory||null);
+  useEffect(()=>{if(user?.centralized_inventory)setCentralizedInventory(user.centralized_inventory);},[user?.centralized_inventory]);
+  const canIssueStock = canIssueDeliveryStock(role) && hasModule('distribution') && !centralizedInventory?.enabled;
   const canAdjustStock = canAdjustInventory(principalRole||role,employee,allowedModules);
   const canManageWarehouses = WAREHOUSE_MANAGERS.includes(role);
   const [removedProducts,setRemovedProducts]=useState([]);
@@ -122,6 +124,7 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
       if (controller.signal.aborted || sequence !== loadSequence.current) return;
       overviewTag.current={url,value:response.headers?.get?.("etag")||null};
       setProducts(data.products); setRemovedProducts(data.removedProducts||[]); setBalances(data.balances); setWarehouses(data.warehouses);
+      setCentralizedInventory(data.centralized_inventory||{enabled:false});
       lastLoadAt.current = Date.now(); setError("");
       setMovementVersion(value => value + 1);
     } catch (failure) { if (!controller.signal.aborted && sequence === loadSequence.current) setError(failure.message); }
@@ -134,10 +137,11 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
   useEffect(() => {
     if(authLoading || !needsOverview)return;
     loadData();
-    const refreshVisible = () => { if (document.visibilityState === 'visible') loadData({ background: true }); };
-    const timer = window.setInterval(refreshVisible, 30000);
-    window.addEventListener('focus', refreshVisible); document.addEventListener('visibilitychange', refreshVisible);
-    return () => { loadSequence.current++; pendingLoad.current?.abort(); window.clearInterval(timer); window.removeEventListener('focus', refreshVisible); document.removeEventListener('visibilitychange', refreshVisible); };
+    const browser=globalThis.window,doc=globalThis.document;
+    const refreshVisible = () => { if (doc?.visibilityState === 'visible') loadData({ background: true }); };
+    const timer = browser?.setInterval?.(refreshVisible, 30000);
+    browser?.addEventListener?.('focus', refreshVisible); doc?.addEventListener?.('visibilitychange', refreshVisible);
+    return () => { loadSequence.current++; pendingLoad.current?.abort(); browser?.clearInterval?.(timer); browser?.removeEventListener?.('focus', refreshVisible); doc?.removeEventListener?.('visibilitychange', refreshVisible); };
   }, [loadData,authLoading,needsOverview]);
 
   useEffect(()=>{if(!authLoading&&needsOverview)return watchItemCatalogue(event=>loadData({background:!['soeicam:item-catalogue-changed','storage'].includes(event?.type)}),{interval:0});},[loadData,authLoading,needsOverview]);
