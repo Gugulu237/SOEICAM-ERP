@@ -7,7 +7,7 @@ const hasContent = children => React.Children.toArray(children).some(child =>
 
 export default function PageHeader({ title, subtitle, actions, back }) {
   return (
-    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+    <div data-page-header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
       <div data-page-heading className="flex min-w-0 items-start gap-2">
         {back && <PageBackButton {...back} />}
         <div className="min-w-0 self-center">
