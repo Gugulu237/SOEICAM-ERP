@@ -137,7 +137,7 @@ test('embedded item editing loads the selected record, confirms a unit correctio
 });
 
 test('Inventory keeps operational shortcuts compact and removes redundant warehouse banners',async()=>{
-  const r=runtime(),ui=await renderer();r.search='section=items';const oldFetch=globalThis.fetch,oldWindow=globalThis.window,oldDocument=globalThis.document;
+  const r=runtime(),ui=await renderer();r.search='section=items&filter=ingredients';const oldFetch=globalThis.fetch,oldWindow=globalThis.window,oldDocument=globalThis.document;
   globalThis.window={setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}};globalThis.document={visibilityState:'visible',addEventListener(){},removeEventListener(){}};
   globalThis.fetch=async()=>Response.json({products:[],balances:[],warehouses:[{id:'cold',name:'Cold Room',warehouse_type:'cold_room',is_active:true}]});
   try{const paint=painter(r,ui,'Inventory');paint();await r.flush();const html=paint();assert.match(html,/Inventory/);assert.match(html,/New item/);assert.match(html,/Receive inventory/);assert.doesNotMatch(html,/Cold Room.*finished products|Fermentation Tank|Warehouse cards|Manage items &amp; assemblies|Items, quantities, costs and stock movements|Stock updated|Refreshes every|Stock value:|Quick edit adds groups/);button(r,'New item').onClick();button(r,'Receive inventory').onClick();assert.equal(button(r,'Manufacturing'),undefined);assert.deepEqual(r.navigation,['/items/new','/purchases?section=receiving']);

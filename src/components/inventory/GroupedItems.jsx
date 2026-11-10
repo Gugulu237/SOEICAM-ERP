@@ -23,7 +23,7 @@ import ItemAttributeFilters from '@/components/items/ItemAttributeFilters';
 const normalize = value => normalizeProductText(value).trim().replace(/\s+/g,' ');
 // Resolve photo-derived labels and searchable metadata once per catalogue update.
 // The page mounts at most 25 cards, including their lazy images/editors.
-export default function GroupedItems({ products, filter, quantities, onEdit, renderDetails, renderActions, renderPhoneActions, table = false }) {
+export default function GroupedItems({ products, filter, quantities, onEdit, renderDetails, renderActions, table = false }) {
   const phone=usePhoneLayout();
   const [search,setSearch] = usePageState('inventory:'+filter+':search',''), [group,setGroup] = usePageState('inventory:'+filter+':group',''), [flavor,setFlavor] = usePageState('inventory:'+filter+':flavor',''), [size,setSize] = usePageState('inventory:'+filter+':size',''), [attributes,setAttributes] = usePageState('inventory:'+filter+':attributes',{}), [page,setPage] = usePageState('inventory:'+filter+':page',1);
   const [sort,setSort]=usePageState('inventory:'+filter+':sort','name');
@@ -62,7 +62,7 @@ export default function GroupedItems({ products, filter, quantities, onEdit, ren
       <div className={showFilters?'':'hidden xl:block'}><ItemAttributeFilters facets={facets} selected={attributes} onChange={value=>update(setAttributes,value)}/></div>
     </div>
     {!filtered.length && <div className="rounded-xl border border-dashed bg-white p-8 text-center text-sm text-slate-500">{ui('No items match these filters.')}{hasFilters && <Button type="button" variant="link" onClick={clear}>{ui('Clear filters')}</Button>}</div>}
-    {!!visible.length&&(phone?<MobileStockList renderActions={renderPhoneActions} rows={visible} quantities={quantities} expanded={expanded} onOpen={(item,element)=>{anchor.current=element;setExpanded(item.id);}}/>:<div className={table?'divide-y rounded-xl border bg-white':'grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 xl:grid-cols-4'}>
+    {!!visible.length&&(phone?<MobileStockList rows={visible} quantities={quantities} expanded={expanded} onOpen={(item,element)=>{anchor.current=element;setExpanded(item.id);}}/>:<div className={table?'divide-y rounded-xl border bg-white':'grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 xl:grid-cols-4'}>
       {visible.map(({item,variant},index)=><article data-stock-card key={item.id} className={table?'min-w-0':'min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white'}>
         <button type="button" aria-label={ui('Item details for {0}',item.name)} aria-haspopup="dialog" aria-expanded={expanded===item.id} onClick={event=>{anchor.current=event?.currentTarget;setExpanded(item.id);}} title={item.name} className={'flex w-full min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary '+(table?'items-center gap-3 p-3':'h-full flex-col')}>
           {table?<ProductThumb product={item} name={item.name} size={48}/>:<ProductPhoto product={item} name={item.name} priority={index<2} className="h-28 w-full bg-slate-50 sm:h-36" imageClassName="p-3" sizes="(min-width: 1280px) 22vw, (min-width: 768px) 30vw, 45vw"/>}

@@ -25,10 +25,10 @@ The exported screen structures are connected to existing ERP records and checked
 | 15 | Nouveau client | `/customers/new`; edit from customer details | Main/branch, identity, zone/GPS, acquisition, billing and save |
 | 16 | Carte clients | `/customers?view=map` | Zone chips, live map and selected-customer/location sheet |
 | 17 | Dégustations et échanges | `/sales?tab=promotions` | Recorded history, periods and employee scope; giveaway/exchange actions |
-| 18 | Stock | `/inventory` | Category/type filters, real quantity/reference/alert summary, compact rows and actions |
+| 18 | Stock | `/inventory` | Category/type filters, real quantity/reference/alert summary, compact rows with item details; no per-item Receive/Count controls |
 | 19 | Fiche article | `/items/<id>` | Item details, pricing, lots/movements and complete settings |
 | 20 | Réception stock | Purchases → Receiving → approved order | Order/warehouse, received quantities, batch/expiry and receipt value |
-| 21 | Inventaire et ajustement | `/accounting/inventory?product=<id>&view=adjustments` | Physical/book/variance cards and the existing guarded count review |
+| 21 | Inventaire et ajustement | Accounting → Quantity adjustments; `/accounting/inventory?view=adjustments` | Adjustment history and the existing guarded Adjust quantity form with item selection |
 | 22 | Alertes péremption | `/expiry` or Production → Quality → Expiry | All/near/expired/held cards and stock-alert access |
 | 23 | Assemblages | `/manufacturing?section=recipes`; default phone Manufacturing | Searchable assembly catalogue by type/size |
 | 24 | Fiche assemblage | Select assembly; `?section=recipes&assembly=<id>` | Real recipe, yield, cost and produce action |

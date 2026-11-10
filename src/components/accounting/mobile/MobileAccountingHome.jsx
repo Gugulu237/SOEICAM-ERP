@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {BarChart3,BookOpen,NotebookPen,Wallet,Building2,CalendarClock,ChevronRight,RefreshCw} from 'lucide-react';
+import {BarChart3,BookOpen,NotebookPen,Wallet,Building2,CalendarClock,ChevronRight,RefreshCw,ClipboardCheck} from 'lucide-react';
 import {Link} from '@/lib/router';
 import {ui,uiMessage,getLocale} from '@/lib/i18n';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
@@ -7,18 +7,20 @@ import {formatXAF} from '@/lib/formatters';
 import {businessDate} from '@/lib/business-date';
 import {canOpenFieldPath} from '@/lib/permissions';
 import {permitsWorkspace} from '@/lib/workspace-navigation';
+import {canAdjustInventory} from '@/lib/inventory-adjustment-access';
 import {loadMobileAccountingSummary} from '../loadMobileAccountingSummary';
 import {recurringExpenseRequest} from '@/lib/recurring-expense-client';
 import {Button} from '@/components/ui/button';
 
 export default function MobileAccountingHome(){
-  const {role,allowedModules}=useCurrentUser();
+  const {role,principalRole,employee,allowedModules}=useCurrentUser();
+  const canAdjust=canAdjustInventory(principalRole||role,employee,allowedModules);
   const [data,setData]=useState(null),[charges,setCharges]=useState(null),[error,setError]=useState(''),[version,setVersion]=useState(0);
   useEffect(()=>{let active=true;setError('');loadMobileAccountingSummary().then(v=>{if(active)setData(v);}).catch(e=>{if(active)setError(e.message);});recurringExpenseRequest().then(v=>{if(active)setCharges(v);}).catch(()=>{});return()=>{active=false;};},[version]);
   const today=businessDate(),month=new Date(today+'T12:00:00').toLocaleDateString(getLocale(),{month:'long',year:'numeric'});
   const canOpen=path=>canOpenFieldPath(role,path,allowedModules)&&permitsWorkspace(path,allowedModules);
   const money=v=>v==null?'—':formatXAF(v);
-  const links=[['Financial Statements','/accounting/statements',BarChart3],['Chart of Accounts','/accounting?tab=accounts',BookOpen],['Journal Entries','/accounting?tab=journals',NotebookPen],['Expenses','/expenses',Wallet],['Fixed Assets','/accounting/assets',Building2],['Recurring expenses','/accounting/recurring-expenses',CalendarClock]];
+  const links=[...(canAdjust?[["Quantity adjustments",'/accounting/inventory?view=adjustments',ClipboardCheck]]:[]),['Financial Statements','/accounting/statements',BarChart3],['Chart of Accounts','/accounting?tab=accounts',BookOpen],['Journal Entries','/accounting?tab=journals',NotebookPen],['Expenses','/expenses',Wallet],['Fixed Assets','/accounting/assets',Building2],['Recurring expenses','/accounting/recurring-expenses',CalendarClock]];
   return <div data-sleek-accounting-home className="space-y-5">
     <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-bold">{ui('Accounting')}</h1><p className="mt-1 text-xs capitalize text-muted-foreground">SOEICAM · {month}</p></div><Button size="icon" variant="outline" aria-label={ui('Refresh')} onClick={()=>setVersion(v=>v+1)}><RefreshCw size={17}/></Button></div>
     {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
