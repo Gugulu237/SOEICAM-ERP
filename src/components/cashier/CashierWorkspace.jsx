@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileCashDeskHome from './MobileCashDeskHome';
 import HelpNotice from '@/components/shared/HelpNotice';
 import {useMenuBack} from '@/hooks/useMenuBack';
 
@@ -54,8 +56,9 @@ function exampleData(data) {
   };
 }
 
-export default function CashierWorkspace({ data, preview = false, afterPrimaryActions }) {
+export default function CashierWorkspace({ data, preview = false, afterPrimaryActions, renderHome }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const phone=usePhoneLayout();
   const {toast}=useToast(),[params,setParams]=useSearchParams(),navigate=useNavigate(),backToMenu=useMenuBack('/cashier',{currentWorkspace:true});
   const [date,setDate]=useState(businessDate),[localTab,setLocalTab]=useState('home');
   const tab=preview?localTab:cashierSection(params.get('section')||((params.get('commercial')||params.get('handover_view'))?'handovers':null));
@@ -87,6 +90,7 @@ export default function CashierWorkspace({ data, preview = false, afterPrimaryAc
   const savings=movements.filter(m=>m.transaction_type==='transfer_out'&&m.source==='daily_savings');
   const pendingDeposits=cashDepositors(s);
   return <div className="min-w-0 space-y-4">
+    {tab==='home'&&renderHome?renderHome({source:{...s,date},ready:!!source,canAct,open,setTab,afterPrimaryActions,refresh}):tab==='home'&&phone?<MobileCashDeskHome source={s} ready={!!source} canAct={canAct} date={date} onDate={setDate} loading={loading} error={error} open={open} setTab={setTab} refresh={refresh} pendingDeposits={pendingDeposits} afterPrimaryActions={afterPrimaryActions}/>:<>
     <WorkspaceHero help eyebrow="Cashier workspace" title={ui('Cashier')} description={ui('Receive daily cash, manage petty cash, record savings and release approved payments.')} icon={Banknote} color="emerald">
       <Button disabled={!canAct} onClick={()=>open('receive')}><Banknote size={17} className="mr-2"/>{ui('Receive cash')}</Button>
       <Button variant="outline" disabled={!canAct} onClick={()=>open('petty')}><ArrowUpRight size={17} className="mr-2"/>{ui('Petty cash')}</Button>
@@ -135,6 +139,7 @@ export default function CashierWorkspace({ data, preview = false, afterPrimaryAc
       {tab==='invoices'&&<React.Suspense fallback={<p role="status">{ui('Loading invoices.')}</p>}><InvoiceWorkspace/></React.Suspense>}
       </section>
     </div>}
+    </>}
     {dialog&&canAct&&(dialog.kind==='receive'?<CashDepositorPicker source={s} onClose={()=>setDialog(null)} onSelect={item=>setDialog({kind:item.kind,document:item.document,requestKey:crypto.randomUUID(),fromPicker:true})}/>:<CashActionDialog key={dialog.requestKey} {...dialog} source={s} onBack={dialog.fromPicker?()=>open('receive'):undefined} onClose={()=>setDialog(null)} onDone={done}/>)}
   </div>;
 }

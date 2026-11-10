@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileCountItem from './MobileCountItem';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {ui,uiMessage,getLocale} from '@/lib/i18n';
 import {useLocaleRender} from '@/lib/localization';
@@ -21,6 +23,7 @@ import {Button} from '@/components/ui/button';
 
 export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',productId='',itemGroup='',onSaved,onBusyChange}){
   useLocaleRender();
+  const phone=usePhoneLayout();
   const [warehouse,setWarehouse]=useState(warehouseId),[data,setData]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useState('');
   const [group,setGroup]=useState(COUNT_ITEM_GROUPS.some(([key])=>key===itemGroup)?itemGroup:''),[syncing,setSyncing]=useState(false),[syncError,setSyncError]=useState('');
   const [counts,setCounts]=useState({}),[batches,setBatches]=useState({}),[found,setFound]=useState({});
@@ -106,7 +109,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
     }catch(e){setError(e.message);}finally{busy.current=false;setSaving(false);onBusyChange?.(false);}
   }
   if(receipt)return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{ui('Stock count posted')}</DialogTitle><DialogDescription>{ui('Stock quantities and the accounting journal were saved together.')}</DialogDescription></DialogHeader><p className="text-sm">{receipt.journal_number} · {receipt.reference}</p><ReportExport report={warehouseAdjustmentDocument(receipt,{warehouse:data.warehouse.name,reason})}/><Button type="button" onClick={()=>onOpenChange(false)}>{ui('Done')}</Button></DialogContent></Dialog>;
-  return <Dialog open={open} onOpenChange={value=>{if(!busy.current)onOpenChange(value);}}><DialogContent className="flex max-h-[92dvh] max-w-4xl flex-col gap-3 overflow-hidden p-3 sm:p-5">
+  return <Dialog open={open} onOpenChange={value=>{if(!busy.current)onOpenChange(value);}}><DialogContent data-sleek-screen="inventory-adjustment" className="flex max-h-[92dvh] max-w-4xl flex-col gap-3 overflow-hidden p-3 sm:p-5">
     <DialogHeader className="shrink-0"><DialogTitle>{ui(stage==='count'?'Physical stock count':'Review stock adjustment')}</DialogTitle><DialogDescription>{ui(stage==='count'?'Enter the actual quantity for each item counted. Leave other items blank.':'Check the differences and accounts before posting.')}</DialogDescription></DialogHeader>
     <HistoryStep active={open&&stage==='review'} onBack={()=>{if(!busy.current)changeStage('count');}}/>
     {error&&<p role="alert" className="shrink-0 rounded-lg bg-red-50 p-2 text-sm text-red-800">{uiMessage(error)} {!saving&&<button type="button" className="underline" onClick={reload}>{ui('Reload and clear counts')}</button>}</p>}
@@ -119,17 +122,19 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
         <div className="grid min-w-0 items-end gap-2 sm:grid-cols-2"><label className="min-w-0 text-xs text-slate-600">{ui('Item group')}<select aria-label={ui('Count item group')} disabled={saving||entries.length>0||!!productId} value={activeGroup} onChange={e=>{if(!busy.current&&!entries.length){setGroup(e.target.value);setPage(0);}}} className="mt-1 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">{COUNT_ITEM_GROUPS.map(([key,label])=><option key={key} value={key}>{ui(label)}</option>)}</select></label><div className="flex min-w-0 flex-wrap items-center gap-2"><Button type="button" variant="outline" disabled={saving||syncing} onClick={()=>checker.current?.()}>{ui(syncing?'Checking stock...':'Refresh quantities')}</Button>{data.as_of&&<span className="text-[11px] text-slate-500">{ui('Stock checked at {0}',new Date(data.as_of).toLocaleTimeString(getLocale(),{hour:'2-digit',minute:'2-digit'}))}</span>}</div></div>
         <div className="flex items-center justify-between gap-2"><ProductSortSelect value={sort} onChange={value=>{setSort(value);setPage(0);}} className="min-w-0 sm:max-w-xs"/>{entries.length>0&&<Button type="button" variant="ghost" onClick={clear}>{ui('Clear counts')}</Button>}</div>
         <div role="table" aria-label={ui('Physical stock count')} className="overflow-hidden rounded-xl border">
-          <div role="row" className="grid grid-cols-[minmax(0,1fr)_3.5rem_5.25rem_3.5rem] items-center gap-2 bg-slate-50 p-2 text-[11px] font-semibold sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem] sm:text-sm"><span role="columnheader">{ui('Item')}</span><span role="columnheader" className="text-right">{ui('On hand')}</span><span role="columnheader">{ui('Physical quantity')}</span><span role="columnheader" className="text-right">{ui('Difference')}</span></div>
+          <div role="row" className="hidden sm:grid grid-cols-[minmax(0,1fr)_3.5rem_5.25rem_3.5rem] items-center gap-2 bg-slate-50 p-2 text-[11px] font-semibold sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem] sm:text-sm"><span role="columnheader">{ui('Item')}</span><span role="columnheader" className="text-right">{ui('On hand')}</span><span role="columnheader">{ui('Physical quantity')}</span><span role="columnheader" className="text-right">{ui('Difference')}</span></div>
           {visible.map(item=>{
             const rows=stock.get(item.id)||[],invalidBook=rows.some(row=>row.count_issue||row.requires_reconciliation||!Number.isFinite(Number(row.book_quantity)));
             const book=invalidBook?null:roundQuantity(rows.reduce((sum,row)=>sum+Number(row.book_quantity),0)),entry=entries.find(entry=>entry.product_id===item.id);
             return <div role="row" key={item.id} className="border-t p-2">
+              {phone?<MobileCountItem item={item} book={book} entry={entry} value={counts[item.id]??''} onChange={value=>changeCount(item.id,value)} disabled={saving||invalidBook}/>:<>
               <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_5.25rem_3.5rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem]">
                 <div role="rowheader" className="min-w-0"><p className="break-words text-xs font-semibold sm:text-sm">{item.name}</p><p className="break-words text-[11px] text-slate-500">{item.sku||item.unit}{item.sku?' · '+item.unit:''}</p></div>
                 <span role="cell" aria-label={ui('Total on hand for {0}',item.name)} className="break-words text-right text-xs tabular-nums sm:text-sm">{book===null?'—':formatNumber(book,3)}</span>
                 <div role="cell"><Input aria-label={ui('Physical quantity for {0}',item.name)} type="number" inputMode="decimal" min="0" max="1000000000" step="0.001" placeholder="—" value={counts[item.id]??''} disabled={saving||invalidBook} aria-invalid={!!entry?.error} onChange={e=>changeCount(item.id,e.target.value)} className="h-11 min-w-0 px-2 text-base tabular-nums"/></div>
                 <span role="cell" aria-label={ui('Difference for {0}',item.name)} className={'break-words text-right text-xs font-semibold tabular-nums sm:text-sm '+(entry?.difference<0?'text-red-700':entry?.difference>0?'text-emerald-700':'text-slate-500')}>{entry&&!entry.error?(entry.difference>0?'+':'')+formatNumber(entry.difference,3):'—'}</span>
               </div>
+              </>}
               {entry?.error&&<p role="alert" className="mt-1 text-xs text-red-700">{uiMessage(entry.error)}</p>}
               {!invalidBook&&item.count_group==='finished'&&rows.some(row=>row.qc_status&&row.qc_status!=='approved'&&!row.production_order_id)&&<button type="button" className="mt-1 min-h-11 text-xs text-primary underline" onClick={()=>openDetails(item.id)}>{ui('Review sale availability')}</button>}
               {invalidBook&&<button type="button" className="mt-1 min-h-11 text-xs text-amber-800 underline" onClick={()=>openDetails(item.id)}>{ui('Review accounting correction')}</button>}
@@ -169,7 +174,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
       </>}
     </div>}
     {(changes.length>100||selectedRows.length>100)&&<p role="alert" className="text-xs text-red-700">{ui('Post no more than 100 changed stock records at a time. Reduce this count selection.')}</p>}
-    {data&&!loading&&<div className="flex shrink-0 items-center justify-between gap-2 border-t pt-3">
+    {data&&!loading&&<div data-mobile-action-bar className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t pt-3">
       <span className="text-xs text-slate-500">{ui('{0} items counted · {1} differences',entries.length,changes.length)}</span>
       <div className="flex gap-2">{stage==='review'&&<Button type="button" variant="outline" disabled={saving} onClick={()=>changeStage('count')}>{ui('Back')}</Button>}<Button type="button" disabled={saving||(stage==='count'?bad||!changes.length||changes.length>100:!ready)} onClick={stage==='count'?()=>changeStage('review'):save}>{saving?ui('Saving...'):ui(stage==='count'?'Review adjustment':'Post adjustment')}</Button></div>
     </div>}

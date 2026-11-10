@@ -1,3 +1,8 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import {useSearchParams} from '@/lib/router';
+import MobileSalesRegister from './MobileSalesRegister';
+import {erp} from '@/api/erpClient';
+import {readAll} from '@/lib/field-pos';
 import ReportExport from '@/components/shared/ReportExport';
 import {salesAnalysisDocument} from '@/lib/sales-report-documents';
 import LearnMore from '@/components/shared/LearnMore';
@@ -24,10 +29,12 @@ import SalesVolumeChart from './SalesVolumeChart';
 export default function CompanySalesRegister({ readOnly = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const phone=usePhoneLayout(),[params]=useSearchParams();
+  const [exchanges,setExchanges]=useState([]),[exchangeError,setExchangeError]=useState('');
   const [reportKind,setReportKind]=useState('summary');
   const today = businessDate(), navigate = useNavigate(), { isAdmin, role } = useCurrentUser();
   const viewOnly = readOnly || role === 'production_manager';
-  const [period, setPeriod] = usePageState('company-sales:period', { from: today.slice(0, 8) + '01', to: today });
+  const [period, setPeriod] = usePageState('company-sales:period', { from: phone?today:today.slice(0, 8) + '01', to: today });
   const [dates,setDates]=usePageState('company-sales:dates', period);
   const [data, setData] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState(''), [reload, setReload] = useState(0);
   useEffect(() => {
@@ -49,6 +56,8 @@ export default function CompanySalesRegister({ readOnly = false }) {
     window.addEventListener('focus', onFocus); document.addEventListener('visibilitychange', onFocus);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
   }, [period, reload]);
+  useEffect(()=>{if(!phone)return;let active=true;setExchangeError('');readAll(erp.entities.SalesOrder,{supply_kind:'exchange',status:'delivered'},'-order_date').then(rows=>{if(active)setExchanges(rows);}).catch(failure=>{if(active)setExchangeError(errorMessage(failure));});return()=>{active=false;};},[phone,reload]);
+  if(phone&&params.get('detailed')!=='1')return <MobileSalesRegister data={data} exchanges={exchanges} exchangeError={exchangeError} error={error} loading={loading} period={period} setPeriod={next=>{setDates(next);setPeriod(next);}} today={today} onReload={()=>setReload(n=>n+1)} viewOnly={viewOnly} isAdmin={isAdmin}/>;
   const columns = [
     { key: 'document_number', label: ui("Sale #") }, { key: 'source', label: ui("Source"),render:value=>ui(value) }, { key: 'customer_name', label: ui("Customer") },
     { key: 'commercial_name', label: ui("Salesperson") }, { key: 'date', label: ui("Date"), render: formatDate },

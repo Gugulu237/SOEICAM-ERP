@@ -3,6 +3,8 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileAccountTree from './mobile/MobileAccountTree';
 import AccountRow, { balanceLabel } from "@/components/accounting/AccountRow";
 import { Layers } from "lucide-react";
 
@@ -12,6 +14,8 @@ export default function AccountTree({
 }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const phone=usePhoneLayout();
+  if(phone)return <MobileAccountTree {...{sections,childrenMap,rollups,entryCounts,collapsed,onToggleCollapse,onEdit,onAddChild,onToggleActive,onToggleHidden,onDelete,busy,canManage}}/>;
   return (
     <div className="space-y-5">
       {sections.map((section) => (

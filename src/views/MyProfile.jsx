@@ -21,7 +21,7 @@ async function profileRequest(options={}){
   return data.profile;
 }
 
-export default function MyProfile(){
+export default function MyProfile({embedded=false}){
   useLocaleRender();
   const {applySelfProfile}=useAuth();
   const {role}=useCurrentUser();
@@ -52,17 +52,17 @@ export default function MyProfile(){
   }
   if(loading)return <PageLoading/>;
   return <div className="mx-auto max-w-4xl space-y-6">
-    <PageHeader title={ui('My profile')} subtitle={ui('Your personal details and language preferences')}/>
+    {!embedded&&<PageHeader title={ui('My profile')} subtitle={ui('Your personal details and language preferences')}/> }
     {!profile ? <section role="alert" className="rounded-xl border bg-white p-6"><p className="text-sm text-red-700">{uiMessage(error)}</p><Button type="button" variant="outline" className="mt-4" onClick={()=>load()}><RefreshCw size={16} className="mr-2"/>{ui('Retry')}</Button></section> : <>
-      <section className="flex items-center gap-4 rounded-2xl border border-green-100 bg-white p-5 sm:p-6">
+      {!embedded&&<><section className="flex items-center gap-4 rounded-2xl border border-green-100 bg-white p-5 sm:p-6">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-green-50 text-green-800"><UserRound size={28}/></div>
         <div className="min-w-0"><h2 className="break-words text-lg font-semibold text-slate-900">{profile.display_name || profile.employee_name}</h2><p className="text-sm text-slate-500">{profile.job_title || profile.role_label}</p></div>
       </section>
       <nav aria-label={ui('My profile')} className="flex flex-wrap gap-2">
         {profile.employee_id && role && role!=='hotesse' && <Link to="/my-stock" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2 text-sm font-medium text-green-800 hover:bg-green-50"><Package size={17}/>{ui('Stock & sales')}</Link>}
         <Link to="/approval-history" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><History size={17}/>{ui('Approval history')}</Link>
-      </nav>
-      <div className="grid items-start gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      </nav></>}
+      <div className={embedded?'':'grid items-start gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'}>
         <form onSubmit={save} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="text-base font-semibold text-slate-900">{ui('Personal details')}</h2>
           <div className="space-y-2"><Label htmlFor="profile-display-name">{ui('Display name')}</Label><Input id="profile-display-name" autoComplete="nickname" value={form.display_name} required maxLength={120} disabled={saving} onChange={e=>{setSaved(false);setForm(f=>({...f,display_name:e.target.value}));}}/><p className="text-xs leading-5 text-slate-500">{ui('Shown in your workspace. Your employment name is managed by the General Manager.')}</p></div>
@@ -72,11 +72,11 @@ export default function MyProfile(){
           {saved && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{ui('Your profile has been updated.')}</p>}
           <div className="flex flex-wrap gap-2"><Button type="submit" disabled={saving}><Save size={16} className="mr-2"/>{saving?ui('Saving...'):ui('Save changes')}</Button><Button type="button" variant="outline" disabled={saving} onClick={()=>load()}>{ui('Reload profile')}</Button></div>
         </form>
-        <div className="space-y-6">
+        {!embedded&&<div className="space-y-6">
           <DeviceNotificationSettings/>
           <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><h2 className="font-semibold text-slate-900">{ui('Language preferences')}</h2><p className="text-sm leading-6 text-slate-500">{ui('Choose French, English or the company default. Your choice is saved automatically for your account.')}</p><LanguageSelector id="profile-language"/></section>
           {profile.employee_id && <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><h2 className="font-semibold text-slate-900">{ui('Employment details')}</h2><dl className="space-y-3 text-sm">{[[ui('Employee name'),profile.employee_name],[ui('Employee number'),profile.employee_number],[ui('Job title'),profile.job_title],[ui('Role'),profile.role_label]].filter(([,value])=>value).map(([label,value])=><div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-slate-800">{value}</dd></div>)}</dl><p className="text-xs leading-5 text-slate-500">{ui('Contact the General Manager to update your employment details.')}</p></section>}
-        </div>
+        </div>}
       </div>
     </>}
   </div>;

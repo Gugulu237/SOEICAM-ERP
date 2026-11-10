@@ -6,6 +6,8 @@ import { sourceMessage, uiMessage } from '@/lib/i18n';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import AccountPosition from './AccountPosition';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileAccountControls from './mobile/MobileAccountControls';
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { erp } from "@/api/erpClient";
 import { useToast } from "@/components/ui/use-toast";
@@ -27,6 +29,7 @@ const ALL = "all";
 export default function ChartOfAccountsManager() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const phone=usePhoneLayout();
   const { toast } = useToast();
   const navigate=useNavigate();
   const { isAdmin, isCashier } = useCurrentUser();
@@ -108,14 +111,15 @@ export default function ChartOfAccountsManager() {
   }
 
   return (
-    <div>
+    <div data-sleek-chart-of-accounts>
       {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}<button type="button" className="ml-3 underline" onClick={() => load().catch(e => setError(e.message))}>{ui("Retry")}</button></p>}
-      {!error && <AccountStats accounts={accounts} balances={balances} totals={totals} />}
+      {!phone&&!error && <AccountStats accounts={accounts} balances={balances} totals={totals} />}
 
       <div className="mb-4 flex flex-wrap gap-2"><Button variant={view === 'position' ? 'default' : 'outline'} onClick={() => setView('position')}>{ui("Assets & liabilities (T view)")}</Button><Button variant={view === 'accounts' ? 'default' : 'outline'} onClick={() => setView('accounts')}>{ui("Account list")}</Button><Button variant="outline" onClick={() => load().catch(e => setError(e.message))}>{ui("Refresh balances")}</Button></div>
       {view === 'position' && !error && <AccountPosition accounts={accounts} balances={balances} date={asOf}/>}
       {view === 'accounts' && <>
-      <div className="flex flex-col lg:flex-row lg:items-center gap-2 mb-4">
+      {phone&&<MobileAccountControls {...{query,setQuery,typeFilter,setTypeFilter,statusFilter,setStatusFilter,showUnused,setShowUnused,expandAll,collapseAll,canManage}} onNew={()=>setDialog({parentId:''})} onRefresh={()=>load().catch(e=>setError(e.message))}/>}
+      <div className={phone?'hidden':'flex flex-col lg:flex-row lg:items-center gap-2 mb-4'}>
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input
@@ -156,9 +160,9 @@ export default function ChartOfAccountsManager() {
         </div>
       </div>
 
-      {statusFilter === 'visible' && <label className="mb-3 flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={showUnused} onChange={e=>setShowUnused(e.target.checked)} />{ui('Show unused accounts')}</label>}
-      {statusFilter === 'visible' && !showUnused && <p className="mb-2 text-xs text-slate-500">{ui('Zero accounts without journal entries are hidden. Accounts with past postings stay visible even when their balance is zero.')}</p>}
-      <p className="mb-3 text-xs text-slate-500">{ui("Hiding only changes this list. All transactions and financial reports remain complete. Used accounts includes accounts with postings or opening balances.")}</p>
+      {!phone&&statusFilter === 'visible' && <label className="mb-3 flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={showUnused} onChange={e=>setShowUnused(e.target.checked)} />{ui('Show unused accounts')}</label>}
+      {!phone&&statusFilter === 'visible' && !showUnused && <p className="mb-2 text-xs text-slate-500">{ui('Zero accounts without journal entries are hidden. Accounts with past postings stay visible even when their balance is zero.')}</p>}
+      <p className="mb-3 hidden text-xs text-slate-500 sm:block">{ui("Hiding only changes this list. All transactions and financial reports remain complete. Used accounts includes accounts with postings or opening balances.")}</p>
       {tree.sections.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white py-16 text-center text-slate-400">
           {accounts.length === 0 ? ui("No accounts yet — create the first one.") : ui("No accounts match these filters.")}

@@ -8,7 +8,7 @@ import { ui } from '@/lib/i18n';
 
 // Small photos and a single, tappable row keep the stock list easy to scan.
 // Quantity remains the catalogue's checked on-hand figure, including zero stock.
-export default function MobileStockList({ rows, quantities, expanded, onOpen }) {
+export default function MobileStockList({ rows, quantities, expanded, onOpen, renderActions }) {
   return <div data-mobile-stock-list className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-white">
     {rows.map(({item,variant})=><article data-stock-row key={item.id}>
       <button type="button" aria-label={ui('Item details for {0}',item.name)} aria-haspopup="dialog" aria-expanded={expanded===item.id} onClick={event=>onOpen(item,event.currentTarget)} className="flex min-h-[88px] w-full min-w-0 items-center gap-3 px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
@@ -23,6 +23,7 @@ export default function MobileStockList({ rows, quantities, expanded, onOpen }) 
         </span>}
         <ChevronRight size={16} className="shrink-0 text-slate-400" aria-hidden="true"/>
       </button>
+      {renderActions&&<div className="grid grid-cols-2 gap-2 border-t border-border px-3 py-2 [&>button]:min-h-11">{renderActions(item)}</div>}
     </article>)}
   </div>;
 }

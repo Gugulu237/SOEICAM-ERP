@@ -5,6 +5,8 @@ import { uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileBatchTrace from '@/components/quality/MobileBatchTrace';
 import React,{useEffect,useRef,useState} from 'react';
 import {searchBatches,traceBatch} from '@/lib/traceability';
 import {useSearchParams} from '@/lib/router';
@@ -19,6 +21,7 @@ import {formatDate} from '@/lib/formatters';
 export default function BatchTrace({embedded=false}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const phone=usePhoneLayout();
   const [params,setParams]=useSearchParams(),batchParam=params.get('batch') || '',productParam=params.get('product') || '';
   const [term,setTerm]=useState(batchParam),[batches,setBatches]=useState([]),[selected,setSelected]=useState(null),[data,setData]=useState(null),[loading,setLoading]=useState(false),[catalogueLoading,setCatalogueLoading]=useState(true),[error,setError]=useState(''),[listError,setListError]=useState(''),[reload,setReload]=useState(0);
   const request=useRef(0);
@@ -40,6 +43,7 @@ export default function BatchTrace({embedded=false}) {
   },[selected,reload]);
   const lot=data?.lot || selected;
   function select(batch){const next=new URLSearchParams(params.toString());next.set('batch',batch.lot_number);next.set('product',batch.product_id);if(embedded){next.set('section','quality');next.set('quality','traceability');}setParams(next);}
+  if(phone&&selected&&data&&!loading)return <MobileBatchTrace data={data} lot={lot} onBack={()=>{setSelected(null);setData(null);const next=new URLSearchParams(params);next.delete('batch');next.delete('product');setParams(next);}}><Tabs defaultValue="forward"><TabsList className="h-auto flex-wrap"><TabsTrigger value="forward">{ui('Customers & locations')}</TabsTrigger><TabsTrigger value="backward">{ui('Production & components')}</TabsTrigger></TabsList><TabsContent value="forward"><BatchGenealogy direction="forward" lot={lot} data={data.forward}/></TabsContent><TabsContent value="backward"><BatchGenealogy direction="backward" lot={lot} data={data.backward}/></TabsContent></Tabs></MobileBatchTrace>;
   return <div className="space-y-5">{embedded?<div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">{ui("Trace a product batch")}</h2><Button variant="outline" size="sm" onClick={()=>setReload(n=>n+1)}>{ui("Refresh batches")}</Button></div>:<PageHeader title={ui("Batch traceability")} subtitle={ui("Find production, expiry, stock locations and customers supplied from the exact batch.")} actions={<Button variant="outline" onClick={()=>setReload(n=>n+1)}>{ui("Refresh")}</Button>}/>}
     <div className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]"><aside className="rounded-2xl border bg-white p-4"><Input aria-label={ui("Search batches")} placeholder={ui("Search batch or product")} value={term} onChange={e=>setTerm(e.target.value)}/><p className="mt-2 text-xs text-slate-500">{ui("Includes depleted batches with recorded movements.")}</p>
       {listError&&<p role="alert" className="mt-3 text-sm text-red-700">{listError}</p>}{catalogueLoading&&<p role="status" className="py-3 text-xs text-slate-500">{ui("Loading batches...")}</p>}

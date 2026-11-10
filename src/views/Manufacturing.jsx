@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileAssemblyCatalogue from '@/components/manufacturing/MobileAssemblyCatalogue';
 import RecipeDeleteButton from '@/components/manufacturing/RecipeDeleteButton';
 
 /* localized-interface */
@@ -27,14 +29,15 @@ const AssemblyBuildPanel=dynamic(()=>import('@/components/manufacturing/Assembly
 const QualityControl=dynamic(()=>import('@/views/QualityControl'),{loading:()=> <p role="status">{ui('Loading quality and batches...')}</p>});
 export default function Manufacturing(){
   useInterfaceLanguage();
-  const {role,allowedModules,loading}=useCurrentUser(),[params,setParams]=useSearchParams();
+  const phone=usePhoneLayout();
+  const {role,allowedModules,loading,user,employee}=useCurrentUser(),[params,setParams]=useSearchParams();
   const canProduce=['admin','production_manager','warehouse_manager'].includes(role)&&(!allowedModules||allowedModules.includes('manufacturing'));
   const canQuality=qualitySections(role).length>0&&(!allowedModules||allowedModules.includes('quality'));
   const sections=[...(canProduce?[['orders','Production orders'],['build','Build assemblies'],['recipes','Recipes']]:[]),...(canQuality?[['quality','Quality & batches']]:[])];
-  const section=sections.some(([key])=>key===params.get('section'))?params.get('section'):sections[0]?.[0];
+  const section=sections.some(([key])=>key===params.get('section'))?params.get('section'):phone&&canProduce?'recipes':sections[0]?.[0];
   if(loading)return <p role="status">{ui('Loading manufacturing...')}</p>;
   if(!section)return <p role="alert">{ui('Your role does not have access to manufacturing.')}</p>;
-  return <div className="space-y-4"><PageHeader title={ui('Manufacturing')}/><nav aria-label={ui('Manufacturing sections')} className="flex flex-wrap gap-2 border-b pb-3">{sections.map(([key,label])=><Button key={key} variant={section===key?'default':'outline'} aria-current={section===key?'page':undefined} onClick={()=>{const next=new URLSearchParams(params);next.set('section',key);setParams(next);}}>{ui(label)}</Button>)}</nav>{section==='build'?<AssemblyBuildPanel/>:section==='quality'?<QualityControl embedded/>:<ManufacturingProduction section={section}/>}</div>;
+  return <div className="space-y-4"><PageHeader title={ui(phone?'Production':'Manufacturing')}/><nav aria-label={ui('Manufacturing sections')} className="flex gap-2 overflow-x-auto border-b pb-3 sm:flex-wrap">{sections.map(([key,label])=><Button key={key} variant={section===key?'default':'outline'} aria-current={section===key?'page':undefined} onClick={()=>{const next=new URLSearchParams(params);next.set('section',key);setParams(next);}}>{ui(phone&&key==='recipes'?'Assemblies':phone&&key==='build'?'Record production':label)}</Button>)}</nav>{section==='build'?<AssemblyBuildPanel mobile={phone} initialProductId={params.get('product')||''} responsible={employee?.full_name||user?.full_name}/>:section==='quality'?<QualityControl embedded/>:phone&&section==='recipes'?<MobileAssemblyCatalogue canPlan={['admin','production_manager'].includes(role)}/>:<ManufacturingProduction section={section}/>}</div>;
 }
 function ManufacturingProduction({section}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

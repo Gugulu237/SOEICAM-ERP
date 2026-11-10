@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileInvoiceDetail from '@/components/sales/MobileInvoiceDetail';
 import SaleReversalDialog from '@/components/sales/SaleReversalDialog';
 import CustomerCollectionDialog from '@/components/customers/CustomerCollectionDialog';
 import LearnMore from '@/components/shared/LearnMore';
@@ -25,6 +27,7 @@ import { Printer,Download,Mail,Share2,Save,Pencil } from 'lucide-react';
 
 export default function SalesInvoice() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const phone=usePhoneLayout();
 
   const {id}=useParams(),navigate=useNavigate(),[params]=useSearchParams(),{role}=useCurrentUser();
   const invoiceList=role==='cashier'?'/cashier?section=invoices':'/sales?tab=invoices',startEditing=params.get('edit')==='1';
@@ -35,6 +38,15 @@ export default function SalesInvoice() {
   const preview=useMemo(()=>data?invoiceHtml({...data,options:options || data.options,invoice:{...data.invoice,due_date:due}}).replace(/<div class="toolbar">.*?<\/div>/,''):'',[data, options, due, interfaceLanguage]);
   async function save(){if(busy)return;setBusy(true);setError('');setNotice('');try{const next=await invoiceRequest({action:'customizeSalesInvoice',invoiceId:id,options,dueDate:due,saveCustomerDefaults:defaults,revision:data.revision});setData(next);setOptions(next.options);setDue(next.invoice.due_date);setEdit(false);setDefaults(false);setNotice(sourceMessage("Invoice details saved."));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function share(){setError('');try{const result=await shareInvoice(data);setNotice(result==='copied'?sourceMessage("Invoice text copied. Paste it into your preferred messaging app."):sourceMessage("Invoice shared."));}catch(e){if(e.name!=='AbortError')setError(sourceMessage("Sharing is unavailable here. Download the invoice or use Print / PDF to save a copy."));}}
+  if(phone&&data&&!edit)return <>
+    <MobileInvoiceDetail data={data} issued={issued} busy={busy} error={error} notice={notice} onBack={()=>navigate(invoiceList)} onPrint={()=>printInvoice(data)} onDownload={()=>downloadInvoice(data)} onShare={share} onEmail={()=>{window.location.href=invoiceEmail(data);}} onCustomize={()=>{setNotice('');setEdit(true);}} onCollect={()=>setCollecting(true)} onReverse={()=>setReversing(true)} onReload={()=>setReload(n=>n+1)} canManage={role!=='cashier'}>
+      {(!data.company.tax_id||!data.company.registration_number)&&<p className="text-xs text-muted-foreground">{ui('Ask the General Manager to verify the company legal details before sharing.')}</p>}
+      {data.has_letterhead_snapshot===false&&<p className="text-xs text-muted-foreground">{ui('This older invoice uses the current company letterhead. Saving its first customization will retain a copy with this document.')}</p>}
+      <iframe title={ui('Invoice preview')} sandbox="" srcDoc={preview} className="h-[700px] w-full rounded border bg-white"/>
+    </MobileInvoiceDetail>
+    {collecting&&<CustomerCollectionDialog customer={{id:data.invoice.customer_id,business_name:data.invoice.customer_name}} invoiceId={id} onClose={()=>setCollecting(false)} onDone={()=>{setCollecting(false);setNotice(sourceMessage('Cash collection recorded. Hand it to the cashier for confirmation and GM approval.'));setReload(n=>n+1);}}/>}
+    {reversing&&<SaleReversalDialog invoiceId={id} onClose={()=>setReversing(false)} onDone={()=>{setReversing(false);setNotice(sourceMessage('Sale reversed. Received money is retained as customer credit.'));setReload(n=>n+1);}}/>}
+  </>;
   return <div className="space-y-4">
     <PageHeader title={data?.invoice.invoice_number || ui("Customer invoice")} subtitle={data?ui("{0} · {1} · Customer owes {2}", data.invoice.customer_name, formatXAF(data.invoice.total), formatXAF(data.invoice.customer_balance)):ui("Company letterhead and client terms")} back={{onClick:()=>navigate(invoiceList),label:ui("Invoices")}}/>
     {error&&<div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700"><span>{uiMessage(error)}</span><Button size="sm" variant="outline" disabled={busy} onClick={()=>setReload(n=>n+1)}>{ui("Reload saved invoice")}</Button></div>}

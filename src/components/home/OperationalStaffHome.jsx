@@ -1,5 +1,7 @@
 
 /* localized-interface */
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileAccountantHome from './MobileAccountantHome';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from 'react';
@@ -18,6 +20,7 @@ const layouts = {
 export default function OperationalStaffHome({ data, loading, mode = 'employee', roleLabel, preview = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const phone=usePhoneLayout();
   const { can, modules } = useWorkspaceAccess();
   const source = data || {}, template = source.template || mode, layout = layouts[template] || layouts.employee;
   const orders = source.purchaseOrders || [], batches = source.orders || [], runs = source.dispatches || [], risks = source.riskLots || [], expenses = source.expenses || [];
@@ -26,6 +29,7 @@ export default function OperationalStaffHome({ data, loading, mode = 'employee',
   const queue = (rows,kind) => rows.slice(0,8).map(row => ({ id:row.id, title:row.po_number || row.order_number || row.dispatch_number || row.title || row.product_name,
     detail:row.supplier_name || row.product_name || row.driver_name || row.batch_number, value:row.status?.replaceAll('_',' ') || row.expiry_date,
     path:kind === 'purchases' ? '/purchases/' + row.id : kind === 'manufacturing' ? '/manufacturing/' + row.id : kind === 'distribution' ? '/distribution/dispatches/' + row.id : kind === 'quality' ? '/manufacturing?section=quality&quality=expiry' : '/expenses' }));
+  if(phone&&template==='warehouse_manager')return <MobileAccountantHome data={data} loading={loading} preview={preview} cards={cards}/>;
   return <div className="space-y-6">
     <WorkspaceHero eyebrow={roleLabel || source.roleLabel} title={layout.title} description={layout.description} icon={layout.icon} color="emerald"><WorkspaceButton path={layout.primary} preview={preview}>{layout.action}</WorkspaceButton></WorkspaceHero>
     <WorkspaceMetrics ready={ready} metrics={[

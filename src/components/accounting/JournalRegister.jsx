@@ -27,7 +27,7 @@ import JournalActivityFeed from "@/components/accounting/JournalActivityFeed";
 const EMPTY_FILTERS = { q: "", status: "all", source: "all", from: "", to: "" };
 const EMPTY_REPORT = { counts: { draft: 0, posted: 0, reversed: 0 }, total: 0, debit: 0, credit: 0, difference: 0 };
 
-export default function JournalRegister() {
+export default function JournalRegister({readOnly=false}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
@@ -144,7 +144,7 @@ export default function JournalRegister() {
   const hasActiveFilters = !!(filters.q || filters.from || filters.to || filters.status !== "all" || filters.source !== "all");
 
   return (
-    <div>
+    <div data-sleek-journal-register>
       <JournalReversalDialog journal={reverseTarget} onClose={()=>setReverseTarget(null)} onReversed={rev=>{toast({title:ui("Journal reversed"),description:ui("Reversal {0} posted",rev.journal_number)});refresh();}}/>
       <Dialog open={!!deleteTarget} onOpenChange={open=>{if(!open&&!deleteFlight.current)setDeleteTarget(null);}}><DialogContent>
         <DialogHeader><DialogTitle>{ui("Delete draft journal")}</DialogTitle><DialogDescription>{ui("This removes an unposted draft and its lines. An audit record is retained. Posted journals must be reversed.")}</DialogDescription></DialogHeader>
@@ -166,7 +166,7 @@ export default function JournalRegister() {
         sources={sources}
         onExport={handleExport}
         exporting={exporting}
-        onNew={() => navigate("/accounting/journals/new")}
+        onNew={readOnly?undefined:() => navigate("/accounting/journals/new")}
         showClear={hasActiveFilters}
       />
 
@@ -184,10 +184,10 @@ export default function JournalRegister() {
           <JournalTable
             rows={rows}
             onOpen={(journal) => navigate(`/accounting/journals/${journal.id}`)}
-            onPost={handlePost}
+            onPost={readOnly?undefined:handlePost}
             onDelete={journal=>{setDeleteReason("");setDeleteNumber("");setDeleteError("");setDeleteTarget(journal);}}
             onReverse={handleReverse}
-            canReverse={isAdmin}
+            canReverse={isAdmin&&!readOnly}
             working={working}
           />
           <div className="mt-3 flex items-center justify-between text-sm text-slate-500">

@@ -5,6 +5,7 @@ import { uiMessage } from '@/lib/i18n';
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import MobileAssetCard from '@/components/accounting/mobile/MobileAssetCard';
 import React, { useState, useEffect, useCallback } from "react";
 import { assetAction } from "@/lib/assets";
 import {syncAssetDepreciation} from '@/lib/asset-depreciation-client';
@@ -86,7 +87,7 @@ export default function FixedAssets() {
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
-    <div>
+    <div data-sleek-assets>
       <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Fixed Assets")}
         subtitle={ui("Flat-rate depreciation and replacement-fund tracking")}
@@ -102,7 +103,7 @@ export default function FixedAssets() {
 
       {error&&<p role="alert" className="mb-4 rounded bg-red-50 p-3 text-red-700">{uiMessage(error)}</p>}
       <DepreciationStatus status={depreciation} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div data-asset-summary className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KPICard title={ui("Assets in Register")} value={live.length} icon={Building2} />
         <KPICard title={ui("Total Cost")} value={formatXAF(totalCost)} />
         <KPICard title={ui("Accumulated Depreciation")} value={formatXAF(totalAccum)} color="red" />
@@ -116,7 +117,7 @@ export default function FixedAssets() {
           <TabsTrigger value="funding">{ui("Replacement Fund")}</TabsTrigger>
         </TabsList>
         <TabsContent value="register" className="mt-4">
-          <DataTable exportTitle="Fixed asset register" exportDisabled={!!error || loading} columns={assetCols} data={assets} searchFields={["asset_number", "name", "serial_number", "location"]} />
+          <DataTable exportTitle="Fixed asset register" exportDisabled={!!error || loading} mobileRow={asset=><MobileAssetCard asset={asset} actions={assetCols.find(c=>c.key==='actions').render(null,asset)}/>} columns={assetCols} data={assets} searchFields={["asset_number", "name", "serial_number", "location"]} />
         </TabsContent>
         <TabsContent value="depreciation" className="mt-4">
           <DataTable exportTitle="Depreciation register" exportDisabled={!!error || loading} columns={entryCols} data={entries} searchFields={["asset_number", "asset_name", "period_label"]} />

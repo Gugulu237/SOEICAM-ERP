@@ -31,7 +31,7 @@ test('Sales starts with action tiles and mounts only the chosen register',async(
   const r=state(),draw=()=>{r.beforeRender();return render();};
   try{
     const html=draw();await r.flush();assert.doesNotMatch(html,/Company register|Invoice workspace/);assert.equal(r.reads,0);
-    assert.deepEqual(r.buttons.map(b=>b['aria-label']),['New sale','All sales','Sales orders','Invoices','Outlet reports']);
+    assert.deepEqual(r.buttons.map(b=>b['aria-label']),['New sale','All sales','Dégustations & exchanges','Sales orders','Invoices','Outlet reports']);
     r.buttons.find(b=>b['aria-label']==='All sales').onClick();assert.match(draw(),/Company register/);assert.equal(r.register.readOnly,false);
     r.buttons.find(b=>b["aria-label"]==='Sales menu').onClick();draw();assert.equal(r.query,'');
     r.buttons.find(b=>b['aria-label']==='Sales orders').onClick();draw();await r.flush();draw();assert.equal(r.reads,1);
@@ -61,7 +61,7 @@ test('Sales menus preserve management reporting and employee permissions',()=>{
     try{
       draw();assert.ok(!r.buttons.some(b=>['Field sales','Outlet reports'].includes(b['aria-label'])));
       if(role!=='employee'){
-        assert.deepEqual(r.buttons.map(b=>b['aria-label']),['Company sales']);
+        assert.deepEqual(r.buttons.map(b=>b['aria-label']),['Company sales','Dégustations & exchanges']);
         r.query='tab=invoices';assert.doesNotMatch(draw(),/Invoice workspace/);
         r.query='tab=all';assert.match(draw(),/Company register/);assert.equal(r.register.readOnly,true);
         assert.ok(!r.buttons.some(b=>b.label==='New sale'));

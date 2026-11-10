@@ -51,6 +51,8 @@ export default function AppSidebar() {
   const { user, role, principalRole, assignedRole, allowedModules } = useCurrentUser();
   const { logout } = useAuth();
 
+  useEffect(()=>{if(typeof window==='undefined')return;const open=()=>setMobileOpen(true);window.addEventListener('soeicam:open-navigation',open);return()=>window.removeEventListener('soeicam:open-navigation',open);},[]);
+
   // Keep the drawer's Back entry until Next commits the selected route. Closing
   // it on click rewinds history while a slower page is still loading and cancels
   // that transition. Replacing the drawer entry leaves one Back step to this page.
@@ -138,7 +140,7 @@ export default function AppSidebar() {
       <button aria-label={ui("Open navigation")} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)} className="fixed left-2 top-2 z-40 hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-[#347623] text-white shadow-sm xl:hidden"><Menu size={21}/></button>
       <nav aria-label={ui('Navigation')} className="sleek-bottom-nav sm:hidden">
         {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={false} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path === INVENTORY_PATH ? ui('Stock') : item.label}</span></Link>)}
-        <button type="button" className="sleek-bottom-item" aria-label={ui('Open navigation')} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={()=>setMobileOpen(true)}><MoreHorizontal size={23}/><span>{ui('More')}</span></button>
+        <Link to="/profile?section=more" resume={false} aria-current={location.pathname==='/profile'&&new URLSearchParams(location.search).get('section')==='more'?'page':undefined} className="sleek-bottom-item"><MoreHorizontal size={23}/><span>{ui('More')}</span></Link>
       </nav>
       <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
       <div className="sticky top-0 hidden h-dvh xl:block">{sidebar()}</div>

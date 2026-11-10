@@ -4,6 +4,9 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import {useSearchParams} from '@/lib/router';
+import MobileAccountingHome from '@/components/accounting/mobile/MobileAccountingHome';
 import {Navigate} from "@/lib/router";
 import { useNavigate } from "@/lib/router";
 import PageHeader from "@/components/shared/PageHeader";
@@ -23,15 +26,20 @@ export default function Accounting() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const phone=usePhoneLayout();
+  const [params,setParams]=useSearchParams();
+  const tab=['accounts','journals','payments','periods','rules'].includes(params.get('tab'))?params.get('tab'):'accounts';
   const { role } = useCurrentUser();
 
   if(role==='cashier')return <Navigate to="/cashier" replace/>;
+  if (phone&&!params.has('tab')) return <MobileAccountingHome/>;
   if (!['admin','cashier'].includes(role)) return <ManagementAccounting/>;
 
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        title={ui("Accounting")}
+        back={phone?{onClick:()=>setParams({}),label:ui("Accounting")}:undefined}
+        title={ui(phone?({accounts:"Chart of Accounts",journals:"Journal Entries",payments:"Payments",periods:"Periods",rules:"Posting Rules"})[tab]:"Accounting")}
         subtitle={ui("Accounts, transactions and financial reporting")}
         actions={<div className="flex flex-wrap gap-2">
           {['admin','cashier'].includes(role) && <Button variant="outline" onClick={()=>navigate("/accounting/payments/new")}><Plus size={16} className="mr-1"/>{ui("Confirm Customer Receipt")}</Button>}
@@ -46,7 +54,7 @@ export default function Accounting() {
           {title:ui("Assets & controls"),links:[["/accounting/assets",ui("Fixed Assets")],["/accounting/inventory",ui("Inventory Audit & Adjustments")],["/accounting/recovery",ui("Expiry & recovery")]]},
         ].map(group=><DropdownMenu key={group.title}><DropdownMenuTrigger asChild><Button variant="outline">{group.title}<ChevronDown size={14} className="ml-2"/></Button></DropdownMenuTrigger><DropdownMenuContent align="start">{group.links.map(([path,label])=><DropdownMenuItem key={path} onSelect={()=>navigate(path)}>{label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>)}
       </nav>
-      <Tabs defaultValue={typeof window !== 'undefined' && ['payments','journals','periods','rules'].includes(new URLSearchParams(window.location.search).get('tab')) ? new URLSearchParams(window.location.search).get('tab') : 'accounts'}>
+      <Tabs value={tab} onValueChange={value=>setParams({tab:value})}>
         <TabsList className="h-auto w-full flex-wrap justify-start gap-1" aria-label={ui("Accounting registers")}>
           <TabsTrigger value="accounts">{ui("Chart of Accounts")}</TabsTrigger>
           <TabsTrigger value="journals">{ui("Journal Entries")}</TabsTrigger>

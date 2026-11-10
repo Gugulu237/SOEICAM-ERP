@@ -87,13 +87,13 @@ export default function FinancialStatements() {
   };
 
   return (
-    <div>
+    <div data-sleek-financial-reports>
       <PageHeader back={{onClick:() => navigate("/accounting"),label:ui(" Accounting")}}
         title={ui("Financial Statements")}
         subtitle={tab === 'cashflow' ? ui("Cash receipts, payments and movement history") : `${formatDate(fromDate)} - ${formatDate(toDate)}`}
       />
 
-      {tab !== 'cashflow' && <div className="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap gap-4 items-end print:hidden">
+      {tab !== 'cashflow' && <div data-report-dates className="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap gap-4 items-end print:hidden">
         <div>
           <Label>{ui("From")}</Label>
           <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
