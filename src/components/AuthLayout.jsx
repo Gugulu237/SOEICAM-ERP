@@ -6,7 +6,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
     <div data-auth-layout className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="mb-4 flex justify-end"><LanguageSelector /></div>
-        <div className="sleek-login-brand sm:hidden"><strong>YOLA</strong><span>SOEICAM ERP</span></div>
+        <div className="sleek-login-brand sm:hidden"><img src="/brand/soeicam-logo.png" alt="SOEICAM" width="180" height="60" /></div>
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary mb-4">
             <Icon className="w-7 h-7 text-primary-foreground" aria-hidden="true" />
