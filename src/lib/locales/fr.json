@@ -8708,5 +8708,9 @@
   "View transactions": "Voir les opérations",
   "View transactions: {0}": "Voir les opérations : {0}",
   "transaction rows": "lignes d’opération",
-  "Print / save PDF": "Imprimer / enregistrer en PDF"
+  "Print / save PDF": "Imprimer / enregistrer en PDF",
+  "{0} months · {1} years": "{0} mois · {1} ans",
+  "Saving.": "Enregistrement...",
+  "Paused": "En pause",
+  "Save recurring expense": "Enregistrer la charge récurrente"
 }
