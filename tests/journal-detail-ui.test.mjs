@@ -7,7 +7,7 @@ const require=createRequire(import.meta.url);
 async function renderer(){
  const mocks={
  '@/api/erpClient':'export const erp=new Proxy({},{get:(_,key)=>globalThis.__journalDetail.client[key]});',
- '@/lib/router':'import React from "react";export const useParams=()=>({id:"journal"}),useNavigate=()=>path=>globalThis.__journalDetail.navigation.push(path),Link=({to,children})=>React.createElement("a",{href:to},children);',
+ '@/lib/router':'import React from "react";export const useParams=()=>({id:"journal"}),useSearchParams=()=>[new URLSearchParams(globalThis.__journalDetail.query||"")],useNavigate=()=>path=>globalThis.__journalDetail.navigation.push(path),Link=({to,children})=>React.createElement("a",{href:to},children);',
  '@/hooks/useCurrentUser':'export const useCurrentUser=()=>({user:{id:"gm"},isAdmin:true});',
  '@/lib/localization':'export const useLocaleRender=()=>{};',
  '@/components/shared/PageHeader':'import React from "react";export default ({title,actions})=>React.createElement("header",null,title,actions);',
@@ -30,4 +30,13 @@ test('failed or incomplete journal reads show a retry action and can recover wit
  const r=hookRuntime(),render=await renderer();let fail=true;r.client={entities:{JournalEntry:{get:async()=>journal},JournalLine:{filter:async()=>{if(fail)throw Error('Connection interrupted');return {items:[{id:'line',account_name:'Recovered account',debit:1000,credit:0}],has_more:false};}}}};globalThis.__journalDetail=r;const draw=()=>{r.beforeRender();return render();};
  try{draw();await r.flush();assert.match(draw(),/Connection interrupted/);assert.ok(r.buttons.find(b=>b.label==='Retry loading journal'));fail=false;await r.buttons.find(b=>b.label==='Retry loading journal').onClick();assert.match(draw(),/Recovered account/);}
  finally{r.cleanup();delete globalThis.__journalDetail;}
+});
+
+
+test('journal detail exposes real source links for invoice and Commercial sale corrections',async()=>{
+ for(const [type,path] of [['Invoice','/sales/invoices/source-id'],['FieldSale','/field-review/source-id']]){
+  const r=hookRuntime(),render=await renderer();r.client={entities:{JournalEntry:{get:async()=>({...journal,source_module:'sales',source_document_type:type,source_document_id:'source-id'})},JournalLine:{filter:async()=>({items:[],has_more:false})}}};globalThis.__journalDetail=r;
+  try{r.beforeRender();render();await r.flush();r.beforeRender();const html=render();assert.match(html,new RegExp('href="'+path+'"'));r.buttons.find(button=>button.label==='Correct source document').onClick();assert.equal(r.navigation.at(-1),path);assert.equal(r.buttons.some(button=>button.label==='Correct journal'),false);}
+  finally{r.cleanup();delete globalThis.__journalDetail;}
+ }
 });

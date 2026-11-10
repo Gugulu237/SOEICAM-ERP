@@ -25,7 +25,7 @@ test('Operations dashboard and sidebar expose the requested features, and sales 
     const paths=['/sales','/inventory','/manufacturing','/distribution'];
     const {render,modules}=module.exports;
     const home=render('home',{data:dashboardPreview('production_manager'),preview:false});
-    for(const title of ['Company sales','Warehouse','Production board','Quality control']) assert.ok(home.includes(title),title);
+    for(const title of ['Company sales','Warehouse','Assemblies','Batches & expiry']) assert.ok(home.includes(title.replaceAll('&','&amp;')),title);
     for(const path of paths.filter(path=>!path.startsWith('/commercial'))) assert.ok(modules.some(m=>m.path===path),path);
     assert.equal(modules.some(module=>module.key==='commercial_workspace'),false,'management uses reports rather than the Commercial main widget');
     const sidebar=render('sidebar');for(const path of paths)assert.ok(sidebar.includes(`href="${path}"`),path);

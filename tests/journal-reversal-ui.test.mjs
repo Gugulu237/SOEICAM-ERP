@@ -56,3 +56,13 @@ test('a failed or refreshed balance preview prevents blind reversal and preserve
   r.buttons.find(b=>b.label==='Refresh review').onClick();draw();await r.flush();draw();assert.equal(r.controls.find(c=>c['aria-label']==='Verified balance for Factory till').value,'');assert.equal(r.controls.find(c=>c['aria-label']==='Confirm verified ledger and treasury balances').checked,false);assert.equal(r.controls.find(c=>c['aria-label']==='Reason for reversal').value,'Correct the original cash entry');assert.equal(posted,0);
  }finally{r.cleanup();delete globalThis.__reversal;}
 });
+
+
+test('manual correction confirmation sends one atomic reversal/replacement command and retries it unchanged',async()=>{
+ const ui=await compiled(),r=hookRuntime(),requests=[],done=[];let fail=true;globalThis.__reversal=r;
+ r.client={entities:{AccountingPeriod:{filter:async()=>({items:[],has_more:false})}},accounting:{previewJournalReversal:async()=>({snapshot:'a'.repeat(64),requires_review:false,accounts:[],treasury:[],blocked:[]}),saveJournal:async body=>{if(body.action==='previewCorrection')return {snapshot:'a'.repeat(64),requires_review:false,accounts:[],treasury:[],blocked:[],correction:true};requests.push(structuredClone(body));if(fail)throw Error('Connection interrupted');return {original:{id:'j'},reversal:{id:'r'},replacement:{id:'replacement',journal_number:'JV-FIX'}};}}};
+ const correction={requestKey:'stable-correction-reference',expectedFingerprint:'b'.repeat(64),correctionDate:businessDate(),description:'Reviewed correction',lines:[{account_id:'cash',account_number:'1000',account_name:'Cash',debit:200,credit:0},{account_id:'capital',account_number:'3000',account_name:'Capital',debit:0,credit:200}]};
+ const draw=()=>{r.beforeRender();return ui.render({journal:{id:'j',journal_number:'JV-1',entry_date:businessDate(),status:'posted'},correction,onClose:()=>{},onCorrected:value=>done.push(value)});};
+ try{draw();await r.flush();assert.match(draw(),/neither is saved/);assert.match(draw(),/Reviewed correction/);r.controls.find(control=>control['aria-label']==='Reason for reversal').onChange({target:{value:'Wrong amount entered'}});draw();await r.form.onSubmit({preventDefault(){}});assert.match(draw(),/Connection interrupted/);assert.equal(requests[0].action,'correctManual');assert.equal(requests[0].requestKey,correction.requestKey);assert.deepEqual(requests[0].replacement,{description:correction.description,lines:correction.lines});assert.equal(requests[0].reversalDate,correction.correctionDate);fail=false;await r.form.onSubmit({preventDefault(){}});assert.deepEqual(requests[1],requests[0]);assert.equal(done[0].replacement.id,'replacement');
+ }finally{r.cleanup();delete globalThis.__reversal;}
+});

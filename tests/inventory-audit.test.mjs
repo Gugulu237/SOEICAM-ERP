@@ -262,3 +262,65 @@ test('count history export uses the same saved scope without scanning stock or t
     env.actAs('blocked','warehouse_manager');assert.equal((await env.call({action:'inventoryAuditWorkspace',historyOnly:true})).status,400);
   }finally{await env.close();}
 });
+
+test('explicit opening stock audit corrections balance both signs against reviewed equity without profit or cash effects',async()=>{
+ const env=await environment();try{
+  const e=env.entities;await e.Account.create({id:'opening-equity',account_number:'3990',name:'Opening equity',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,currency:'XAF',balance:0});
+  let a=await env.start();assert.equal(a.purpose,'');
+  a=await env.save(a,[8,6],{purpose:'opening_correction',correctionAccountId:'opening-equity',correctionConfirmed:true});
+  assert.equal(a.purpose,'opening_correction');assert.equal(a.correction_account_id,'opening-equity');assert.equal(a.correction_confirmed,true);assert.equal(a.loss_account_id,'');assert.equal(a.gain_account_id,'');
+  a=await env.change('Submit',a);a=await env.approve(a);
+  assert.deepEqual(a.approved_treatment,{purpose:'opening_correction',correction_account_id:'opening-equity',correction_confirmed:true});assert.match(a.approved_plan_token,/^[a-f\d]{64}$/);assert.ok(a.approved_plan.every(line=>['inventory','opening-equity'].includes(line.account_id)));
+  const body=env.write('Post',a),result=await env.ok(body);a=result.audit;
+  assert.equal(a.status,'posted');assert.equal((await env.ok(body)).reused,true);
+  assert.equal((await e.Account.get('inventory')).balance,140);assert.equal((await e.Account.get('opening-equity')).balance,-10);assert.equal((await e.Account.get('loss')).balance,0);assert.equal((await e.Account.get('gain')).balance,0);
+  const lines=await e.JournalLine.list();assert.equal(lines.reduce((sum,line)=>sum+line.debit-line.credit,0),0);assert.ok(lines.every(line=>['inventory','opening-equity'].includes(line.account_id)));
+  assert.equal((await e.JournalEntry.list()).length,1);assert.equal((await e.StockMovement.list()).length,2);assert.equal((await e.StockBalance.get('lot1')).quantity,8);assert.equal((await e.StockBalance.get('lot2')).quantity,6);assert.equal((await e.StockBalance.get('lot1')).qc_status,'quarantine');assert.equal((await e.StockBalance.get('lot1')).expiry_date,'2027-01-01');assert.equal((await e.TreasuryTransaction.list()).length,0);assert.equal((await e.TreasuryAccount.get('till')).balance,1000);
+ }finally{await env.close();}
+});
+
+test('opening audit purpose requires explicit confirmation and a permitted equity account before any saved revision',async()=>{
+ const env=await environment();try{
+  const e=env.entities;
+  for(const [id,changes] of [['equity',{}],['usd',{currency:'USD'}],['debit-equity',{normal_balance:'debit'}],['inactive',{is_active:false}],['nonposting',{is_posting:false}],['treasury',{is_treasury:true}],['cash-linked',{}]])await e.Account.create({id,account_number:id,name:id,account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,currency:'XAF',balance:0,...changes});
+  await e.TreasuryAccount.create({id:'linked-equity-till',name:'Linked equity',account_type:'cash',gl_account_id:'cash-linked',balance:0});
+  const a=await env.start(),base={rows:a.rows.map(row=>({balance_id:row.balance_id,counted_quantity:row.book_quantity+1,reason:'Verified opening stock error'})),evidenceReference:'OPENING-COUNT-1',purpose:'opening_correction',correctionAccountId:'equity',correctionConfirmed:true};
+  const before=(await e.AuditLog.list()).length;
+  for(const change of [{purpose:''},{purpose:'unknown'},{correctionConfirmed:false},{correctionAccountId:''},...['inventory','gain','loss','cash','usd','debit-equity','inactive','nonposting','treasury','cash-linked'].map(correctionAccountId=>({correctionAccountId})),{use_current_cost:true},{confirm_reconciliation:true},{rows:base.rows.map(row=>({...row,use_current_cost:true}))},{rows:base.rows.map(row=>({...row,confirm_reconciliation:true}))}]){
+   const result=await env.call(env.write('Save',a,{...base,...change}));assert.equal(result.status,400,JSON.stringify(change));
+  }
+  assert.equal((await e.AuditLog.list()).length,before);assert.equal((await e.JournalEntry.list()).length,0);assert.equal((await e.StockMovement.list()).length,0);
+  const workspace=await env.ok({action:'inventoryAuditWorkspace'});assert.ok(workspace.accounts.some(account=>account.id==='equity'));assert.ok(!workspace.accounts.some(account=>['usd','debit-equity','inactive','nonposting','treasury','cash-linked'].includes(account.id)));
+ }finally{await env.close();}
+});
+
+test('opening audit review revalidates equity and rejects missing approved treatment metadata without posting',async()=>{
+ const env=await environment();try{
+  const e=env.entities;await e.Account.create({id:'equity',account_number:'3990',name:'Opening equity',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
+  let a=await env.save(await env.start(),[11,5],{purpose:'opening_correction',correctionAccountId:'equity',correctionConfirmed:true});a=await env.approve(await env.change('Submit',a));
+  await e.Account.update('equity',{currency:'USD'});let failed=await env.call(env.write('Post',a));assert.equal(failed.status,400);assert.match(failed.error,/XAF.*equity/);assert.equal((await e.JournalEntry.list()).length,0);
+  await e.Account.update('equity',{currency:'XAF'});
+  const legacy={...a,revision:a.revision+1};delete legacy.approved_treatment;delete legacy.approved_plan_token;
+  await e.AuditLog.create({id:'missing-neutral-approval',description:'Legacy neutral approval without treatment review',action:'inventoryAuditApprove',module:'inventory_audit',entity_type:'InventoryAudit',entity_id:a.id,user_id:'gm',inventory_audit_state:legacy,inventory_audit_payload:'legacy-fixture'});
+  failed=await env.call(env.write('Post',legacy));assert.equal(failed.status,400);assert.match(failed.error,/treatment changed/);assert.equal((await e.StockBalance.get('lot1')).quantity,10);assert.equal((await e.JournalEntry.list()).length,0);
+ }finally{await env.close();}
+});
+
+test('legacy approved operating counts retain their original gain and loss treatment without rewriting earlier proof',async()=>{
+ const env=await environment();try{
+  const e=env.entities;let a=await env.approve(await env.change('Submit',await env.save(await env.start())));
+  const legacy={...a,revision:a.revision+1};for(const field of ['purpose','correction_account_id','correction_confirmed','approved_treatment','approved_plan_token'])delete legacy[field];
+  const proof=await e.AuditLog.create({id:'legacy-operating-approval',description:'Legacy operating count approval',action:'inventoryAuditApprove',module:'inventory_audit',entity_type:'InventoryAudit',entity_id:a.id,user_id:'gm',inventory_audit_state:legacy,inventory_audit_payload:'legacy-fixture'});
+  a=(await env.ok(env.write('Post',legacy))).audit;assert.equal(a.status,'posted');assert.equal((await e.Account.get('loss')).balance,20);assert.equal((await e.Account.get('gain')).balance,10);assert.deepEqual(await e.AuditLog.get(proof.id),proof);
+ }finally{await env.close();}
+});
+
+test('a matched opening correction cannot manufacture value from submitted unit-cost fields and recount clears treatment review',async()=>{
+ const env=await environment();try{
+  const e=env.entities;await e.Account.create({id:'equity',account_number:'3990',name:'Opening equity',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
+  let a=await env.start(),rows=a.rows.map(row=>({balance_id:row.balance_id,counted_quantity:row.book_quantity,unit_cost:999,value_after:9999,value_difference:9999,reason:'Verified opening stock count'}));
+  a=await env.save(a,[],{rows,purpose:'opening_correction',correctionAccountId:'equity',correctionConfirmed:true});a=await env.change('Submit',a);assert.equal(a.status,'matched');assert.equal((await e.JournalEntry.list()).length,0);assert.equal((await e.StockBalance.get('lot1')).total_value,100);
+  a=await env.save(await env.start(),[11,5],{purpose:'opening_correction',correctionAccountId:'equity',correctionConfirmed:true});a=await env.approve(await env.change('Submit',a));a=await env.change('Recount',a,{note:'Fresh count and purpose review required'});
+  assert.equal(a.purpose,'');assert.equal(a.correction_account_id,'');assert.equal(a.correction_confirmed,false);assert.equal(a.approved_treatment,null);assert.equal(a.approved_plan_token,'');assert.equal(a.approved_plan,null);
+ }finally{await env.close();}
+});

@@ -18,6 +18,7 @@ async function ui() {
       '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__invoiceUI.session||({isAdmin:true,role:"admin"});',
       '@/components/ui/button':`import React from 'react';export function Button({children,onClick,...props}){globalThis.__invoiceUI.capture('button',{...props,onClick},children);return React.createElement('button',props,children);}`,
       '@/components/ui/dialog':`import React from 'react';export const Dialog=({children,open})=>open?React.createElement('div',null,children):null;export const DialogContent=({children})=>React.createElement('div',null,children);export const DialogHeader=DialogContent,DialogTitle=DialogContent,DialogDescription=DialogContent;`,
+      '@/components/sales/SaleReversalDialog':`import React from 'react';export default props=>{globalThis.__invoiceUI.reversal=props;return React.createElement('p',null,'Checked sale reversal');};`,
       '@/components/sales/InvoiceEditor':`export default function Editor(props){globalThis.__invoiceUI.editor=props;return null;}`,
     };
     b.onResolve({filter:/^\.\/InvoiceEditor$/},()=>({path:'@/components/sales/InvoiceEditor',namespace:'mock'}));
@@ -64,4 +65,12 @@ test('mobile invoice shares the receipt hierarchy, preserves verified source fie
   const draw=()=>{state.beforeRender();return render('detail');};
   try{draw();await state.flush();const html=draw();assert.match(html,/REC-007/);assert.match(html,/Saved seller/);assert.match(html,/Saved recorder/);assert.match(html,/Replacement yoghurt/);assert.match(html,/Exchanges/);assert.match(html,/Invoice tools &amp; preview/);assert.equal(state.buttons.find(b=>b.label==='Print').disabled,!verified);assert.equal(state.buttons.find(b=>b.label==='Export PDF').disabled,!verified);assert.equal(state.buttons.some(b=>b.label==='Reverse sale'||b.label==='Collect cash for handover'),false);state.buttons.find(b=>b['aria-label']==='Back').onClick();assert.equal(state.navigation.at(-1),'/cashier?section=invoices');state.session={role:'admin',isAdmin:true};draw();state.buttons.find(b=>b['aria-label']==='Back').onClick();assert.equal(state.navigation.at(-1),'/sales?tab=all');}finally{state.cleanup();delete globalThis.__invoiceUI;}
  }
+});
+
+
+test('sale correction chooses safe metadata editing or the checked source reversal without directly editing journal lines',async()=>{
+ const render=await ui(),state=hookRuntime(),calls=[];globalThis.__invoiceUI=state;state.session={role:'admin',isAdmin:true};state.request=async body=>{calls.push(body);return structuredClone(saved);};
+ const draw=()=>{state.beforeRender();return render('detail');};
+ try{draw();await state.flush();draw();state.buttons.find(button=>button.label==='Correct sale').onClick();assert.match(draw(),/Products, customer or amounts/);state.buttons.find(button=>button.label==='Edit invoice details').onClick();draw();assert.ok(state.editor);state.buttons.find(button=>button.label==='Cancel').onClick();draw();state.buttons.find(button=>button.label==='Correct sale').onClick();draw();state.buttons.find(button=>button.label==='Review sale correction').onClick();draw();assert.equal(state.reversal.invoiceId,'invoice-1');assert.equal(calls.filter(call=>call.action!=='invoiceDetail').length,0);
+ }finally{state.cleanup();delete globalThis.__invoiceUI;}
 });

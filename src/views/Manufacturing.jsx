@@ -1,6 +1,6 @@
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import MobileAssemblyCatalogue from '@/components/manufacturing/MobileAssemblyCatalogue';
-import RecipeDeleteButton from '@/components/manufacturing/RecipeDeleteButton';
+import {manufacturingSection} from '@/lib/manufacturing-workspace';
 
 /* localized-interface */
 import dynamic from 'next/dynamic';
@@ -18,9 +18,8 @@ import PageHeader from "@/components/shared/PageHeader";
 import DataTable from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { Plus, Send, CheckCircle, LayoutGrid, Table } from "lucide-react";
+import { Send, CheckCircle, LayoutGrid, Table } from "lucide-react";
 import ProductionBoard from "@/components/manufacturing/ProductionBoard";
 import ViewToggle from "@/components/shared/ViewToggle";
 import ProductionApprovalNotice from '@/components/manufacturing/ProductionApprovalNotice';
@@ -32,19 +31,26 @@ export default function Manufacturing(){
   const phone=usePhoneLayout();
   const {role,allowedModules,loading,user,employee}=useCurrentUser(),[params,setParams]=useSearchParams();
   const canProduce=['admin','production_manager','warehouse_manager'].includes(role)&&(!allowedModules||allowedModules.includes('manufacturing'));
-  const canQuality=qualitySections(role).length>0&&(!allowedModules||allowedModules.includes('quality'));
-  const sections=[...(canProduce?[['orders','Production orders'],['build','Build assemblies'],['recipes','Recipes']]:[]),...(canQuality?[['quality','Quality & batches']]:[])];
-  const section=sections.some(([key])=>key===params.get('section'))?params.get('section'):phone&&canProduce?'recipes':sections[0]?.[0];
+  const permittedQuality=qualitySections(role),canQuality=permittedQuality.length>0&&(!allowedModules||allowedModules.includes('quality'));
+  const sections=[...(canProduce?[['assemblies','Assemblies'],['build','Build assemblies']]:[]),...(canQuality?[['batches','Batches & expiry']]:[])];
+  const requested=manufacturingSection(params.get('section'));
+  const section=canProduce&&requested==='history'?'history':sections.some(([key])=>key===requested)?requested:sections[0]?.[0];
+  useEffect(()=>{if(!['recipes','orders'].includes(params.get('section')))return;const next=new URLSearchParams(params);next.set('section',manufacturingSection(params.get('section')));setParams(next,{replace:true});},[params,setParams]);
   if(loading)return <p role="status">{ui('Loading manufacturing...')}</p>;
   if(!section)return <p role="alert">{ui('Your role does not have access to manufacturing.')}</p>;
-  const navigation=<nav aria-label={ui('Manufacturing sections')} className={phone?'grid gap-2':'flex gap-2 overflow-x-auto border-b pb-3 sm:flex-wrap'}>{sections.map(([key,label])=><Button key={key} variant={section===key?'default':'outline'} aria-current={section===key?'page':undefined} onClick={()=>{const next=new URLSearchParams(params);next.set('section',key);next.delete('assembly');next.delete('product');setParams(next);}}>{ui(phone&&key==='recipes'?'Assemblies':phone&&key==='build'?'Record production':label)}</Button>)}</nav>;
-  return <div className="relative space-y-4">{phone?<details className="absolute right-0 top-0 z-10"><summary className="flex min-h-11 cursor-pointer list-none items-center rounded-full border bg-white px-4 text-xs font-semibold text-primary">{ui('Tools')}</summary><div className="absolute right-0 mt-2 w-60 rounded-[22px] border bg-white p-3 shadow-lg">{navigation}</div></details>:<><PageHeader title={ui('Manufacturing')}/>{navigation}</>}{section==='build'?<AssemblyBuildPanel mobile={phone} initialProductId={params.get('product')||''} responsible={employee?.full_name||user?.full_name}/>:section==='quality'?<QualityControl embedded/>:phone&&section==='recipes'?<MobileAssemblyCatalogue canPlan={['admin','production_manager'].includes(role)}/>:<ManufacturingProduction section={section}/>}</div>;
+  const choose=(key,quality)=>{const next=new URLSearchParams(params);next.set('section',key);next.delete('assembly');next.delete('product');next.delete('batch');if(quality)next.set('quality',quality);else next.delete('quality');setParams(next);};
+  const tools=canProduce||canQuality&&permittedQuality.some(item=>['release','inspections'].includes(item.key));
+  return <div className="space-y-4">
+    <nav aria-label={ui('Manufacturing sections')} className={phone?'grid gap-2 '+(sections.length===1?'grid-cols-1':sections.length===2?'grid-cols-2':'grid-cols-3'):'flex flex-wrap gap-2 border-b pb-3'}>{sections.map(([key,label])=><Button key={key} className="h-auto min-h-12 min-w-0 whitespace-normal px-2 text-xs sm:px-4 sm:text-sm" variant={section===key?'default':'outline'} aria-current={section===key?'page':undefined} onClick={()=>choose(key,key==='batches'?(permittedQuality.some(item=>item.key==='traceability')?'traceability':'expiry'):undefined)}>{ui(label)}</Button>)}</nav>
+    <div className="relative">{tools&&<details className="absolute right-0 top-0 z-10"><summary className="flex min-h-11 cursor-pointer list-none items-center rounded-full border bg-white px-4 text-xs font-semibold text-primary">{ui('Tools')}</summary><nav aria-label={ui('Manufacturing tools')} className="absolute right-0 mt-2 grid w-60 gap-2 rounded-[22px] border bg-white p-3 shadow-lg">{canProduce&&<Button variant="outline" onClick={()=>choose('history')}>{ui('Production history')}</Button>}{canQuality&&permittedQuality.some(item=>['release','inspections'].includes(item.key))&&<Button variant="outline" onClick={()=>choose('batches',permittedQuality.find(item=>['release','inspections'].includes(item.key)).key)}>{ui('Quality controls')}</Button>}</nav></details>}
+      {section==='build'?<AssemblyBuildPanel mobile={phone} initialProductId={params.get('product')||''} responsible={employee?.full_name||user?.full_name}/>:section==='batches'?<QualityControl embedded tracking defaultSection="traceability"/>:section==='assemblies'?<MobileAssemblyCatalogue canPlan={['admin','production_manager'].includes(role)}/>:<div className="pt-14"><ManufacturingProduction/></div>}
+    </div>
+  </div>;
 }
-function ManufacturingProduction({section}) {
+function ManufacturingProduction() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [orders, setOrders] = useState([]);
-  const [recipes, setRecipes] = useState([]);
   const [products, setProducts] = useState([]);
   const [view, setView] = useState("board");
   const [loading, setLoading] = useState(true);
@@ -59,12 +65,11 @@ function ManufacturingProduction({section}) {
   async function loadData() {
     setLoading(true);
     setLoadError('');
-    try { const [o, r, p] = await Promise.all([
+    try { const [o, p] = await Promise.all([
       readAll(erp.entities.ProductionOrder,{}),
-      readAll(erp.entities.Recipe,{}),
       readAll(erp.entities.Product, { inventory_type: { $in: ['finished_product', 'assembly'] } }),
     ]);
-    setOrders(o); setRecipes(r.filter(recipe=>!recipe.recipe_deleted_at&&recipe.recipe_kind!=='assembly_build_snapshot')); setProducts(p);
+    setOrders(o); setProducts(p);
     }catch(error){setLoadError(error.message);}finally{setLoading(false);}
   }
 
@@ -98,32 +103,14 @@ function ManufacturingProduction({section}) {
     )},
   ];
 
-  const recipeCols = [
-    { key: "recipe_name", label: ui("Recipe") },
-    { key: "product_name", label: ui("Product") },
-    { key: "version", label: ui("Version") },
-    { key: "batch_output", label: ui("Batch Output"), className: "text-right" },
-    { key: "status", label: ui("Status"), render: v => <StatusBadge status={v} /> },
-    {key:'actions',label:ui('Actions'),sortable:false,render:(_,recipe)=><div className="flex flex-wrap gap-2" onClick={event=>event.stopPropagation()}><Button size="sm" variant="outline" onClick={()=>navigate('/manufacturing/recipes/'+recipe.id)}>{ui(canPlan?'Edit recipe':'Open recipe')}</Button>{canPlan&&<RecipeDeleteButton recipe={recipe} onDeleted={loadData}/>}</div>},
-  ];
-
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
     <div>
-      <PageHeader
-        title={ui(section==='recipes'?'Recipes':'Production orders')}
-        actions={
-          <div className="flex gap-2">
-            <Button disabled={!canPlan} variant="outline" onClick={() => navigate("/manufacturing/recipes/new")}><Plus size={16} className="mr-1" />{ui(" New Recipe")}</Button>
-            <Button disabled={!canPlan} onClick={() => navigate("/manufacturing/new")}><Plus size={16} className="mr-1" />{ui(" New Production Order")}</Button>
-          </div>
-        }
-      />
+      <PageHeader title={ui('Production history')} actions={<Button disabled={!canPlan} onClick={()=>navigate('/manufacturing?section=build')}>{ui('Build assemblies')}</Button>}/>
       <ProductionApprovalNotice result={approvalCheck} reference={approvalCheck?.reference} onReview={()=>navigate(`/manufacturing/${approvalCheck.orderId}`)}/>
       {loadError&&<p role="alert" className="mb-4 text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={loadData}>{ui('Retry')}</button></p>}
-      <Tabs value={section}>
-        <TabsContent value="orders" className="mt-4">
+      <div className="mt-4">
           <div className="flex justify-end mb-3">
             <ViewToggle
               value={view}
@@ -137,11 +124,7 @@ function ManufacturingProduction({section}) {
           {view === "board"
             ? <ProductionBoard orders={orders} products={products} />
             : <DataTable columns={orderCols} data={orders} searchFields={["order_number", "product_name"]} onRowClick={row => navigate(`/manufacturing/${row.id}`)} />}
-        </TabsContent>
-        <TabsContent value="recipes" className="mt-4">
-          <DataTable columns={recipeCols} data={recipes} searchFields={["recipe_name", "product_name"]} onRowClick={row => navigate(`/manufacturing/recipes/${row.id}`)} />
-        </TabsContent>
-      </Tabs>
+      </div>
     </div>
   );
 }

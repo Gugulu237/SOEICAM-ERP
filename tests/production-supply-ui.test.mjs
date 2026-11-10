@@ -66,7 +66,7 @@ test('the production form retains a blocked approval, updates missing quantities
 });
 
 for(const kind of ['manufacturing','approvals'])test(`${kind} shows shortage details and keeps the item pending instead of reporting approval`,async()=>{
-  const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;r.session={role:'admin',canApproveProduction:true,user:{id:'gm'}};r.client=approvalClient(calls);let decisions=0;
+  const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;r.session={role:'admin',canApproveProduction:true,user:{id:'gm'}};r.client=approvalClient(calls);if(kind==='manufacturing')r.search='section=history';let decisions=0;
   const draw=()=>{r.beforeRender();return render(kind,{embedded:true,onDecision:()=>decisions++});};
   try{draw();await r.flush();draw();await r.flush();draw();
     if(kind==='manufacturing'){r.buttons.find(b=>b.label==='Table View').onClick();draw();}
@@ -151,14 +151,14 @@ test('production completion offers only Cold Room, retains output on a failed sa
  try{draw();await r.flush();draw();await r.flush();draw();r.buttons.find(b=>b.label.trim()==='Complete Production').onClick();assert.match(draw(),/Complete production into Cold Room/);const destination=elements.find(e=>e.tag==='select'&&e.props.id==='completed-warehouse');assert.equal(destination.props.value,'cold');r.inputs.find(p=>p.id==='completed-quantity').onChange({target:{value:'19'}});draw();await r.buttons.find(b=>b.label==='Receive into Cold Room').onClick();draw();assert.equal(r.inputs.find(p=>p.id==='completed-quantity').value,'19');assert.equal(calls[0].warehouseId,'cold');assert.equal(calls[0].quantity,19);fail=false;await r.buttons.find(b=>b.label==='Receive into Cold Room').onClick();assert.equal(calls.length,2);assert.equal(calls[1].orderId,'finished');}
  finally{r.cleanup();delete globalThis.__productionUI;}
 });
-test('a build link without an approved recipe opens BOM setup for the selected assembly',async()=>{
+test('a legacy setup link opens checked assembly building with the selected product',async()=>{
  const render=await renderer(),r=runtime();globalThis.__productionUI=r;r.search='product=assembly-1';r.params={};r.session={role:'production_manager'};r.client=approvalClient([]);r.client.entities.Recipe.filter=async()=>[];
- const draw=()=>{r.beforeRender();return render('production');};try{draw();await r.flush();assert.match(draw(),/approved production recipe/);r.buttons.find(b=>b.label==='Set up recipe / BOM').onClick();assert.deepEqual(r.navigation,['/manufacturing/recipes/new?product=assembly-1']);}finally{r.cleanup();delete globalThis.__productionUI;}
+ const draw=()=>{r.beforeRender();return render('production');};try{draw();await r.flush();assert.match(draw(),/Use assembly building/);r.buttons.find(b=>b.label==='Build assemblies').onClick();assert.deepEqual(r.navigation,['/manufacturing?section=build&product=assembly-1']);}finally{r.cleanup();delete globalThis.__productionUI;}
 });
-test('an Inventory build link finds any finished variant in an approved yogurt recipe and opens the phased planner',async()=>{
+test('a legacy finished-variant link preserves its selected product in checked assembly building',async()=>{
  const render=await renderer(),r=runtime();globalThis.__productionUI=r;r.search='product=assembly-2';r.params={};r.session={role:'production_manager'};r.client=approvalClient([]);
  r.client.entities.Recipe.filter=async()=>[{id:'yogurt',recipe_kind:'yogurt_phased_v1',product_id:'different-representative',status:'approved',version:1,yogurt_config:{outputs:[{product_id:'assembly-2'}]}}];
- const draw=()=>{r.beforeRender();return render('production');};try{draw();await r.flush();draw();assert.deepEqual(r.navigation,['/manufacturing/new?recipe=yogurt']);}finally{r.cleanup();delete globalThis.__productionUI;}
+ const draw=()=>{r.beforeRender();return render('production');};try{draw();await r.flush();draw();assert.deepEqual(r.navigation,['/manufacturing?section=build&product=assembly-2']);}finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
 test('shortage supplier selection includes unlinked active vendors and sends a reviewed proposal without changing the catalogue',async()=>{

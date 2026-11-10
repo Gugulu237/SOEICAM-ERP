@@ -18,7 +18,7 @@ const ACTIONS = [
   { get label(){return ui("New Sales Order");}, path: "/sales/new", icon: Receipt, roles: ["admin", "employee"] },
   { get label(){return ui("New Purchase Order");}, path: "/purchases/new", icon: ShoppingCart, roles: ["admin", "procurement", "production_manager", "warehouse_manager", "employee"] },
   { get label(){return ui("Receive Goods");}, path: "/purchases?section=receiving", icon: PackageCheck, roles: ["admin", "procurement", "warehouse_manager"] },
-  { get label(){return ui("New Production Order");}, path: "/manufacturing/new", icon: Factory, roles: ["admin", "production_manager"] },
+  { get label(){return ui("Build assemblies");}, path: "/manufacturing?section=build", icon: Factory, roles: ["admin", "production_manager"] },
   { get label(){return ui("Record Payment");}, path: "/accounting/payments/new", icon: Banknote, roles: ["admin", "cashier"] },
   { get label(){return ui("New Customer");}, path: "/customers/new", icon: UserPlus, roles: ["admin", "employee", "commercial"] },
   { get label(){return ui("Issue goods");}, path: "/inventory?issue=1", icon: Truck, roles: ["admin", "warehouse_manager"], modules: ["inventory", "distribution"] },

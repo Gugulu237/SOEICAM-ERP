@@ -61,7 +61,7 @@ The active build has no Vite entry point, Vite dependencies, Vite environment va
 ## Application areas
 
 - Inventory: finished products, ingredients, packaging, assemblies, receiving, stock movements and adjustments.
-- Manufacturing: bucket-based recipes, fermentation, additives, flavouring, sticker/material availability, actual packaged output and batch/expiry tracking.
+- Manufacturing: product assemblies and component costs, checked assembly builds, recorded batches, expiry dates and traceability. Recipe creation and version workflows are hidden; prior production history is preserved.
 - Employees: role hierarchy, employee accounts, responsibilities, shared duties, reports and Payroll.
 - Payroll: current employee details, GM payslip review and approval, Cashier settlement and employee payables.
 - Purchasing and suppliers: material catalogues, requests, approved receipts, supplier bills and settlements.

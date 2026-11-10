@@ -143,3 +143,12 @@ test('inventory adjustment defaults are reserved for top admins and revocations 
  assert.ok(old.roles.admin.modules.includes('inventory_adjustments'));assert.ok(!old.roles.warehouse_manager.modules.includes('inventory_adjustments'));assert.ok(!old.roles.cashier.modules.includes('inventory_adjustments'));
  const narrowed=validateRoleProfile({...old.roles.warehouse_manager,label:'Warehouse',category:'Operations',modules:['inventory']});assert.equal(narrowed.module_permissions_version,5);assert.ok(!catalogueFromStored({roles:{warehouse_manager:narrowed}}).roles.warehouse_manager.modules.includes('inventory_adjustments'));
 });
+
+
+test('canonical batches route retains the quality module boundary rather than requiring assembly editing access',()=>{
+ assert.equal(moduleForPath('/manufacturing?section=batches'),'quality');
+ assert.equal(moduleForPath('/manufacturing?section=batches&quality=traceability'),'quality');
+ assert.equal(moduleForPath('/manufacturing?section=quality'),'quality');
+ assert.equal(moduleForPath('/manufacturing?section=assemblies'),'manufacturing');
+ assert.equal(moduleForPath('/manufacturing?section=build'),'manufacturing');
+});

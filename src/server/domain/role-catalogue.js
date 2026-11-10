@@ -172,7 +172,7 @@ export function moduleForPath(path) {
   const [pathname,query='']=String(path || '').split('?');
   const root = '/' + pathname.split('/').filter(Boolean)[0];
   if(root==='/team-workspaces'&&new URLSearchParams(query).get('section')==='payroll')return 'payroll';
-  if(root==='/manufacturing' && pathname.replace(/\/+$/,'')==='/manufacturing' && new URLSearchParams(query).get('section')==='quality')return 'quality';
+  if(root==='/manufacturing' && pathname.replace(/\/+$/,'')==='/manufacturing' && ['quality','batches'].includes(new URLSearchParams(query).get('section')))return 'quality';
   const paths = { '/purchases':'purchases','/suppliers':'purchases','/inventory':'inventory','/items':'inventory','/manufacturing':'manufacturing','/quality':'quality','/expiry':'quality','/traceability':'quality','/distribution':'distribution','/driver':'distribution','/custody':'distribution','/supply-chain':'inventory','/sales':'sales','/sales-reports':'sales_reports','/customers':'customers','/field-customers':'customers','/commercial':'commercial','/field-sales':'commercial','/commercial-performance':'commercial','/outlet-reports':'outlets','/hotesse':'outlets','/cashier':'cashier','/cash-handovers':'cashier','/accounting':'accounting','/finance-pulse':'accounting','/expenses':'expenses','/approvals':'approvals','/employees':'employees','/team-workspaces':'employees','/payroll':'payroll','/admin':'admin','/reports':'reports','/cockpit':'reports' };
   return paths[root] || null;
 }

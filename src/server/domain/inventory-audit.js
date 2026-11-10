@@ -1,3 +1,4 @@
+import {inventoryAdjustmentTreatment,validStockCorrectionAccount} from '../../lib/inventory-adjustment-treatment.js';
 import { warehouseCountState } from '../../lib/warehouse-count.js';
 import { adjustmentAccess } from './inventory-adjustment-access.js';
 import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
@@ -81,7 +82,19 @@ function validateCounts(state, requireCost = true) {
     if (requireCost && row.difference && (row.book_quantity > 0 ? row.book_value / row.book_quantity : row.unit_cost) <= 0) throw Error(`${row.product_name} has no established carrying cost; reconcile its valuation before adjusting quantity`);
   }
 }
+function stateTreatment(state) {
+  return inventoryAdjustmentTreatment({purpose:state.purpose,correctionAccountId:state.correction_account_id,correctionConfirmed:state.correction_confirmed});
+}
 function journalPlan(state, c) {
+  const treatment=stateTreatment(state),correction=treatment.purpose==='opening_correction'?c.accounts.get(treatment.correction_account_id):null;
+  if(treatment.purpose==='opening_correction'){
+    if(state.managed_location)throw Error('Opening stock corrections require a company stock location. Reconcile managed delivery stock through Distribution.');
+    if(!validStockCorrectionAccount(correction,c.cashIds))throw Error('Choose an active posting XAF credit-normal equity account for the opening stock correction.');
+    for(const row of state.rows){
+      const expected=countVariance(row,row.counted_quantity);
+      if(row.use_current_cost===true||row.confirm_reconciliation===true||!row.difference&&row.value_difference||['difference','value_difference','value_after'].some(key=>Number(row[key])!==expected[key]))throw Error('Opening stock corrections cannot revalue unchanged quantities or use current-cost valuation.');
+    }
+  }
   const groups = new Map(), add = (a, debit, credit) => {
     const key = `${a.id}:${debit ? 'debit' : 'credit'}`, line = groups.get(key) || { account_id: a.id, account_number: a.account_number, account_name: a.name, debit: 0, credit: 0 };
     line.debit = roundMoney(line.debit + debit); line.credit = roundMoney(line.credit + credit); groups.set(key, line);
@@ -92,8 +105,8 @@ function journalPlan(state, c) {
     if(row.difference>0)requireFinishedStorage(product,c.warehouses.get(row.warehouse_id),{isolation:true});
     const inventory = validAccount(c, row.inventory_account_id, ['asset'], 'debit', 'inventory asset'), value = Math.abs(row.value_difference);
     if (!value) continue;
-    if (row.value_difference < 0) { add(validAccount(c, state.loss_account_id, ['expense', 'other_expense'], 'debit', 'inventory loss'), value, 0); add(inventory, 0, value); }
-    else { add(inventory, value, 0); add(validAccount(c, state.gain_account_id, ['other_income'], 'credit', 'inventory surplus'), 0, value); }
+    if (row.value_difference < 0) { add(correction||validAccount(c, state.loss_account_id, ['expense', 'other_expense'], 'debit', 'inventory loss'), value, 0); add(inventory, 0, value); }
+    else { add(inventory, value, 0); add(correction||validAccount(c, state.gain_account_id, ['other_income'], 'credit', 'inventory surplus'), 0, value); }
   }
   return [...groups.values()];
 }
@@ -117,7 +130,7 @@ export async function inventoryAuditAction(client, user, body) {
     if (historyOnly) return { audits, page, total: starts.total, has_more: starts.has_more };
     const rows = balances.map(b => { try { const row=snapshot(b,c),state=warehouseCountState(row);return {...row,unit_cost:state.carrying_cost ?? row.unit_cost,...(state.count_issue || state.requires_reconciliation?{issue:state.count_issue || 'Use Adjust quantity to verify and correct this lot valuation before starting an audited count.'}: {})}; } catch (error) { return { balance_id: b.id, product_name: b.product_name || b.product_id, warehouse_id: b.warehouse_id, book_quantity: b.quantity, book_value: b.total_value, issue: error.message }; } });
     return { role, can_post_adjustments:permissions.can_adjust, user_id: user.id, rows, warehouses: [...c.warehouses.values()].map(w => view(w, 'id name warehouse_type is_active')),
-      accounts: [...c.accounts.values()].filter(a => a.is_active !== false && a.is_posting !== false && ['expense', 'other_expense', 'other_income'].includes(a.account_type)).map(a => view(a, 'id account_number name account_type normal_balance')),
+      accounts: [...c.accounts.values()].filter(a => a.is_active !== false && a.is_posting !== false && (['expense', 'other_expense', 'other_income'].includes(a.account_type)||validStockCorrectionAccount(a,c.cashIds))).map(a => view(a, 'id account_number name account_type normal_balance currency is_active is_posting is_treasury')),
       audits, page, total: starts.total, has_more: starts.has_more };
   }
   if (body.action === 'inventoryAuditMovements') {
@@ -147,7 +160,7 @@ export async function inventoryAuditAction(client, user, body) {
     const rows = balances.map(b => snapshot(b, c));
     for (const r of rows) { const state=warehouseCountState(r);if(state.count_issue || state.requires_reconciliation)throw Error(state.count_issue || 'Use Adjust quantity to verify and correct this lot valuation before starting an audited count.');countedQuantity(r.book_quantity); countVariance(r, r.book_quantity); }
     const state = { id: 'IA-' + hash([user.id, body.requestKey]).slice(0, 32), title: label(body.title, 'a count title'), status: 'draft', revision: 0, created_by: user.id, counter_name: employee?.full_name || user.full_name || user.email || user.id, makers: [user.id], created_at: new Date().toISOString(), count_date: businessDate(), snapshot_at: new Date().toISOString(),
-      warehouse_id: rows[0].warehouse_id, warehouse_name: rows[0].warehouse_name, managed_location: MANAGED_WAREHOUSE_TYPES.includes(rows[0].warehouse_type), evidence_reference: '', loss_account_id: '', gain_account_id: '', rows };
+      warehouse_id: rows[0].warehouse_id, warehouse_name: rows[0].warehouse_name, managed_location: MANAGED_WAREHOUSE_TYPES.includes(rows[0].warehouse_type), evidence_reference: '', loss_account_id: '', gain_account_id: '', purpose:'',correction_account_id:'',correction_confirmed:false,rows };
     return { audit: await append(s, state, body.action, user, employee, eventId, payload) };
   }
   const { state: original } = await load(s, body.auditId), state = structuredClone(original);
@@ -159,12 +172,15 @@ export async function inventoryAuditAction(client, user, body) {
     if (state.makers.includes(user.id)) throw Error('You cannot approve or independently review a count you prepared or edited');
     note = label(body.note, 'a review note');
     if (body.action === 'inventoryAuditReturn') { state.status = 'draft'; state.review_note = note; }
-    else { await requireFresh(s, state, c); validateCounts(state); state.approved_plan = journalPlan(state, c); state.status = 'approved'; state.approved_by = user.id; state.approved_by_name = employee?.full_name || user.full_name || user.email || user.id; state.approved_at = new Date().toISOString(); state.review_note = note; }
+    else { await requireFresh(s, state, c); validateCounts(state); state.approved_plan = journalPlan(state, c); state.approved_treatment=stateTreatment(state);state.approved_plan_token=hash({plan:state.approved_plan,treatment:state.approved_treatment}); state.status = 'approved'; state.approved_by = user.id; state.approved_by_name = employee?.full_name || user.full_name || user.email || user.id; state.approved_at = new Date().toISOString(); state.review_note = note; }
   } else {
     authorizeEditor(state, role, user);
     if (body.action === 'inventoryAuditSave') {
       if (state.status !== 'draft') throw Error('Only a draft count can be edited');
       if (!Array.isArray(body.rows) || body.rows.length !== state.rows.length || new Set(body.rows.map(r => r.balance_id)).size !== state.rows.length) throw Error('Save exactly one count for each selected lot');
+      const treatment=inventoryAdjustmentTreatment(body);
+      if(treatment.purpose==='opening_correction'&&(body.use_current_cost===true||body.confirm_reconciliation===true||body.rows.some(row=>row?.use_current_cost===true||row?.confirm_reconciliation===true)))throw Error('Opening stock corrections cannot use current-cost valuation or value-only reconciliation.');
+      if(treatment.purpose==='opening_correction'&&!validStockCorrectionAccount(c.accounts.get(treatment.correction_account_id),c.cashIds))throw Error('Choose an active posting XAF credit-normal equity account for the opening stock correction.');
       const byId = new Map(body.rows.map(r => [r.balance_id, r]));
       state.rows = state.rows.map(row => {
         const input = byId.get(row.balance_id); if (!input) throw Error('The count contains an unexpected stock lot');
@@ -172,7 +188,8 @@ export async function inventoryAuditAction(client, user, body) {
         return { ...row, ...(input.counted_quantity === '' || input.counted_quantity == null ? { counted_quantity: null, difference: null, value_difference: null } : countVariance(row, input.counted_quantity)), reason };
       });
       state.evidence_reference = label(body.evidenceReference || '', 'the count sheet reference', false);
-      state.loss_account_id = String(body.lossAccountId || ''); state.gain_account_id = String(body.gainAccountId || '');
+      Object.assign(state,treatment);
+      state.loss_account_id = treatment.purpose==='operating'?String(body.lossAccountId || ''):''; state.gain_account_id = treatment.purpose==='operating'?String(body.gainAccountId || ''):'';
       state.makers = [...new Set([...state.makers, user.id])];
     } else if (body.action === 'inventoryAuditRecount') {
       if (!['draft', 'submitted', 'approved'].includes(state.status)) throw Error('This count is closed. Start a new count for corrections');
@@ -180,13 +197,15 @@ export async function inventoryAuditAction(client, user, body) {
       const balances = await readRecords(s.StockBalance, { id: { $in: state.rows.map(r => r.balance_id) } });
       if (balances.length !== state.rows.length) throw Error('A selected lot no longer exists. Cancel this count and start another');
       if (balances.some(b => b.warehouse_id !== state.warehouse_id)) throw Error('A selected lot moved warehouses. Cancel this count and start another');
-      state.rows = balances.map(b => snapshot(b, c)); state.managed_location = state.rows.some(r => MANAGED_WAREHOUSE_TYPES.includes(r.warehouse_type)); state.status = 'draft'; state.evidence_reference = ''; state.approved_by = ''; state.approved_at = ''; state.approved_plan = null; state.snapshot_at = new Date().toISOString(); state.count_date = businessDate(); state.makers = [...new Set([...state.makers, user.id])];
+      state.rows = balances.map(b => snapshot(b, c)); state.managed_location = state.rows.some(r => MANAGED_WAREHOUSE_TYPES.includes(r.warehouse_type)); state.status = 'draft'; state.evidence_reference = ''; state.approved_by = ''; state.approved_at = ''; state.approved_plan = null;state.approved_treatment=null;state.approved_plan_token='';state.purpose='';state.correction_account_id='';state.correction_confirmed=false; state.snapshot_at = new Date().toISOString(); state.count_date = businessDate(); state.makers = [...new Set([...state.makers, user.id])];
     } else if (body.action === 'inventoryAuditCancel') {
       if (!['draft', 'submitted', 'approved'].includes(state.status)) throw Error('This count is already closed');
       note = label(body.note, 'the cancellation reason'); state.status = 'cancelled';
     } else if (body.action === 'inventoryAuditSubmit') {
       if (state.status !== 'draft') throw Error('Only a draft count can be submitted');
       await requireFresh(s, state, c); validateCounts(state, !state.managed_location);
+      const treatment=stateTreatment(state);
+      if(treatment.purpose==='opening_correction')journalPlan(state,c);
       const totals = auditTotals(state.rows);
       if (!totals.variances) state.status = 'matched';
       else if (state.managed_location) { state.status = 'referred'; note = 'Discrepancies recorded for Distribution reconciliation. Paired vehicle and commercial manifests are unchanged.'; }
@@ -199,7 +218,8 @@ export async function inventoryAuditAction(client, user, body) {
       const date = businessDate(), periods = await readRecords(s.AccountingPeriod, { start_date: { $lte: date }, end_date: { $gte: date } });
       if (!periods.length || periods.some(p => p.status !== 'open')) throw Error('An open accounting period is required for today. Closed periods cannot be adjusted');
       const plan = journalPlan(state, c);
-      if (hash(plan) !== hash(state.approved_plan)) throw Error('The approved posting accounts changed. Recount and obtain fresh approval');
+      const treatment=stateTreatment(state),planToken=hash({plan,treatment});
+      if(hash(plan)!==hash(state.approved_plan)||state.approved_plan_token&&state.approved_plan_token!==planToken||state.approved_treatment&&hash(state.approved_treatment)!==hash(treatment)||treatment.purpose==='opening_correction'&&(!state.approved_plan_token||!state.approved_treatment))throw Error('The approved posting accounts or treatment changed. Recount and obtain fresh approval');
       const existing = await readRecords(s.StockMovement, { document_type: 'InventoryAudit', document_id: state.id });
       if (existing.length) throw Error('This count already has stock movements. Reconcile its posting before retrying');
       let journal;

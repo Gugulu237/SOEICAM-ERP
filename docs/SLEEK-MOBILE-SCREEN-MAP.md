@@ -32,8 +32,8 @@ The exported screen structures are connected to existing ERP records and checked
 | 20 | Réception stock | Purchases → Receiving → approved order | Order/warehouse, received quantities, batch/expiry and receipt value |
 | 21 | Inventaire et ajustement | Accounting → Quantity adjustments; `/accounting/inventory?view=adjustments` | Adjustment history and the existing guarded Adjust quantity form with item selection |
 | 22 | Alertes péremption | `/expiry` or Production → Quality → Expiry | All/near/expired/held cards and stock-alert access |
-| 23 | Assemblages | `/manufacturing?section=recipes`; default phone Manufacturing | Searchable assembly catalogue by type/size |
-| 24 | Fiche assemblage | Select assembly; `?section=recipes&assembly=<id>` | Saved yield helper, material/other-component totals, packaging totals, complete cost and checked produce action |
+| 23 | Assemblages | `/manufacturing?section=assemblies`; default phone Manufacturing | Searchable assembly catalogue by type/size |
+| 24 | Fiche assemblage | Select assembly; `?section=assemblies&assembly=<id>` | Saved yield helper, material/other-component totals, packaging totals, complete cost and checked produce action |
 | 25 | Enregistrer production | `/manufacturing?section=build` | Grouped outputs, saved yield/buckets, quantity/expiry, component review and post |
 | 26 | Lot production | Select saved build or `/traceability?batch=<batch>&product=<id>` | Actual lot details, movement timeline, materials and traceability |
 | 27 | Comptabilité | `/accounting` | Posted financial summary, quick access and actual recurring queue |

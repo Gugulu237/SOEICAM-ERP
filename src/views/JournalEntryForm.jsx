@@ -19,11 +19,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { Plus, Trash2 } from "lucide-react";
 
 import {businessDate} from "@/lib/business-date";
+import {journalFingerprint,canEditManualDraft} from '@/lib/journal-corrections';
 import { balancingAmount } from "@/lib/journal-balancing";
 
 const emptyLine = () => ({ account_id: "", account_number: "", account_name: "", description: "", debit: 0, credit: 0 });
 
-export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
+export default function JournalEntryForm({embedded=false,onSaved,onCancel,draftJournal,draftLines=[],correctionJournal,correctionLines=[],onReviewCorrection}={}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
@@ -32,15 +33,18 @@ export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
   const saveRef = useRef(false),loadSequence=useRef(0);
   const [loadingAccounts,setLoadingAccounts]=useState(true);
   const pickerTrigger = useRef(null);
-  const requestKey = useRef(crypto.randomUUID());
+  const requestKey = useRef(crypto.randomUUID()),pendingDraft=useRef(null);
+  const [expectedFingerprint,setExpectedFingerprint]=useState(''),[saveError,setSaveError]=useState('');
+  const editing=!!draftJournal,correcting=!!correctionJournal;
+  const unresolved=editing&&!!saveError&&!!pendingDraft.current;
   const [autoBalance, setAutoBalance] = useState(true);
   const [loadError, setLoadError] = useState("");
   const { toast } = useToast();
   const [accounts, setAccounts] = useState([]);
   const [pickerLine, setPickerLine] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ entry_date: businessDate(), description: "" });
-  const [lines, setLines] = useState([emptyLine(), emptyLine()]);
+  const [form, setForm] = useState({ entry_date: correcting?businessDate():draftJournal?.entry_date||businessDate(), description: correcting?('Correction of '+correctionJournal.journal_number+': '+(correctionJournal.description||'')).slice(0,1000):draftJournal?.description||"" });
+  const [lines, setLines] = useState((editing?draftLines:correcting?correctionLines:[]).length?(editing?draftLines:correctionLines).map(line=>({...emptyLine(),account_id:line.account_id,account_number:line.account_number,account_name:line.account_name,description:line.description||'',debit:line.debit||0,credit:line.credit||0})):[emptyLine(), emptyLine()]);
 
   const loadAccounts=useCallback(async()=>{
     const sequence=++loadSequence.current;setLoadingAccounts(true);setLoadError("");
@@ -50,6 +54,8 @@ export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
     finally{if(sequence===loadSequence.current)setLoadingAccounts(false);}
   },[]);
   useEffect(()=>{loadAccounts();return()=>{loadSequence.current++;};},[loadAccounts]);
+
+  useEffect(()=>{let active=true;if(draftJournal||correctionJournal)journalFingerprint(draftJournal||correctionJournal,editing?draftLines:correctionLines).then(value=>{if(active)setExpectedFingerprint(value);}).catch(e=>{if(active)setSaveError(e.message);});return()=>{active=false;};},[draftJournal,correctionJournal]);
 
   const updateLine = (i, field, value) => {
     setLines((prev) => prev.map((l, idx) => {
@@ -66,13 +72,15 @@ export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
   const balanced = errors.length === 0;
 
   async function save(status) {
-    if (saveRef.current||loadingAccounts||loadError||!accounts.length) return;
+    if (saveRef.current||loadingAccounts||loadError||!accounts.length||(editing||correcting)&&!expectedFingerprint) return;
+    if(editing&&!canEditManualDraft(draftJournal)){setSaveError(ui('Only an unposted manual draft can be edited.'));return;}
     if (!form.description) { toast({ title: ui("Description required"), variant: "destructive" }); return; }
     if (status === "posted" && !balanced) { toast({ title: ui("Cannot post"), description: errors[0], variant: "destructive" }); return; }
+    if(correcting){if(!balanced)return;onReviewCorrection?.({requestKey:requestKey.current,expectedFingerprint,description:form.description,lines:lines.map(line=>({...line})),correctionDate:form.entry_date});return;}
     saveRef.current = true;
     setSaving(true);
     try {
-      const journal = await erp.accounting.saveJournal({
+      const input = editing?(pendingDraft.current||{action:'updateDraft',journalId:draftJournal.id,requestKey:requestKey.current,expectedFingerprint,entryDate:form.entry_date,description:form.description,lines}):{
         requestKey: requestKey.current,
         entryDate: form.entry_date,
         description: form.description,
@@ -80,23 +88,26 @@ export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
         sourceDocumentType: "manual_journal",
         lines,
         status,
-      });
+      };
+      if(editing)pendingDraft.current=input;
+      const journal=await erp.accounting.saveJournal(input);pendingDraft.current=null;setSaveError('');
       toast({ title: status === "posted" ? ui("Journal posted") : ui("Draft saved"), description: journal.journal_number });
       if(onSaved)onSaved(journal);else navigate("/accounting?tab=journals");
     } catch (e) {
+      setSaveError(e.message);
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });
     } finally { saveRef.current = false; setSaving(false); }
   }
 
   return (
     <div data-sleek-journal-form={!embedded||undefined} data-mobile-inline-journal={embedded||undefined}>
-      {!embedded&&<PageHeader title={ui("New Journal Entry")} subtitle={ui("Manual double-entry journal — debits must equal credits")} />}
+      {!embedded&&<PageHeader title={ui(editing?'Edit draft journal':correcting?'Correct posted journal':"New Journal Entry")} subtitle={ui(correcting?'Review the replacement. Confirmation will post a linked reversal and corrected journal.':"Manual double-entry journal — debits must equal credits")} />}
       <div className="min-w-0 bg-white rounded-lg border border-slate-200 p-3 sm:p-6 space-y-4">
-        {embedded&&<h2 className="text-base font-bold">{ui('New Journal Entry')}</h2>}
+        {embedded&&<h2 className="text-base font-bold">{ui(editing?'Edit draft journal':correcting?'Review corrected journal':'New Journal Entry')}</h2>}{(editing||correcting)&&<p className="text-sm text-slate-600">{(draftJournal||correctionJournal).journal_number} · {ui(correcting?'The posted original stays unchanged. Review every replacement line before continuing.':'Changes affect this unposted draft only. Post it separately after saving.')}</p>}
         {loadingAccounts&&<p role="status" className="text-sm">{ui("Loading accounts...")}</p>}
         {loadError&&<div role="alert" className="space-y-2 text-sm text-red-700"><p>{uiMessage(loadError)}</p><Button type="button" variant="outline" onClick={loadAccounts}>{ui("Retry loading accounts")}</Button></div>}
         {!loadingAccounts&&!loadError&&!accounts.length&&<p role="status" className="text-sm">{ui("No active posting accounts are available for journals.")}</p>}
-        <fieldset disabled={saving||loadingAccounts||!!loadError||!accounts.length} className="min-w-0 space-y-4">
+        <fieldset disabled={saving||loadingAccounts||!!loadError||!accounts.length||unresolved} className="min-w-0 space-y-4">
         {phone?<><div className="grid grid-cols-2 gap-3"><label className="min-w-0 space-y-1 text-xs text-muted-foreground">{ui('Journal')}<div className="flex min-h-12 items-center rounded-lg border px-3 text-sm text-foreground">{ui('Manual journal')}</div></label><label className="min-w-0 space-y-1 text-xs text-muted-foreground">{ui('Transaction Date')}<Input aria-label={ui('Transaction Date')} type="date" value={form.entry_date} onChange={e=>setForm({...form,entry_date:e.target.value})}/></label></div><label className="block space-y-1 text-xs text-muted-foreground">{ui('Description')}<Input aria-label={ui('Description')} value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label></>:<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <Label>{ui("Transaction Date")}</Label>
@@ -166,10 +177,11 @@ export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
         </div>
 
         </fieldset>
+        {saveError&&<p role="alert" className="text-sm text-red-700">{uiMessage(saveError)}</p>}{unresolved&&<p className="text-xs text-slate-600">{ui('Retry to confirm the same draft edits, or cancel and reload the saved journal. Your current entries are kept.')}</p>}
         <div data-accounting-form-actions={!embedded||undefined} data-mobile-action-bar={!embedded||undefined} className={phone?'grid grid-cols-2 gap-2 [&_button]:min-h-12 [&_button:last-child]:col-span-2':'flex flex-wrap justify-end gap-2'}>
           <Button variant="outline" disabled={saving} onClick={() => onCancel?onCancel():navigate("/accounting")}>{ui("Cancel")}</Button>
-          <Button variant="secondary" disabled={saving||loadingAccounts||!!loadError||!accounts.length} onClick={() => save("draft")}>{ui("Save as Draft")}</Button>
-          <Button disabled={saving || loadingAccounts || !!loadError || !accounts.length || !balanced} onClick={() => save("posted")}>{ui("Post Journal")}</Button>
+          <Button variant="secondary" disabled={saving||loadingAccounts||!!loadError||!accounts.length||(editing||correcting)&&!expectedFingerprint||correcting&&!balanced} onClick={() => save("draft")}>{ui(editing?unresolved?'Retry draft edits':'Save draft changes':correcting?'Review correction':"Save as Draft")}</Button>
+          {!editing&&!correcting&&<Button disabled={saving || loadingAccounts || !!loadError || !accounts.length || !balanced} onClick={() => save("posted")}>{ui("Post Journal")}</Button>}
         </div>
       </div>
       {pickerLine!==null && <JournalAccountPicker key={pickerLine} open returnFocusRef={pickerTrigger} accounts={accounts} selectedId={lines[pickerLine]?.account_id || ""} lineNumber={pickerLine+1} onOpenChange={open=>{if(!open)setPickerLine(null);}} onSelect={id=>{updateLine(pickerLine,"account_id",id);setPickerLine(null);}}/>}

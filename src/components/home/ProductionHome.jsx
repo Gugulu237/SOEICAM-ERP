@@ -27,7 +27,7 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
   return <div className="space-y-6">
     <WorkspaceHero eyebrow={roleLabel || 'Operations / Production Manager workspace'} title={ui("Keep daily operations moving")} description={ui("Oversee inventory, manufacturing, quality, expiry and deliveries. Review company sales and Commercial performance. Coordinate the teams responsible for these operations.")} icon={Factory} color="violet">
       <WorkspaceButton path="/inventory?section=items&filter=materials&area=all&panel=stock" preview={preview} variant="outline">{ui("View warehouse materials")}</WorkspaceButton>
-      <WorkspaceButton path="/manufacturing/new" preview={preview}><Plus size={17} className="mr-2" />{ui("Plan production")}</WorkspaceButton><WorkspaceButton path="/manufacturing?section=quality" preview={preview} variant="outline">{ui("Open quality control")}</WorkspaceButton>
+      <WorkspaceButton path="/manufacturing?section=build" preview={preview}><Plus size={17} className="mr-2" />{ui("Build assemblies")}</WorkspaceButton><WorkspaceButton path="/manufacturing?section=batches&quality=traceability" preview={preview} variant="outline">{ui("Batches & expiry")}</WorkspaceButton>
     </WorkspaceHero>
     <WorkspaceMetrics ready={ready} metrics={[
       can('manufacturing') && { label: 'Batches planned today', value: summary.plannedToday.length, note: 'Scheduled production orders' },
@@ -41,9 +41,9 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
       { title: 'Company sales', detail: 'View posted invoices and Commercial supplies', path: '/sales', icon: Receipt, color: 'bg-green-50 text-green-700' },
       { title: 'Warehouse', detail: 'Manage items, assemblies and stock', path: '/inventory', icon: Package, color: 'bg-sky-50 text-sky-700' },
       { title: 'Deliveries', detail: 'Manage teams, fleet, dispatches and returns', path: '/distribution?tab=deliveries', icon: Truck, color: 'bg-blue-50 text-blue-700' },
-      { title: 'Production board', detail: 'Plan, record output and follow batches', path: '/manufacturing', icon: Factory, color: 'bg-blue-50 text-blue-700' },
-      { title: 'Quality control', detail: 'Release batches, inspect quality, review expiry and trace supplies', path: '/manufacturing?section=quality', icon: FlaskConical, color: 'bg-emerald-50 text-emerald-700' },
-      { title: 'Review requests', detail: 'Recipes and expense approvals', path: '/approvals', icon: ClipboardCheck, color: 'bg-blue-50 text-blue-700' },
+      { title: 'Assemblies', detail: 'Products, components and bucket yields', path: '/manufacturing?section=assemblies', icon: Factory, color: 'bg-blue-50 text-blue-700' },
+      { title: 'Batches & expiry', detail: 'Track product batches, expiry dates and recorded movements', path: '/manufacturing?section=batches&quality=traceability', icon: FlaskConical, color: 'bg-emerald-50 text-emerald-700' },
+      { title: 'Review requests', detail: 'Production and expense approvals', path: '/approvals', icon: ClipboardCheck, color: 'bg-blue-50 text-blue-700' },
     ])} />
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_310px]">
       {can('manufacturing') && <WorkspacePanel title={ui("Your production board")} subtitle={ui("Open a batch for materials, output and quality details.")}>
@@ -54,13 +54,13 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
         })}</div>
       </WorkspacePanel>}
       <aside className="space-y-5"><WorkspacePanel title={ui("Needs your attention")}><WorkspaceQueue preview={preview} empty="No checks to display." rows={[
-        { id: 'warehouse-issue', title: ui('Approved — awaiting warehouse issue'), value: ready ? (source.orders || []).filter(order=>order.status==='approved').length : '-', path: '/manufacturing' },
-        { id: 'gm', title: 'Pending production submissions', value: ready ? summary.awaitingGM.length : '-', path: '/manufacturing' },
-        { id: 'expiring', title: 'Lots expiring in 7 days', value: ready ? summary.expiring.length : '—', path: '/manufacturing?section=quality&quality=expiry' },
-        { id: 'expired', title: 'Expired lots still in stock', value: ready ? summary.expired.length : '—', path: '/manufacturing?section=quality&quality=expiry' },
+        { id: 'warehouse-issue', title: ui('Approved — awaiting warehouse issue'), value: ready ? (source.orders || []).filter(order=>order.status==='approved').length : '-', path: '/manufacturing?section=history' },
+        { id: 'gm', title: 'Pending production submissions', value: ready ? summary.awaitingGM.length : '-', path: '/manufacturing?section=history' },
+        { id: 'expiring', title: 'Lots expiring in 7 days', value: ready ? summary.expiring.length : '—', path: '/manufacturing?section=batches&quality=expiry' },
+        { id: 'expired', title: 'Expired lots still in stock', value: ready ? summary.expired.length : '—', path: '/manufacturing?section=batches&quality=expiry' },
         ...(source.productionApprovals || []).map(q => ({ id: q.key, title: q.title, value: q.count, path: q.path })),
         { id: 'cheques', title: 'Your cheque signature', value: ready ? (source.cheques || []).length : '—', path: '/cashier' },
-      ]} /></WorkspacePanel><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5"><h2 className="font-semibold text-blue-950">{ui("Release with confidence")}</h2><p className="mt-2 text-sm leading-6 text-blue-900">{ui("Production Managers submit directly to Warehouse. Review quality results before releasing a batch to saleable stock.")}</p><WorkspaceButton path="/quality?section=traceability" preview={preview} variant="outline">{ui("Trace a batch")}</WorkspaceButton></div></aside>
+      ]} /></WorkspacePanel><div className="rounded-2xl border border-blue-100 bg-blue-50 p-5"><h2 className="font-semibold text-blue-950">{ui("Release with confidence")}</h2><p className="mt-2 text-sm leading-6 text-blue-900">{ui("Production Managers submit directly to Warehouse. Review quality results before releasing a batch to saleable stock.")}</p><WorkspaceButton path="/manufacturing?section=batches&quality=traceability" preview={preview} variant="outline">{ui("Trace a batch")}</WorkspaceButton></div></aside>
     </div>
     <ProductRange products={source.products} />
   </div>;

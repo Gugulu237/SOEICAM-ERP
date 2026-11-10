@@ -3,7 +3,7 @@ import { requireAccountant } from './account-definitions.js';
 import { round2, nextSequence, audit } from './field-ops.js';
 
 // reversingManual is server-only: journalLifecycle supplies an exact, verified mirror.
-export async function saveManualJournal(stores, context, body, {reversingManual=false,reversalPlan=null}={}) {
+export async function saveManualJournal(stores, context, body, {reversingManual=false,reversalPlan=null,validateOnly=false}={}) {
   requireAccountant(context);
   let draft = null;
   if(body?.journalId){
@@ -23,7 +23,7 @@ export async function saveManualJournal(stores, context, body, {reversingManual=
   const raw=body.lines.filter(l=>l.account_id||Number(l.debit)||Number(l.credit));
   const fingerprint=JSON.stringify({entryDate,description,status,lines:raw.map(l=>({account_id:l.account_id,debit:Number(l.debit||0),credit:Number(l.credit||0),description:String(l.description||'')}))});
   const previous=(await stores.JournalEntry.filter({manual_request_key:body.requestKey},'id',1))[0];
-  if(previous){if(previous.manual_request_payload!==fingerprint)throw Object.assign(Error('This save reference belongs to different journal details. Reload before creating another journal.'),{status:409});return previous;}
+  if(previous){if(validateOnly)throw Object.assign(Error('This save reference is already in use. Reload before editing another journal.'),{status:409});if(previous.manual_request_payload!==fingerprint)throw Object.assign(Error('This save reference belongs to different journal details. Reload before creating another journal.'),{status:409});return previous;}
   if(raw.length<1||(status==='posted'&&raw.length<2))throw Error('A posted journal requires at least two lines.');
   const periods=await stores.AccountingPeriod.filter({}),matches=periods.filter(p=>p.start_date<=entryDate&&entryDate<=p.end_date),period=matches.find(p=>['closed','locked'].includes(p.status))||matches.sort((a,b)=>String(b.start_date).localeCompare(String(a.start_date)))[0];
   if(['closed','locked'].includes(period?.status))throw Error('The accounting period is closed or locked.');
@@ -35,6 +35,7 @@ export async function saveManualJournal(stores, context, body, {reversingManual=
     const debit=round2(d),credit=round2(c);
     if(status==='posted'&&debit===0&&credit===0)throw Error('A posted journal cannot contain a zero-value line.');
     const account=accounts.get(l.account_id)||await stores.Account.get(String(l.account_id));
+    if(validateOnly&&account?.is_control_account)throw Error('Control accounts must be corrected through their original business workflow.');
     if(!account||account.is_active===false||account.is_posting===false||account.allow_manual_journal===false&&!reversingManual)throw Error('Choose active posting accounts that allow manual journals.');
     accounts.set(account.id,account);
     if(String(l.description||'').length>1000)throw Error('A journal line description is too long.');
@@ -46,6 +47,7 @@ export async function saveManualJournal(stores, context, body, {reversingManual=
   if(status==='posted'&&totalDebit!==totalCredit)throw Error('Journal debits and credits must balance before posting.');
   const checkedPlan=reversingManual?reversalPlan:null;
   if(checkedPlan&&(status!=='posted'||checkedPlan.accounts.length!==accounts.size||checkedPlan.accounts.some(a=>!accounts.has(a.id))))throw Error('Invalid manual reversal plan.');
+  if(validateOnly)return {entryDate,description,status,period,lines,totalDebit,totalCredit};
   const cashPlan=checkedPlan?checkedPlan.treasury.map(t=>({id:t.id,balance:t.balance_after})):status==='posted'?await manualCashPlan(stores,context,lines,accounts,{reversingManual}):[];
   const client={entities:stores},journal_number=draft?.journal_number||await nextSequence(client,'next_journal_number','JV',6);
   const journalData={journal_number,entry_date:entryDate,description,source_module:'manual',source_document_type:'manual_journal',source_document_id:'MAN-'+body.requestKey,period_id:period?.id||'',status,is_immutable:status==='posted',total_debit:totalDebit,total_credit:totalCredit,posted_by:status==='posted'?context.user.id:'',posted_at:status==='posted'?new Date().toISOString():'',manual_request_key:body.requestKey,manual_request_payload:fingerprint,created_by:context.user.email};

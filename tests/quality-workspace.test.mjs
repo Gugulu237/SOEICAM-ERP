@@ -23,7 +23,7 @@ test('canonical links preserve exact product/batch identity and legacy query val
 });
 
 async function ui(){
-  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Quality from './src/views/QualityControl.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Quality));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'quality-ui',setup(b){
+  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Quality from './src/views/QualityControl.jsx';export const render=props=>renderToStaticMarkup(React.createElement(Quality,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'quality-ui',setup(b){
     const mocks={
       'next/dynamic':`import React from 'react';let index=0;const names=['release','inspections','expiry','traceability'];export default loader=>{const name=names[index++];return props=>{globalThis.__qualityUI.panels.push({name,props});return React.createElement('div',null,'Mounted '+name);};};`,
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>({role:globalThis.__qualityUI.role,loading:false});`,
@@ -49,4 +49,11 @@ test('merged screen mounts only the permitted active panel and never mounts rele
 test('expiry-to-trace navigation retains the exact lot and product within the merged workspace',async()=>{
   const render=await ui();globalThis.__qualityUI={role:'production_manager',params:new URLSearchParams('section=expiry'),panels:[],navigation:[]};
   try{const r=globalThis.__qualityUI;render();r.panels[0].props.onTrace({lot_number:'LOT / 1',product_id:'product-42'});const url=new URL(r.navigation[0],'http://localhost');assert.equal(url.pathname,'/manufacturing');assert.equal(url.searchParams.get('section'),'quality');assert.equal(url.searchParams.get('quality'),'traceability');assert.equal(url.searchParams.get('batch'),'LOT / 1');assert.equal(url.searchParams.get('product'),'product-42');r.params=new URLSearchParams(url.searchParams);r.params.set('section',r.params.get('quality'));r.panels=[];render();assert.deepEqual(r.panels.map(p=>p.name),['traceability']);}finally{delete globalThis.__qualityUI;}
+});
+
+
+test('assembly tracking opens actual batches with expiry alongside and keeps quality controls secondary',async()=>{
+ const render=await ui();globalThis.__qualityUI={role:'admin',params:new URLSearchParams('section=batches'),panels:[],navigation:[]};
+ try{const r=globalThis.__qualityUI,html=render({embedded:true,tracking:true,defaultSection:'traceability'}),primary=html.match(/<nav>([\s\S]*?)<\/nav>/)[1];assert.deepEqual(r.panels.map(p=>p.name),['traceability']);assert.match(primary,/Expiry dates/);assert.match(primary,/Batches/);assert.doesNotMatch(primary,/Batch release|Inspections/);assert.match(html,/<details[^>]*>/);assert.match(html,/Quality controls/);r.tabs.onValueChange('expiry');r.panels=[];render({embedded:true,tracking:true,defaultSection:'traceability'});assert.equal(r.params.get('section'),'batches');assert.deepEqual(r.panels.map(p=>p.name),['expiry']);r.role='employee';r.params=new URLSearchParams('section=batches');r.panels=[];const staff=render({embedded:true,tracking:true,defaultSection:'traceability'});assert.deepEqual(r.panels.map(p=>p.name),['expiry']);assert.doesNotMatch(staff,/data-tab="traceability"|data-tab="release"/);
+ }finally{delete globalThis.__qualityUI;}
 });

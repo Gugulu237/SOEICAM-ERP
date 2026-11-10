@@ -20,6 +20,9 @@ import ReceiptGallery from "@/components/field/ReceiptGallery";
 import { invokeFieldOps, errorMessage, SALE_STATUS, PAYMENT_LABEL } from "@/lib/field-ops";
 import { formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import { useToast } from "@/components/ui/use-toast";
+import SaleReversalDialog from '@/components/sales/SaleReversalDialog';
+import {ReversedSaleGuidance} from '@/components/sales/SaleCorrectionChooser';
+import {useNavigate} from '@/lib/router';
 import { Loader2 } from "lucide-react";
 import { readAll } from '@/lib/field-pos';
 
@@ -38,6 +41,7 @@ export default function FieldSaleReview() {
   const [params] = useSearchParams();
   const commercialId = params.get('commercial') || '';
   const { toast } = useToast();
+  const navigate=useNavigate(),[reversing,setReversing]=useState(false);
   const [filter, setFilter] = useState("queue");
   const [sales, setSales] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -106,6 +110,9 @@ export default function FieldSaleReview() {
           actions={<StatusPill map={SALE_STATUS} value={selected.status} />}
         />
 
+        {selected.status==='approved_posted'&&!selected.sale_reversal&&selected.supply_kind!=='exchange'&&<div className="mb-4 space-y-2 rounded-xl border bg-white p-3"><p className="text-xs leading-5 text-slate-600">{ui('Posted sale details are corrected through the original sale workflow so stock, tax, cash and customer balances stay consistent.')}</p><Button variant="outline" onClick={()=>setReversing(true)}>{ui('Correct sale')}</Button></div>}
+        {reversing&&<SaleReversalDialog fieldSaleId={selected.id} onClose={()=>setReversing(false)} onDone={async()=>{setReversing(false);await open(await erp.entities.FieldSale.get(selected.id));}}/>}
+        {selected.sale_reversal&&<div className="mb-4"><ReversedSaleGuidance customerId={selected.customer_id} onNewSale={()=>navigate('/sales/new?customer='+encodeURIComponent(selected.customer_id))}/></div>}
         {selected.duplicate_flag && (
           <div className="mb-4 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800">
             {selected.duplicate_note}

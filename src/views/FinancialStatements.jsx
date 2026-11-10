@@ -17,6 +17,8 @@ import { ledgerStatuses } from '@/server/domain/journal-validation';
 import { businessDate } from '@/lib/business-date';
 import PageHeader from "@/components/shared/PageHeader";
 import IncomeStatement from "@/components/accounting/IncomeStatement";
+import StatementAccountDrilldown from '@/components/accounting/StatementAccountDrilldown';
+import {buildStatementAccountDrilldown} from '@/lib/statement-drilldown';
 import {syncAssetDepreciation} from '@/lib/asset-depreciation-client';
 import DepreciationStatus from '@/components/assets/DepreciationStatus';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
@@ -58,6 +60,7 @@ export default function FinancialStatements() {
   const [fromDate, setFromDate] = useState(() => {const date=businessDate(),mobile=typeof window!=='undefined'&&window.matchMedia?.('(max-width: 639px)').matches;return mobile?date.slice(0,7)+'-01':date.slice(0,4)+'-01-01';});
   const [toDate, setToDate] = useState(() => businessDate());
   const [loading, setLoading] = useState(true);
+  const [drilldown,setDrilldown]=useState(null);
 
   useEffect(() => {
     if (tab === 'cashflow') return;
@@ -87,6 +90,12 @@ export default function FinancialStatements() {
     const snapshot = await loadStatementLedger();
     const freshActivity = computeActivity({...snapshot, fromDate:selectedFrom, toDate:selectedTo});
     return {accounts:snapshot.accounts, activity:freshActivity, depreciation:snapshot.depreciation};
+  };
+  const openAccount=selection=>{
+    // Opening a detail is a local read of the exact rendered snapshot. Do not
+    // call loadStatementLedger here: that refresh also checks depreciation.
+    try{setDrilldown({title:selection.title,detail:buildStatementAccountDrilldown({accounts,journalsById,lines,fromDate,toDate,...selection})});}
+    catch(cause){setDrilldown({title:selection.title,error:cause.message});}
   };
 
   return (
@@ -129,16 +138,17 @@ export default function FinancialStatements() {
           <TabsTrigger value="cashflow">{ui("Cash Flow")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pnl" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} journalsById={journalsById} lines={lines} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} canCorrectSetup={principalRole==='admin'} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} journalsById={journalsById} lines={lines} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} canCorrectSetup={principalRole==='admin'} onAccountOpen={openAccount} />}
         </TabsContent>
         <TabsContent value="balance" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} onAccountOpen={openAccount} />}
         </TabsContent>
         <TabsContent value="cashflow" className="mt-4">
           <CashFlowStatement />
         </TabsContent>
       </Tabs>
       {phone&&tab!=='cashflow'&&!loading&&!error&&<details className="mt-4 rounded-xl border bg-white p-3"><summary className="min-h-8 cursor-pointer text-xs font-semibold">{ui('Depreciation controls')}</summary><DepreciationStatus status={depreciation} canManage={isAdmin}/></details>}
+      {drilldown&&<StatementAccountDrilldown {...drilldown} onClose={()=>setDrilldown(null)}/>}
     </div>
   );
 }

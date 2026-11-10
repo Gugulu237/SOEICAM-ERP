@@ -45,8 +45,8 @@ export async function postDraft(journal) {
 }
 
 export const previewJournalReversal=journalId=>erp.accounting.previewJournalReversal(journalId);
-export async function reverseJournal(journal,{reversalDate,reason,treasuryReview}={}) {
-  return erp.accounting.saveJournal({action:"reverse",journalId:journal.id,reversalDate,reason,...(treasuryReview?{treasuryReview}:{})});
+export async function reverseJournal(journal,{reversalDate,reason,treasuryReview,correction}={}) {
+  return erp.accounting.saveJournal({action:correction?"correctManual":"reverse",journalId:journal.id,reversalDate,reason,...(correction?{requestKey:correction.requestKey,expectedFingerprint:correction.expectedFingerprint,replacement:{description:correction.description,lines:correction.lines}}:{}),...(treasuryReview?{treasuryReview}:{})});
 }
 
 // Resolve a configurable posting rule (rule_key -> account). No hardcoded account IDs.
