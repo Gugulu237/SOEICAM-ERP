@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileSaleFlow,{MobileSaleDetail} from '@/components/sales/MobileSaleFlow';
 import ExchangePackagingNotice,{exchangePackagingWarningText} from '@/components/field/ExchangePackagingNotice';
 import {watchSalesStock} from '@/lib/sales-stock-refresh';
 import SaleReplacements from '@/components/field/SaleReplacements';
@@ -31,6 +33,7 @@ const sourceInput=value=>{if(value==='company')return {sourceType:'company'};con
 export default function SalesOrderForm({ownIssuedStock=false}){
   const call=async body=>{const action=ownIssuedStock?({salesOrderWorkspace:'employeeSalesWorkspace',salesOrderStock:'employeeSalesStock',salesOrderDeliveryPoints:'employeeSalesDeliveryPoints',recordSuppliedOrder:'employeeRecordSupply'}[body.action]):body.action;const {data}=await invokeFieldOps({...body,action});if(data.error)throw Error(data.error);return data;};
   useLocaleRender();
+  const phone=usePhoneLayout();
   const {id}=useParams(),navigate=useNavigate(),back=useBack(ownIssuedStock?'/my-stock':'/sales'),{toast}=useToast(),today=businessDate();
   const [catalogue,setCatalogue]=useState(null),[order,setOrder]=useState(null),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[retry,setRetry]=useState(0);
   const [source,setSource]=useState(''),[stockResult,setStockResult]=useState(null),[sourceLoading,setSourceLoading]=useState(false),[sourceError,setSourceError]=useState(''),[stockRetry,setStockRetry]=useState(0);
@@ -154,6 +157,12 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     ...(catalogue?.defaultSource!=='company'?catalogue?.warehouses||[]:[]).map(w=>({id:'warehouse:'+w.id,kind:'warehouse',label:w.name})),
   ];
   const sourceLabel=sourceOptions.find(option=>option.id===source)?.label||order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location');
+  if(phone&&locked)return <MobileSaleDetail order={order} lines={calculated} products={products} replacements={replacements} sellerName={sellerName} sourceLabel={sourceLabel} back={back} navigate={navigate}/>;
+  if(phone&&wizard)return <MobileSaleFlow record={order} step={step} goTo={goTo} advance={advance} back={back} form={form} setForm={setForm} customer={customer} catalogue={catalogue} points={points} pointsLoading={pointsLoading} pointsError={pointsError} pointsCustomerId={pointsCustomerId} retryPoints={()=>setPointsRetry(n=>n+1)} canChooseSeller={canChooseSeller} changeSeller={changeSeller} sellerName={sellerName} today={today} sourceLabel={sourceLabel} products={products} lines={lines} calculated={calculated} changeLine={changeLine} setProductQuantity={setProductQuantity} replacements={replacements} setReplacements={setReplacements} exchangeOnly={exchangeOnly} totals={totals} saving={saving} saveError={saveError} save={save} canSave={!calculated.some(line=>line.pricing_error)&&!!sourceData&&!sourceLoading&&!sourceError&&pointsCustomerId===form.customer_id&&!pointsLoading&&!pointsError&&(lines.length>0||replacements.length>0)&&!!form.customer_id&&!!form.seller_id&&!!form.date} onRefreshStock={()=>setStockRetry(n=>n+1)} sourceLoading={sourceLoading} sourceError={sourceError} sourceControls={<>
+    {central?<p className="rounded-lg border bg-secondary px-3 py-2 text-xs font-semibold text-primary">{ui('Company stock')}</p>:<SaleStockPicker open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} value={source} options={sourceOptions} onChange={setSource} disabled={saving} fallbackLabel={source?sourceLabel:''}/>}
+    <div className="flex items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui('Your sale deducts from company stock when recorded. No goods issue or unsold-stock return is required.')}</p></LearnMore><button type="button" onClick={()=>setStockRetry(n=>n+1)} disabled={sourceLoading} className="min-h-11 text-xs text-primary underline">{ui('Refresh stock')}</button></div>
+    {sourceLoading&&<p role="status" className="text-xs text-muted-foreground">{ui('Checking available finished stock...')}</p>}{sourceError&&<p role="alert" className="text-xs text-red-700">{uiMessage(sourceError)}</p>}
+  </>}/>;
   return <div className="min-w-0 space-y-4">
     <PageHeader back={{onClick:back,label:ui('Back'),disabled:saving}} title={order?ui('Sales Order {0}',order.order_number):ui('Record a sale or exchange')} subtitle={order?<StatusBadge status={order.status}/>:undefined} actions={order?.invoice_id&&<Button onClick={()=>navigate('/sales/invoices/'+order.invoice_id)}><FileText size={16} className="mr-1"/>{ui('Open invoice')}</Button>}/>
     <ExchangePackagingNotice record={order}/>

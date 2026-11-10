@@ -13,7 +13,7 @@ import {recurringExpenseRequest} from '@/lib/recurring-expense-client';
 import {Link} from '@/lib/router';
 import IncomeStatementSources from './IncomeStatementSources';
 
-function summarizeIncome(accounts, activity) {
+export function summarizeIncome(accounts, activity) {
   const sum = (rows) => round2(rows.reduce((s, r) => s + r.amount, 0));
 
   const revenue = sectionRows(accounts, activity, ["revenue"], -1);
@@ -59,7 +59,8 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate, 
     return incomeDocument({...range,summary:summarizeIncome(snapshot.accounts,snapshot.activity),depreciation:snapshot.depreciation,recurring:{total:charges.pending_total}});
   }:undefined;
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-3 sm:p-6 max-w-3xl">
+    <div data-sleek-income-statement className="bg-white rounded-lg border border-slate-200 p-3 sm:p-6 max-w-3xl">
+      <section className="mb-5 rounded-xl border bg-white p-4 sm:hidden"><p className="text-xs text-muted-foreground">{ui('Net profit / loss')}</p><strong className="mt-1 block text-2xl font-bold tabular-nums text-primary">{formatXAF(net)}</strong><div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3"><div><p className="text-[11px] text-muted-foreground">{ui('Revenue')}</p><strong className="text-xs tabular-nums">{formatXAF(totalRevenue)}</strong></div><div><p className="text-[11px] text-muted-foreground">{ui('Gross margin')}</p><strong className="text-xs tabular-nums">{totalRevenue?Number(grossProfit/totalRevenue*100).toFixed(1)+'%':'—'}</strong></div></div></section>
       {(recurring.loading||recurring.error||recurring.count>0)&&<div role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{ui(recurring.loading?'Checking recurring expenses...':recurring.error?'Recurring expense review is unavailable. Refresh before finalizing this report.':'Recurring charges awaiting recognition: {0}. These are not yet deducted from the reported profit.',formatXAF(recurring.total))}{!recurring.loading&&recurring.canReview&&<Link className="mt-2 block font-medium underline" to="/accounting/recurring-expenses">{ui('Review recurring expenses')}</Link>}</div>}
       <div className="mb-5"><ReportExport report={document} getReport={getReport} disabled={recurring.loading||!!recurring.error}/></div>
       <StatementSection title={ui("Revenue")} rows={revenue} total={totalRevenue} />

@@ -2,6 +2,8 @@
 /* localized-interface */
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import { usePhoneLayout } from '@/hooks/usePhoneLayout';
+import MobileCustomerOverview from './MobileCustomerOverview';
 import React, { useState, useEffect, useCallback } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
@@ -26,13 +28,14 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const phone=usePhoneLayout();
   const [locations, setLocations] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState('');
+  const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState(''),[loading,setLoading]=useState(true);
   const [spoilOpen, setSpoilOpen] = useState(false),[reportVersion,setReportVersion]=useState(0);
 
   const load = useCallback(async () => {
-    setLoadError('');
+    setLoadError('');setLoading(true);
     try {
     const [locs, ords, spls] = await Promise.all([
       erp.entities.CustomerLocation.filter({ customer_id: partner.id, is_active: true }),
@@ -42,7 +45,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
     setLocations(locs);
     setOrders(ords);
     setSpoilage(spls);
-    } catch(error) { setLoadError(error.message); }
+    } catch(error) { setLoadError(error.message); }finally{setLoading(false);}
   }, [partner.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -55,7 +58,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="hidden flex-wrap items-start justify-between gap-3 sm:flex">
         <div>
           {parentPartner && (
             <button onClick={() => onSelect?.(parentPartner)} className="text-xs text-blue-600 hover:underline mb-0.5">{ui("← Branch of ")}{parentPartner.business_name}
@@ -75,10 +78,11 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </div>
       </div>
 
-      <CustomerActionGrid onSale={onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
+      {phone&&<MobileCustomerOverview partner={partner} orders={orders} deliveredValue={deliveredValue} loading={loading} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/>}
+      <CustomerActionGrid onSale={phone?undefined:onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
       {paymentSummary}
       {loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>}
-      <section aria-label={ui("Customer delivery location")} className="space-y-3 rounded-xl border bg-white p-4">
+      <section aria-label={ui("Customer delivery location")} className="hidden sm:block space-y-3 rounded-xl border bg-white p-4">
         <h3 className="text-sm font-semibold">{ui("Customer delivery location")}</h3>
         {(locationsByCustomer[partner.id]?.length ? locationsByCustomer[partner.id] : [partner]).map(point=><div key={point.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           {point.id!==partner.id&&<p className="w-full break-words text-sm font-medium">{point.name}</p>}
@@ -99,7 +103,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="hidden grid-cols-2 lg:grid-cols-4 gap-3 sm:grid">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Balance Owed")}</p>
           <p className="text-lg font-bold text-slate-900">{formatXAF(partner.balance)}</p>

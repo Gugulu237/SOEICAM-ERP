@@ -2,6 +2,8 @@
 /* localized-interface */
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileCustomerForm from '@/components/customers/MobileCustomerForm';
 import React, { useState, useEffect, useRef } from "react";
 import { erp } from "@/api/erpClient";
 import { Navigate, useBack, useNavigate, useParams } from "@/lib/router";
@@ -26,6 +28,7 @@ export default function CustomerForm() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { id } = useParams();
+  const phone=usePhoneLayout();
   const navigate = useNavigate(), goBack = useBack('/customers');
   const { toast } = useToast();
   const isEdit = !!id;
@@ -143,7 +146,7 @@ export default function CustomerForm() {
   return (
     <div>
       <PageHeader
-        title={isEdit ? `Partner: ${form.business_name}` : ui("Add Partner")}
+        title={isEdit ? (phone?form.business_name:`Partner: ${form.business_name}`) : ui(phone?"New customer":"Add Partner")}
         back={{onClick:goBack,label:ui(" Back"),disabled:saving}}
       />
       {loading && <p role="status" className="mb-4 text-sm text-slate-500">{ui("Loading customer setup...")}</p>}
@@ -158,7 +161,7 @@ export default function CustomerForm() {
           {isEdit && <TabsTrigger value="payments">{ui("Payments (")}{payments.length})</TabsTrigger>}
         </TabsList>
         <TabsContent value="details" className="mt-4">
-          <fieldset disabled={!!customerRecord?.customer_removed_at} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 max-w-3xl">
+          {phone?<fieldset disabled={!!customerRecord?.customer_removed_at}><MobileCustomerForm form={form} setForm={setForm} partnerType={partnerType} setPartnerType={setPartnerType} mainPartners={mainPartners} agents={agents} acquiredById={acquiredById} setAcquiredById={setAcquiredById} isAdmin={isAdmin} isEdit={isEdit} acquisition={acquisition} saving={saving} locating={locating} disabled={loading||saving||!!loadError||!!customerRecord?.customer_removed_at} onBusyChange={setLocating} onSave={handleSave} saveError={saveError}/></fieldset>:<fieldset disabled={!!customerRecord?.customer_removed_at} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 max-w-3xl">
             <section className="mb-5 space-y-3 rounded-xl border p-4"><label className="flex min-h-11 items-center gap-2 text-sm font-medium"><input id="customer-is-branch" type="checkbox" checked={partnerType==='branch'} onChange={e=>{setPartnerType(e.target.checked?'branch':'main');if(!e.target.checked)set('parent_id','');}}/>{ui('This customer belongs to a main / parent customer')}</label>{partnerType==='branch'&&<label className="block text-sm">{ui('Main / parent customer')}<select id="customer-main-partner" aria-label={ui('Main / parent customer')} value={form.parent_id} onChange={e=>set('parent_id',e.target.value)} className="mt-1 h-11 w-full rounded-md border bg-white px-3"><option value="">{ui('Choose the parent customer')}</option>{mainPartners.map(c=><option key={c.id} value={c.id}>{c.business_name}</option>)}</select></label>}</section>
             {!isEdit && isAdmin && <section className="mb-5 space-y-2 rounded-xl border bg-slate-50 p-4"><label htmlFor="customer-acquired-by" className="block text-sm font-medium">{ui("Acquired by (employee)")}</label><select id="customer-acquired-by" value={acquiredById} onChange={event => setAcquiredById(event.target.value)} className="h-11 w-full rounded-md border bg-white px-3 text-sm"><option value="">{ui("No employee acquisition credit")}</option>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select><p className="text-xs leading-5 text-slate-600">{ui("Select the Commercial employee who found this customer. Their acquisition and configured commission are tracked on their account after verification. Your administrator account remains the registrar.")}</p>{acquiredById && <p className="text-xs text-slate-800">{ui("The new acquisition will await GM verification before its customer bonus counts. This does not create a salary payment.")}</p>}</section>}
             {isEdit && acquisition?.name && <section className="mb-5 rounded-xl border bg-slate-50 p-4 text-sm"><p>{ui("Acquired by ")}<strong>{acquisition.name}</strong> / {acquisition.date}</p><p className="mt-1 text-xs text-slate-500">{ui("Acquisition: ")}{acquisition.status.replaceAll('_', ' ')}</p>{acquisition.registrar && <p className="mt-1 text-xs text-slate-500">{ui("Registered by ")}{acquisition.registrar}</p>}<p className="mt-2 text-xs text-slate-500">{ui("Acquisition history is preserved. Verify customer acquisitions in Customers, Acquisition review.")}</p></section>}
@@ -228,7 +231,7 @@ export default function CustomerForm() {
             <div className="mt-6 flex gap-3">
               <Button onClick={handleSave} disabled={saving || locating || loading || !!loadError}><Save size={16} className="mr-1" /> {saving ? ui("Saving...") : ui("Save")}</Button>
             </div>
-          </fieldset>
+          </fieldset>}
         </TabsContent>
         {isEdit && (
           <TabsContent value="invoices" className="mt-4">

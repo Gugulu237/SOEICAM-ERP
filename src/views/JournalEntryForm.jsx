@@ -87,7 +87,7 @@ export default function JournalEntryForm() {
   }
 
   return (
-    <div>
+    <div data-sleek-journal-form>
       <PageHeader title={ui("New Journal Entry")} subtitle={ui("Manual double-entry journal — debits must equal credits")} />
       <div className="min-w-0 bg-white rounded-lg border border-slate-200 p-3 sm:p-6 space-y-4">
         {loadingAccounts&&<p role="status" className="text-sm">{ui("Loading accounts...")}</p>}
@@ -163,7 +163,7 @@ export default function JournalEntryForm() {
         </div>
 
         </fieldset>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div data-accounting-form-actions data-mobile-action-bar className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" disabled={saving} onClick={() => navigate("/accounting")}>{ui("Cancel")}</Button>
           <Button variant="secondary" disabled={saving||loadingAccounts||!!loadError||!accounts.length} onClick={() => save("draft")}>{ui("Save as Draft")}</Button>
           <Button disabled={saving || loadingAccounts || !!loadError || !accounts.length || !balanced} onClick={() => save("posted")}>{ui("Post Journal")}</Button>

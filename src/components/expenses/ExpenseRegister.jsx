@@ -16,7 +16,7 @@ import CategoryBadge from "./CategoryBadge";
 import { Plus, Wallet, Landmark } from "lucide-react";
 
 // The single register of every expense paid out of a treasury account.
-export default function ExpenseRegister() {
+export default function ExpenseRegister({initialOpen=false}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ export default function ExpenseRegister() {
   const [hasMore, setHasMore] = useState(false);
   const [totals, setTotals] = useState({ count: 0, total: 0 });
   const [loading, setLoading] = useState(true);
-  const [recordOpen, setRecordOpen] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(initialOpen);
 
   useEffect(() => { erp.entities.TreasuryAccount.filter({ is_active: true }).then(setAccounts); }, []);
 

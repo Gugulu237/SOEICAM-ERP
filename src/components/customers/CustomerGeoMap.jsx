@@ -88,7 +88,7 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
     destroy(){clearRoute();clear();click.remove();maps.event.clearInstanceListeners(map);element.replaceChildren();}
   };
 }
-export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,onClose,drawingControls,mapControls,onOpenCustomer,onEditPoint}){
+export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,onClose,drawingControls,mapControls,zoneFilters,onOpenCustomer,onEditPoint}){
   const element=useRef(null),fullHost=useRef(null),canvas=useRef(null),adapter=useRef(null),navigator=useRef(null),callbacks=useRef({}),latestPoints=useRef(points),lastRequest=useRef(null);
   const [ready,setReady]=useState(0),[status,setStatus]=useState('loading'),[provider,setProvider]=useState(''),[error,setError]=useState(''),[useGoogle,setUseGoogle]=useState(true),[diagnostic,setDiagnostic]=useState('');
   const [expanded,setExpanded]=useState(initialExpanded),[localSelected,setLocalSelected]=useState(selectedId),[navigation,setNavigation]=useState(emptyNavigation);
@@ -157,23 +157,24 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
   function content(full){
     return <div className={'flex min-h-0 min-w-0 flex-col bg-white '+(full?'h-full':'')}>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white p-2" style={full?{paddingTop:'max(.5rem, env(safe-area-inset-top))',paddingLeft:'max(.5rem, env(safe-area-inset-left))',paddingRight:'max(.5rem, env(safe-area-inset-right))'}:undefined}>
-        <div className="flex min-w-0 items-center gap-1.5"><MapPin size={16} className="shrink-0 text-emerald-700"/><span className="text-xs font-semibold">{ui('Delivery map')}</span></div>
+        <div className="flex min-w-0 items-center gap-1.5"><MapPin size={16} className="shrink-0 text-emerald-700"/><span><span className="block text-sm font-bold">{ui('Customer map')}</span><span className="block text-[11px] text-slate-500">{ui('Delivery zones')}</span></span></div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button type="button" className={actionClass} disabled={status!=='ready'} onClick={()=>adapter.current?.frame('points',latestPoints.current)}><LocateFixed size={15}/>{ui('Show pins')}</button>
           <button type="button" className={actionClass} aria-label={ui(full?'Close full map':'Expand map')} onClick={()=>full?closeFull():setExpanded(true)}>{full?<Minimize2 size={15}/>:<Maximize2 size={15}/>}<span>{ui(full?'Close':'Full map')}</span></button>
         </div>
       </div>
+      {zoneFilters&&<div className="shrink-0 border-b bg-white">{zoneFilters}</div>}
       {mapControls&&<details className="max-h-[40dvh] shrink-0 overflow-y-auto overscroll-contain border-b"><summary className="min-h-11 cursor-pointer px-3 py-3 text-xs font-medium">{ui('Filters and zones')}</summary><div className="p-3 pt-0">{mapControls}</div></details>}
       <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
         <div ref={full?setFullHost:element} className="h-full w-full" role="region" data-swipe-back="ignore" aria-label={ui('Customer delivery map')}/>
         {status==='loading'&&<p role="status" className="pointer-events-none absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
       </div>
-      {status==='ready'&&!drawing&&(selected||navigation.phase!=='idle')&&<section aria-label={ui('Delivery directions')} className="max-h-[38dvh] shrink-0 space-y-2 overflow-y-auto overscroll-contain border-t p-3 text-sm">
+      {status==='ready'&&!drawing&&(selected||navigation.phase!=='idle')&&<section aria-label={ui('Delivery directions')} className="max-h-[38dvh] shrink-0 space-y-3 overflow-y-auto overscroll-contain rounded-t-2xl border-t bg-white p-4 text-sm shadow-[0_-4px_18px_rgba(0,0,0,0.05)]">
         <div className="flex items-start justify-between gap-2"><div className="min-w-0">
           <p className="break-words font-semibold">{navigation.phase!=='idle'?stops.map(p=>p.business_name||ui('Customer')).join(' → '):selected?.business_name}</p>
-          {selected&&navigation.phase==='idle'&&<><p className="break-words text-xs text-slate-500">{[selected.address,selected.neighbourhood,selected.town].filter(Boolean).join(', ')}</p>{selected.gps_status!=='ready'&&<p className="text-xs text-amber-700">{ui('Delivery pin needs verification.')}</p>}</>}
+          {selected&&navigation.phase==='idle'&&<><p className="mt-1 break-words text-xs text-slate-500">{[selected.address,selected.neighbourhood,selected.town,selected.acquired_by_name||selected.employee_name].filter(Boolean).join(' · ')}</p><p className="mt-1 flex flex-wrap items-center gap-1 text-xs tabular-nums text-slate-500"><MapPin size={13}/>{Number(selected.gps_lat).toFixed(5)} · {Number(selected.gps_lng).toFixed(5)}{Number(selected.gps_accuracy_m)>0?' · '+Math.round(selected.gps_accuracy_m)+' m':''}</p>{selected.gps_status!=='ready'&&<p className="text-xs text-amber-700">{ui('Delivery pin needs verification.')}</p>}</>}
         </div><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label={ui('Close delivery directions')} onClick={clearSelection}><X size={17}/></button></div>
-        {navigation.phase==='idle'&&selected&&<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>}
+        {navigation.phase==='idle'&&selected&&<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>}
         {navigation.phase==='idle'&&selected&&<div className="flex flex-wrap gap-2">
           {onOpenCustomer&&<button type="button" className={actionClass} onClick={()=>onOpenCustomer(selected.customer_id||selected.id)}>{ui('Open customer profile')}</button>}
           {onEditPoint&&<button type="button" className={actionClass} onClick={()=>onEditPoint(selected)}>{ui('Delivery details')}</button>}

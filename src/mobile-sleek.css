@@ -89,3 +89,10 @@
   [data-account-menu] { min-width: 44px; min-height: 44px; justify-content: center; }
   [data-account-menu] button { min-width: 44px; min-height: 44px; justify-content: center; }
 }
+@media (max-width:639px) {
+  body:has([data-mobile-action-bar]) .sleek-quick-actions { display:none; }
+  [data-sleek-screen] { min-width:0; }
+  [data-sleek-screen] :is(button,a,input,select,textarea):focus-visible { outline-offset:3px; }
+  [data-sleek-screen="more"] [data-page-header] { margin-top:0; }
+  [data-clerk-auth] > p { color:hsl(var(--muted-foreground)); }
+}

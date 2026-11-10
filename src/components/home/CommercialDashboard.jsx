@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileCommercialHome from './MobileCommercialHome';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useState } from 'react';
@@ -32,6 +34,7 @@ const tabKey = value => value === 'requests' ? 'stock' : value;
 export default function CommercialDashboard({ data, actorEmployee, preview = false, loading = false, managing = false, showReadOnlyNotice = true, hideMobileHero = false, section = 'workspace', activeTab, onTabChange, openFromLink = false, initialCustomerId = '', onClearEntry, onRefresh, onEntryChange, onBackToMenu, allowedModules }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const auth = useCurrentUser();
+  const phone=usePhoneLayout();
   const navigate=useNavigate(),central=data?.centralized_inventory?.enabled===true||auth.user?.centralized_inventory?.enabled===true;
   const menuTabs=central?[...tabs.map(([key,label,icon])=>[key,key==='stock'?'Company stock':key==='performance'?'Monthly customer commissions':label,icon]),['degustation','Record Dégustation',Package]]:tabs;
   const ownStock = !preview && !managing && data?.readOnly !== true && !auth.loading && !auth.error && !!auth.user?.id
@@ -63,9 +66,10 @@ export default function CommercialDashboard({ data, actorEmployee, preview = fal
   if (tab === 'new-sale' && canRecordSale) return <section className="rounded-2xl border bg-white p-4 sm:p-5"><FieldSaleForm embedded commercialId={salesEmployee.id} commercialName={salesEmployee.full_name} saleId={entry?.saleId} initialCustomerId={entry?.customerId || ''} initialProductId={entry?.productId || ''} initialQuantity={entry?.quantity ?? ''} initialPaymentType={entry?.paymentType || ''} onCancel={() => { setEntry(null); onClearEntry?.(); backToMenu(); }} onDone={result => { setEntry(null); onClearEntry?.(); setTab('supplies'); setRecorded(result); onRefresh?.(); }} /></section>;
   const runs = (data?.runs || []).filter(run => run.can_supply);
   return <div className="min-w-0 space-y-4">
-    {tab === 'home' && ownStock && <Button className="h-11 w-full sm:w-auto" aria-label={ui('Record sale')} disabled={!canRecordSale} onClick={() => openSale()}><ShoppingBag size={18} className="mr-2" />{ui('Record sale')}</Button>}
-    {tab === 'home' && ownStock && <MyStockOverview />}
-    {tab==='home'?<DashboardTaskGrid label={ui('Commercial tasks')} tasks={menuTabs.filter(([key])=>(!ownStock||key!=='new-sale')&&(!['customers','new-customer'].includes(key)||canCustomers)).map(([key,label,icon])=>({key,label:ui(label),icon,primary:key==='new-sale',disabled:['new-sale','new-customer','degustation'].includes(key)&&!canRecordSale,onSelect:()=>key==='new-sale'?openSale():key==='degustation'?setGiveaway(true):setTab(key)}))}/>:<PageHeader title={ui(menuTabs.find(([key])=>key===tab)?.[1]||'Sales')} back={{onClick:backToMenu,label:ui('Commercial Agent dashboard'),disabled:registrationBusy}}/>}
+    {tab === 'home' && phone && <MobileCommercialHome data={data} ready={ready} preview={preview} canRecordSale={canRecordSale} canCustomers={canCustomers} openSale={openSale} setTab={setTab} menuTabs={menuTabs} onModuleSelect={key=>key==='degustation'?setGiveaway(true):setTab(key)}/>}
+    {tab === 'home' && !phone && ownStock && <Button className="h-11 w-full sm:w-auto" aria-label={ui('Record sale')} disabled={!canRecordSale} onClick={() => openSale()}><ShoppingBag size={18} className="mr-2" />{ui('Record sale')}</Button>}
+    {tab === 'home' && !phone && ownStock && <MyStockOverview />}
+    {tab==='home'?!phone&&<DashboardTaskGrid label={ui('Commercial tasks')} tasks={menuTabs.filter(([key])=>(!ownStock||key!=='new-sale')&&(!['customers','new-customer'].includes(key)||canCustomers)).map(([key,label,icon])=>({key,label:ui(label),icon,primary:key==='new-sale',disabled:['new-sale','new-customer','degustation'].includes(key)&&!canRecordSale,onSelect:()=>key==='new-sale'?openSale():key==='degustation'?setGiveaway(true):setTab(key)}))}/>:<PageHeader title={ui(menuTabs.find(([key])=>key===tab)?.[1]||'Sales')} back={{onClick:backToMenu,label:ui('Commercial Agent dashboard'),disabled:registrationBusy}}/>}
     {tab==='new-customer'&&canRecordSale&&canCustomers&&<section className="rounded-2xl border bg-white p-4 sm:p-5"><FieldCustomerRegistration commercialId={salesEmployee.id} onBusyChange={setRegistrationBusy} onCancel={backToMenu} onSaved={customer=>{setRegistrationBusy(false);onRefresh?.();openSale({customerId:customer.id});}}/></section>}
     {tab==='supplies'&&(central?<EmployeeStock embedded initialTab="sales"/>:<CommercialDailySupplies employeeId={data?.employee?.id} today={data?.date} preview={preview} onOpenSale={saleId=>openSale({saleId})}/>)}
     {recorded && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{recorded.sale.sale_number}: {recorded.submitted ? ui("Posted to company Sales. Vehicle stock and customer balance are updated.") : ui("Draft saved. Stock has not moved.")}</p>}

@@ -20,18 +20,19 @@ import PayExpenseDialog from "@/components/expenses/PayExpenseDialog";
 import BudgetManager from "@/components/expenses/BudgetManager";
 import ExpenseRegister from "@/components/expenses/ExpenseRegister";
 import ExpenseReport from "@/components/expenses/ExpenseReport";
-import {Link} from '@/lib/router';
+import {Link,useSearchParams} from '@/lib/router';
 import { Plus } from "lucide-react";
 
 export default function Expenses() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { toast } = useToast();
+  const [params]=useSearchParams();
   const { user, employee, role, departmentId } = useCurrentUser();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,setError]=useState('');
-  const [newOpen, setNewOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(params.get('new')==='request');
   const [payTarget, setPayTarget] = useState(null);
 
   useEffect(() => { load(); }, []);
@@ -75,7 +76,7 @@ export default function Expenses() {
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
   return (
-    <div>
+    <div data-sleek-expenses>
       <PageHeader
         title={ui("Expenses & Budgets")}
         subtitle={ui("Request, approve, categorise and report every operating expense paid out of treasury")}
@@ -101,7 +102,7 @@ export default function Expenses() {
       </div>
 
       {error&&<p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
-      <Tabs defaultValue={payer?"register":"board"}>
+      <Tabs defaultValue={["register","board","list","reports","budgets"].includes(params.get("tab"))?params.get("tab"):payer?"register":"board"}>
         <TabsList>
           {payer&&<TabsTrigger value="register">{ui("Expense Register")}</TabsTrigger>}
           <TabsTrigger value="board">{ui("Requests Board")}</TabsTrigger>
@@ -110,7 +111,7 @@ export default function Expenses() {
           {payer&&<TabsTrigger value="budgets">{ui("Budgets")}</TabsTrigger>}
         </TabsList>
         {payer&&<TabsContent value="register" className="mt-4">
-          <ExpenseRegister />
+          <ExpenseRegister initialOpen={params.get('new')==='expense'} />
         </TabsContent>}
         <TabsContent value="board" className="mt-4">
           <ExpenseBoard

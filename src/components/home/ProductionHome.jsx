@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileProductionHome from './MobileProductionHome';
 import {mergeRoleWorkspaces} from '@/lib/appModules';
 
 /* localized-interface */
@@ -19,7 +21,9 @@ export default function ProductionHome({ data, loading, preview, roleLabel }) {
   const [tab, setTab] = useState('active');
   const source = data || {}, summary = productionSnapshot(source), ready = !!data && !loading;
   const navigate = useNavigate();
+  const phone=usePhoneLayout();
   const orders = tab === 'qc' ? summary.awaitingQC : tab === 'today' ? summary.plannedToday : source.orders || [];
+  if(phone)return <MobileProductionHome data={data} loading={loading} preview={preview}/>;
   return <div className="space-y-6">
     <WorkspaceHero eyebrow={roleLabel || 'Operations / Production Manager workspace'} title={ui("Keep daily operations moving")} description={ui("Oversee inventory, manufacturing, quality, expiry and deliveries. Review company sales and Commercial performance. Coordinate the teams responsible for these operations.")} icon={Factory} color="violet">
       <WorkspaceButton path="/inventory?section=items&filter=materials&area=all&panel=stock" preview={preview} variant="outline">{ui("View warehouse materials")}</WorkspaceButton>
