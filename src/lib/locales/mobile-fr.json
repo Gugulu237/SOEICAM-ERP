@@ -9,5 +9,9 @@
   "Outstanding invoice balances": "Créances clients facturées",
   "Company treasury": "Trésorerie",
   "No pending items in these approval queues.": "Aucune approbation en attente.",
-  "Expired / expiring lots": "Lots expirés ou proches de la péremption"
+  "Expired / expiring lots": "Lots expirés ou proches de la péremption",
+  "{0} items": "{0} articles",
+  "In stock": "En stock",
+  "Search items": "Rechercher un article",
+  "units": "unités"
 }
