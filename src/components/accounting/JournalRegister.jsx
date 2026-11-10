@@ -6,6 +6,7 @@ import { tableReport } from '@/lib/report-models';
 import {invalidateERPReads} from "@/api/erpClient";
 import { ui,uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "@/lib/router";
 import { useToast } from "@/components/ui/use-toast";
@@ -23,6 +24,7 @@ import JournalStats from "@/components/accounting/JournalStats";
 import JournalFilters from "@/components/accounting/JournalFilters";
 import JournalTable from "@/components/accounting/JournalTable";
 import JournalActivityFeed from "@/components/accounting/JournalActivityFeed";
+import JournalEntryForm from '@/views/JournalEntryForm';
 
 const EMPTY_FILTERS = { q: "", status: "all", source: "all", from: "", to: "" };
 const EMPTY_REPORT = { counts: { draft: 0, posted: 0, reversed: 0 }, total: 0, debit: 0, credit: 0, difference: 0 };
@@ -31,6 +33,7 @@ export default function JournalRegister({readOnly=false}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const phone=usePhoneLayout();
   const { toast } = useToast();
   const { user, isAdmin } = useCurrentUser();
   const [term, setTerm] = useState("");
@@ -51,6 +54,7 @@ export default function JournalRegister({readOnly=false}) {
   const [ledger, setLedger] = useState(null);
   const [sources, setSources] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [composerKey,setComposerKey]=useState(0);
 
   useEffect(() => {
     let active=true;setSourceError("");loadJournalSources().then(v=>{if(active)setSources(v);}).catch(e=>{if(active)setSourceError(e.message);});return()=>{active=false;};
@@ -67,7 +71,9 @@ export default function JournalRegister({readOnly=false}) {
     const timer = setTimeout(() => {
       setFilters((f) => (f.q === term ? f : { ...f, q: term }));
     }, 400);
-    return () => clearTimeout(timer);
+
+
+  return () => clearTimeout(timer);
   }, [term]);
 
   useEffect(() => {
@@ -143,6 +149,11 @@ export default function JournalRegister({readOnly=false}) {
 
   const hasActiveFilters = !!(filters.q || filters.from || filters.to || filters.status !== "all" || filters.source !== "all");
 
+  const journalExport=(<div className="mb-4"><ReportExport disabled={loading || working || !!error || term!==filters.q || !!(filters.from && filters.to && filters.from>filters.to)} getReport={async()=>tableReport('Journal register',[
+        {key:'journal_number',label:'Journal'},{key:'entry_date',label:'Entry date'},{key:'description',label:'Description'},{key:'source_module',label:'Source'},{key:'source_document_type',label:'Source document'},{key:'source_document_id',label:'Source document ID'},
+        {key:'total_debit',label:'Debit',exportType:'money'},{key:'total_credit',label:'Credit',exportType:'money'},{key:'status',label:'Status'},{key:'created_date',label:'Recorded at'},{key:'posted_at',label:'Posted at'},{key:'posted_by',label:'Posted by'},
+      ],await loadJournalExport(filters),Object.entries(filters),['Every matching journal is included with its recorded status. Drafts do not affect the ledger. Reversed journals retain their history.'])}/></div>);
+
   return (
     <div data-sleek-journal-register>
       <JournalReversalDialog journal={reverseTarget} onClose={()=>setReverseTarget(null)} onReversed={rev=>{toast({title:ui("Journal reversed"),description:ui("Reversal {0} posted",rev.journal_number)});refresh();}}/>
@@ -156,8 +167,10 @@ export default function JournalRegister({readOnly=false}) {
           <DialogFooter><Button type="button" variant="outline" disabled={working} onClick={()=>setDeleteTarget(null)}>{ui("Cancel")}</Button><Button type="submit" variant="destructive" disabled={working||deleteReason.trim().length<3||deleteNumber!==deleteTarget?.journal_number}>{ui("Delete draft journal")}</Button></DialogFooter>
         </form>
       </DialogContent></Dialog>
-      <JournalStats report={report} ledger={ledger} error={ledgerError} />
+      {!phone&&<>      <JournalStats report={report} ledger={ledger} error={ledgerError} />
       <div className="mb-3 flex flex-wrap items-center gap-2"><Button type="button" variant="outline" disabled={loading} onClick={refresh}>{ui(error||ledgerError||sourceError?"Retry journal loading":"Refresh journals")}</Button>{[error,ledgerError,sourceError].filter(Boolean).map((message,i)=><p key={i} role="alert" className="text-sm text-red-700">{uiMessage(message)}</p>)}</div>
+</>}
+      {phone&&[error,ledgerError,sourceError].filter(Boolean).map((message,i)=><p key={i} role="alert" className="text-sm text-red-700">{uiMessage(message)}</p>)}
       <JournalFilters
         term={term}
         onTermChange={setTerm}
@@ -166,14 +179,12 @@ export default function JournalRegister({readOnly=false}) {
         sources={sources}
         onExport={handleExport}
         exporting={exporting}
-        onNew={readOnly?undefined:() => navigate("/accounting/journals/new")}
+        onNew={readOnly||phone?undefined:() => navigate("/accounting/journals/new")}
         showClear={hasActiveFilters}
       />
 
-      <div className="mb-4"><ReportExport disabled={loading || working || !!error || term!==filters.q || !!(filters.from && filters.to && filters.from>filters.to)} getReport={async()=>tableReport('Journal register',[
-        {key:'journal_number',label:'Journal'},{key:'entry_date',label:'Entry date'},{key:'description',label:'Description'},{key:'source_module',label:'Source'},{key:'source_document_type',label:'Source document'},{key:'source_document_id',label:'Source document ID'},
-        {key:'total_debit',label:'Debit',exportType:'money'},{key:'total_credit',label:'Credit',exportType:'money'},{key:'status',label:'Status'},{key:'created_date',label:'Recorded at'},{key:'posted_at',label:'Posted at'},{key:'posted_by',label:'Posted by'},
-      ],await loadJournalExport(filters),Object.entries(filters),['Every matching journal is included with its recorded status. Drafts do not affect the ledger. Reversed journals retain their history.'])}/></div>
+      {!phone&&journalExport}
+      {phone&&<h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-primary">{ui('Recent entries')}</h2>}
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -201,8 +212,10 @@ export default function JournalRegister({readOnly=false}) {
         </>
       )}
 
-      {isAdmin&&<AccountingIntegrityCheck onCorrected={refresh}/>}
-      <JournalActivityFeed />
+      {phone?<><div className="mt-5">{!readOnly&&<JournalEntryForm key={composerKey} embedded onSaved={()=>{setComposerKey(k=>k+1);refresh();}} onCancel={()=>setComposerKey(k=>k+1)}/>}</div><details className="mt-4 rounded-xl border bg-white p-3"><summary className="min-h-8 cursor-pointer text-xs font-semibold">{ui('Journal controls & export')}</summary><div className="mt-3 space-y-3"><JournalStats report={report} ledger={ledger} error={ledgerError}/><Button variant="outline" disabled={loading} onClick={refresh}>{ui('Refresh journals')}</Button>{journalExport}      {isAdmin&&<AccountingIntegrityCheck onCorrected={refresh}/>}
+      <JournalActivityFeed /></div></details></>:<>      {isAdmin&&<AccountingIntegrityCheck onCorrected={refresh}/>}
+      <JournalActivityFeed /></>}
+
     </div>
   );
 }

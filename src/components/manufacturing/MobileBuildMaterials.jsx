@@ -1,0 +1,13 @@
+import React from 'react';
+import {Check} from 'lucide-react';
+import {ui} from '@/lib/i18n';
+import {formatQuantity} from '@/lib/formatters';
+
+// The same checked plan as desktop, with labels kept beside every quantity.
+export default function MobileBuildMaterials({materials=[]}){
+  return <div data-mobile-build-materials className="divide-y">{materials.map(material=><article key={material.product_id} className="space-y-3 p-4">
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h4 className="text-sm font-semibold">{material.product_name}</h4><p className="mt-1 text-xs text-slate-500">{ui('Required')}: <strong className="text-foreground">{formatQuantity(material.required)} {material.unit}</strong></p></div><span className={'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold '+(material.missing>0||material.count_issue?'bg-red-50 text-red-700':'bg-primary/10 text-primary')}>{material.count_issue?ui('Check stock record'):material.missing>0?ui('Shortage')+': '+formatQuantity(material.missing)+' '+material.unit:<span className="inline-flex items-center gap-1"><Check size={12}/>{ui('Enough stock')}</span>}</span></div>
+    <dl className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-3">{[[ui('On hand'),formatQuantity(material.on_hand??material.available)],[ui('Available to build'),formatQuantity(material.available)],[ui('On hand after build'),material.on_hand_after==null?'—':formatQuantity(material.on_hand_after)]].map(([label,value])=><div key={label} className="min-w-0"><dt className="text-[10px] leading-4 text-slate-500">{label}</dt><dd className="mt-1 break-words text-xs font-semibold tabular-nums">{value} {value==='—'?'':material.unit}</dd></div>)}</dl>
+    {!!material.lots?.length&&<details className="rounded-2xl border p-3"><summary className="min-h-6 cursor-pointer text-xs font-medium">{ui('Stock by location and lot')}{material.excluded>0?' · '+ui('Not available to build: {0}',formatQuantity(material.excluded)+' '+material.unit):''}</summary><div className="mt-3 space-y-3">{material.lots.map(lot=><div key={lot.id} className="border-t pt-2 text-xs"><div className="flex items-start justify-between gap-3"><strong className="min-w-0">{lot.warehouse_name}</strong><span className="shrink-0 tabular-nums">{lot.quantity==null?ui('Invalid quantity'):formatQuantity(lot.quantity)+' '+material.unit}</span></div><p className="mt-1 text-slate-500">{ui('Lot')}: {lot.lot_number||ui('Not recorded')}{lot.expiry_date?' · '+ui('Expiry')+': '+lot.expiry_date:''}</p><p className={'mt-1 '+(lot.available>0?'text-primary':'text-amber-800')}>{ui(lot.status)}</p></div>)}</div></details>}
+  </article>)}</div>;
+}

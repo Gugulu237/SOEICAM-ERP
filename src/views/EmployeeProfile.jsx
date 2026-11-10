@@ -60,8 +60,9 @@ export default function EmployeeProfile() {
   if (!employee) return null;
   const definition = catalogue?.roles?.[employee.role];
   const pending = records.requests.filter(request => pendingRequest(request.status));
+  const accountLabel=usesClerk()?(accountInfo?.employeeId===id?({linked:ui('Login linked'),invited:ui('Invitation sent'),ready:ui('Ready to invite'),unlinked:ui('Not invited')})[accountInfo.status]||ui('Not linked'):accountError?ui('Not available'):ui('Checking...')):employee.user_id?ui('Login linked'):ui('Login not linked');
   return <div className="space-y-5">
-    {phone&&<MobileEmployeeOverview employee={employee} roleName={definition?.label||roleLabel(employee.role)} onEdit={()=>setEditing(true)}/>}
+    {phone&&<MobileEmployeeOverview employee={employee} roleName={definition?.label||roleLabel(employee.role)} onEdit={()=>setEditing(true)} accountLabel={accountLabel}/>}
     <details className={phone?'rounded-xl border bg-white p-4':'contents'} open={!phone}><summary className={phone?'cursor-pointer text-sm font-semibold':'hidden'}>{ui('All employment records')}</summary>
     <Link to="/team-workspaces?section=people" className="text-sm font-medium text-[#245719] hover:underline">{ui("← All employees")}</Link>
     <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-white p-5"><div><p className="text-xs font-semibold uppercase tracking-wider text-green-700">{ui("GM employee overview")}</p><h1 className="mt-1 text-2xl font-bold">{employee.full_name}</h1><p className="mt-1 text-sm text-slate-600">{employee.job_title || ui("No job title")} · {definition?.label || roleLabel(employee.role)} · {employee.employee_number || ui("No employee number")}</p><div className="mt-3"><StatusBadge status={employee.status || 'active'} /></div></div><Button onClick={() => setEditing(true)}>{ui("Edit employee")}</Button></header>

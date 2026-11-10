@@ -37,9 +37,10 @@ async function detail(stores,id) {
   const [lines,settings,customer,journal]=await Promise.all([readRecords(stores.InvoiceLine,{invoice_id:id}),readRecords(stores.CompanySettings),stores.Customer.get(invoice.customer_id),invoice.journal_id?stores.JournalEntry.get(invoice.journal_id):null]);
   if(isOpeningRecord(invoice))throw Error('This is an opening receivable. View its original reference and balance in Receivables.');
   if(!lines.length)throw Error('This invoice has no saved lines. Reconcile its source order before printing it.');
-  let customerBalance=round2(invoice.balance),customerPaid=round2(invoice.amount_paid);
+  let customerBalance=round2(invoice.balance),customerPaid=round2(invoice.amount_paid),source=null;
   if(invoice.field_sale_id) {
     const field=await stores.FieldSale.get(invoice.field_sale_id);
+    source=field;
     if(!field || field.status!=='approved_posted' || field.journal_id!==invoice.journal_id)throw Error('The linked Commercial supply needs reconciliation.');
     customerBalance=round2(field.amount_due); customerPaid=field.sale_reversal?round2(field.sale_reversal.customer_credit):round2(Number(field.total)-customerBalance);
   } else if(invoice.payment_type==='cash' && postedInvoiceStatuses.includes(invoice.status)) {
@@ -47,10 +48,16 @@ async function detail(stores,id) {
     // owed by the customer and must never appear as an unpaid customer invoice.
     customerBalance=0; customerPaid=round2(invoice.total);
   }
+  // This is the invoice's already linked source, never a company-wide lookup.
+  // Do not expose another customer's receipt if a historical link is corrupt.
+  if(!source&&invoice.sales_order_id)source=await stores.SalesOrder.get(invoice.sales_order_id);
+  if(source&&(source.customer_id!==invoice.customer_id||source.invoice_id&&source.invoice_id!==invoice.id))throw Error('The linked source sale needs reconciliation before viewing its receipt details.');
+  const receipt={receipt_reference:invoice.receipt_reference||source?.receipt_reference||'',salesperson_name:invoice.salesperson_name||source?.salesperson_name||source?.commercial_name||'',recorded_by_name:invoice.recorded_by_name||source?.recorded_by_name||source?.sales_supply_recorded_by_name||''};
+  const replacements=Array.isArray(source?.stock_replacements)?source.stock_replacements.map(row=>pick(row,'product_id product_name quantity unit reason expiry_date lot_number')):undefined;
   const company=invoice.invoice_document?.company || invoiceCompany(settings[0]);
   const options={...invoiceDefaults(customer,company),...invoice.invoice_document?.options};
   const accountingVerified=journal?.status==='posted' && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
-  return {invoice:{...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
+  return {replacements,invoice:{...receipt,...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>pick(l,'id product_id product_name quantity unit unit_price discount_amount tax_amount total')),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
 }
 async function workspace(stores,role) {
   const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),role==='cashier'?[]:readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),role==='cashier'?[]:readRecords(stores.Customer),readRecords(stores.CompanySettings)]);

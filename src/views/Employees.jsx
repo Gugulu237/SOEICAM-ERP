@@ -1,3 +1,5 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileTeamDirectory from '@/components/employees/MobileTeamDirectory';
 import { usePageState } from '@/lib/navigation-context';
 import { employeeRemoved } from '@/lib/employee-lifecycle';
 import EmployeeRemovalAction from '@/components/employees/EmployeeRemovalAction';
@@ -24,8 +26,10 @@ import { inviteEmployee } from '@/lib/staff-invitations-client';
 import { useToast } from '@/components/ui/use-toast';
 
 
-export default function Employees({ embedded=false, section='people', initialRole='' }) {
+export default function Employees({ embedded=false, section='people', initialRole='', mobileNavigation=null }) {
   useLocaleRender();
+  const phone=usePhoneLayout();
+  const [employeeSearch,setEmployeeSearch]=usePageState('employees:search','');
   const [roleCatalogue,setRoleCatalogue]=useState(null), [employees,setEmployees]=useState([]);
   const [loading,setLoading]=useState(true), [loadError,setLoadError]=useState('');
   const [category,setCategory]=usePageState('employees:category','All'), [roleFilter,setRoleFilter]=usePageState('employees:role','all');
@@ -64,11 +68,13 @@ export default function Employees({ embedded=false, section='people', initialRol
   const shared={employees:visibleEmployees,onEditEmployee:canManage?editEmployee:undefined,onInvite:canManage&&usesClerk()?invite:undefined,inviting};
   if(embedded&&section==='roles')return <div className="min-w-0">{error}{roleCatalogue&&<RoleAccessReference embedded open catalogue={roleCatalogue} initialRole={initialRole} onSaved={load} {...shared}/>} {form}</div>;
   return <div className="min-w-0">
+    {phone?<MobileTeamDirectory employees={visibleEmployees} definitions={definitions} search={employeeSearch} onSearch={setEmployeeSearch} roleFilter={roleFilter} onRoleFilter={setRoleFilter} onNew={()=>{setEditing(null);setShowForm(true);}} onRoles={()=>openRole('')} canManage={canManage} loading={loading} error={error} navigation={mobileNavigation}/>:<>
     <PageHeader title={embedded?ui('Employee directory'):ui('Employees')} actions={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={()=>openRole('')}><ShieldCheck size={16} className="mr-1"/>{ui('Roles & organigram')}</Button>{canManage&&<Button onClick={()=>{setEditing(null);setShowForm(true);}}><Plus size={16} className="mr-1"/>{ui('New Employee')}</Button>}</div>}/>
     {error}
     <div className="mb-4 flex flex-wrap items-center gap-2">{['All',...ROLE_CATEGORIES].map(cat=><button type="button" key={cat} onClick={()=>{setCategory(cat);setRoleFilter('all');}} className={'rounded-full border px-3 py-1.5 text-xs transition '+(category===cat?'border-primary bg-primary text-white':'border-slate-200 bg-white text-slate-600 hover:border-slate-300')}>{ui(cat)} <span className="opacity-60">{categoryCount(cat)}</span></button>)}<div className="w-full sm:ml-auto sm:w-56"><Select value={roleFilter} onValueChange={value=>{setRoleFilter(value);setCategory('All');}}><SelectTrigger aria-label={ui('Filter employees by role')}><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">{ui('All roles')}</SelectItem>{definitions.map(def=><SelectItem key={def.key} value={def.key}>{ui(def.label)} ({counts[def.key]||0})</SelectItem>)}</SelectContent></Select></div></div>
     {loading&&<p role="status" className="mb-3 text-xs text-slate-500">{ui('Loading employees...')}</p>}
     {!loadError&&<EmployeeRoleDirectory employees={visibleEmployees} definitions={definitions} category={category} roleFilter={roleFilter} onOpen={openRole}/>}
+    </>}
     {form}
     {canManage&&removedEmployees.length>0&&<details className="mt-5 rounded-xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{ui('Removed employees')} ({removedEmployees.length})</summary><ul className="mt-3 divide-y">{removedEmployees.map(person=><li key={person.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm">{person.full_name}</span><EmployeeRemovalAction employee={person} onSaved={load}/></li>)}</ul></details>}
     <RoleAccessReference open={showRoles} onOpenChange={setShowRoles} catalogue={roleCatalogue} initialRole={roleToOpen} onSaved={load} {...shared}/>

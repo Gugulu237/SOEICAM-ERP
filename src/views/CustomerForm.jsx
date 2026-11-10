@@ -3,6 +3,7 @@
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileCustomerHeader from '@/components/customers/MobileCustomerHeader';
 import MobileCustomerForm from '@/components/customers/MobileCustomerForm';
 import React, { useState, useEffect, useRef } from "react";
 import { erp } from "@/api/erpClient";
@@ -145,21 +146,21 @@ export default function CustomerForm() {
   if(role==='commercial')return <Navigate to={'/customers?'+(isEdit?'customer='+encodeURIComponent(id):'new=1'+(new URLSearchParams(window.location.search).get('parent')?'&parent='+encodeURIComponent(new URLSearchParams(window.location.search).get('parent')):''))} replace/>;
   return (
     <div>
-      <PageHeader
+      {phone?<MobileCustomerHeader title={isEdit?form.business_name:ui('New customer')} subtitle={isEdit?ui('Customer details'):ui('Identity, zone and delivery location')} back={{onClick:goBack,label:ui('Back'),disabled:saving}}/>:<PageHeader
         title={isEdit ? (phone?form.business_name:`Partner: ${form.business_name}`) : ui(phone?"New customer":"Add Partner")}
         back={{onClick:goBack,label:ui(" Back"),disabled:saving}}
-      />
+      />}
       {loading && <p role="status" className="mb-4 text-sm text-slate-500">{ui("Loading customer setup...")}</p>}
       {loadError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={() => setReload(value => value + 1)}>{ui("Retry")}</button></p>}
       {customerRecord?.customer_removed_at && <p className="mb-4 rounded-xl border bg-amber-50 p-3 text-sm">{ui("This customer is deleted from the directory. Restore it before editing.")}</p>}
       {isEdit&&customerRecord&&!customerRecord.customer_removed_at&&<Button className="mb-4" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(customerRecord.parent_id||id))}>{ui('Add branch')}</Button>}
       <fieldset disabled={loading || saving || !!loadError}>
       <Tabs defaultValue="details">
-        <TabsList>
+        {(!phone||isEdit)&&<TabsList>
           <TabsTrigger value="details">{ui("Details")}</TabsTrigger>
           {isEdit && <TabsTrigger value="invoices">{ui("Invoices (")}{invoices.length})</TabsTrigger>}
           {isEdit && <TabsTrigger value="payments">{ui("Payments (")}{payments.length})</TabsTrigger>}
-        </TabsList>
+        </TabsList>}
         <TabsContent value="details" className="mt-4">
           {phone?<fieldset disabled={!!customerRecord?.customer_removed_at}><MobileCustomerForm form={form} setForm={setForm} partnerType={partnerType} setPartnerType={setPartnerType} mainPartners={mainPartners} agents={agents} acquiredById={acquiredById} setAcquiredById={setAcquiredById} isAdmin={isAdmin} isEdit={isEdit} acquisition={acquisition} saving={saving} locating={locating} disabled={loading||saving||!!loadError||!!customerRecord?.customer_removed_at} onBusyChange={setLocating} onSave={handleSave} saveError={saveError}/></fieldset>:<fieldset disabled={!!customerRecord?.customer_removed_at} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 max-w-3xl">
             <section className="mb-5 space-y-3 rounded-xl border p-4"><label className="flex min-h-11 items-center gap-2 text-sm font-medium"><input id="customer-is-branch" type="checkbox" checked={partnerType==='branch'} onChange={e=>{setPartnerType(e.target.checked?'branch':'main');if(!e.target.checked)set('parent_id','');}}/>{ui('This customer belongs to a main / parent customer')}</label>{partnerType==='branch'&&<label className="block text-sm">{ui('Main / parent customer')}<select id="customer-main-partner" aria-label={ui('Main / parent customer')} value={form.parent_id} onChange={e=>set('parent_id',e.target.value)} className="mt-1 h-11 w-full rounded-md border bg-white px-3"><option value="">{ui('Choose the parent customer')}</option>{mainPartners.map(c=><option key={c.id} value={c.id}>{c.business_name}</option>)}</select></label>}</section>

@@ -6,6 +6,7 @@ import { useLocaleRender } from '@/lib/localization';
 import { useNavigate,useSearchParams } from '@/lib/router';
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import MobileAccountingHome from './mobile/MobileAccountingHome';
+import MobileAccountingRegisterShell from './mobile/MobileAccountingRegisterShell';
 import JournalRegister from './JournalRegister';
 import PageHeader from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ export default function ManagementAccounting() {
   const navigate=useNavigate();
   const phone=usePhoneLayout(),[params]=useSearchParams();
   if(phone&&!params.has('tab'))return <MobileAccountingHome/>;
+  if(phone)return <MobileAccountingRegisterShell title={params.get('tab')==='journals'?'Journal Entries':'Chart of Accounts'} subtitle={params.get('tab')==='journals'?undefined:'Accounts and hierarchy'} onBack={()=>navigate('/accounting')} tools={[{label:'Financial Statements',open:()=>navigate('/accounting/statements')},{label:'Expenses',open:()=>navigate('/expenses')}]}>{params.get('tab')==='journals'?<JournalRegister readOnly/>:<ChartOfAccountsManager/>}</MobileAccountingRegisterShell>;
   return <div className="space-y-5"><PageHeader title={ui('Accounting')} subtitle={ui('Management financial reports and expense requests')} actions={<Button onClick={()=>navigate('/expenses')}>{ui('Request an operating expense')}</Button>}/>
     <p className="rounded-xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">{ui('Review company accounts and posted financial reports. Expense requests follow approval and payment through the existing finance workflow.')}</p>
     <nav aria-label={ui('Management financial reports')} className="flex flex-wrap gap-2"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline">{ui('Financial reports')}<ChevronDown size={14} className="ml-2"/></Button></DropdownMenuTrigger><DropdownMenuContent align="start">{[['/accounting/statements','Financial Statements'],['/accounting/ledger','General Ledger'],['/accounting/trial-balance','Trial Balance'],['/accounting/cash-flow','Cash Flow & History']].map(([path,label])=><DropdownMenuItem key={path} onSelect={()=>navigate(path)}>{ui(label)}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></nav>

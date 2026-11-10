@@ -2,6 +2,7 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import dynamic from 'next/dynamic';
 import {Plus,Pencil,RefreshCw,Undo2,X} from 'lucide-react';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {useLocaleRender} from '@/lib/localization';
 import {ui,uiMessage} from '@/lib/i18n';
@@ -19,6 +20,7 @@ const CustomerGeoMap=dynamic(()=>import('./CustomerGeoMap'),{ssr:false,loading:(
 const emptyMatches={eligible:[],assigned:[],otherZones:[],unverified:[]};
 export default function CustomerMapWorkspace({onOpenCustomer,onClose}){
   useLocaleRender();
+  const phone=usePhoneLayout();
   const {isAdmin,role}=useCurrentUser(),canAssign=isAdmin||role==='employee';
   const [data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[reload,setReload]=useState(0),[loading,setLoading]=useState(true),[search,setSearch]=useState(''),[zoneId,setZoneId]=useState(''),[municipality,setMunicipality]=useState(''),[point,setPoint]=useState(null),[editingPoint,setEditingPoint]=useState(false),[drawing,setDrawing]=useState(false),[draft,setDraft]=useState([]),[zoneDialog,setZoneDialog]=useState(null),[busy,setBusy]=useState(false),[frame,setFrame]=useState({kind:'points'}),[navigationRequest]=useState(null);
   useEffect(()=>{let active=true;setLoading(true);setError('');customerDeliveryRequest({action:'customerMapWorkspace'}).then(result=>{if(active)setData(result);}).catch(e=>{if(active)setError(errorMessage(e));}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[reload]);
@@ -56,7 +58,7 @@ export default function CustomerMapWorkspace({onOpenCustomer,onClose}){
     </>}
   </div>;
   return <section className="min-w-0">
-    {!data?mapControls:<CustomerGeoMap initialExpanded zoneFilters={zoneFilters} onClose={onClose} points={filtered} zones={zones} selectedId={point?.id} drawing={drawing} draft={draft} onVertex={p=>setDraft(v=>v.length<60?[...v,p]:v)} onSelect={p=>{if(!drawing)setPoint(p);}} onClearSelection={()=>setPoint(null)} navigationRequest={navigationRequest} drawingControls={drawingControls} mapControls={mapControls} onOpenCustomer={onOpenCustomer} onEditPoint={p=>{setPoint(p);setEditingPoint(true);}} onZoneSelect={z=>{if(!drawing){setZoneId(z.id);setMunicipality('');setPoint(null);}}} frame={frame}/>}
+    {!data?mapControls:<CustomerGeoMap pageLayout={phone} initialExpanded={!phone} zoneFilters={zoneFilters} onClose={onClose} points={filtered} zones={zones} selectedId={point?.id} drawing={drawing} draft={draft} onVertex={p=>setDraft(v=>v.length<60?[...v,p]:v)} onSelect={p=>{if(!drawing)setPoint(p);}} onClearSelection={()=>setPoint(null)} navigationRequest={navigationRequest} drawingControls={drawingControls} mapControls={mapControls} onOpenCustomer={onOpenCustomer} onEditPoint={p=>{setPoint(p);setEditingPoint(true);}} onZoneSelect={z=>{if(!drawing){setZoneId(z.id);setMunicipality('');setPoint(null);}}} frame={frame}/>}
     {zoneDialog&&data&&<DeliveryZoneDialog key={zoneDialog.id||'new-map-zone'} zone={zoneDialog} zones={data.zones} revision={data.revision} onClose={()=>{setZoneDialog(null);if(draft.length)setDrawing(true);}} onSaved={saved}/>}
     {editingPoint&&point&&data&&<DeliveryPointDialog key={point.id} point={point} zones={data.zones} routes={data.routes} policy={data.policy} onClose={()=>setEditingPoint(false)} onSaved={()=>saved()}/>}
   </section>;

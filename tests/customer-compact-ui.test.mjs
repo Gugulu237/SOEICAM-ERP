@@ -5,9 +5,10 @@ import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
 const output=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Customers,{CustomerDirectory} from './src/views/Customers.jsx';import List from './src/components/customers/CustomerQuickList.jsx';import Tasks from './src/components/customers/CustomerTasks.jsx';import Zones from './src/components/customers/CustomerDeliveryZones.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='zones'?Zones:kind==='tasks'?Tasks:kind==='directory'?CustomerDirectory:kind==='customers'?Customers:List,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'compact-customers',setup(b){
-  b.onResolve({filter:/^react$/},a=>/(Customers|CustomerQuickList|CustomerMapLinks|CustomerTasks|CustomerActionGrid|CustomerDeliveryZones)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
+  b.onResolve({filter:/^react$/},a=>/(Customers|CustomerQuickList|CustomerMapLinks|CustomerTasks|CustomerActionGrid|CustomerDeliveryZones|MobileCustomerHeader)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
   b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({resolveDir:process.cwd(),contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__clients.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__clients.state("+JSON.stringify(key)+",v),useEffect=(fn,deps)=>globalThis.__clients.effect("+JSON.stringify(key)+",fn,deps),useMemo=fn=>fn(),useCallback=fn=>fn;"}));
   const mocks={
+    '@/hooks/usePhoneLayout':"export const usePhoneLayout=()=>Boolean(globalThis.__clients.phone);",
     '@/lib/customer-delivery-client':"export const customerDeliveryRequest=body=>globalThis.__clients.deliveryRequest(body);",
     '@tanstack/react-query':"export const useQuery=()=>({data:{zones:[]}});",
     '@/lib/field-ops':"export const invokeFieldOps=async ()=>({data:{customers:globalThis.__clients.customers}}),errorMessage=e=>e.message;",
@@ -166,5 +167,28 @@ test('delivery zones opens a customer directly and retains precise point selecti
     assert.ok(state.buttons.some(b=>b.label==='Delivery details'));assert.deepEqual(opened,['shop'],'checkbox selection must not open another profile');
     state.controls.find(c=>c['aria-label']==='Assign selected to zone').onChange({target:{value:'north'}});draw();await state.buttons.find(b=>b.label==='Assign selected').onClick();
     assert.deepEqual(writes,[{action:'assignDeliveryZone',zoneId:'north',points:[{kind:'location',recordId:'east',revision:4}]}]);
+  }finally{state.cleanup();delete globalThis.__clients;}
+});
+
+
+test('phone directory uses compact actions, real zone filters and acquisition-agent search',async()=>{
+  const state=hookRuntime();globalThis.__clients=state;state.phone=true;
+  state.customers=[{...customer,acquired_by_name:'Finder Alice'},{id:'other',business_name:'Other shop',acquired_by_name:'Finder Bob'}];
+  const draw=()=>{state.beforeRender();return render('customers',{});};
+  try{
+    draw();await state.flush();let html=draw();assert.match(html,/Shop A/);assert.doesNotMatch(html,/Customer sections|View customers|Customer neighbourhoods/);
+    assert.ok(state.buttons.some(button=>button['aria-label']==='Map'));assert.ok(state.buttons.some(button=>button['aria-label']==='Add customer'));
+    state.controls.find(control=>control['aria-label']==='Find a customer').onChange({target:{value:'Finder Alice'}});html=draw();assert.match(html,/Shop A/);assert.doesNotMatch(html,/Other shop/);
+    state.buttons.find(button=>button['aria-label']==='Add customer').onClick();assert.equal(state.navigation.at(-1),'/customers/new');
+  }finally{state.cleanup();delete globalThis.__clients;}
+});
+
+test('phone commercial profile retains scoped actions and never invents unavailable invoice totals',async()=>{
+  const state=hookRuntime();globalThis.__clients=state;state.phone=true;state.query='customer=shop';
+  state.session={role:'commercial',isAdmin:false,employee:{id:'agent',status:'active'}};state.customers=[{...customer,registered_by_name:'Actual registrar'}];
+  const draw=()=>{state.beforeRender();return render('tasks',{directory:true});};
+  try{
+    draw();await state.flush();const html=draw();assert.match(html,/data-mobile-customer-profile/);assert.match(html,/Customer tools and details/);assert.match(html,/Sales history is not available in this customer workspace/);assert.doesNotMatch(html,/Find a customer|Search name, phone|Acquired by<|3.5%/);
+    assert.match(html,/Registered by/);assert.match(html,/Actual registrar/);assert.match(html,/data-mobile-action-bar/);
   }finally{state.cleanup();delete globalThis.__clients;}
 });

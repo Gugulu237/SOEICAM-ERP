@@ -50,7 +50,7 @@ export default function CashFlowStatement() {
     const link = document.createElement('a'); link.href = url; link.download = `SOEICAM-Cash-Flow-${report.from}-to-${report.to}.csv`; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return <div className="space-y-5">
-    <form className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4 print:hidden" onSubmit={e => { e.preventDefault(); run(range); }}>
+    <form data-statement-export className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4 print:hidden" onSubmit={e => { e.preventDefault(); run(range); }}>
       <div><Label htmlFor="cashflow-from">{ui("From")}</Label><Input id="cashflow-from" type="date" required disabled={loading} value={range.from} onChange={e => setRange({ ...range, from: e.target.value })} /></div>
       <div><Label htmlFor="cashflow-to">{ui("To")}</Label><Input id="cashflow-to" type="date" required disabled={loading} value={range.to} onChange={e => setRange({ ...range, to: e.target.value })} /></div>
       <Button type="submit" disabled={loading}><RefreshCw size={15} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />{loading ? ui("Running report...") : ui("Run cash flow")}</Button>

@@ -15,6 +15,8 @@ import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
 import { commercialWorkspaceSubject, commercialWorkspaceSection, validateCommercialWorkspace } from '@/lib/commercial-workspace';
 import dynamic from 'next/dynamic';
 import MobileInfo from '@/components/shared/MobileInfo';
+import {DashboardIdentity} from '@/components/home/DashboardIdentity';
+import {StaffWelcome} from '@/components/home/StaffMobileParts';
 
 const CommercialPerformance = dynamic(() => import('@/views/CommercialPerformance'), { loading: () => <p role="status" className="p-6 text-sm text-slate-500">{ui("Loading performance...")}</p> });
 
@@ -93,9 +95,11 @@ export default function CommercialWorkspace() {
   if (authLoading) return <p role="status" className="p-8 text-slate-500">{ui("Loading your Commercial workspace...")}</p>;
   if (role === 'production_manager' && !authError) return <div className="space-y-5 pb-6"><header className="rounded-2xl border border-emerald-200 bg-white p-5"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{ui("Commercial Dashboard")}</p><h1 className="mt-2 text-2xl font-bold">{ui("Performance")}</h1><p className="mt-2 text-sm text-slate-600">{ui("Review agent supplies, customer acquisition and bonus progress across the field team.")}</p></header><CommercialPerformance embedded readOnly /></div>;
   if (authError || !['admin', 'commercial'].includes(role)) return <p role="alert" className="p-8 text-red-700">{authError || ui("A Commercial or General Manager account is required.")}</p>;
+  const mobileHome=!managing&&!reportSection&&dashboardNavigation.activeTab==='home'&&section!=='pos';
   const serviceMissing = /unknown action.*employeeDashboard|function.*(?:not found|not deployed)|status code 404/i.test(error);
-  return <div className="space-y-5 pb-6">
-    <section className="rounded-2xl border border-emerald-200 bg-white p-4 sm:p-5">
+  return <DashboardIdentity value={{roleName:roleLabel||'Commercial agent',employeeName:employee?.full_name||user?.full_name,centralHero:mobileHome}}><div className="space-y-5 pb-6">
+    {mobileHome&&<header className="relative pr-14 sm:hidden"><StaffWelcome date={data?.date} force/><Button variant="ghost" size="icon" className="absolute right-0 top-0 h-12 w-12" aria-label={ui('Refresh')} disabled={loading} onClick={refresh}><RefreshCw size={18} className={loading?'animate-spin':''}/></Button></header>}
+    <section className={(mobileHome?'hidden sm:block ':'')+"rounded-2xl border border-emerald-200 bg-white p-4 sm:p-5"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-0 flex-1 pr-10 sm:pr-0">{!managing && <div className="sm:hidden"><p className="text-xs font-semibold uppercase tracking-wide text-primary">{ui(roleLabel || "Commercial agent")}</p><h1 className="mt-1 break-words text-2xl font-bold text-slate-900">{employee?.full_name || user?.full_name}</h1></div>}<h2 className={"font-semibold text-slate-900 " + (!managing ? "hidden sm:block" : "")}>{reviewing ? ui('Customer acquisition review') : managing ? ui("Commercial quick reports") : ui("Commercial Agent dashboard")}</h2><MobileInfo title={ui("Commercial workspace")} className="absolute right-0 top-0 sm:static" desktopClassName="mt-1 text-xs text-slate-500"><p>{reviewing ? ui('Verify reported customer acquisitions as General Manager. The review records your own account and does not create employee sales or operations.') : managing ? ui("Choose an agent to review their recorded activity. Employee operations are read-only.") : ui("Your stock, customers, sales and cash from SOEICAM.")}</p></MobileInfo></div>
         <div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${data ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{reportSection ? reviewing ? ui("Acquisition review") : ui("Reports") : data ? ui("Live records") : loading ? ui("Connecting...") : ui("Awaiting connection")}</span><Button variant="outline" size="sm" disabled={loading || (managing && rosterLoading)} onClick={refresh}><RefreshCw size={14} className={'mr-2 ' + (loading ? 'animate-spin' : '')} />{ui("Refresh")}</Button></div>
@@ -112,5 +116,5 @@ export default function CommercialWorkspace() {
     {!employeeId && !managing && <p role="alert" className="rounded-xl bg-slate-50 p-4 text-sm text-slate-900">{ui("Link this login to an active Commercial employee to open the live dashboard.")}</p>}
     {employeeId && !reportSection && error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p className="font-semibold">{ui("Live records could not be loaded.")}</p><p className="mt-1">{serviceMissing ? ui("The Commercial workspace service needs activation on the linked SOEICAM backend. Your local dashboard is ready.") : error}</p><button onClick={refresh} className="mt-2 font-semibold underline">{ui("Retry connection")}</button></div>}
     {reportSection ? <CommercialPerformance key={section+':'+reload} embedded selectedAgentId={managing ? employeeId : ''} readOnly={managing && !reviewing} reviewMode={reviewing} /> : employeeId && <CommercialDashboard key={scope} section={section} {...dashboardNavigation} allowedModules={allowedModules} openFromLink={section === 'pos' && params.get('new') === '1'} initialCustomerId={params.get('customer') || ''} onClearEntry={() => setParams(current => { current.delete('new'); current.delete('customer'); return current; }, { replace: true })} data={data} actorEmployee={managing ? undefined : employee} loading={loading && !data} managing={managing} onRefresh={refresh} onEntryChange={setEntryActive} />}
-  </div>;
+  </div></DashboardIdentity>;
 }

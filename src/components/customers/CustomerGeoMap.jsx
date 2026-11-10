@@ -88,7 +88,7 @@ export async function googleAdapter(element,key,onPoint,onZone,onVertex){
     destroy(){clearRoute();clear();click.remove();maps.event.clearInstanceListeners(map);element.replaceChildren();}
   };
 }
-export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,onClose,drawingControls,mapControls,zoneFilters,onOpenCustomer,onEditPoint}){
+export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelect,onClearSelection,onZoneSelect,drawing=false,draft=[],onVertex,frame,navigationRequest,initialExpanded=false,pageLayout=false,onClose,drawingControls,mapControls,zoneFilters,onOpenCustomer,onEditPoint}){
   const element=useRef(null),fullHost=useRef(null),canvas=useRef(null),adapter=useRef(null),navigator=useRef(null),callbacks=useRef({}),latestPoints=useRef(points),lastRequest=useRef(null);
   const [ready,setReady]=useState(0),[status,setStatus]=useState('loading'),[provider,setProvider]=useState(''),[error,setError]=useState(''),[useGoogle,setUseGoogle]=useState(true),[diagnostic,setDiagnostic]=useState('');
   const [expanded,setExpanded]=useState(initialExpanded),[localSelected,setLocalSelected]=useState(selectedId),[navigation,setNavigation]=useState(emptyNavigation);
@@ -155,27 +155,28 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
   const route=navigation.route,stops=navigation.stops;
   const distance=meters=>Number.isFinite(meters)?(meters<1000?ui('{0} m',Math.round(meters)):ui('{0} km',(meters/1000).toFixed(1))):'';
   function content(full){
+    const inlinePage=pageLayout&&!full;
     return <div className={'flex min-h-0 min-w-0 flex-col bg-white '+(full?'h-full':'')}>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white p-2" style={full?{paddingTop:'max(.5rem, env(safe-area-inset-top))',paddingLeft:'max(.5rem, env(safe-area-inset-left))',paddingRight:'max(.5rem, env(safe-area-inset-right))'}:undefined}>
+      {!inlinePage&&<div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-white p-2" style={full?{paddingTop:'max(.5rem, env(safe-area-inset-top))',paddingLeft:'max(.5rem, env(safe-area-inset-left))',paddingRight:'max(.5rem, env(safe-area-inset-right))'}:undefined}>
         <div className="flex min-w-0 items-center gap-1.5"><MapPin size={16} className="shrink-0 text-emerald-700"/><span><span className="block text-sm font-bold">{ui('Customer map')}</span><span className="block text-[11px] text-slate-500">{ui('Delivery zones')}</span></span></div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button type="button" className={actionClass} disabled={status!=='ready'} onClick={()=>adapter.current?.frame('points',latestPoints.current)}><LocateFixed size={15}/>{ui('Show pins')}</button>
           <button type="button" className={actionClass} aria-label={ui(full?'Close full map':'Expand map')} onClick={()=>full?closeFull():setExpanded(true)}>{full?<Minimize2 size={15}/>:<Maximize2 size={15}/>}<span>{ui(full?'Close':'Full map')}</span></button>
         </div>
-      </div>
+      </div>}
       {zoneFilters&&<div className="shrink-0 border-b bg-white">{zoneFilters}</div>}
-      {mapControls&&<details className="max-h-[40dvh] shrink-0 overflow-y-auto overscroll-contain border-b"><summary className="min-h-11 cursor-pointer px-3 py-3 text-xs font-medium">{ui('Filters and zones')}</summary><div className="p-3 pt-0">{mapControls}</div></details>}
-      <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
+      {!inlinePage&&mapControls&&<details className="max-h-[40dvh] shrink-0 overflow-y-auto overscroll-contain border-b"><summary className="min-h-11 cursor-pointer px-3 py-3 text-xs font-medium">{ui('Filters and zones')}</summary><div className="p-3 pt-0">{mapControls}</div></details>}
+      <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':inlinePage?'mt-3 h-[min(58dvh,470px)] min-h-[320px] rounded-2xl border':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
         <div ref={full?setFullHost:element} className="h-full w-full" role="region" data-swipe-back="ignore" aria-label={ui('Customer delivery map')}/>
         {status==='loading'&&<p role="status" className="pointer-events-none absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
       </div>
-      {status==='ready'&&!drawing&&(selected||navigation.phase!=='idle')&&<section aria-label={ui('Delivery directions')} className="max-h-[38dvh] shrink-0 space-y-3 overflow-y-auto overscroll-contain rounded-t-2xl border-t bg-white p-4 text-sm shadow-[0_-4px_18px_rgba(0,0,0,0.05)]">
+      {status==='ready'&&!drawing&&(selected||navigation.phase!=='idle')&&<section aria-label={ui('Delivery directions')} className={inlinePage?"mt-3 shrink-0 space-y-3 rounded-2xl border bg-white p-4 text-sm shadow-sm":"max-h-[38dvh] shrink-0 space-y-3 overflow-y-auto overscroll-contain rounded-t-2xl border-t bg-white p-4 text-sm shadow-[0_-4px_18px_rgba(0,0,0,0.05)]"}>
         <div className="flex items-start justify-between gap-2"><div className="min-w-0">
           <p className="break-words font-semibold">{navigation.phase!=='idle'?stops.map(p=>p.business_name||ui('Customer')).join(' → '):selected?.business_name}</p>
           {selected&&navigation.phase==='idle'&&<><p className="mt-1 break-words text-xs text-slate-500">{[selected.address,selected.neighbourhood,selected.town,selected.acquired_by_name||selected.employee_name].filter(Boolean).join(' · ')}</p><p className="mt-1 flex flex-wrap items-center gap-1 text-xs tabular-nums text-slate-500"><MapPin size={13}/>{Number(selected.gps_lat).toFixed(5)} · {Number(selected.gps_lng).toFixed(5)}{Number(selected.gps_accuracy_m)>0?' · '+Math.round(selected.gps_accuracy_m)+' m':''}</p>{selected.gps_status!=='ready'&&<p className="text-xs text-amber-700">{ui('Delivery pin needs verification.')}</p>}</>}
         </div><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label={ui('Close delivery directions')} onClick={clearSelection}><X size={17}/></button></div>
-        {navigation.phase==='idle'&&selected&&<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>}
-        {navigation.phase==='idle'&&selected&&<div className="flex flex-wrap gap-2">
+        {navigation.phase==='idle'&&selected&&(pageLayout?<><div className="grid grid-cols-2 gap-2"><button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="flex min-h-12 items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold text-primary disabled:opacity-50"><Navigation size={16}/>{ui('Directions')}</button>{onOpenCustomer&&<button type="button" onClick={()=>onOpenCustomer(selected.customer_id||selected.id)} className="min-h-12 rounded-xl bg-primary px-2 text-sm font-semibold text-white">{ui('View profile')}</button>}</div>{onEditPoint&&<details><summary className="min-h-11 cursor-pointer py-3 text-xs font-medium text-muted-foreground">{ui('Delivery details')}</summary><button type="button" className={actionClass} onClick={()=>onEditPoint(selected)}>{ui('Edit delivery details')}</button></details>}</>:<button type="button" disabled={status!=='ready'} onClick={()=>startRoute([selected])} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white disabled:opacity-50"><Navigation size={16}/>{ui('Directions from my location')}</button>)}
+        {!pageLayout&&navigation.phase==='idle'&&selected&&<div className="flex flex-wrap gap-2">
           {onOpenCustomer&&<button type="button" className={actionClass} onClick={()=>onOpenCustomer(selected.customer_id||selected.id)}>{ui('Open customer profile')}</button>}
           {onEditPoint&&<button type="button" className={actionClass} onClick={()=>onEditPoint(selected)}>{ui('Delivery details')}</button>}
         </div>}
@@ -199,13 +200,14 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
           <button type="button" className="min-h-11 text-xs font-medium text-slate-600" onClick={()=>navigator.current?.clear()}>{ui('Clear route')}</button>
         </>}
       </section>}
-      {drawing&&full&&<div className="max-h-[30dvh] shrink-0 overflow-y-auto border-t p-2">{drawingControls||<p className="text-xs">{ui('Tap the map to add corners around the delivery area.')}</p>}</div>}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 border-t bg-white px-3 py-2 text-[10px] text-slate-500" style={full?{paddingBottom:'max(.5rem, env(safe-area-inset-bottom))'}:undefined}><span>{provider}</span><CustomerInfo title={ui('Map display')}><p>{ui('YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.')}</p><p>{ui('Ordinary businesses and landmark labels are controlled by the published Google Cloud map style linked to this map ID.')}</p></CustomerInfo></div>
+      {drawing&&(full||inlinePage)&&<div className="max-h-[30dvh] shrink-0 overflow-y-auto border-t p-2">{drawingControls||<p className="text-xs">{ui('Tap the map to add corners around the delivery area.')}</p>}</div>}
+      {inlinePage&&<details open={drawing||undefined} className="mt-3 rounded-xl border bg-white"><summary className="min-h-12 cursor-pointer px-3 py-3 text-xs font-semibold">{ui('Map tools and display')}</summary><div className="space-y-3 border-t p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{provider}</span><button type="button" className={actionClass} onClick={()=>setExpanded(true)}><Maximize2 size={15}/>{ui('Full map')}</button></div>{mapControls}<CustomerInfo title={ui('Map display')}><p>{ui('YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.')}</p><p>{ui('Ordinary businesses and landmark labels are controlled by the published Google Cloud map style linked to this map ID.')}</p></CustomerInfo></div></details>}
+      {!inlinePage&&<div className="flex shrink-0 flex-wrap items-center justify-between gap-1 border-t bg-white px-3 py-2 text-[10px] text-slate-500" style={full?{paddingBottom:'max(.5rem, env(safe-area-inset-bottom))'}:undefined}><span>{provider}</span><CustomerInfo title={ui('Map display')}><p>{ui('YOLA pins: customer GPS. Coloured border: verified. Grey: verify location.')}</p><p>{ui('Ordinary businesses and landmark labels are controlled by the published Google Cloud map style linked to this map ID.')}</p></CustomerInfo></div>}
       {error&&<div role="status" className="max-h-[22dvh] shrink-0 overflow-y-auto border-t border-amber-200 bg-amber-50 p-3 text-xs text-slate-700"><p>{error}</p><button type="button" onClick={()=>window.location.reload()} className="mt-2 min-h-10 rounded-md border bg-white px-3 font-medium">{ui('Reload page')}</button>{diagnostic&&<CustomerInfo title={ui('Google Maps status')}><p>{ui('Allow this website in Google Cloud: {0}',typeof window!=='undefined'?window.location.origin+'/*':'http://localhost:5175/*')}</p><p className="break-words font-mono">{diagnostic}</p></CustomerInfo>}</div>}
     </div>;
   }
   return <div className="min-w-0">
-    <div hidden={expanded} className="overflow-hidden rounded-xl border">{content(false)}</div>
+    <div hidden={expanded} className={pageLayout?"min-w-0":"overflow-hidden rounded-xl border"}>{content(false)}</div>
     {expanded&&<p className="py-4 text-xs text-slate-500">{ui('Map expanded')}</p>}
     <Dialog open={expanded} onOpenChange={value=>{if(!value)closeFull();}}>
       <DialogContent style={{animation:'none'}} className="left-0 top-0 flex h-[100dvh] max-h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:rounded-none sm:p-0 duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none [&>button:last-child]:hidden" onOpenAutoFocus={event=>{event.preventDefault();fullHost.current?.parentNode?.parentNode?.querySelector('button')?.focus();}}>

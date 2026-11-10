@@ -213,7 +213,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const cancel = () => { if (!savingRef.current && !unitBusy) { if (embedded) onCancel?.(); else goBack(); } };
 
   return <div data-sleek-screen="item-form">
-    {!embedded && <PageHeader title={isEdit ? phone&&!allSettings?form.name:ui("Edit Item") : ui("New Item")} subtitle={ui("Set up the item, its accounts and its stock settings.")} back={{onClick:cancel,label:ui("Back"),disabled:saving || unitBusy}} />}
+    {!embedded && <PageHeader title={isEdit ? phone&&!allSettings?form.name:ui("Edit Item") : ui("New Item")} subtitle={ui(phone&&isEdit&&!allSettings?"Item details and pricing":"Set up the item, its accounts and its stock settings.")} back={{onClick:cancel,label:ui("Back"),disabled:saving || unitBusy}} />}
     {phone&&isEdit&&!embedded&&!allSettings&&saveError&&!pendingSave&&<p role="alert" className="mb-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
     {phone&&isEdit&&!embedded&&!allSettings&&savedItem&&<MobileItemOverview item={savedItem} form={form} set={set} cost={itemType==='assembly'?estimatedCost:form.current_cost||form.purchase_price} quantity={quantityOnHand} stockLoading={stockLoading} stockError={stockError} saving={saving||unitBusy} onSave={handleSave} onSettings={()=>setAllSettings(true)} readOnly={!!savedItem.item_removed_at}/>}
     {phone&&allSettings&&!embedded&&<Button variant="outline" className="mb-4" onClick={()=>setAllSettings(false)}>{ui('Back to item details')}</Button>}
@@ -248,7 +248,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
       {saveError && !pendingSave && <p role="alert" className="text-sm text-red-700">{uiMessage(saveError)}</p>}
       <div className="flex gap-3 border-t pt-4"><Button type="button" onClick={handleSave} disabled={saving || unitBusy}><Save size={16} className="mr-1" />{saving ? ui("Saving...") : ui("Save Item")}</Button><Button type="button" variant="outline" onClick={cancel} disabled={saving || unitBusy}>{ui("Cancel")}</Button></div>
     </fieldset>
-    {savedItem&&<ItemMaintenance item={savedItem} disabled={saving||unitBusy} onBusyChange={busy=>{savingRef.current=busy;setSaving(busy);onBusyChange?.(busy);}} onDone={item=>{if(embedded)onSaved?.(item);else navigate('/inventory');}} onStockAdjusted={()=>{setStockReload(v=>v+1);onStockAdjusted?.();}}/>}
+    {savedItem&&(phone&&!allSettings?<details className="rounded-[22px] border bg-white p-4"><summary className="min-h-6 cursor-pointer text-xs font-semibold">{ui('Catalogue maintenance')}</summary><ItemMaintenance item={savedItem} disabled={saving||unitBusy} onBusyChange={busy=>{savingRef.current=busy;setSaving(busy);onBusyChange?.(busy);}} onDone={item=>{if(embedded)onSaved?.(item);else navigate('/inventory');}} onStockAdjusted={()=>{setStockReload(v=>v+1);onStockAdjusted?.();}}/></details>:<ItemMaintenance item={savedItem} disabled={saving||unitBusy} onBusyChange={busy=>{savingRef.current=busy;setSaving(busy);onBusyChange?.(busy);}} onDone={item=>{if(embedded)onSaved?.(item);else navigate('/inventory');}} onStockAdjusted={()=>{setStockReload(v=>v+1);onStockAdjusted?.();}}/>)}
     <UnitChangeDialog open={!!pendingSave} itemName={form.name} fromUnit={savedItem && stockUnit(savedItem)} toUnit={pendingSave?.changes.unit_of_measure || savedItem && stockUnit(savedItem)} saving={saving} error={uiMessage(saveError)} onConfirm={()=>persist(pendingSave)} onCancel={()=>{if(!savingRef.current)setPendingSave(null);}} />
   </div>;
 }

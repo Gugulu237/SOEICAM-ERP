@@ -8,11 +8,16 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { invokeFieldOps, errorMessage } from '@/lib/field-ops';
-import HotesseWorkspace from './HotesseWorkspace';
+import HotesseHome from '@/components/home/HotesseHome';
+import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {DashboardIdentity} from '@/components/home/DashboardIdentity';
+import {StaffWelcome} from '@/components/home/StaffMobileParts';
+import {RefreshCw} from 'lucide-react';
 import {useDashboardNavigation} from '@/hooks/useDashboardNavigation';
 export default function HotesseLiveWorkspace() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const dashboardNavigation=useDashboardNavigation();
+  const {roleLabel,employee,user}=useCurrentUser(),mobileHome=dashboardNavigation.activeTab==='home';
 
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [reload, setReload] = useState(0);
   useEffect(() => {
@@ -28,5 +33,10 @@ export default function HotesseLiveWorkspace() {
     refresh(); const timer = window.setInterval(visible, 30000); window.addEventListener('focus', visible); document.addEventListener('visibilitychange', visible);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', visible); document.removeEventListener('visibilitychange', visible); };
   }, [reload]);
-  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" disabled={loading} onClick={() => setReload(value => value + 1)}>{ui("Refresh shelves")}</Button></div>{error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}</p>}<HotesseWorkspace {...dashboardNavigation} data={data} loading={loading && !data} onRefresh={() => setReload(value => value + 1)} /></div>;
+  return <DashboardIdentity value={{roleName:roleLabel||'Hotesse',employeeName:data?.employee?.full_name||employee?.full_name||user?.full_name,centralHero:mobileHome}}><div className="space-y-4">
+    {mobileHome&&<header className="relative pr-14 sm:hidden"><StaffWelcome date={data?.date} force/><Button size="icon" variant="ghost" aria-label={ui('Refresh shelves')} className="absolute right-0 top-0 h-12 w-12" disabled={loading} onClick={()=>setReload(value=>value+1)}><RefreshCw size={18} className={loading?'animate-spin':''}/></Button></header>}
+    <div className={(mobileHome?'hidden sm:flex ':'flex ')+"justify-end"}><Button size="sm" variant="outline" disabled={loading} onClick={() => setReload(value => value + 1)}>{ui("Refresh shelves")}</Button></div>
+    {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{uiMessage(error)}</p>}
+    <HotesseHome {...dashboardNavigation} data={data} loading={loading && !data} onRefresh={() => setReload(value => value + 1)} />
+  </div></DashboardIdentity>;
 }

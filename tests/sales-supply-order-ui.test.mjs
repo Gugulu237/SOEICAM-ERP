@@ -33,12 +33,12 @@ function setup(render,workspace=options,stockData=stock){
   const r=hookRuntime(),calls=[];r.client={entities:{CustomerLocation:{filter:async()=>[]},Customer:{filter:async()=>[]}}};r.fail=true;r.routeId=undefined;
   r.invoke=async body=>{calls.push(body);if(body.action==='salesOrderWorkspace')return {data:workspace};if(body.action==='salesOrderStock')return {data:stockData};if(body.action==='salesOrderDeliveryPoints')return {data:{points:[]}};if(r.fail)throw Error('Connection interrupted');return {data:{order:{id:'order'},invoiceId:'invoice'}};};
   globalThis.__suppliedOrderUI=r;
-  const paint=()=>{r.beforeRender();return render();},control=label=>r.controls.find(c=>c['aria-label']===label),button=label=>r.buttons.find(b=>b.label===label);
+  const paint=()=>{r.beforeRender();return render();},control=label=>r.controls.find(c=>c['aria-label']===label),button=label=>r.buttons.find(b=>b.label===label||b['aria-label']===label);
   return {r,calls,paint,control,button,async ready(){paint();await r.flush();paint();await r.flush();return paint();},close(){r.cleanup();delete globalThis.__suppliedOrderUI;}};
 }
 
 
-async function selectCustomer(f){f.control('Customer').onChange({target:{value:'customer'}});for(let i=0;i<3;i++){f.paint();await f.r.flush();}f.paint();}
+async function selectCustomer(f){if(f.r.phone){f.control('Search customers').onChange({target:{value:'Customer'}});f.paint();f.r.buttons.find(b=>b['aria-label']==='Choose customer Customer').onClick();}else f.control('Customer').onChange({target:{value:'customer'}});for(let i=0;i<3;i++){f.paint();await f.r.flush();}f.paint();}
 async function productsStep(f){await selectCustomer(f);f.button('Continue to products').onClick();return f.paint();}
 function quantity(f,value){f.r.productPicker.onQuantityChange(f.r.productPicker.products[0],value);return f.paint();}
 function reviewStep(f,reference='RCPT-001'){f.button('No replacements').onClick();f.paint();f.button('Review sale').onClick();f.paint();if(reference!==null){f.control('Receipt reference number').onChange({target:{value:reference}});f.paint();}}
@@ -377,9 +377,10 @@ test('exported phone sale flow keeps customer, inline quantity, replacement decl
  try{
   let html=await f.ready();assert.match(html,/Step 1 of 3/);assert.match(html,/Salesperson A/);assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
   f.button('Next').onClick();assert.match(f.paint(),/Choose a customer/);
-  await selectCustomer(f);f.button('Next').onClick();html=f.paint();assert.match(html,/Step 2 of 3/);assert.equal(f.control('Customer'),undefined);
+  await selectCustomer(f);f.button('Next').onClick();html=f.paint();assert.match(html,/Step 2 of 3/);assert.equal(f.control('Search customers'),undefined);
+  f.r.buttons.find(b=>b['aria-label']==='Add one YOLA 500 g').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,1);f.r.buttons.find(b=>b['aria-label']==='Remove one YOLA 500 g').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,'');
   f.control('Units sold for YOLA 500 g').onChange({target:{value:'6'}});f.paint();
-  f.button('Replacement').onClick();f.paint();f.button('No replacements').onClick();f.paint();f.button('Next').onClick();html=f.paint();assert.match(html,/Step 3 of 3/);
+  f.button('Replacement').onClick();f.paint();f.button('No replacements').onClick();f.paint();f.button('Next').onClick();html=f.paint();assert.match(html,/Step 3 of 3/);assert.match(html,/Handed to the cashier/);assert.equal(f.button('Edit salesperson'),undefined);assert.equal(f.r.controls.find(c=>c.name==='sale-payment'&&c.checked)?.type,'radio');
   assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
   await confirm().onClick();assert.match(f.paint(),/reference number of the receipt/);
   f.control('Receipt reference number').onChange({target:{value:'  PHONE-007  '}});f.paint();const save=confirm().onClick;await Promise.all([save(),save()]);assert.match(f.paint(),/Connection interrupted/);

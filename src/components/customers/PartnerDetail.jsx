@@ -20,6 +20,7 @@ import PartnerStockPanel from "./PartnerStockPanel";
 import PartnerSalesPanel from "./PartnerSalesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatXAF } from "@/lib/formatters";
+import {customerInvoiceQuery,customerMonthInvoiceQuery} from '@/lib/customer-mobile-summary';
 import { Plus } from "lucide-react";
 
 // 360° view of one business partner: its group (sub-partners), locations,
@@ -29,6 +30,8 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
 
   const navigate = useNavigate();
   const phone=usePhoneLayout();
+  const [mobileSales,setMobileSales]=useState({loading:true,invoices:[],total:null,error:''});
+  const [salesReload,setSalesReload]=useState(0);
   const [locations, setLocations] = useState([]);
   const [orders, setOrders] = useState([]);
   const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState(''),[loading,setLoading]=useState(true);
@@ -50,13 +53,25 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(()=>{
+    if(!phone)return;
+    let active=true;
+    setMobileSales({loading:true,invoices:[],total:null,error:''});
+    Promise.all([
+      erp.entities.Invoice.aggregate({query:customerMonthInvoiceQuery(partner.id),groupBy:'status',sum:['total']}),
+      erp.entities.Invoice.filter(customerInvoiceQuery(partner.id),{sort:'-invoice_date',limit:6,include_total:false}),
+    ]).then(([summary,recent])=>{if(active)setMobileSales({loading:false,invoices:recent.items,total:summary.rows.reduce((sum,row)=>sum+Number(row.sum_total||0),0),error:''});})
+      .catch(error=>{if(active)setMobileSales({loading:false,invoices:[],total:null,error:error.message});});
+    return()=>{active=false;};
+  },[phone,partner.id,salesReload]);
+  const Tools=phone?'details':'div';
   const deliveredOrders = orders.filter(o => ["invoiced", "delivered", "partially_delivered"].includes(o.status));
   const deliveredValue = deliveredOrders.reduce((s, o) => s + (o.total || 0), 0);
   const spoilageValue = spoilage.reduce((s, r) => s + (r.total_value || 0), 0);
 
 
   return (
-    <div className="space-y-5">
+    <div className={phone?"space-y-5 pb-24":"space-y-5"}>
       {/* Header */}
       <div className="hidden flex-wrap items-start justify-between gap-3 sm:flex">
         <div>
@@ -78,7 +93,11 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </div>
       </div>
 
-      {phone&&<MobileCustomerOverview partner={partner} orders={orders} deliveredValue={deliveredValue} loading={loading} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/>}
+      {phone&&<MobileCustomerOverview partner={partner} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/>}
+      <Tools className={phone?'rounded-xl border bg-white':'space-y-5'}>
+      {phone&&<summary className="min-h-12 cursor-pointer p-3 text-sm font-semibold">{ui('Customer tools and details')}</summary>}
+      <div className={phone?'space-y-5 border-t p-3':'space-y-5'}>
+      {phone&&<div className="flex flex-wrap gap-2">{parentPartner&&<Button variant="outline" onClick={()=>onSelect?.(parentPartner)}>{ui('Main customer')}: {parentPartner.business_name}</Button>}{canReportSpoilage&&<Button variant="outline" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={15}/>{ui('Add branch')}</Button>}</div>}
       <CustomerActionGrid onSale={phone?undefined:onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
       {paymentSummary}
       {loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>}
@@ -140,6 +159,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
       </Tabs>
 
       {canReportSpoilage&&<CustomerSpoilageReports key={partner.id} customer={partner} reload={reportVersion}/>}
+      </div></Tools>
       {spoilOpen&&<SpoilageDialog
         open={spoilOpen}
         onOpenChange={setSpoilOpen}
