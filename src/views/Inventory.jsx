@@ -1,3 +1,4 @@
+import { usePhoneLayout } from '@/hooks/usePhoneLayout';
 import {watchItemCatalogue} from '@/lib/item-catalogue-sync';
 
 /* localized-messages */
@@ -49,7 +50,9 @@ export default function Inventory() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate(), [params, setParams] = useSearchParams();
-  const workspace = inventoryWorkspaceState(params);
+  const phone=usePhoneLayout();
+  const requestedWorkspace=inventoryWorkspaceState(params);
+  const workspace=phone&&requestedWorkspace.section==='home'?{...requestedWorkspace,section:'items'}:requestedWorkspace;
   const backToMenu = useMenuBack('/inventory');
   const { user,role, principalRole, employee, allowedModules, loading: authLoading } = useCurrentUser(), { toast } = useToast();
   const hasModule=key=>role==='admin' || !allowedModules || allowedModules.includes(key);
@@ -182,30 +185,34 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
     ...(canManageWarehouses?[{key:'locations',label:'Storage locations',icon:Warehouse,open:()=>changeWorkspace({section:'locations'})}]:[]),
   ];
 
-  return <div className="min-w-0 space-y-4">
+  return <div data-inventory-workspace className="min-w-0 space-y-4">
     <header className="flex items-center justify-between gap-2">
-      <div data-page-heading className="flex min-w-0 items-center gap-2">{workspace.section!=='home' && <PageBackButton onClick={backToMenu} label={ui('Inventory menu')}/>}<h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">{ui(sectionTitle || 'Inventory')}</h1></div>
+      <div data-page-heading className="flex min-w-0 items-center gap-2">{workspace.section!=='home' && !(phone&&workspace.section==='items') && <PageBackButton onClick={backToMenu} label={ui('Inventory menu')}/>}<h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">{ui(phone&&workspace.section==='items'?'Stock':sectionTitle || 'Inventory')}</h1></div>
       <div className="flex shrink-0 items-center gap-2">
         {['items','stock','movements'].includes(workspace.section) && <InventoryAlertsMenu items={lowStock} loading={loading} open={alertsOpen} onOpenChange={setAlertsOpen} onOpenItem={canEdit?item=>{setAlertsOpen(false);editItem(item);}:undefined}/>}
-        {canEdit && workspace.section==='items' && <Button className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/>{ui('New item')}</Button>}
+        {canEdit && !phone && workspace.section==='items' && <Button aria-label={ui('New item')} className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/><span className="hidden sm:inline">{ui('New item')}</span></Button>}
       </div>
     </header>
     {workspace.section==='home' && !authLoading && <nav aria-label={ui('Inventory sections')} className="mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">{menu.map(({key,label,icon:Icon,open})=><button key={key} type="button" aria-label={ui(label)} onClick={open} className="group flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48"><span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span><span className="break-words text-sm font-semibold text-slate-900 sm:text-base">{ui(label)}</span></button>)}</nav>}
     {authLoading && <Pending/>}
-    {workspace.section==='items' && (canReceive || canIssueStock) && <div role="group" aria-label={ui('Inventory actions')} className={'grid gap-2 '+(canReceive&&canIssueStock?'grid-cols-2':'grid-cols-1')}>
+    {workspace.section==='items' && !phone && (canReceive || canIssueStock) && <div role="group" aria-label={ui('Inventory actions')} className={'grid gap-2 '+(canReceive&&canIssueStock?'grid-cols-2':'grid-cols-1')}>
       {canReceive && <Button aria-label={ui('Receive inventory')} className="h-auto min-h-12 min-w-0 gap-2 whitespace-normal rounded-xl px-2 py-3 text-xs sm:px-4 sm:text-sm" onClick={() => navigate('/purchases?section=receiving')}><PackageCheck size={18} className="shrink-0"/><span>{ui('Receive inventory')}</span></Button>}
       {canIssueStock && <Button aria-label={ui('Issue goods')} variant="outline" className="h-auto min-h-12 min-w-0 gap-2 whitespace-normal rounded-xl border-primary/30 px-2 py-3 text-xs text-primary sm:px-4 sm:text-sm" onClick={() => {setIssueAgent('');setShowIssue(true);}}><Truck size={18} className="shrink-0"/><span>{ui('Issue goods')}</span></Button>}
     </div>}
     {workspace.section==='items'&&showRemoved&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-slate-50 p-3 text-sm"><strong>{ui('Deleted items')}</strong><Button variant="outline" onClick={()=>changeWorkspace({deleted:''})}>{ui('Back to catalogue')}</Button></div>}
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{uiMessage(error)}<button type="button" className="ml-3 underline" onClick={loadData}>{ui("Retry")}</button></div>}
     {workspace.section==='items' && <>
-    <nav aria-label={ui("Item types")} className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-      {ITEM_FILTERS.map(filter => <button type="button" key={filter.key} aria-pressed={workspace.filter === filter.key} onClick={() => changeWorkspace({ section: 'items', filter: filter.key, type: 'all' })} className={"flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium sm:justify-center " + (workspace.filter === filter.key ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400")}>{filter.label}<span className="text-xs opacity-70">{loading ? "-" : counts[filter.key]}</span></button>)}
+    <nav aria-label={ui("Item types")} className={phone?"-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]":"grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"}>
+      {ITEM_FILTERS.map(filter => <button type="button" key={filter.key} aria-pressed={workspace.filter === filter.key} onClick={() => changeWorkspace({ section: 'items', filter: filter.key, type: 'all' })} className={(phone?"flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold ":"flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium sm:justify-center ") + (workspace.filter === filter.key ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400")}>{filter.label}<span className="text-xs opacity-70">{loading ? "-" : counts[filter.key]}</span></button>)}
     </nav>
     <div className="flex items-center justify-between gap-2">
-      <ViewToggle value={view} onChange={setView} options={[{ value: "visual", label: "Photos", icon: Grid2X2 }, { value: "table", label: "Table", icon: List }]} />
+      {phone?<div className="flex min-w-0 items-center gap-2">{canReceive?<Button variant="outline" className="min-h-11 gap-2 rounded-xl text-sm" onClick={()=>navigate('/purchases?section=receiving')}><PackageCheck size={17}/>{ui('Receive inventory')}</Button>:<span className="text-xs text-muted-foreground">{ui("{0} items",filtered.length)}</span>}</div>:<ViewToggle value={view} onChange={setView} options={[{ value: "visual", label: "Photos", icon: Grid2X2 }, { value: "table", label: "Table", icon: List }]} />}
       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 rounded-xl" aria-label={ui('More inventory tools')}><MoreHorizontal size={20}/></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64 [&_[role=menuitem]]:min-h-11">
+          {phone&&canIssueStock&&<DropdownMenuItem onSelect={()=>{setIssueAgent('');setShowIssue(true);}}><Truck size={16} className="mr-2"/>{ui('Issue goods')}</DropdownMenuItem>}
+          {phone&&canEdit&&<DropdownMenuItem onSelect={()=>navigate('/items/new')}><Plus size={16} className="mr-2"/>{ui('New item')}</DropdownMenuItem>}
+          {phone&&<DropdownMenuItem onSelect={()=>changeWorkspace({section:'alerts'})}><Bell size={16} className="mr-2"/>{ui('Stock alerts')}</DropdownMenuItem>}
+          {phone&&canManageWarehouses&&<DropdownMenuItem onSelect={()=>changeWorkspace({section:'locations'})}><Warehouse size={16} className="mr-2"/>{ui('Storage locations')}</DropdownMenuItem>}
           <DropdownMenuItem disabled={refreshing} onSelect={() => loadData()}><RefreshCw size={16} className="mr-2"/>{ui('Refresh')}</DropdownMenuItem>
           {canEdit&&<DropdownMenuItem onSelect={()=>changeWorkspace({section:'items',filter:'all',deleted:showRemoved?'':'1'})}>{ui(showRemoved?'Back to catalogue':'Deleted items')}</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => changeWorkspace({ section: 'stock' })}>{ui('Stock on Hand')}</DropdownMenuItem>
