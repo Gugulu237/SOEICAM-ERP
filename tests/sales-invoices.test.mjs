@@ -179,9 +179,11 @@ test('VAT-inclusive supplies retain the listed price and never present VAT as an
 
 test('invoice receipt projection uses only its linked customer source, keeps product identity and excludes replacement costs',async()=>{
  const f=await setup(),o=await order(f),doc=await invoiceAction(f.client,admin,body(o));
+ await f.entities.Product.update('product-a',{image_url:'/products/real-yoghurt.png',private_note:'not public'});
+ await f.entities.Invoice.update(doc.invoice.id,{created_date:'2026-10-18T10:34:00Z'});
  await f.entities.SalesOrder.update(o.id,{receipt_reference:'REC-123',salesperson_name:'Saved seller',recorded_by_name:'Saved recorder',stock_replacements:[{product_id:'product-a',product_name:'YOLA',quantity:1,unit:'ea',reason:'damaged',expiry_date:'',lot_number:'LOT-1',unit_cost:123,private_note:'internal'}]});
  const detail=await invoiceAction(f.client,admin,{action:'invoiceDetail',invoiceId:doc.invoice.id});
- assert.equal(detail.invoice.receipt_reference,'REC-123');assert.equal(detail.invoice.salesperson_name,'Saved seller');assert.equal(detail.invoice.recorded_by_name,'Saved recorder');assert.equal(detail.lines[0].product_id,'product-a');
+ assert.equal(detail.invoice.receipt_reference,'REC-123');assert.equal(detail.invoice.salesperson_name,'Saved seller');assert.equal(detail.invoice.recorded_by_name,'Saved recorder');assert.equal(detail.lines[0].product_id,'product-a');assert.equal(detail.lines[0].image_url,'/products/real-yoghurt.png');assert.equal(detail.invoice.recorded_at,'2026-10-18T10:34:00Z');assert.doesNotMatch(JSON.stringify(detail),/private_note/);
  assert.deepEqual(detail.replacements,[{product_id:'product-a',product_name:'YOLA',quantity:1,unit:'ea',reason:'damaged',expiry_date:'',lot_number:'LOT-1'}]);assert.equal(detail.invoice.recorded_by,undefined);assert.equal(detail.lines[0].cogs_total,undefined);
  await f.entities.Employee.update('cashier',{role:'production_manager',status:'active'});await assert.rejects(invoiceAction(f.client,{id:'cashier-login',role:'user'},{action:'invoiceDetail',invoiceId:doc.invoice.id}),/restricted/);
  await f.entities.SalesOrder.update(o.id,{customer_id:'customer-b'});await assert.rejects(invoiceAction(f.client,admin,{action:'invoiceDetail',invoiceId:doc.invoice.id}),/source sale needs reconciliation/);

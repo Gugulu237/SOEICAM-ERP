@@ -16,6 +16,7 @@ async function ui() {
         export default {...React,createElement:(tag,props,...children)=>{globalThis.__cashierUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};
         export const useState=v=>globalThis.__cashierUI.state(key(),v); export const useEffect=(fn,deps)=>globalThis.__cashierUI.effect(key(),fn,deps); export const useRef=v=>globalThis.__cashierUI.ref(key(),v);`, resolveDir: process.cwd() }));
       const mocks = {
+        '@/hooks/usePhoneLayout': `export const usePhoneLayout=()=>Boolean(globalThis.__cashierUI.phone);`,
         '@/api/erpClient': `export const invalidateERPReads=()=>{};export const erp={functions:{invoke:(...args)=>globalThis.__cashierUI.invoke(...args)}};`,
         '@/lib/router': `import React from 'react'; export const Link=({children,to,...props})=>React.createElement('a',{href:to,...props},children); export const useNavigate=()=>path=>globalThis.__cashierUI.navigation.push(path);export const useSearchParams=()=>[new URLSearchParams(globalThis.__cashierUI.query || ''),value=>{const r=globalThis.__cashierUI;r.query=(typeof value==='function'?value(new URLSearchParams(r.query || '')):value).toString();}];`,
         '@/components/ui/use-toast': `export const useToast=()=>({toast:value=>globalThis.__cashierUI.notifications.push(value)});`,
@@ -156,5 +157,29 @@ test('Cashier tiles retain quick reports and receipt-history navigation follows 
   r.query=historyQuery;draw();assert.ok(r.buttons.some(b=>b.label==='Hide receipt history'));
   r.query='';draw();r.buttons.find(b=>b['aria-label']==='Open Cheques & signatures').onClick();assert.equal(r.navigation.at(-1),'/cashier?view=cheques');
   assert.ok(calls.every(body=>!['cashierPettyExpense','cashierTransfer','cashierReceiveDailyCash','cashierReleasePayment'].includes(body.action)));
+ }finally{r.cleanup();delete globalThis.__cashierUI;}
+});
+
+
+test('mobile Caisse embeds the same checked handover form with live variance, treasury choice and retained retry key',async()=>{
+ const render=await ui(),r=runtime(),{client,entities}=await fixture(),source=await cashierAction(client,user,{action:'cashierWorkspace',date}),requests=[];let fail=true,done=0;
+ r.invoke=async(name,body)=>{requests.push(body);if(fail)throw Error('Inline receipt interrupted');return {data:await cashierAction(client,user,body)};};globalThis.__cashierUI=r;
+ const props={kind:'handover',document:source.handovers[0],source,embedded:true,onDone:()=>done++},draw=()=>{r.beforeRender();return render(props,true);};
+ try{
+  let html=draw();assert.match(html,/data-inline-cash-receipt/);assert.match(html,/Expected|Received|Variance/);assert.doesNotMatch(html,/Cash still due:|Cancel/);assert.equal((await entities.TreasuryTransaction.list()).length,0);
+  assert.equal(r.buttons.find(b=>b.type==='submit').disabled,true);r.selects[0].onChange({target:{value:'till'}});r.inputs.find(i=>i.type==='number').onChange({target:{value:'600'}});html=draw();assert.match(html,/Confirm with variance/);assert.equal(r.inputs.find(i=>i.placeholder==='Required if the cash received is short').required,true);
+  r.inputs.find(i=>i.placeholder==='Required if the cash received is short').onChange({target:{value:'Agent retains 400 XAF'}});draw();await r.submit({preventDefault(){}});html=draw();assert.match(html,/Inline receipt interrupted/);assert.equal(r.inputs.find(i=>i.type==='number').value,'600');assert.equal(done,0);
+  fail=false;await r.submit({preventDefault(){}});assert.equal(done,1);assert.equal(requests[0].requestKey,requests[1].requestKey);assert.ok(requests[1].requestKey);assert.equal(requests[1].action,'confirmHandover');assert.equal(requests[1].receivedAmount,600);assert.equal(requests[1].treasuryAccountId,'till');assert.equal(requests[1].handoverId,'handover');assert.equal(requests[1].varianceReason,'Agent retains 400 XAF');assert.equal(requests[1].cashier_id,undefined);
+  assert.equal((await entities.TreasuryAccount.get('till')).balance,100600);const handover=await entities.CashHandover.get('handover');assert.equal(handover.status,'partially_received');assert.equal(handover.cashier_id,'cashier');assert.equal((await entities.TreasuryTransaction.list()).length,1);assert.equal((await entities.FieldSale.list()).length,0);
+ }finally{r.cleanup();delete globalThis.__cashierUI;}
+});
+
+test('the phone cash desk exposes inline handover confirmation and GM preview cannot submit it',async()=>{
+ const render=await ui(),r=runtime(),{client,entities}=await fixture(),calls=[];r.phone=true;
+ r.invoke=async(name,body)=>{calls.push(body);return {data:await cashierAction(client,user,body)};};globalThis.__cashierUI=r;
+ const draw=props=>{r.beforeRender();return render(props||{});};
+ try{
+  draw();await r.flush();let html=draw();assert.match(html,/data-inline-cash-receipt/);assert.match(html,/Receive into account|Transaction date|Confirm receipt/);assert.ok(r.buttons.some(b=>b.label==='Receive cash'));assert.ok(r.buttons.some(b=>b.label==='Petty cash'));assert.equal(calls.some(body=>body.action==='confirmHandover'),false);
+  const source=await cashierAction(client,user,{action:'cashierWorkspace',date});html=draw({data:source,preview:true});assert.match(html,/<fieldset disabled/);const before=calls.length;await r.submit({preventDefault(){}});assert.equal(calls.length,before);assert.equal((await entities.TreasuryTransaction.list()).length,0);
  }finally{r.cleanup();delete globalThis.__cashierUI;}
 });

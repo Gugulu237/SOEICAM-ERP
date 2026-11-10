@@ -17,6 +17,7 @@ const allowed=['admin','commercial','employee','warehouse_manager','procurement'
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const digest=value=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 const same=(a,b)=>JSON.stringify(canonical(a))===JSON.stringify(canonical(b));
+const denied=message=>Object.assign(Error(message),{status:403});
 const invalid=()=>Error('Reconcile the recorded Dégustation stock and accounting evidence before continuing.');
 const pick=(row,keys)=>Object.fromEntries(keys.split(' ').filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]]));
 const stockProof=row=>pick(row,'id product_id product_name quantity source_warehouse_id destination_warehouse_id movement_type document_type document_id movement_date status lot_number expiry_date production_order_id batch_number unit_cost total_value employee_id employee_name recorded_by customer_id customer_name journal_id journal_number dispatch_id degustation_already_expensed degustation_appropriation_id degustation_appropriation_quantity degustation_appropriation_value degustation_appropriation_expense_account_id degustation_appropriation_inventory_account_id central_degustation_id central_degustation_policy central_degustation_source central_degustation_activation_id');
@@ -30,12 +31,14 @@ async function actor(client,user,body){
  const role=principalRole(user,employee),manager=role==='admin';
  if(!user?.id||!allowed.includes(role)||!manager&&(!active(employee)||employee.user_id!==user.id))throw Error('An active authorized staff profile is required for Dégustation.');
  if(client.auth.assertModule){let permitted=false,lastError;for(const module of role==='commercial'?['commercial']:['sales','inventory'])try{client.auth.assertModule(module);permitted=true;break;}catch(error){if(error.status!==403)throw error;lastError=error;}if(!permitted)throw lastError;}
+ if(body.allEmployees===true&&!manager)throw denied('Only the General Manager can view all employees’ Dégustation history.');
+ if(body.allEmployees===true&&body.employeeId)throw Error('Choose all employees or one employee for Dégustation history.');
  const self=employee||manager&&{id:user.id,full_name:user.full_name||'General Manager',status:'active',role:'admin'};
  if(!manager&&body.employeeId&&body.employeeId!==self.id)throw Error('Record Dégustation only under your own profile.');
  let target=self;
  if(manager&&body.employeeId&&body.employeeId!==self.id)target=await client.asServiceRole.entities.Employee.get(body.employeeId);
- if(!active(target))throw Error('Choose an active employee recording the Dégustation.');
- return {self,employee:target,manager};
+ if(body.allEmployees!==true&&!active(target))throw Error('Choose an active employee recording the Dégustation.');
+ return {self,employee:target,manager,allEmployees:body.allEmployees===true};
 }
 
 async function customers(s,context,user){
@@ -78,26 +81,48 @@ async function verifyEvent(s,event,prefetched){
 }
 
 function publicRecord(proof,costs){
- return {id:proof.id,reference:proof.reference,date:proof.date,source:proof.source,employee_id:proof.employee_id,employee_name:proof.employee_name,customer_id:proof.customer_id,customer_name:proof.customer_name,recorded_by:proof.recorded_by,recorded_at:proof.recorded_at,notes:proof.reason,lines:proof.lines.map(row=>({...row})),...(costs?{cost:proof.cost,journal_id:proof.journal?.id||'',journal_number:proof.journal?.journal_number||''}:{})};
+ return {id:proof.id,reference:proof.reference,date:proof.date,source:proof.source,employee_id:proof.employee_id,employee_name:proof.employee_name,customer_id:proof.customer_id,customer_name:proof.customer_name,recorded_by:proof.recorded_by,recorded_at:proof.recorded_at,notes:proof.reason,lines:proof.lines.map(row=>pick(row,'product_id product_name quantity')),...(costs?{cost:proof.cost,journal_id:proof.journal?.id||'',journal_number:proof.journal?.journal_number||''}:{})};
 }
 
+// Batch the same protected evidence for personal and principal-GM history.
+// Aggregate history never loads live stock catalogues or changes its writers.
 async function history(s,context,body){
  const from=journalDate(body.from||today().slice(0,8)+'01'),to=journalDate(body.to||today());if(from>to)throw Error('Choose a valid Dégustation reporting period.');
- const events=await readRecords(s.AuditLog,{action:'record_central_degustation',module:'inventory',central_degustation_employee_id:context.employee.id,central_degustation_date:{$gte:from,$lte:to}}),records=[];
+ if(context.allEmployees&&(Date.parse(to+'T12:00:00Z')-Date.parse(from+'T12:00:00Z'))/86400000+1>366)throw Error('Choose at most 366 days for all employees’ Dégustation history.');
+ const events=await readRecords(s.AuditLog,{action:'record_central_degustation',module:'inventory',...(context.allEmployees?{}:{central_degustation_employee_id:context.employee.id}),central_degustation_date:{$gte:from,$lte:to}}),records=[];
  const [movements,journals]=await Promise.all([byIds(s.StockMovement,'central_degustation_id',events.map(row=>row.id)),byIds(s.JournalEntry,'id',events.map(row=>row.central_degustation_record?.journal?.id))]);
- const journalLines=await byIds(s.JournalLine,'journal_id',journals.map(row=>row.id)),byJournal=new Map(journals.map(row=>[row.id,row]));
- for(const event of events){const proof=event.central_degustation_record;if(!proof||proof.date<from||proof.date>to||proof.employee_id!==context.employee.id)throw invalid();records.push(publicRecord(await verifyEvent(s,event,{movements:movements.filter(row=>row.central_degustation_id===event.id),journal:byJournal.get(proof.journal?.id),journalLines:journalLines.filter(row=>row.journal_id===proof.journal?.id)}),context.manager));}
- const old=await readRecords(s.StockMovement,{document_type:'Degustation',employee_id:context.employee.id,status:'approved',movement_date:{$gte:from,$lte:to}});
- for(const row of degustationHistory(old.filter(row=>!row.central_degustation_id),{costs:context.manager}))records.push({...row,source:'issued',employee_id:context.employee.id});
+ const journalLines=await byIds(s.JournalLine,'journal_id',journals.map(row=>row.id)),byJournal=new Map(journals.map(row=>[row.id,row])),byEvent=new Map(),byLines=new Map();
+ for(const movement of movements){if(!byEvent.has(movement.central_degustation_id))byEvent.set(movement.central_degustation_id,[]);byEvent.get(movement.central_degustation_id).push(movement);}
+ for(const line of journalLines){if(!byLines.has(line.journal_id))byLines.set(line.journal_id,[]);byLines.get(line.journal_id).push(line);}
+ for(const event of events){const proof=event.central_degustation_record;if(!proof||proof.date<from||proof.date>to||typeof proof.employee_id!=='string'||!proof.employee_id||!context.allEmployees&&proof.employee_id!==context.employee.id)throw invalid();records.push(publicRecord(await verifyEvent(s,event,{movements:byEvent.get(event.id)||[],journal:byJournal.get(proof.journal?.id),journalLines:byLines.get(proof.journal?.id)||[]}),context.manager));}
+ const old=await readRecords(s.StockMovement,{document_type:'Degustation',...(context.allEmployees?{}:{employee_id:context.employee.id}),status:'approved',movement_date:{$gte:from,$lte:to}}),legacyGroups=new Map();
+ for(const movement of old.filter(row=>!row.central_degustation_id)){
+  // Historical document references may be reused by different employees.
+  // Rows with no saved employee id cannot be combined or attributed to the GM.
+  const employeeId=typeof movement.employee_id==='string'?movement.employee_id:'',key=JSON.stringify([employeeId,employeeId?'':movement.id]);
+  if(!legacyGroups.has(key))legacyGroups.set(key,{employeeId,movements:[]});legacyGroups.get(key).movements.push(movement);
+ }
+ for(const {employeeId,movements:legacy} of legacyGroups.values())for(const row of degustationHistory(legacy,{costs:context.manager}))records.push({...row,...(context.allEmployees?{id:employeeId?'legacy:employee:'+encodeURIComponent(employeeId)+':'+encodeURIComponent(row.id||legacy[0].id):'legacy:unattributed:'+encodeURIComponent(legacy[0].id),source_document_id:row.id||'',...(!employeeId?{employee_attribution_missing:true}:{})}:{}),source:'issued',employee_id:employeeId});
  return records.sort((a,b)=>String(b.recorded_at||b.date).localeCompare(String(a.recorded_at||a.date)));
+}
+
+// Choices contain only saved history names/ids and the caller's own identity.
+// They are bounded separately from the complete, untruncated period history.
+function historyChoices(records,self){
+ const employees=new Map(),customers=new Map();
+ for(const row of records){if(row.employee_id&&!employees.has(row.employee_id))employees.set(row.employee_id,{id:row.employee_id,full_name:row.employee_name||''});if(row.customer_id&&!customers.has(row.customer_id))customers.set(row.customer_id,{id:row.customer_id,business_name:row.customer_name||''});}
+ if(!employees.has(self.id))employees.set(self.id,{id:self.id,full_name:self.full_name});
+ const employeeRows=[...employees.values()].sort((a,b)=>String(a.full_name).localeCompare(String(b.full_name))||a.id.localeCompare(b.id)),customerRows=[...customers.values()].sort((a,b)=>String(a.business_name).localeCompare(String(b.business_name))||a.id.localeCompare(b.id));
+ return {employees:employeeRows.slice(0,500),customers:customerRows.slice(0,500),filter_choices_truncated:employeeRows.length>500||customerRows.length>500};
 }
 
 export async function centralDegustationAction(client,user,body){
  if(!CENTRAL_DEGUSTATION_ACTIONS.includes(body.action))throw Error('Unknown central Dégustation action.');
+ if(Object.hasOwn(body,'allEmployees')&&(body.action!=='centralDegustationHistory'||typeof body.allEmployees!=='boolean'))throw denied('The all-employees option is available only as a read-only Dégustation history scope.');
  const context=await actor(client,user,body),svc=client.asServiceRole,s=svc.entities;
  if(body.action!=='recordCentralDegustation'){
   const mode=await centralizedInventoryPolicy(s);if(!mode)throw Error('Centralized inventory is not enabled.');
-  if(body.action==='centralDegustationHistory')return {records:await history(s,context,body),costs_visible:context.manager,employee:pick(context.employee,'id full_name')};
+  if(body.action==='centralDegustationHistory'){const records=await history(s,context,body);return {records,costs_visible:context.manager,employee:context.allEmployees?null:pick(context.employee,'id full_name'),employeeId:context.allEmployees?'':context.employee.id,allEmployees:context.allEmployees,canChooseEmployee:context.manager,...historyChoices(records,context.allEmployees?context.self:context.employee)};}
   const [source,choices,previous,records]=await Promise.all([salesStockSource(svc,{sourceType:'company'},today()),customers(s,context,user),legacyAllocations(s,context.employee),history(s,context,body)]);
   const staff=context.manager?(await readRecords(s.Employee,{status:'active'})).filter(active):[context.employee];
   if(!staff.some(row=>row.id===context.self.id))staff.unshift(context.self);

@@ -30,6 +30,7 @@ export default function CompanySalesRegister({ readOnly = false, onMenu, onPromo
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const phone=usePhoneLayout(),[params]=useSearchParams();
+  const includeDetails=phone&&params.get('detailed')!=='1';
   const [exchanges,setExchanges]=useState([]),[exchangeError,setExchangeError]=useState('');
   const [reportKind,setReportKind]=useState('summary');
   const today = businessDate(), navigate = useNavigate(), { isAdmin, role } = useCurrentUser();
@@ -44,7 +45,7 @@ export default function CompanySalesRegister({ readOnly = false, onMenu, onPromo
       if (!active || pending) return;
       pending = true; setLoading(true); setError('');
       try {
-        const result = await invokeFieldOps({ action: 'companySales', ...period });
+        const result = await invokeFieldOps({ action: 'companySales', ...period, ...(includeDetails?{includeDetails:true}:{}) });
         if (result.data.error) throw new Error(result.data.error);
         if (active) setData(result.data);
       } catch (failure) { if (active) setError(errorMessage(failure)); }
@@ -55,7 +56,7 @@ export default function CompanySalesRegister({ readOnly = false, onMenu, onPromo
     const timer = window.setInterval(onFocus, 30000);
     window.addEventListener('focus', onFocus); document.addEventListener('visibilitychange', onFocus);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
-  }, [period, reload]);
+  }, [period, reload, includeDetails]);
   useEffect(()=>{if(!phone)return;let active=true;setExchangeError('');readAll(erp.entities.SalesOrder,{supply_kind:'exchange',status:'delivered'},'-order_date').then(rows=>{if(active)setExchanges(rows);}).catch(failure=>{if(active)setExchangeError(errorMessage(failure));});return()=>{active=false;};},[phone,reload]);
   if(phone&&params.get('detailed')!=='1')return <MobileSalesRegister onMenu={onMenu} onPromotions={onPromotions} data={data} exchanges={exchanges} exchangeError={exchangeError} error={error} loading={loading} period={period} setPeriod={next=>{setDates(next);setPeriod(next);}} today={today} onReload={()=>setReload(n=>n+1)} viewOnly={viewOnly} isAdmin={isAdmin}/>;
   const columns = [

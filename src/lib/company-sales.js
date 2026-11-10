@@ -4,6 +4,20 @@ import { roundMoney } from './field-pos.js';
 export const postedInvoiceStatuses = ['posted', 'partially_paid', 'paid', 'overdue'];
 const posted = row => typeof row.journal_id === 'string' && Boolean(row.journal_id.trim());
 
+// Read-only display metadata: a saved timestamp must contain an actual time.
+// Never turn a date-only historical field into a fabricated midnight sale time.
+const text=value=>typeof value==='string'?value:'';
+const savedDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+export function saleReadMetadata(record={}) {
+  const due=text(record.due_date);
+  const recorded=[record.sales_supply_recorded_at,record.recorded_at,record.created_date,record.created_at].find(value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d/.test(value)&&/(Z|[+-]\d{2}:\d{2})$/.test(value)&&savedDate(value.slice(0,10))&&Number.isFinite(Date.parse(value)));
+  return {due_date:savedDate(due)?due:'',recorded_at:recorded||'',receipt_reference:text(record.receipt_reference)};
+}
+export function saleProductMetadata(line={},product) {
+  const savedProduct=product?.id===line.product_id?product:null;
+  return {id:text(line.product_id),name:text(line.product_name)||text(savedProduct?.name),image_url:text(line.image_url)||text(line.product_image_url)||text(savedProduct?.image_url)};
+}
+
 // One posted document is one sale. Loading, drafts, exchanges and cash handover
 // are never sales; displaying a field supply does not create another invoice.
 export function companySalesRegister({ invoices = [], fieldSales = [], from, to }) {
@@ -11,18 +25,18 @@ export function companySalesRegister({ invoices = [], fieldSales = [], from, to 
   const corrections=[];
   for(const [source,records,dateKey] of [['Invoice',invoices.filter(i=>!i.field_sale_id),'invoice_date'],['Commercial supply',fieldSales,'transaction_date']])for(const record of records){
     const reversal=record.sale_reversal;if(!reversal?.journal_id||!inPeriod(reversal.date)||!posted(record))continue;
-    corrections.push({id:'reversal:'+record.id,document_id:record.id,document_number:'Reversal · '+(record.invoice_number||record.sale_number||record.id),source,date:reversal.date,original_date:record[dateKey],customer_id:record.customer_id,customer_name:record.customer_name,commercial_id:record.salesperson_id||record.commercial_id||'',commercial_name:record.salesperson_name||record.commercial_name||'',payment_type:record.payment_type,status:'reversed',is_reversal:true,subtotal:-Number(record.subtotal||0),tax:-Number(record.tax_total||0),total:-Number(record.total||0),collected:-(source==='Invoice'?(record.payment_type==='cash'?Number(record.total)||0:0):Number(record.amount_collected)||0),balance:0,receipt_count:0,sales_order_id:record.sales_order_id||'',invoice_id:record.invoice_id||''});
+    corrections.push({...saleReadMetadata(reversal),id:'reversal:'+record.id,document_id:record.id,document_number:'Reversal · '+(record.invoice_number||record.sale_number||record.id),source,date:reversal.date,original_date:record[dateKey],customer_id:record.customer_id,customer_name:record.customer_name,commercial_id:record.salesperson_id||record.commercial_id||'',commercial_name:record.salesperson_name||record.commercial_name||'',payment_type:record.payment_type,status:'reversed',is_reversal:true,subtotal:-Number(record.subtotal||0),tax:-Number(record.tax_total||0),total:-Number(record.total||0),collected:-(source==='Invoice'?(record.payment_type==='cash'?Number(record.total)||0:0):Number(record.amount_collected)||0),balance:0,receipt_count:0,sales_order_id:record.sales_order_id||'',invoice_id:record.invoice_id||''});
   }
   const fieldJournals = new Set(fieldSales.filter(row=>row.status==='approved_posted' && posted(row)).map(row=>row.journal_id));
   const rows = [
     ...invoices.filter(row => !isOpeningRecord(row) && !row.field_sale_id && !fieldJournals.has(row.journal_id) && (postedInvoiceStatuses.includes(row.status)||row.status==='credited'&&row.sale_reversal?.journal_id) && posted(row) && inPeriod(row.invoice_date)).map(row => ({
-      id: 'invoice:' + row.id, document_id: row.id, document_number: row.invoice_number || row.id, source: 'Invoice', date: row.invoice_date,
+      ...saleReadMetadata(row),id: 'invoice:' + row.id, document_id: row.id, document_number: row.invoice_number || row.id, source: 'Invoice', date: row.invoice_date,
       customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.salesperson_id || '',commercial_name: row.salesperson_name || '', payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
       collected: row.payment_type==='cash'?Number(row.total) || 0:0, balance: row.payment_type==='cash'?0:Number(row.balance) || 0, sales_order_id: row.sales_order_id || '', receipt_count: 0,
     })),
     ...fieldSales.filter(row => row.supply_kind !== 'exchange' && row.status === 'approved_posted' && posted(row) && inPeriod(row.transaction_date)).map(row => ({
-      id: 'field:' + row.id, document_id: row.id, document_number: row.sale_number || row.id, source: 'Commercial supply', date: row.transaction_date,
+      ...saleReadMetadata(row),id: 'field:' + row.id, document_id: row.id, document_number: row.sale_number || row.id, source: 'Commercial supply', date: row.transaction_date,
       customer_id:row.customer_id,customer_name: row.customer_name, commercial_id:row.commercial_id,commercial_name: row.commercial_name, payment_type: row.payment_type, status: row.status,
       subtotal: Number(row.subtotal) || 0, tax: Number(row.tax_total) || 0, total: Number(row.total) || 0,
       collected: Number(row.amount_collected) || 0, balance: Number(row.amount_due) || 0, receipt_count: row.receipt_file_uris?.length || 0, invoice_id:row.invoice_id || '',

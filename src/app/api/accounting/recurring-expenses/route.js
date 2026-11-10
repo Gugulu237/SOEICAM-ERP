@@ -9,7 +9,7 @@ export async function GET(request){
   try{
     const params=new URL(request.url).searchParams;
     const context=await authenticateRequest('accounting');
-    return Response.json(await transaction(()=>recurringExpenseWorkspace(serviceEntities,context,{from:params.get('from')||undefined,to:params.get('to')||undefined,reportOnly:params.get('summary')==='1'})),{headers});
+    return Response.json(await transaction(()=>recurringExpenseWorkspace(serviceEntities,context,{from:params.get('from')||undefined,to:params.get('to')||undefined,reportOnly:['1','alerts'].includes(params.get('summary')),alertsOnly:params.get('summary')==='alerts'})),{headers});
   }catch(error){return apiError(error);}
 }
 export async function POST(request){
