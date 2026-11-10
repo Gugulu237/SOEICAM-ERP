@@ -3,6 +3,8 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from 'react';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import MobileManagerHome from './MobileManagerHome';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from '@/lib/router';
 import { BriefcaseBusiness, CheckSquare, Users, Store, ArrowUpRight } from 'lucide-react';
@@ -17,6 +19,7 @@ const Approvals = dynamic(() => import('@/views/Approvals'), { ssr: false });
 export default function ManagerHome({ data, loading, preview, onRefresh }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const phone = usePhoneLayout();
   const [params, setParams] = useSearchParams();
   const section = ['approvals','quick-reports'].includes(params.get('section')) ? params.get('section') : 'overview';
   const selectSection = value => setParams(current => {
@@ -27,6 +30,7 @@ export default function ManagerHome({ data, loading, preview, onRefresh }) {
   const source = data || {}, summary = managerSnapshot(source), cash = cashierSnapshot(source), production = productionSnapshot(source), ready = !!data && !loading;
   const maximum = Math.max(1, ...summary.trend.map(day => day.value));
   const queues = (source.approvalQueues || []).filter(q => q.count > 0);
+  if (phone && section === 'overview') return <MobileManagerHome data={data} loading={loading} preview={preview}/>;
   return <div className="space-y-6">
     <nav aria-label={ui("General Manager dashboard sections")} className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
       {[['overview', 'Overview'], ['approvals', 'Approvals'], ['quick-reports', 'Quick reports']].map(([value, label]) => <button key={value} type="button" aria-current={section === value ? 'page' : undefined} onClick={() => selectSection(value)} className={'rounded-lg px-4 py-2 text-sm font-semibold ' + (section === value ? 'bg-primary text-primary-foreground' : 'bg-white text-slate-700 hover:bg-sky-50')}>{ui(label)}</button>)}
