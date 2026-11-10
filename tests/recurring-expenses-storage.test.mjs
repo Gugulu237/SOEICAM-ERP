@@ -48,5 +48,13 @@ test('real entity stores preserve recurring schedule JSON, deterministic IDs, po
     const counts=await Promise.all(['JournalEntry','JournalLine','AuditLog','Payment','PaymentAllocation'].map(n=>s[n].count({})));
     const retry=await post();assert.equal(retry.status,200);assert.equal((await retry.json()).reused,true);
     assert.deepEqual(await Promise.all(['JournalEntry','JournalLine','AuditLog','Payment','PaymentAllocation'].map(n=>s[n].count({}))),counts);
+    const financialBefore=await Promise.all(['Bill','JournalEntry','JournalLine','Payment','TreasuryTransaction'].map(name=>s[name].count({})));
+    const configure={action:'configure',requestKey:crypto.randomUUID(),newAccount:{name:'Fixture monthly service',account_number:'TEST-CONFIG-SERVICE'},expectedRevision:0,settings:{enabled:true,amount:37.25,due_day:1,effective_month:date.slice(0,7),supplier_id:'landlord',payable_account_id:'payable'}};
+    const saveSetup=()=>api.POST(new Request('http://localhost/api/accounting/recurring-expenses',{method:'POST',body:JSON.stringify(configure)}));
+    const configured=await saveSetup();assert.equal(configured.status,200);const savedSetup=await configured.json(),createdAccount=await s.Account.get(savedSetup.account.id);
+    assert.equal(createdAccount.account_type,'expense');assert.equal(createdAccount.recurring_expense.versions[0].amount,37.25);assert.equal(createdAccount.recurring_expense.versions[0].payable_account_id,'payable');
+    assert.deepEqual(await Promise.all(['Bill','JournalEntry','JournalLine','Payment','TreasuryTransaction'].map(name=>s[name].count({}))),financialBefore);
+    assert.equal((await (await saveSetup()).json()).reused,true);assert.equal((await s.Account.filter({account_number:'TEST-CONFIG-SERVICE'})).length,1);
+
   }finally{delete globalThis.__recurringStoreDB;delete globalThis.__recurringStoreTx;delete globalThis.__recurringStoreContext;await db.close();}
 });

@@ -8,7 +8,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import MobileAssetCard from '@/components/accounting/mobile/MobileAssetCard';
 import MobileFixedAssets from '@/components/accounting/mobile/MobileFixedAssets';
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback,useRef } from "react";
 import { assetAction } from "@/lib/assets";
 import {syncAssetDepreciation} from '@/lib/asset-depreciation-client';
 import DepreciationStatus from '@/components/assets/DepreciationStatus';
@@ -29,6 +29,9 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, CalendarClock, Building2 } from "lucide-react";
+import {assetSetupIncomplete} from '@/lib/asset-register-review';
+import AssetRegisterReconciliation from '@/components/assets/AssetRegisterReconciliation';
+import AccountAssetDialog from '@/components/accounting/AccountAssetDialog';
 
 export default function FixedAssets() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -43,20 +46,24 @@ export default function FixedAssets() {
   const [dialog, setDialog] = useState(null);
   const [disposing, setDisposing] = useState(null);
   const [editing,setEditing]=useState(null),[funding,setFunding]=useState(null),[accounts,setAccounts]=useState([]),[treasuryAccounts,setTreasuryAccounts]=useState([]),[transfers,setTransfers]=useState([]),[error,setError]=useState("");
+  const [reconciliation,setReconciliation]=useState(null),[reviewAccount,setReviewAccount]=useState(null),[workspaceReady,setWorkspaceReady]=useState(false);
+  const [checking,setChecking]=useState(false);
+  const checkingRef=useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);setError('');
-    try { setDepreciation(await syncAssetDepreciation());const data=await assetAction({action:'assetWorkspace'});setAssets(data.assets);setEntries(data.entries);setAccounts(data.accounts);setTreasuryAccounts(data.treasuryAccounts);setTransfers(data.transfers); }
-    catch(e){setError(e.message)} finally {setLoading(false)}
+    try { const data=await assetAction({action:'assetWorkspace'});setAssets(data.assets);setEntries(data.entries);setAccounts(data.accounts);setTreasuryAccounts(data.treasuryAccounts);setTransfers(data.transfers);setDepreciation(data.depreciationStatus||null);setReconciliation(data.reconciliation||null);setWorkspaceReady(true); }
+    catch(e){setError(e.message);setWorkspaceReady(false);} finally {setLoading(false)}
   }, []);
   useEffect(() => { load(); }, [load]);
+  const checkDepreciation=async()=>{if(checkingRef.current)return;checkingRef.current=true;setChecking(true);setError('');try{await syncAssetDepreciation();await load();}catch(cause){setError(cause.message);}finally{checkingRef.current=false;setChecking(false);}};
   const canManage = isAdmin || isCashier;
   const canFund = canManage && (isAdmin || !allowedModules || allowedModules.includes('cashier'));
   const fundingEntries=entries.filter(e=>e.replacement_target>0);
   const targetTotal=round2(fundingEntries.reduce((n,e)=>n+e.replacement_target,0)),fundedTotal=round2(fundingEntries.reduce((n,e)=>n+e.replacement_funded,0)),outstandingTotal=round2(fundingEntries.reduce((n,e)=>n+e.replacement_outstanding,0));
   const live = assets.filter((a) => a.status !== "disposed" && a.status !== "written_off");
-  const totalCost = round2(live.reduce((s, a) => s + (a.acquisition_cost || 0), 0));
-  const totalAccum = round2(live.reduce((s, a) => s + (a.accumulated_depreciation || 0), 0));
+  const totalCost = round2(live.reduce((s, a) => s + (Number(a.acquisition_cost) || 0), 0));
+  const totalAccum = round2(live.reduce((s, a) => s + (Number(a.accumulated_depreciation) || 0), 0));
   const totalNbv = round2(totalCost - totalAccum);
   const monthlyCharge = round2(live.filter((a) => a.status === "active").reduce((s, a) => s + monthlyDepreciation(a), 0));
 
@@ -70,9 +77,9 @@ export default function FixedAssets() {
     { key: "acquisition_cost", label: ui("Cost"), render: (v) => formatXAF(v) },
     { key: "accumulated_depreciation", label: ui("Accum. Dep."), render: (v) => formatXAF(v) },
     { key: "net_book_value", label: ui("Net Book Value"), render: (v) => <span className="font-semibold">{formatXAF(v)}</span> },
-    { key: "status", label: ui("Status"), render: (v) => <StatusBadge status={v} /> },
+    { key: "status", label: ui("Status"), render: (v,a) => assetSetupIncomplete(a)?<span className="text-xs font-semibold text-amber-800">{ui('Setup incomplete')}</span>:<StatusBadge status={v} /> },
     {
-      key: "actions", label: "", render: (v, asset) => canManage && asset.status !== "disposed" && asset.status !== "written_off" ? (
+      key: "actions", label: "", render: (v, asset) => canManage && !assetSetupIncomplete(asset) && asset.status !== "disposed" && asset.status !== "written_off" ? (
         <div className="flex gap-2"><Button size="sm" variant="outline" onClick={e=>{e.stopPropagation();setEditing(asset)}}>{ui("Schedule")}</Button><Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setDisposing(asset); }}>{ui("Dispose")}</Button></div>
       ) : null,
     },
@@ -107,11 +114,16 @@ export default function FixedAssets() {
       {dialog === "depreciation" && <DepreciationRunDialog assets={assets} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
       {editing&&<AssetPlanDialog asset={editing} accounts={accounts} onClose={()=>setEditing(null)} onDone={()=>{setEditing(null);load()}} />}
       {funding&&<AssetFundingDialog entry={funding} treasuryAccounts={treasuryAccounts} onClose={()=>setFunding(null)} onDone={()=>{setFunding(null);load()}} />}
-      {disposing && <DisposeAssetDialog asset={disposing} onClose={() => setDisposing(null)} onDone={() => { setDisposing(null); load(); }} />}</>);
+      {disposing && <DisposeAssetDialog asset={disposing} onClose={() => setDisposing(null)} onDone={() => { setDisposing(null); load(); }} />}
+      {reviewAccount&&<AccountAssetDialog account={reviewAccount} onClose={()=>setReviewAccount(null)} onChanged={load}/>}</>);
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
+  if(!workspaceReady)return <section className="space-y-3"><PageHeader title={ui('Fixed Assets')}/><p role="alert" className="rounded-xl border border-red-200 p-4 text-sm text-red-700">{uiMessage(error)}</p><Button variant="outline" onClick={load}>{ui('Retry loading the asset register')}</Button></section>;
 
-  if(phone)return <><MobileFixedAssets assets={assets} summary={{totalCost,totalNbv,totalAccum,monthlyCharge}} canManage={canManage} onBack={()=>navigate('/accounting')} onNew={()=>setDialog('asset')} onRunDepreciation={()=>setDialog('depreciation')} onRefresh={load} renderActions={asset=>assetCols.find(c=>c.key==='actions').render(null,asset)} historyContent={historyContent} fundingContent={fundingContent} registerTools={<DataTable exportTitle="Fixed asset register" exportDisabled={!!error||loading} mobileRow={asset=><MobileAssetCard asset={asset} actions={assetCols.find(c=>c.key==='actions').render(null,asset)}/>} columns={assetCols} data={assets} searchFields={["asset_number","name","serial_number","location"]}/>} depreciationWarning={!!(depreciation?.pending_count||depreciation?.issues?.length)} depreciationStatus={<DepreciationStatus status={depreciation}/>} error={error?uiMessage(error):''}/>{dialogs}</>;
+  const reconciliationContent=<AssetRegisterReconciliation data={reconciliation} canManage={canManage} onReview={setReviewAccount}/>;
+  const depreciationContent=<><DepreciationStatus status={depreciation}/>{canManage&&<div className="mt-3 space-y-2"><p className="text-xs text-muted-foreground">{ui('This processes saved authorized depreciation schedules for eligible completed months. Opening the register does not post depreciation.')}</p><Button variant="outline" disabled={checking} onClick={checkDepreciation}>{ui(checking?'Checking saved depreciation...':'Check saved depreciation')}</Button></div>}</>;
+
+  if(phone)return <><MobileFixedAssets assets={assets} summary={{totalCost,totalNbv,totalAccum,monthlyCharge}} reconciliation={reconciliation} reconciliationContent={reconciliationContent} canManage={canManage} onBack={()=>navigate('/accounting')} onNew={()=>setDialog('asset')} onRunDepreciation={()=>setDialog('depreciation')} onRefresh={load} renderActions={asset=>assetCols.find(c=>c.key==='actions').render(null,asset)} historyContent={historyContent} fundingContent={fundingContent} registerTools={<DataTable exportTitle="Fixed asset register" exportDisabled={!!error||loading} mobileRow={asset=><MobileAssetCard asset={asset} actions={assetCols.find(c=>c.key==='actions').render(null,asset)}/>} columns={assetCols} data={assets} searchFields={["asset_number","name","serial_number","location"]}/>} depreciationWarning={!!(depreciation?.pending_count||depreciation?.issues?.length)} depreciationStatus={depreciationContent} error={error?uiMessage(error):''}/>{dialogs}</>;
 
   return (
     <div data-sleek-assets>
@@ -129,13 +141,15 @@ export default function FixedAssets() {
       />
 
       {error&&<p role="alert" className="mb-4 rounded bg-red-50 p-3 text-red-700">{uiMessage(error)}</p>}
-      <DepreciationStatus status={depreciation} />
+      {depreciationContent}
+      <p className="mb-3 text-sm text-muted-foreground">{ui('These values describe saved asset records. Posted asset-account balances awaiting registration are shown separately below.')}</p>
       <div data-asset-summary className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KPICard title={ui("Assets in Register")} value={live.length} icon={Building2} />
         <KPICard title={ui("Total Cost")} value={formatXAF(totalCost)} />
         <KPICard title={ui("Accumulated Depreciation")} value={formatXAF(totalAccum)} color="red" />
         <KPICard title={ui("Net Book Value")} value={formatXAF(totalNbv)} subtitle={ui("Monthly charge {0}", formatXAF(monthlyCharge))} color="green" />
       </div>
+      <div className="mb-6">{reconciliationContent}</div>
 
       <Tabs defaultValue="register">
         <TabsList>

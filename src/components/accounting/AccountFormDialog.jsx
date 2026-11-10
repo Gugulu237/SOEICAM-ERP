@@ -254,7 +254,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
           <p className="text-sm text-slate-600">{ui('Set the lifespan and straight-line monthly expense for assets recorded in this account. Each asset keeps its own schedule.')}</p>
           <Button type="button" variant="outline" disabled={saving} onClick={()=>setAssetSettings(true)}>{ui('Manage asset depreciation')}</Button>
         </section>}
-        {(recurringExpenseAccount(form)||account?.recurring_expense)&&<RecurringExpenseSettings value={recurring} existing={account?.recurring_expense} disabled={saving} onChange={value=>{setRecurring(value);setRecurringChanged(true);}}/>}
+        {(recurringExpenseAccount(form)||account?.recurring_expense)&&<RecurringExpenseSettings payrollManaged={String(account?.account_number||form.account_number)==='6100'} value={recurring} existing={account?.recurring_expense} disabled={saving} onChange={value=>{setRecurring(value);setRecurringChanged(true);}}/>}
         </Settings>
         {saveError && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
         <Footer data-mobile-action-bar={inline||undefined} className={inline?'sticky bottom-0 z-20 grid grid-cols-2 gap-2 border-t bg-white pt-3 [&_button]:min-h-14':undefined}>
