@@ -4,7 +4,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {build} from 'esbuild';
 import path from 'node:path';
 import {fixture,date,user as cashier} from './helpers/cashier.mjs';
-import {prepareRecurringExpense,recurringExpenseWorkspace,recordRecurringExpense} from '../src/server/domain/recurring-expenses.js';
+import {prepareRecurringExpense,recurringExpenseWorkspace,recordRecurringExpense,configureRecurringExpense,previewDueAccrual,accrueDueExpenses} from '../src/server/domain/recurring-expenses.js';
 import {verifiedRecurringBill} from '../src/server/domain/recurring-bill-evidence.js';
 import {recurringDueDate} from '../src/lib/recurring-expense-schedule.js';
 import {shiftMonth} from '../src/lib/asset-schedule.js';
@@ -194,4 +194,60 @@ test('checked endpoint commits once and a retry after a lost response creates no
     assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
     const read=await api.GET(new Request('http://localhost/api/accounting/recurring-expenses'));assert.equal(read.headers.get('cache-control'),'private, no-store');
   }finally{delete globalThis.__recurringTest;await db.close();}
+});
+
+
+const directSettings=(extra={})=>monthly({due_day:1,payable_account_id:'payable',...extra});
+test('direct recurring setup creates a real expense account without a global rule and saves versions without posting liabilities',async()=>{
+ const f=await setup(),s=f.entities;await s.PostingRule.deleteMany({rule_key:'supplier_payable'});const beforeJournals=(await s.JournalEntry.list()).length,beforeBills=(await s.Bill.list()).length;
+ const body={action:'configure',requestKey:crypto.randomUUID(),newAccount:{name:'Fixture internet charge',account_number:'TEST-NET'},expectedRevision:0,settings:directSettings({amount:123.45})};
+ const result=await configureRecurringExpense(s,context,body),account=await s.Account.get(result.account.id);
+ assert.equal(account.account_type,'expense');assert.equal(account.normal_balance,'debit');assert.equal(account.recurring_expense.versions[0].amount,123.45);assert.equal(account.recurring_expense.versions[0].payable_account_id,'payable');assert.equal((await s.JournalEntry.list()).length,beforeJournals);assert.equal((await s.Bill.list()).length,beforeBills);assert.equal((await s.TreasuryTransaction.list()).length,0);
+ const retry=await configureRecurringExpense(s,context,body);assert.equal(retry.reused,true);assert.equal(retry.account.id,account.id);assert.equal((await s.Account.list()).filter(row=>row.account_number==='TEST-NET').length,1);
+ await assert.rejects(configureRecurringExpense(s,context,{...body,settings:{...body.settings,amount:99}}),{status:409});
+ const next=shiftMonth(month,1),edited=await configureRecurringExpense(s,context,{action:'configure',requestKey:crypto.randomUUID(),accountId:account.id,expectedRevision:1,settings:directSettings({amount:200,effective_month:next})});
+ assert.equal(edited.account.recurring_expense.revision,2);assert.deepEqual(edited.account.recurring_expense.versions.map(version=>version.amount),[123.45,200]);
+ await assert.rejects(configureRecurringExpense(s,context,{action:'configure',requestKey:crypto.randomUUID(),accountId:account.id,expectedRevision:1,settings:directSettings({amount:250,effective_month:next})}),{status:409});
+ const workspace=await recurringExpenseWorkspace(s,context);assert.equal(workspace.summaries.find(row=>row.account_id===account.id).pending_total,123.45);assert.equal(workspace.summaries.find(row=>row.account_id===account.id).accrued_unpaid_total,0);
+});
+
+test('direct schedule setup requires its own valid payee and payable and denies salary duplication by exact payroll account',async()=>{
+ const f=await setup(),s=f.entities,body={action:'configure',requestKey:crypto.randomUUID(),newAccount:{name:'Fixture monthly service',account_number:'TEST-SERVICE'},expectedRevision:0,settings:directSettings()};
+ for(const settings of [{...body.settings,supplier_id:''},{...body.settings,payable_account_id:''},{...body.settings,payable_account_id:'till-gl'},{...body.settings,payable_account_id:'expense'},{...body.settings,effective_month:shiftMonth(month,-1)}])await assert.rejects(configureRecurringExpense(s,context,{...body,requestKey:crypto.randomUUID(),settings}));
+ await assert.rejects(configureRecurringExpense(s,{user:cashier,role:'cashier',employee:{id:'cashier',role:'cashier',status:'active'}},body),{status:403});
+ await assert.rejects(configureRecurringExpense(s,context,{...body,newAccount:{name:'Fixture salaries',account_number:'6100'}}),/Payroll/);
+ const expense=await s.Account.get('expense');await s.Account.update('expense',{account_number:'6100',recurring_expense:{...expense.recurring_expense,versions:expense.recurring_expense.versions.map(version=>({...version,due_day:1}))}});
+ let workspace=await recurringExpenseWorkspace(s,context),row=workspace.rows.find(value=>value.account_id==='expense');assert.equal(row.payroll_managed,true);assert.equal(row.blocked,true);assert.ok(workspace.accounts.some(account=>account.id==='expense'&&account.payroll_managed));
+ await assert.rejects(recordRecurringExpense(s,context,{action:'accrue',requestKey:crypto.randomUUID(),accountId:'expense',period:row.period,token:row.token}),/Payroll/);
+ await assert.rejects(previewDueAccrual(s,context,{rows:[{accountId:'expense',period:row.period,token:row.token}]}),/Payroll/);
+ assert.equal((await s.Bill.list()).length,0);
+ await configureRecurringExpense(s,context,{action:'configure',requestKey:crypto.randomUUID(),accountId:'expense',expectedRevision:1,settings:{enabled:false,effective_month:shiftMonth(month,1)}});
+ workspace=await recurringExpenseWorkspace(s,context,{today:shiftMonth(month,1)+'-10'});assert.equal(workspace.rows.length,1,'legacy salary charge stays visible while future duplicate schedule is paused');
+});
+
+test('due recognition is a read-only bounded reviewed selection and rejects stale, future or duplicate rows',async()=>{
+ const f=await setup(),s=f.entities,result=await configureRecurringExpense(s,context,{action:'configure',requestKey:crypto.randomUUID(),newAccount:{name:'Fixture due service',account_number:'TEST-DUE'},expectedRevision:0,settings:directSettings({amount:100})}),row=(await recurringExpenseWorkspace(s,context)).rows.find(value=>value.account_id===result.account.id),input={accountId:row.account_id,period:row.period,token:row.token},before=structuredClone(f.rows);
+ const preview=await previewDueAccrual(s,context,{rows:[input]});assert.equal(preview.total,100);assert.equal(preview.count,1);assert.deepEqual(f.rows,before);
+ await assert.rejects(previewDueAccrual(s,context,{rows:[input,input]}),/only once/);await assert.rejects(previewDueAccrual(s,context,{rows:Array(61).fill(input)}),/1 and 60/);
+ await assert.rejects(accrueDueExpenses(s,context,{action:'accrueDue',requestKey:crypto.randomUUID(),rows:[input],reviewToken:preview.token,confirmed:false}),/Review and confirm/);
+ await s.Account.update(result.account.id,{name:'Changed during review'});await assert.rejects(accrueDueExpenses(s,context,{action:'accrueDue',requestKey:crypto.randomUUID(),rows:[input],reviewToken:preview.token,confirmed:true}),/changed/);assert.equal((await s.Bill.list()).length,0);
+ const future=await configureRecurringExpense(s,context,{action:'configure',requestKey:crypto.randomUUID(),newAccount:{name:'Fixture future service',account_number:'TEST-FUTURE'},expectedRevision:0,settings:directSettings({effective_month:shiftMonth(month,1)})});assert.ok(!(await recurringExpenseWorkspace(s,context)).rows.some(value=>value.account_id===future.account.id));
+});
+
+test('reviewed due accrual commits rent and service payables together, rolls back late failures, retries once and pays a partial debt without duplicate expense',async()=>{
+ const db=new PGlite();try{
+  const f=await setup(db),s=f.entities,api=await route();globalThis.__recurringTest={...f,context,db};
+  const accounts=[];for(const [name,number,amount] of [['Fixture rent','TEST-RENT',100],['Fixture service','TEST-SUB',200]])accounts.push((await configureRecurringExpense(s,context,{action:'configure',requestKey:crypto.randomUUID(),newAccount:{name,account_number:number},expectedRevision:0,settings:directSettings({amount})})).account);
+  const workspace=await recurringExpenseWorkspace(s,context),selected=workspace.rows.filter(row=>accounts.some(account=>account.id===row.account_id)),rows=selected.map(row=>({accountId:row.account_id,period:row.period,token:row.token}));
+  const request=body=>api.POST(new Request('http://localhost/api/accounting/recurring-expenses',{method:'POST',body:JSON.stringify(body)}));
+  const previewResponse=await request({action:'previewDueAccrual',rows});assert.equal(previewResponse.status,200);const preview=await previewResponse.json();assert.equal(preview.total,300);assert.equal((await s.Bill.list()).length,0);
+  const body={action:'accrueDue',requestKey:crypto.randomUUID(),rows,reviewToken:preview.token,confirmed:true},beforeJournals=(await s.JournalEntry.list()).length,create=s.AuditLog.create;
+  s.AuditLog.create=async input=>{if(input.action==='accrue_due_recurring_expenses')throw Error('Late due-review audit failure');return create(input);};
+  let response=await request(body);assert.equal(response.status,400);assert.equal((await s.Bill.list()).length,0);assert.equal((await s.JournalEntry.list()).length,beforeJournals);assert.equal((await s.Supplier.get('supplier')).balance,0);assert.equal((await s.Account.get('payable')).balance,0);
+  s.AuditLog.create=create;response=await request(body);assert.equal(response.status,200);assert.equal((await response.json()).count,2);assert.equal((await s.Bill.list()).length,2);assert.equal((await s.JournalEntry.list()).length,beforeJournals+2);assert.equal((await s.Supplier.get('supplier')).balance,300);assert.equal((await s.TreasuryAccount.get('till')).balance,100000);assert.equal((await s.Payment.list()).length,0);
+  const counts=await Promise.all(['Bill','JournalEntry','JournalLine','AuditLog'].map(name=>s[name].list().then(values=>values.length)));response=await request(body);assert.equal(response.status,200);assert.equal((await response.json()).reused,true);assert.deepEqual(await Promise.all(['Bill','JournalEntry','JournalLine','AuditLog'].map(name=>s[name].list().then(values=>values.length))),counts);
+  const rent=selected.find(row=>row.account_name==='Fixture rent');await recordRecurringExpense(s,context,{action:'pay',requestKey:crypto.randomUUID(),accountId:rent.account_id,period:rent.period,token:rent.token,amount:40,date,treasuryAccountId:'till',reference:'TEST-PARTIAL'});
+  assert.equal((await s.Account.get(rent.account_id)).balance,100);assert.equal((await s.Account.get('payable')).balance,260);assert.equal((await s.Supplier.get('supplier')).balance,260);assert.equal((await s.Payment.list()).length,1);assert.equal((await s.Bill.list()).length,2);
+  const summary=(await recurringExpenseWorkspace(s,context)).summaries.find(value=>value.account_id===rent.account_id);assert.equal(summary.accrued_unpaid_total,60);assert.equal(summary.paid_total,40);assert.equal(summary.pending_total,0);
+ }finally{delete globalThis.__recurringTest;await db.close();}
 });

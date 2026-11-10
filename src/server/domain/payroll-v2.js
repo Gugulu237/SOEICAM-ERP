@@ -5,7 +5,7 @@ import { requireActiveContext, forbidden } from '../access.js';
 import { assertModule } from './role-catalogue.js';
 import { readRecords } from './commercial-workspace.js';
 import { round2, postJournal, today } from './field-ops.js';
-import { PAYSLIP_MONEY_FIELDS, payslipAmounts, payrollMoney } from '../../lib/payroll-values.js';
+import { PAYSLIP_MONEY_FIELDS, payslipAmounts, payrollMoney, payrollPaymentDateFloor } from '../../lib/payroll-values.js';
 
 const hash=value=>createHash('sha256').update(JSON.stringify(value,(_,v)=>v && typeof v==='object' && !Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
 const label=context=>context.employee?.full_name || context.user.full_name || context.user.email || context.user.id;
@@ -69,7 +69,10 @@ async function bookPayroll(stores,context,run,body) {
   if(lines.some(line=>employeePayrollChanged(line,currentStaff.byId.get(line.employee_id)?.snapshot)))throw conflict('Employee information changed. Update this payroll from employees and review the affected payslips before approval.');
   const totals=total(lines);
   if(['employee_count','total_gross','total_deductions','total_net'].some(k=>Number(run[k])!==totals[k]) || totals.total_gross<=0)throw Error('Payroll totals changed. Review the employee payslips again.');
-  const date=today();await period(stores,date);
+  const approvalDate=today(),date=body.accrualDate===undefined?approvalDate:body.accrualDate;
+  if(run.period_name>approvalDate.slice(0,7))throw Error('Future-month payroll cannot be approved before the earned month begins.');
+  if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T12:00:00Z'))||new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date||date.slice(0,7)!==run.period_name||date>approvalDate)throw Error('Review an explicit accrual date within the payroll month, no later than today.');
+  await period(stores,date);
   const [accounts,treasury]=await Promise.all([readRecords(stores.Account),readRecords(stores.TreasuryAccount)]);
   const expense=accounts.find(a=>a.account_number==='6100'),payable=accounts.find(a=>a.account_number==='4200'),treasuryIds=new Set(treasury.map(t=>t.gl_account_id));
   if(!active(expense) || !active(payable) || expense.account_type!=='expense' || payable.account_type!=='liability' || expense.normal_balance!=='debit' || payable.normal_balance!=='credit' || treasuryIds.has(expense.id) || treasuryIds.has(payable.id))throw Error('Configure active posting accounts 6100 (salary expense) and 4200 (employee salaries payable).');
@@ -88,8 +91,8 @@ async function bookPayroll(stores,context,run,body) {
   const {journal}=await postJournal({entities:stores},{entryDate:date,description:`Payroll ${run.period_name}`,sourceModule:'payroll',sourceDocumentType:'PayrollRun',sourceDocumentId:run.id,userId:context.user.id,lines:postings});
   const now=new Date().toISOString();
   for(const l of lines)await stores.PayrollLine.update(l.id,{status:'approved',payroll_approved_by:context.user.id,payroll_approved_name:label(context),payroll_approved_at:now,payroll_payable_account_id:payable.id,amount_paid:0,outstanding_amount:l.net_pay});
-  const saved=await stores.PayrollRun.update(run.id,{status:'posted',payroll_workflow_version:2,approved_by:context.user.id,approved_by_name:label(context),approved_at:now,payroll_posted_date:date,payroll_payable_account_id:payable.id,journal_id:journal.id,total_paid:0,total_outstanding:totals.total_net,payment_status:totals.total_net?'unpaid':'paid',payroll_revision:Number(run.payroll_revision || 0)+1});
-  await log(stores,context,saved,'approve_payroll',`Approved reviewed payslips and recorded ${totals.total_net} XAF employee payable for ${run.period_name}`,{payroll_approved_line_ids:lines.map(l=>l.id),journal_id:journal.id});
+  const saved=await stores.PayrollRun.update(run.id,{status:'posted',payroll_workflow_version:2,approved_by:context.user.id,approved_by_name:label(context),approved_at:now,payroll_posted_date:date,payroll_approval_date:approvalDate,payroll_payable_account_id:payable.id,journal_id:journal.id,total_paid:0,total_outstanding:totals.total_net,payment_status:totals.total_net?'unpaid':'paid',payroll_revision:Number(run.payroll_revision || 0)+1});
+  await log(stores,context,saved,'approve_payroll',`Approved reviewed payslips and recorded ${totals.total_net} XAF employee payable for ${run.period_name}`,{payroll_approved_line_ids:lines.map(l=>l.id),journal_id:journal.id,payroll_accrual_date:date,payroll_approval_date:approvalDate});
   return saved;
 }
 async function paySalary(stores,context,body) {
@@ -104,7 +107,8 @@ async function paySalary(stores,context,body) {
   const source=await stores.JournalEntry.get(run.journal_id);
   if(source?.status!=='posted' || source.source_document_id!==run.id)throw Error('The approved payroll journal needs reconciliation.');
   const amount=payrollMoney(body.amount),date=String(body.date || today()),reference=text(body.reference,'the payment receipt or transfer reference',200);
-  if(amount<=0 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date || date>today() || date<run.payroll_posted_date)throw Error('Choose a positive payment and a valid date on or after payroll approval, no later than today.');
+  const paymentFloor=payrollPaymentDateFloor(run);
+  if(amount<=0 || !paymentFloor || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date || date>today() || date<paymentFloor)throw Error('Choose a positive payment and a valid date on or after payroll approval, no later than today.');
   await period(stores,date);
   const paid=settlement([line],await paymentsFor(stores,run.id)).lines[0];
   if(amount>paid.outstanding_amount)throw conflict('This payment exceeds the employee outstanding salary. Reload the payslip.');

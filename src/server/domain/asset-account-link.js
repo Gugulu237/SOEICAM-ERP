@@ -8,10 +8,11 @@ const digest = value => createHash('sha256').update(JSON.stringify(value)).diges
 
 // A cached account balance alone is not evidence of capitalized cost. Reconcile
 // every contributing journal, including reversed originals and their offsets.
-async function ledgerEvidence(stores, account, allAccounts) {
-  const targetLines = await readRecords(stores.JournalLine, { account_id: account.id });
+export async function assetAccountLedgerEvidence(stores, account, allAccounts, prepared) {
+  const targetLines = prepared?prepared.targetLines.filter(row=>row.account_id===account.id):await readRecords(stores.JournalLine, { account_id: account.id });
   const journalIds = [...new Set(targetLines.map(row => row.journal_id))], journals = [], lines = [];
-  for (let i = 0; i < journalIds.length; i += 100) {
+  if(prepared){const ids=new Set(journalIds);journals.push(...prepared.journals.filter(row=>ids.has(row.id)));lines.push(...prepared.lines.filter(row=>ids.has(row.journal_id)));}
+  else for (let i = 0; i < journalIds.length; i += 100) {
     const ids = journalIds.slice(i, i + 100);
     journals.push(...await readRecords(stores.JournalEntry, { id: { $in: ids } }));
     lines.push(...await readRecords(stores.JournalLine, { journal_id: { $in: ids } }));
@@ -39,6 +40,13 @@ async function ledgerEvidence(stores, account, allAccounts) {
   return { balance: normalBalance / 100, journals, lines };
 }
 
+export function assetCostSources(ledger,accountId){
+ return ledger.journals.filter(j=>ledgerStatuses.includes(j.status)).map(journal=>{
+  const selected=ledger.lines.filter(row=>row.journal_id===journal.id&&row.account_id===accountId),debit=selected.reduce((n,row)=>n+journalCents(row.debit),0),credit=selected.reduce((n,row)=>n+journalCents(row.credit),0);
+  return {id:journal.id,journal_number:journal.journal_number,entry_date:journal.entry_date,description:journal.description||'',reference:journal.reference||'',source_module:journal.source_module||'',debit:debit/100,credit:credit/100,net_cost:(debit-credit)/100};
+ }).sort((a,b)=>a.entry_date.localeCompare(b.entry_date)||String(a.journal_number||a.id).localeCompare(String(b.journal_number||b.id),undefined,{numeric:true}));
+}
+
 export async function assetAccountWorkspace(stores, accountId) {
   const [accounts, allAssets, treasury, rules, products] = await Promise.all([
     readRecords(stores.Account), readRecords(stores.FixedAsset), readRecords(stores.TreasuryAccount),
@@ -55,7 +63,7 @@ export async function assetAccountWorkspace(stores, accountId) {
   if (controls.length || inventoryProducts.length) blocked.push('An account mapped to cash, stock, receivables or prepayments cannot be linked as a depreciable asset.');
   let ledger, registered = 0;
   try {
-    ledger = await ledgerEvidence(stores, account, accounts);
+    ledger = await assetAccountLedgerEvidence(stores, account, accounts);
     for (const asset of assets.filter(row => !retired(row))) registered += journalCents(asset.acquisition_cost);
     if (!Number.isSafeInteger(registered)) throw Error('Registered asset costs exceed the supported precision.');
     if (registered > Math.round(ledger.balance * 100)) blocked.push('Registered asset costs exceed this account balance. Reconcile the register before linking another asset.');
@@ -68,6 +76,7 @@ export async function assetAccountWorkspace(stores, accountId) {
     ledger_cost: ledger?.balance ?? null, registered_cost: registered / 100, unassigned_cost: unassigned,
     eligible: blocked.length === 0, blocked_reasons: blocked,
     token: digest({ account, assets, ledger, treasury: treasury.filter(row => row.gl_account_id === account.id), controls, inventoryProducts }),
+    cost_sources:ledger?assetCostSources(ledger,account.id):[],
   };
 }
 
@@ -84,7 +93,7 @@ export async function validateAssetAccountLink(stores, body) {
   const contra = workspace.accounts.find(row => row.id === body.data?.accum_dep_account_id);
   if (!contra || contra.account_type !== 'asset' || contra.normal_balance !== 'credit' || contra.is_posting === false || contra.currency && contra.currency !== 'XAF') throw Error('Choose an active accumulated depreciation posting account in XAF.');
   const allAccounts = await readRecords(stores.Account);
-  const evidence = await ledgerEvidence(stores, contra, allAccounts);
+  const evidence = await assetAccountLedgerEvidence(stores, contra, allAccounts);
   const assets = await readRecords(stores.FixedAsset, { accum_dep_account_id: contra.id });
   const assigned = assets.filter(row => !retired(row)).reduce((sum, row) => sum + journalCents(row.accumulated_depreciation), 0);
   if (!Number.isSafeInteger(assigned) || assigned !== Math.round(evidence.balance * 100)) throw Error('This accumulated depreciation account has an unassigned or inconsistent balance. Reconcile prior depreciation before linking another asset.');

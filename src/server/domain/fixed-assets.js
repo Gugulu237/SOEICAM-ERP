@@ -3,6 +3,8 @@ import { requireStaff, postJournal, round2, today, audit } from './field-ops.js'
 import { readRecords } from './commercial-workspace.js';
 import { assetDate, assetMoney, flatDepreciationTerms, depreciationPlan, monthEnd, monthIndex, shiftMonth, scheduleThrough } from '../../lib/asset-schedule.js';
 import { assetAccountWorkspace, validateAssetAccountLink } from './asset-account-link.js';
+import {assetRegisterReconciliation} from './asset-register-reconciliation.js';
+import {assetScheduleStatus} from '../../lib/asset-register-review.js';
 
 export const ASSET_ACTIONS = ['assetWorkspace','assetAccountWorkspace','assetLinkAccount','assetDepreciationPreview','assetRegister','assetUpdatePlan','assetRunDepreciation','assetFundReplacement','assetDispose'];
 const idFor = (type, value) => type + '-' + createHash('sha256').update(value).digest('hex').slice(0,40);
@@ -88,8 +90,9 @@ export async function fixedAssetAction(client, user, body) {
   client.auth.assertModule?.('accounting');
   const svc=client.asServiceRole, action=body.action;
   if(action==='assetWorkspace') {
-    const [assets,entries,accounts,treasuryAccounts]=await Promise.all([readRecords(svc.entities.FixedAsset),readRecords(svc.entities.DepreciationEntry),readRecords(svc.entities.Account,{is_active:true}),readRecords(svc.entities.TreasuryAccount,{is_active:true})]);
-    return {assets,...await reserveSummary(svc,entries),accounts,treasuryAccounts};
+    const [assets,entries,allAccounts,allTreasury]=await Promise.all([readRecords(svc.entities.FixedAsset),readRecords(svc.entities.DepreciationEntry),readRecords(svc.entities.Account),readRecords(svc.entities.TreasuryAccount)]);
+    const reconciliation=await assetRegisterReconciliation(svc.entities,{assets,accounts:allAccounts,treasuryAccounts:allTreasury}).catch(error=>({error:error.message}));
+    return {assets,...await reserveSummary(svc,entries),accounts:allAccounts.filter(a=>a.is_active===true),treasuryAccounts:allTreasury.filter(a=>a.is_active===true),depreciationStatus:assetScheduleStatus(assets),reconciliation};
   }
   if(action==='assetAccountWorkspace')return assetAccountWorkspace(svc.entities,body.accountId);
   if(action==='assetDepreciationPreview')return preview(svc,body.month);

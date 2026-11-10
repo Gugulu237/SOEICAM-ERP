@@ -4,14 +4,15 @@ import {useLocaleRender} from '@/lib/localization';
 import {assetAction, monthlyDepreciation} from '@/lib/assets';
 import {assetDate, flatDepreciationTerms, scheduleThrough, completedDepreciationMonth} from '@/lib/asset-schedule';
 import {businessDate} from '@/lib/business-date';
-import {formatXAF} from '@/lib/formatters';
+import {formatAccountingXAF as formatXAF,formatDate} from '@/lib/formatters';
+import {Link} from '@/lib/router';
 import AssetPlanDialog from '@/components/assets/AssetPlanDialog';
 import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter} from '@/components/ui/dialog';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 
-const emptyForm = name => ({name, acquisition_date:'', in_service_date:'', acquisition_cost:'', salvage_value:'0', useful_life_months:'', accum_dep_account_id:'', expense_account_id:'', automatic_depreciation_enabled:true, reference:'', confirmed:false});
+const emptyForm = name => ({name, acquisition_date:'', in_service_date:'', acquisition_cost:'', salvage_value:'0', useful_life_months:'', accum_dep_account_id:'', expense_account_id:'', automatic_depreciation_enabled:false, reference:'', confirmed:false});
 
 export default function AccountAssetDialog({account, onClose, onChanged}) {
   useLocaleRender();
@@ -65,6 +66,7 @@ export default function AccountAssetDialog({account, onClose, onChanged}) {
         <div><dt className="text-slate-500">{ui('Cost already in the asset register')}</dt><dd className="font-semibold">{formatXAF(workspace.registered_cost)}</dd></div>
         <div><dt className="text-slate-500">{ui('Cost available for a schedule')}</dt><dd className="font-semibold">{formatXAF(workspace.unassigned_cost)}</dd></div>
       </dl>
+      {!!workspace.cost_sources?.length&&<details open className="rounded-lg border p-3 text-sm"><summary className="cursor-pointer font-semibold">{ui('Journal sources for this recorded cost')}</summary><p className="mt-2 text-xs text-muted-foreground">{ui('Review the posted sources and enter the actual acquisition or opening reference. Journal dates are not assumed to be the asset acquisition or in-service dates.')}</p><div className="mt-2 divide-y">{workspace.cost_sources.map(source=><div key={source.id} className="flex items-start justify-between gap-3 py-2"><span className="min-w-0"><Link replaceOverlay to={'/accounting/journals/'+encodeURIComponent(source.id)} className="font-semibold text-primary underline">{source.journal_number||source.id}</Link><span className="mt-1 block break-words text-xs text-muted-foreground">{formatDate(source.entry_date)} · {source.description}</span></span><strong className="shrink-0 text-xs tabular-nums">{formatXAF(source.net_cost)}</strong></div>)}</div></details>}
       <p className="text-sm text-slate-600">{ui('Each registered asset keeps its own lifespan. Select the asset whose schedule you want to change.')}</p>
       {workspace.assets.length === 0 ? <p className="text-sm text-slate-500">{ui('No asset is linked to this account yet.')}</p> : <div className="space-y-2">{workspace.assets.map(asset=><div key={asset.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
         <div><p className="font-medium">{asset.asset_number} · {asset.name}</p><p className="text-sm text-slate-600">{ui('Cost: {0} · {1} months · {2} per month', formatXAF(asset.acquisition_cost), asset.useful_life_months || '-', formatXAF(monthlyDepreciation(asset)))}</p><p className="text-xs text-slate-500">{ui(asset.status || '')}</p>{!Number(asset.acquisition_cost) && <p className="text-xs text-slate-500">{ui('This record has no capitalized cost. Link a verified recorded amount below to create its depreciation schedule.')}</p>}</div>
@@ -75,6 +77,7 @@ export default function AccountAssetDialog({account, onClose, onChanged}) {
       {adding && eligible && <fieldset disabled={busy} className="space-y-4 rounded-lg border p-4">
         <legend className="px-1 font-medium">{ui('Link existing asset cost')}</legend>
         <p className="text-sm text-slate-600">{ui('Enter the portion of this account that belongs to this asset. Saving links its depreciation schedule to the recorded cost without posting another purchase or cash payment.')}</p>
+        <p className="text-xs text-muted-foreground">{ui('A reviewed equipment group may use one register entry. Enter its actual cost and useful life; no quantity or acquisition date is inferred from the account name.')}</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id="account-asset-name" label="Asset Name" value={form.name} onChange={v=>set('name',v)} />
           <Field id="account-asset-cost" label="Recorded asset cost (XAF)" type="number" min="0.01" step="0.01" max={workspace.unassigned_cost} value={form.acquisition_cost} onChange={v=>set('acquisition_cost',v)} />
@@ -90,7 +93,7 @@ export default function AccountAssetDialog({account, onClose, onChanged}) {
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={form.automatic_depreciation_enabled} onChange={e=>set('automatic_depreciation_enabled',e.target.checked)} />{ui('Post depreciation automatically each month')}</label>
         <p className="text-xs text-slate-600">{ui('Posts at month end and catches up any unposted completed months from the in-service date. No cash payment is created.')}</p>
         {form.automatic_depreciation_enabled&&pending.length>0&&<p role="status" className="rounded bg-amber-50 p-3 text-sm">{ui('Enabling this schedule includes {0} unposted months, totaling {1}. Closed periods require review.', pending.length, formatXAF(pending.reduce((sum,row)=>sum+row.amount,0)))}</p>}
-        <label className="flex gap-2 text-sm"><input type="checkbox" aria-label={ui('Confirm already-recorded asset cost')} checked={form.confirmed} onChange={e=>set('confirmed',e.target.checked)} />{ui('I confirm this is already-capitalized gross cost for this asset, no depreciation has been recorded for it elsewhere, and the in-service date is its actual start of use.')}</label>
+        <label className="flex gap-2 text-sm"><input type="checkbox" aria-label={ui('Confirm already-recorded asset cost')} checked={form.confirmed} onChange={e=>set('confirmed',e.target.checked)} />{ui('I reviewed the posted sources and confirm this is already-capitalized gross cost for this asset or equipment group, no depreciation has been recorded for it elsewhere, and the in-service date is its actual start of use.')}</label>
         {error&&<p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
         <Button type="button" disabled={busy||!terms||!form.confirmed} onClick={save}>{busy?ui('Saving.'):ui('Save depreciation schedule')}</Button>
       </fieldset>}

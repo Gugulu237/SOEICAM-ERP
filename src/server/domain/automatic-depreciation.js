@@ -3,20 +3,12 @@ import { completedDepreciationMonth, scheduleThrough } from '../../lib/asset-sch
 import { readRecords } from './commercial-workspace.js';
 import { postDepreciationRows } from './fixed-assets.js';
 import { audit, round2 } from './field-ops.js';
+import {assetScheduleStatus} from '../../lib/asset-register-review.js';
 
 const automatic = asset => asset.automatic_depreciation?.enabled === true && !!asset.automatic_depreciation.authorized_by;
 const issue = (asset,error) => ({asset_id:asset.id,asset_name:asset.name,message:error.code?'Depreciation could not be posted. Retry or review the asset accounts.':error.message});
 export async function automaticDepreciationStatus(stores, {date=businessDate()}={}) {
-  const through=completedDepreciationMonth(date),assets=await readRecords(stores.FixedAsset,{status:'active'});
-  let pendingCount=0,pendingTotal=0,manualCount=0;const issues=[];
-  for (const asset of assets) {
-    try {
-      const due=scheduleThrough(asset,through);
-      pendingCount+=due.length;pendingTotal=round2(pendingTotal+due.reduce((n,r)=>n+r.amount,0));
-      if (!automatic(asset)) manualCount+=due.length;
-    } catch(error) {issues.push(issue(asset,error));}
-  }
-  return {through,pending_count:pendingCount,pending_total:pendingTotal,manual_count:manualCount,issues};
+  return assetScheduleStatus(await readRecords(stores.FixedAsset,{status:'active'}),{date});
 }
 
 // One asset-month per serializable transaction: failures roll back the entry,

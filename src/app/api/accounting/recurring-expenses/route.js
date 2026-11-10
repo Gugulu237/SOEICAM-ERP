@@ -1,7 +1,7 @@
 import {authenticateRequest,apiError,checkOrigin} from '@/server/auth';
 import {serviceEntities} from '@/server/entities';
 import {database,transaction} from '@/server/db';
-import {recurringExpenseWorkspace,recordRecurringExpense} from '@/server/domain/recurring-expenses';
+import {recurringExpenseWorkspace,recordRecurringExpense,configureRecurringExpense,previewDueAccrual,accrueDueExpenses} from '@/server/domain/recurring-expenses';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 const headers={'Cache-Control':'private, no-store'};
@@ -18,7 +18,11 @@ export async function POST(request){
     if(text.length>10000)throw Error('The recurring expense request is too large.');
     const body=JSON.parse(text);
     return Response.json(await transaction(async()=>{
+      if(body.action==='configure')await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['chart-of-accounts']);
       await database().unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['recurring-expenses']);
+      if(body.action==='configure')return configureRecurringExpense(serviceEntities,context,body);
+      if(body.action==='previewDueAccrual')return previewDueAccrual(serviceEntities,context,body);
+      if(body.action==='accrueDue')return accrueDueExpenses(serviceEntities,context,body);
       return recordRecurringExpense(serviceEntities,context,body);
     }),{headers});
   }catch(error){return apiError(error);}

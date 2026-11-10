@@ -18,7 +18,7 @@ async function renderer(kind='asset'){
       '@/lib/assets':"export {monthlyDepreciation} from './src/lib/asset-schedule.js';export const assetAction=body=>globalThis.__accountAssetUI.action(body);",
       '@/api/erpClient':'export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__accountAssetUI.action(body)})},accounting:{saveAccount:body=>globalThis.__accountAssetUI.save(body)}};',
       '@/hooks/useCurrentUser':'export const useCurrentUser=()=>({isAdmin:true,isCashier:false});',
-      '@/lib/router':'export const useNavigate=()=>()=>{};',
+      '@/lib/router':"import React from 'react';export const useNavigate=()=>()=>{};export const Link=({to,children,replaceOverlay,...p})=>React.createElement('a',{href:to,...p},children);",
       '@/components/ui/use-toast':'export const useToast=()=>({toast:value=>globalThis.__accountAssetUI.notifications.push(value)});',
       '@/components/ui/input':"import React from 'react';export const Input=p=>{globalThis.__accountAssetUI.capture('input',p);return React.createElement('input',p);};",
       '@/components/ui/button':"import React from 'react';export const Button=({children,variant,size,...p})=>{globalThis.__accountAssetUI.capture('button',p,children);return React.createElement('button',p,children);};",
@@ -61,7 +61,7 @@ test('linking existing capitalized cost previews straight-line expense and retri
     const requests=[];let fail=true;r.action=async body=>{if(body.action==='assetAccountWorkspace')return workspace();requests.push(body);if(fail)throw Error('Connection interrupted');return {asset:{id:'new-asset'}};};
     await button(r,'Save depreciation schedule').onClick();assert.match(draw(),/Connection interrupted/);assert.equal(control(r,'account-asset-cost').value,'1200');assert.equal(control(r,'Confirm already-recorded asset cost').checked,true);
     fail=false;const submit=button(r,'Save depreciation schedule');await Promise.all([submit.onClick(),submit.onClick()]);assert.equal(requests.length,2);assert.deepEqual(requests[0],requests[1]);assert.equal(changed,1);
-    assert.equal(requests[1].action,'assetLinkAccount');assert.equal(requests[1].accountId,'equipment');assert.equal(requests[1].workspaceToken,'verified-ledger-snapshot');assert.equal(requests[1].confirmExistingCost,true);assert.equal(requests[1].data.useful_life_months,60);assert.equal(requests[1].data.acquisition_cost,1200);assert.equal(requests[1].data.automatic_depreciation_enabled,true);assert.equal(requests[1].fundingAccountId,undefined);assert.equal(requests[1].data.funding_account_id,undefined);
+    assert.equal(requests[1].action,'assetLinkAccount');assert.equal(requests[1].accountId,'equipment');assert.equal(requests[1].workspaceToken,'verified-ledger-snapshot');assert.equal(requests[1].confirmExistingCost,true);assert.equal(requests[1].data.useful_life_months,60);assert.equal(requests[1].data.acquisition_cost,1200);assert.equal(requests[1].data.automatic_depreciation_enabled,false);assert.equal(requests[1].fundingAccountId,undefined);assert.equal(requests[1].data.funding_account_id,undefined);
   }finally{f.close();}
 });
 
@@ -97,5 +97,12 @@ test('account list hides never-used zero rows but its toggle and editing selecto
   const data={accounts:[unused,used],balances:{used:{debit:100,credit:100,entries:2}},date:'2026-11-06'};
   const f=await env('manager',{},data),{r,draw}=f;
   try{assert.doesNotMatch(draw(),/Unused account/);assert.match(draw(),/Settled account/);const toggle=r.controls.find(c=>c.type==='checkbox');assert.equal(toggle.checked,false);toggle.onChange({target:{checked:true}});assert.match(draw(),/Unused account/);r.tree.onEdit(used);draw();assert.equal(r.form.accounts.length,2);assert.ok(r.form.accounts.some(a=>a.id==='unused'));assert.equal(r.form.canManageAssets,true);}
+  finally{f.close();}
+});
+
+test('existing-cost review exposes journal provenance and leaves dates, cost, life and automatic posting for explicit review',async()=>{
+  const data=workspace();data.cost_sources=[{id:'fixture-opening',journal_number:'JV-FIXTURE',entry_date:'2025-01-01',description:'Fictional capitalized equipment opening',net_cost:1200}];
+  const f=await env('asset',{account,onClose(){}},data),{r,draw}=f;
+  try{assert.match(draw(),/Journal sources for this recorded cost/);assert.match(draw(),/href="\/accounting\/journals\/fixture-opening"/);button(r,'Set a schedule for recorded cost').onClick();draw();for(const id of ['account-asset-cost','account-asset-acquired','account-asset-start','account-asset-months'])assert.equal(control(r,id).value,'');assert.equal(r.controls.filter(c=>c.type==='checkbox')[0].checked,false);assert.equal(control(r,'Confirm already-recorded asset cost').checked,false);assert.equal(r.calls.length,1);}
   finally{f.close();}
 });

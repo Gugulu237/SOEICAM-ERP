@@ -1,8 +1,8 @@
 # Monthly recurring expenses
 
-In Accounting → Chart of Accounts, create or edit a posting expense account. Enable **Monthly recurring expense**, then choose the monthly XAF amount, supplier or landlord, due day and first month. A top administrator must authorize these settings. Use separate posting accounts when different recurring obligations need different amounts or suppliers.
+In Accounting → Recurring expenses, choose **New recurring expense**. Select an existing expense account or create one, then choose the monthly XAF amount, supplier or landlord, explicit payable counterpart, due day and first month. The payee and payable-management links open the existing setup pages. A top administrator must authorize these settings. Use separate posting accounts when different recurring obligations need different amounts or suppliers. Existing Chart of Accounts settings remain available too. Payroll's salary-expense account is managed through Payroll and cannot create a duplicate monthly supplier charge.
 
-Open **Recurring expenses** from Accounting, Expenses or Payables. Each enabled month appears once, including missed months. Entries are calculated when the screen opens; a daily refresh also catches a new month in an already open screen. There is no background financial posting or cron requirement.
+Open **Recurring expenses** from Accounting, Expenses or Payables. Each enabled month appears once, including missed months. Entries are calculated when the screen opens; a daily refresh also catches a new month in an already open screen. There is no background financial posting or cron requirement. Saving a schedule does not recognize an expense, payable or cash payment. **Accrue due charges / pay later** previews a bounded selection of up to 60 due charges, then requires confirmation before the checked transaction recognizes them together. Unrecognized amounts and accrued unpaid bills remain separate; account/payee summaries show the actual unpaid obligations for rent, internet and other configured expenses.
 
 | User action | Accounting result |
 | --- | --- |
