@@ -26,7 +26,7 @@ export default function AccountPosition({accounts,balances,date,title=ui("Assets
   ]};
   return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-label={ui("T-shaped financial position")}>
     <header className="flex flex-wrap items-end justify-between gap-3 px-5 py-5 sm:px-7"><div><h2 className="text-xl font-semibold text-slate-900">{title}</h2><p className="mt-1 text-xs text-slate-500">{date?'As at '+formatDate(date)+'. ':''}{ui("Posted ledger balances · XAF")}</p></div><p className="text-xs text-slate-500">{ui("Negative balances reduce their section total.")}</p></header>
-    <div className="px-5 pb-4 sm:px-7"><ReportExport report={document}/></div>
+    <div data-statement-export className="px-5 pb-4 sm:px-7"><ReportExport report={document}/></div>
     <div className="grid border-t-4 border-slate-800 md:grid-cols-2">
       <div className="flex min-w-0 flex-col p-5 sm:p-7"><div className="mb-6 border-b border-slate-200 pb-5"><p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">{ui("Assets")}</p><p className="mt-2 break-words text-3xl font-bold tabular-nums text-slate-950">{formatXAF(p.totalAssets)}</p><p className="mt-1 text-xs text-slate-500">{ui("What the company owns")}</p></div>
         <AccountRows title={ui("Assets")} rows={p.assets} total={p.totalAssets}/><div className="mt-auto flex justify-between gap-3 border-y-2 border-slate-800 bg-slate-50 px-3 py-4 font-bold"><span>{ui("Total assets")}</span><span className="whitespace-nowrap tabular-nums">{formatXAF(p.totalAssets)}</span></div>

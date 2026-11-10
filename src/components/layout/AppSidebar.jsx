@@ -86,7 +86,10 @@ export default function AppSidebar() {
 
   const mobileTabs = ['/', role === 'commercial' ? '/commercial' : '/sales', INVENTORY_PATH, '/customers']
     .map(path => visibleItems.find(item => item.path === path)).filter(Boolean);
-  const mobilePath = path => path === '/sales' ? '/sales?tab=all' : path === INVENTORY_PATH ? '/inventory?section=items&filter=finished&area=all' : targetPath(path);
+  const mobilePath = path => {
+    const target=targetPath(path);
+    return target === '/sales' ? '/sales?tab=all' : target === INVENTORY_PATH ? '/inventory?section=items&filter=finished&area=all' : target;
+  };
   const sidebar = (mobile=false) => { const compact=collapsed&&!mobile; return (
     <div className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ${mobile ? "w-full" : compact ? "w-16" : "w-60"}`}>
       <div className={`flex min-h-20 items-center gap-2 border-b border-sidebar-border bg-sidebar ${compact ? 'justify-center px-2 py-4' : 'justify-between px-3 py-3'}`}>

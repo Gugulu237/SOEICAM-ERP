@@ -28,6 +28,8 @@ import CustomerPaymentSummary from '@/components/customers/CustomerPaymentSummar
 import CustomerOpeningBalance from '@/components/customers/CustomerOpeningBalance';
 import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
 import CustomerInfo from '@/components/customers/CustomerInfo';
+import MobileCustomerHeader from '@/components/customers/MobileCustomerHeader';
+import {useDeliveryZoneOptions} from '@/components/customers/DeliverySetupFields';
 import PartnerDetail from "@/components/customers/PartnerDetail";
 
 import { Button } from "@/components/ui/button";
@@ -65,7 +67,7 @@ export default function Customers() {
     </nav>
   </div>;
   return <div className="min-w-0 space-y-4">
-    {view==='map'?<><PageHeader title={ui('Map')} back={{onClick:backToMenu,label:ui('Customers menu')}}/><CustomerMapWorkspace onClose={backToMenu} onOpenCustomer={role==='commercial'?undefined:openCustomer}/></>:role==='commercial'?<CustomerTasks directory back={{onClick:backToMenu,label:ui('Customers menu')}}/>:view==='list'?<CustomerDirectory selectedId={params.get('customer')} back={phone?undefined:{onClick:backToMenu,label:ui('Customers menu')}}/>:<><PageHeader back={{onClick:backToMenu,label:ui('Customers menu')}} title={ui('Delivery zones')} subtitle={<CustomerInfo title={ui('Delivery zones')}>{ui('Delivery zones, outlet locations and GPS coverage')}</CustomerInfo>}/><CustomerDeliveryZones onOpenCustomer={openCustomer}/></>}
+    {view==='map'?<>{phone?<MobileCustomerHeader title={ui('Customer map')} subtitle={ui('Delivery zones')} back={{onClick:backToMenu,label:ui('Back to customers')}}/>:<PageHeader title={ui('Map')} back={{onClick:backToMenu,label:ui('Customers menu')}}/>}<CustomerMapWorkspace onClose={backToMenu} onOpenCustomer={openCustomer}/></>:role==='commercial'?<CustomerTasks directory back={{onClick:backToMenu,label:ui('Customers menu')}}/>:view==='list'?<CustomerDirectory selectedId={params.get('customer')} back={phone?undefined:{onClick:backToMenu,label:ui('Customers menu')}}/>:<><PageHeader back={{onClick:backToMenu,label:ui('Customers menu')}} title={ui('Delivery zones')} subtitle={<CustomerInfo title={ui('Delivery zones')}>{ui('Delivery zones, outlet locations and GPS coverage')}</CustomerInfo>}/><CustomerDeliveryZones onOpenCustomer={openCustomer}/></>}
   </div>;
 }
 
@@ -74,6 +76,7 @@ export function CustomerDirectory({selectedId,back}) {
 
   const phone=usePhoneLayout();
   const [zone,setZone]=useState('');
+  const zoneOptions=useDeliveryZoneOptions();
   const [params,setParams]=useSearchParams();
   const backToList=useMenuBack('/customers?view=list');
   const [records, setCustomers] = useState([]);
@@ -129,15 +132,19 @@ export function CustomerDirectory({selectedId,back}) {
   }, {});
   const customerById=new Map(customers.map(customer=>[customer.id,customer]));
   const query=search.trim().toLocaleLowerCase();
-  const customerZone=customer=>customer.neighbourhood || customer.town || '';
-  const zones=[...new Set(customers.map(customerZone).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-  const filtered=customers.filter(customer=>(!zone||customerZone(customer)===zone)&&[customer.business_name,customer.customer_number,customer.phone,customer.contact_person,customer.town,customer.neighbourhood,customerById.get(customer.parent_id)?.business_name,...(locationsByCustomer[customer.id]||[]).flatMap(location=>[location.name,location.town])].join(' ').toLocaleLowerCase().includes(query)).sort((a,b)=>(a.business_name||'').localeCompare(b.business_name||''));
+  const zones=zoneOptions.data?.zones||[];
+  const zoneName=customer=>zones.find(zone=>zone.id===customer.delivery_zone_id)?.name||'';
+  const customerZone=customer=>customer.delivery_zone_id||'unassigned';
+  const filtered=customers.filter(customer=>(!zone||customerZone(customer)===zone)&&[customer.business_name,customer.customer_number,customer.phone,customer.contact_person,customer.acquired_by_name,zoneName(customer),customer.town,customer.neighbourhood,customerById.get(customer.parent_id)?.business_name,...(locationsByCustomer[customer.id]||[]).flatMap(location=>[location.name,location.town])].join(' ').toLocaleLowerCase().includes(query)).sort((a,b)=>(a.business_name||'').localeCompare(b.business_name||''));
 
   if (loading) return <div><PageHeader title={ui('Customers')} back={selectedId?{onClick:backToList,label:ui('Back to customers')}:back}/><div role="status" aria-label={ui('Loading customers...')} className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div></div>;
 
   return (
     <div>
-      <PageHeader
+      {phone?<MobileCustomerHeader title={selected?.business_name||ui('Customers')} subtitle={selected?[ui(selected.parent_id?'Branch':'Main customer'),selected.neighbourhood||selected.town].filter(Boolean).join(' · '):ui('{0} customers',customers.length)} back={selectedId?{onClick:backToList,label:ui('Back to customers')}:back} actions={<>
+        {!selectedId&&<button type="button" aria-label={ui('Map')} onClick={()=>setParams({view:'map'})} className="flex h-12 w-12 items-center justify-center rounded-xl border bg-white"><MapIcon size={20}/></button>}
+        {selectedId?(canReport&&<button type="button" aria-label={ui('Edit customer')} onClick={()=>navigate('/customers/'+selectedId)} className="flex h-12 w-12 items-center justify-center rounded-xl border bg-white"><Pencil size={20}/></button>):<button type="button" aria-label={ui('Add customer')} onClick={()=>navigate('/customers/new')} className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-white"><Plus size={20}/></button>}
+      </>}/>:<PageHeader
         back={selectedId?{onClick:backToList,label:ui('Back to customers')}:back}
         title={selected?.business_name || ui("Customers")}
         subtitle={!selectedId ? ui('{0} customers',customers.length) : undefined}
@@ -147,14 +154,15 @@ export function CustomerDirectory({selectedId,back}) {
             {phone&&selectedId&&canReport?<Button variant="outline" onClick={()=>navigate('/customers/'+selectedId)} aria-label={ui('Edit customer')}><Pencil size={18}/></Button>:<Button onClick={() => navigate("/customers/new")} aria-label={ui('Add customer')}><Plus size={16} className="mr-1" /><span>{ui("Add customer")}</span></Button>}
           </div>
         }
-      />
+      />}
 
       {error&&<p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)} <button className="underline" onClick={load}>{ui("Retry")}</button></p>}
       {notice&&<p role="status" className="mb-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
       {gpsTarget&&<CustomerGpsDialog key={gpsTarget.location?.id||gpsTarget.customer.id} {...gpsTarget} onClose={()=>setGpsTarget(null)} onSaved={savedGps}/>}
       {!selected?<div className="mx-auto max-w-4xl space-y-3">
-        <div className="relative"><Search size={17} className="pointer-events-none absolute left-3 top-3.5 text-slate-400"/><Input aria-label={ui('Find a customer')} placeholder={ui('Name, phone or neighbourhood')} value={search} onChange={event=>setSearch(event.target.value)} className="h-11 bg-white pl-10"/></div>
-        {phone&&zones.length>0&&<nav aria-label={ui('Customer neighbourhoods')} className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{['',...zones].map(value=><button type="button" key={value} aria-pressed={zone===value} onClick={()=>setZone(value)} className={'min-h-11 shrink-0 rounded-xl border px-3 text-xs font-semibold '+(zone===value?'border-primary bg-primary text-white':'bg-white text-slate-600')}>{value||ui('All zones')}</button>)}</nav>}
+        <div className="relative"><Search size={17} className="pointer-events-none absolute left-3 top-3.5 text-slate-400"/><Input aria-label={ui('Find a customer')} placeholder={ui('Name, phone, agent or zone')} value={search} onChange={event=>setSearch(event.target.value)} className="h-11 bg-white pl-10"/></div>
+        {phone&&<nav aria-label={ui('Filter customers by zone')} className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{[{id:'',name:ui('All zones')},{id:'unassigned',name:ui('Unassigned')},...zones].map(item=><button type="button" key={item.id} aria-pressed={zone===item.id} onClick={()=>setZone(item.id)} className={'min-h-11 shrink-0 rounded-xl border px-3 text-xs font-semibold '+(zone===item.id?'border-primary bg-primary text-white':'bg-white text-slate-600')}>{item.name}</button>)}</nav>}
+        {phone&&zoneOptions.isError&&<p role="alert" className="text-xs text-muted-foreground">{ui('Zone names could not load. ')}<button type="button" className="underline" onClick={()=>zoneOptions.refetch()}>{ui('Retry')}</button></p>}
         <CustomerGroupedList key={search} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={selectCustomer} mapPointFor={customer=>(locationsByCustomer[customer.id]||[]).find(hasCustomerLocation)||customer}/>
       </div>:<div className="min-w-0">
             {selected ? (

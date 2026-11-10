@@ -6,7 +6,7 @@ import {useLocaleRender} from '@/lib/localization';
 import {useAuth} from '@/lib/AuthContext';
 import {ui,uiMessage} from '@/lib/i18n';
 
-export default function LanguageSelector({id='app-language'}){
+export default function LanguageSelector({id='app-language',segmented=false}){
   useLocaleRender();
   const phone=usePhoneLayout();
   const {user,saveLanguagePreference,isSavingLanguage}=useAuth();
@@ -17,10 +17,10 @@ export default function LanguageSelector({id='app-language'}){
   }
   return <div className="relative flex shrink-0 items-center gap-1 text-xs">
     <Globe size={16} aria-hidden="true" className="hidden sm:block"/>
-    <label className="sr-only" htmlFor={id}>{ui('Interface language')}</label>
-    <select id={id} aria-label={ui('Interface language')} aria-describedby={error ? id+'-error' : undefined} value={user?.preferred_language || ''} disabled={isSavingLanguage} onChange={e=>choose(e.target.value)} className="h-11 w-14 min-w-0 rounded-lg border border-green-100 bg-white px-1 text-base sm:text-xs sm:w-auto sm:max-w-40 sm:px-2">
+    {!segmented&&<label className="sr-only" htmlFor={id}>{ui('Interface language')}</label>}
+    {segmented?<div id={id} role="group" aria-label={ui('Interface language')} aria-describedby={error ? id+'-error' : undefined} className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">{[['fr','FR'],['en','EN'],['',ui('Auto')]].map(([value,label])=><button key={value} type="button" aria-pressed={(user?.preferred_language||'')===value} disabled={isSavingLanguage} onClick={()=>choose(value)} className={'min-h-10 rounded-md px-2 text-sm font-semibold '+((user?.preferred_language||'')===value?'border bg-white':'text-muted-foreground')}>{label}</button>)}</div>:<select id={id} aria-label={ui('Interface language')} aria-describedby={error ? id+'-error' : undefined} value={user?.preferred_language || ''} disabled={isSavingLanguage} onChange={e=>choose(e.target.value)} className="h-11 w-14 min-w-0 rounded-lg border border-green-100 bg-white px-1 text-base sm:text-xs sm:w-auto sm:max-w-40 sm:px-2">
       <option value="fr" lang="fr">{phone ? "FR" : "Français"}</option><option value="en" lang="en">{phone ? "EN" : "English"}</option><option value="">{phone ? ui("Auto") : ui('Company default')}</option>
-    </select>
+    </select>}
     {error&&<p id={id+'-error'} role="alert" className="fixed left-3 right-3 top-14 z-50 sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-64 rounded border bg-white p-3 text-red-700">{uiMessage(error)}</p>}
   </div>;
 }

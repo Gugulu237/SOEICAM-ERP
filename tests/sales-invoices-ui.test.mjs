@@ -11,6 +11,7 @@ async function ui() {
     b.onResolve({filter:/^react$/},args=>/(InvoiceWorkspace|SalesInvoice)\.jsx$/.test(args.importer)?{path:args.importer.endsWith('SalesInvoice.jsx')?'detail':'create',namespace:'hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;export const useState=v=>globalThis.__invoiceUI.state(${JSON.stringify(key)},v);export const useEffect=(fn,deps)=>globalThis.__invoiceUI.effect(${JSON.stringify(key)},fn,deps);export const useMemo=fn=>fn();`,resolveDir:process.cwd()}));
     const mocks={
+      '@/hooks/usePhoneLayout':'export const usePhoneLayout=()=>!!globalThis.__invoiceUI.phone;',
       '@/components/shared/DataTable':"import React from 'react';export default function Table(props){return React.createElement('div',null,props.data.map(row=>React.createElement('div',{key:row.id},row.invoice_number,props.columns.find(c=>c.key==='customize')?.render(null,row))));}",
       '@/api/erpClient':`export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__invoiceUI.request(body)})}};`,
       '@/lib/router':`const navigate=path=>globalThis.__invoiceUI.navigation.push(path);export const useNavigate=()=>navigate;export const useParams=()=>({id:'invoice-1'});export const useSearchParams=()=>[new URLSearchParams(globalThis.__invoiceUI.query||'')];`,
@@ -52,4 +53,15 @@ test('invoice customization opens from its direct link and returns a cashier to 
  state.request=async body=>{calls.push(body);return body.action==='invoiceDetail'?structuredClone(saved):{...structuredClone(saved),options:body.options,revision:4};};
  const draw=()=>{state.beforeRender();return render('detail');};
  try{draw();await state.flush();draw();assert.ok(state.editor);assert.equal(state.buttons.find(b=>b.label==='Print / PDF').disabled,true);state.editor.setOptions({...options,layout:'classic',footer:'Client footer'});draw();await state.buttons.find(b=>b.label==='Save customization').onClick();draw();assert.equal(calls.at(-1).options.footer,'Client footer');state.buttons.find(b=>b['aria-label']==='Invoices').onClick();assert.deepEqual(state.navigation,['/cashier?section=invoices']);}finally{state.cleanup();delete globalThis.__invoiceUI;}
+});
+
+
+test('mobile invoice shares the receipt hierarchy, preserves verified source fields and keeps issuing guards and cashier boundaries',async()=>{
+ const render=await ui();
+ for(const verified of [true,false]){
+  const state=hookRuntime();globalThis.__invoiceUI=state;state.phone=true;state.query='from=sales';state.session={role:'cashier',isAdmin:false};
+  state.request=async()=>({...structuredClone(saved),accounting_verified:verified,invoice:{...saved.invoice,receipt_reference:'REC-007',salesperson_name:'Saved seller',recorded_by_name:'Saved recorder'},replacements:[{product_id:'p',product_name:'Replacement yoghurt',quantity:1,reason:'damaged'}]});
+  const draw=()=>{state.beforeRender();return render('detail');};
+  try{draw();await state.flush();const html=draw();assert.match(html,/REC-007/);assert.match(html,/Saved seller/);assert.match(html,/Saved recorder/);assert.match(html,/Replacement yoghurt/);assert.match(html,/Exchanges/);assert.match(html,/Invoice tools &amp; preview/);assert.equal(state.buttons.find(b=>b.label==='Print').disabled,!verified);assert.equal(state.buttons.find(b=>b.label==='Export PDF').disabled,!verified);assert.equal(state.buttons.some(b=>b.label==='Reverse sale'||b.label==='Collect cash for handover'),false);state.buttons.find(b=>b['aria-label']==='Back').onClick();assert.equal(state.navigation.at(-1),'/cashier?section=invoices');state.session={role:'admin',isAdmin:true};draw();state.buttons.find(b=>b['aria-label']==='Back').onClick();assert.equal(state.navigation.at(-1),'/sales?tab=all');}finally{state.cleanup();delete globalThis.__invoiceUI;}
+ }
 });

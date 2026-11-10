@@ -115,10 +115,11 @@ export default function ChartOfAccountsManager() {
       {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}<button type="button" className="ml-3 underline" onClick={() => load().catch(e => setError(e.message))}>{ui("Retry")}</button></p>}
       {!phone&&!error && <AccountStats accounts={accounts} balances={balances} totals={totals} />}
 
-      <div className="mb-4 flex flex-wrap gap-2"><Button variant={view === 'position' ? 'default' : 'outline'} onClick={() => setView('position')}>{ui("Assets & liabilities (T view)")}</Button><Button variant={view === 'accounts' ? 'default' : 'outline'} onClick={() => setView('accounts')}>{ui("Account list")}</Button><Button variant="outline" onClick={() => load().catch(e => setError(e.message))}>{ui("Refresh balances")}</Button></div>
+      <div className={phone?"hidden":"mb-4 flex flex-wrap gap-2"}><Button variant={view === 'position' ? 'default' : 'outline'} onClick={() => setView('position')}>{ui("Assets & liabilities (T view)")}</Button><Button variant={view === 'accounts' ? 'default' : 'outline'} onClick={() => setView('accounts')}>{ui("Account list")}</Button><Button variant="outline" onClick={() => load().catch(e => setError(e.message))}>{ui("Refresh balances")}</Button></div>
+      {phone&&view==='position'&&<Button variant="outline" className="mb-3" onClick={()=>setView('accounts')}>{ui('Account list')}</Button>}
       {view === 'position' && !error && <AccountPosition accounts={accounts} balances={balances} date={asOf}/>}
       {view === 'accounts' && <>
-      {phone&&<MobileAccountControls {...{query,setQuery,typeFilter,setTypeFilter,statusFilter,setStatusFilter,showUnused,setShowUnused,expandAll,collapseAll,canManage}} onNew={()=>setDialog({parentId:''})} onRefresh={()=>load().catch(e=>setError(e.message))}/>}
+      {phone&&<MobileAccountControls {...{query,setQuery,typeFilter,setTypeFilter,statusFilter,setStatusFilter,showUnused,setShowUnused,expandAll,collapseAll,canManage}} onNew={()=>setDialog({parentId:''})} onViewPosition={()=>setView('position')} onRefresh={()=>load().catch(e=>setError(e.message))}/>}
       <div className={phone?'hidden':'flex flex-col lg:flex-row lg:items-center gap-2 mb-4'}>
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -182,6 +183,7 @@ export default function ChartOfAccountsManager() {
           onDelete={node=>{setDeleteError('');setDeleting({account:node,requestKey:crypto.randomUUID()});}}
           busy={busy}
           canManage={canManage}
+          selectedId={phone?dialog?.account?.id:undefined}
         />
       )}
 
@@ -189,6 +191,8 @@ export default function ChartOfAccountsManager() {
       {deleting && <Dialog open onOpenChange={open=>{if(!open && !busy)setDeleting(null);}}><DialogContent><DialogHeader><DialogTitle>{ui("Delete unused account")}</DialogTitle></DialogHeader><p>{deleting.account.account_number} — {deleting.account.name}</p><p className="text-sm text-slate-600">{ui("Only accounts without transactions, balances, sub-accounts or configuration links can be permanently deleted. Hide accounts you may need again.")}</p>{deleteError && <p role="alert" className="text-sm text-red-700">{uiMessage(deleteError)}</p>}<DialogFooter><Button variant="outline" disabled={busy} onClick={()=>setDeleting(null)}>{ui("Cancel")}</Button><Button variant="destructive" disabled={busy} onClick={deleteAccount}>{busy?ui("Deleting..."):ui("Delete account permanently")}</Button></DialogFooter></DialogContent></Dialog>}
       {dialog && (
         <AccountFormDialog
+          key={dialog.account?.id||dialog.parentId||'new'}
+          inline={phone}
           account={dialog.account || null}
           canSetOpening={isAdmin}
           canManageAssets={isAdmin}

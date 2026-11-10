@@ -2,7 +2,8 @@
 /* localized-interface */
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useState, useRef } from "react";
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import React, { useState, useRef,useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -21,10 +22,12 @@ import AccountAssetDialog from './AccountAssetDialog';
 
 const NO_PARENT = "__none__";
 
-export default function AccountFormDialog({ account, accounts, balances, defaultParentId, canSetOpening = false, canManageAssets = false, onClose, onDone, onAssetUpdated }) {
+export default function AccountFormDialog({ account, accounts, balances, defaultParentId, canSetOpening = false, canManageAssets = false, onClose, onDone, onAssetUpdated, inline=false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const { toast } = useToast();
+  const phone=usePhoneLayout();
+  useEffect(()=>{if(inline)document.querySelector('[data-mobile-selected-account]')?.scrollIntoView?.({behavior:'smooth',block:'start'});},[inline]);
   const isEdit = !!account;
   const savingRef = useRef(false);
   const requestKey = useRef(crypto.randomUUID());
@@ -122,13 +125,14 @@ export default function AccountFormDialog({ account, accounts, balances, default
 
   const parentAccounts = eligibleAccountParents(accounts, form);
   const locked = form.is_system;
+  const Container=inline?'section':Dialog,Content=inline?'div':DialogContent,Header=inline?'header':DialogHeader,Title=inline?'h2':DialogTitle,Footer=inline?'footer':DialogFooter,Settings=phone?'details':React.Fragment;
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !savingRef.current && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? ui("Edit account {0}", account.account_number) : ui("New account")}</DialogTitle>
-        </DialogHeader>
+    <Container {...(inline?{'data-mobile-selected-account':true}:{open:true,onOpenChange:o=>!o&&!savingRef.current&&onClose()})}>
+      <Content className={inline?'mt-5 space-y-3 rounded-xl border bg-white p-4':'max-w-2xl max-h-[90vh] overflow-y-auto'}>
+        <Header>
+          <Title className={inline?'text-xs font-bold uppercase tracking-wider text-primary':undefined}>{inline&&isEdit?ui('Selected account'):isEdit ? ui("Edit account {0}", account.account_number) : ui("New account")}</Title>
+        </Header>
 
         {locked && (
           <div className="flex items-start gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
@@ -151,7 +155,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
             <Label htmlFor="account-name">{ui("Account Name")}</Label>
             <Input id="account-name" value={form.name} onChange={(e) => set("name", e.target.value)} />
           </div>
-          <div>
+          {!phone&&<div>
             <Label>{ui("Type")}</Label>
             <Select value={form.account_type} onValueChange={changeType} disabled={locked}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -162,11 +166,11 @@ export default function AccountFormDialog({ account, accounts, balances, default
               </SelectContent>
             </Select>
             {['equity','liability'].includes(form.account_type) && <p className="mt-1 text-xs text-slate-500">{ui("Use Equity for ownership capital. Repayable investor loans belong in Liabilities.")}</p>}
-          </div>
-          <div>
+          </div>}
+          {!phone&&<div>
             <Label>{ui("Normal Balance")}</Label>
             <Input value={form.normal_balance} disabled readOnly className="capitalize" />
-          </div>
+          </div>}
           <div className="sm:col-span-2">
             <Label htmlFor="account-parent">{ui("Parent Account")}</Label>
             <Select disabled={locked || !!newParent} value={form.parent_id || NO_PARENT} onValueChange={changeParent}>
@@ -192,8 +196,10 @@ export default function AccountFormDialog({ account, accounts, balances, default
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="rounded-lg border border-slate-200 p-3">
+        {phone&&canSetOpening&&<AccountOpeningFields opening={opening} form={form} disabled={saving}/>}
+        <Settings {...(phone?{className:'space-y-3'}:{})}>
+        {phone&&<><summary className="min-h-8 cursor-pointer text-xs font-semibold">{ui('Account configuration')}</summary><div className="grid grid-cols-2 gap-3"><div><Label>{ui('Type')}</Label><Select value={form.account_type} onValueChange={changeType} disabled={locked}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{ACCOUNT_TYPES.map(t=><SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent></Select></div><div><Label>{ui('Normal Balance')}</Label><Input value={form.normal_balance} disabled readOnly className="capitalize"/></div></div>{['equity','liability'].includes(form.account_type)&&<p className="text-xs text-muted-foreground">{ui('Use Equity for ownership capital. Repayable investor loans belong in Liabilities.')}</p>}</>}
+        <div className="space-y-2"><div className="rounded-lg border border-slate-200 p-3">
             <Label>{ui("Cash-flow activity")}</Label>
             <Select value={form.cash_flow_category} onValueChange={v => set('cash_flow_category', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -242,21 +248,22 @@ export default function AccountFormDialog({ account, accounts, balances, default
           <Textarea rows={2} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder={ui("What this account is used for")} />
         </div>
 
-        {canSetOpening && <AccountOpeningFields opening={opening} form={form} disabled={saving}/>}
+        {!phone&&canSetOpening&&<AccountOpeningFields opening={opening} form={form} disabled={saving}/>}
         {canManageAssets && account && account.account_type === 'asset' && account.normal_balance === 'debit' && account.is_posting !== false && !account.is_treasury && <section className="rounded-lg border border-slate-200 p-3 space-y-2">
           <h3 className="font-medium">{ui('Fixed-asset depreciation')}</h3>
           <p className="text-sm text-slate-600">{ui('Set the lifespan and straight-line monthly expense for assets recorded in this account. Each asset keeps its own schedule.')}</p>
           <Button type="button" variant="outline" disabled={saving} onClick={()=>setAssetSettings(true)}>{ui('Manage asset depreciation')}</Button>
         </section>}
         {(recurringExpenseAccount(form)||account?.recurring_expense)&&<RecurringExpenseSettings value={recurring} existing={account?.recurring_expense} disabled={saving} onChange={value=>{setRecurring(value);setRecurringChanged(true);}}/>}
+        </Settings>
         {saveError && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
-        <DialogFooter>
+        <Footer data-mobile-action-bar={inline||undefined} className={inline?'sticky bottom-0 z-20 grid grid-cols-2 gap-2 border-t bg-white pt-3 [&_button]:min-h-14':undefined}>
           <Button disabled={saving} variant="outline" onClick={onClose}>{ui("Cancel")}</Button>
           <Button disabled={saving} onClick={handleSave}>{isEdit ? ui("Save Changes") : ui("Create Account")}</Button>
-        </DialogFooter>
-      </DialogContent>
+        </Footer>
+      </Content>
       {canManageAssets && assetSettings && <AccountAssetDialog account={account} onClose={()=>setAssetSettings(false)} onChanged={onAssetUpdated} />}
-    </Dialog>
+    </Container>
   );
 }
 

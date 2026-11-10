@@ -8,6 +8,7 @@ import { useNavigate } from "@/lib/router";
 import { formatAccountingXAF as formatXAF } from "@/lib/formatters";
 import { validateJournal, round2 } from "@/lib/posting";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import PageHeader from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,10 +23,11 @@ import { balancingAmount } from "@/lib/journal-balancing";
 
 const emptyLine = () => ({ account_id: "", account_number: "", account_name: "", description: "", debit: 0, credit: 0 });
 
-export default function JournalEntryForm() {
+export default function JournalEntryForm({embedded=false,onSaved,onCancel}={}) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const phone=usePhoneLayout();
   useCurrentUser();
   const saveRef = useRef(false),loadSequence=useRef(0);
   const [loadingAccounts,setLoadingAccounts]=useState(true);
@@ -80,21 +82,22 @@ export default function JournalEntryForm() {
         status,
       });
       toast({ title: status === "posted" ? ui("Journal posted") : ui("Draft saved"), description: journal.journal_number });
-      navigate("/accounting?tab=journals");
+      if(onSaved)onSaved(journal);else navigate("/accounting?tab=journals");
     } catch (e) {
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });
     } finally { saveRef.current = false; setSaving(false); }
   }
 
   return (
-    <div data-sleek-journal-form>
-      <PageHeader title={ui("New Journal Entry")} subtitle={ui("Manual double-entry journal — debits must equal credits")} />
+    <div data-sleek-journal-form={!embedded||undefined} data-mobile-inline-journal={embedded||undefined}>
+      {!embedded&&<PageHeader title={ui("New Journal Entry")} subtitle={ui("Manual double-entry journal — debits must equal credits")} />}
       <div className="min-w-0 bg-white rounded-lg border border-slate-200 p-3 sm:p-6 space-y-4">
+        {embedded&&<h2 className="text-base font-bold">{ui('New Journal Entry')}</h2>}
         {loadingAccounts&&<p role="status" className="text-sm">{ui("Loading accounts...")}</p>}
         {loadError&&<div role="alert" className="space-y-2 text-sm text-red-700"><p>{uiMessage(loadError)}</p><Button type="button" variant="outline" onClick={loadAccounts}>{ui("Retry loading accounts")}</Button></div>}
         {!loadingAccounts&&!loadError&&!accounts.length&&<p role="status" className="text-sm">{ui("No active posting accounts are available for journals.")}</p>}
         <fieldset disabled={saving||loadingAccounts||!!loadError||!accounts.length} className="min-w-0 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {phone?<><div className="grid grid-cols-2 gap-3"><label className="min-w-0 space-y-1 text-xs text-muted-foreground">{ui('Journal')}<div className="flex min-h-12 items-center rounded-lg border px-3 text-sm text-foreground">{ui('Manual journal')}</div></label><label className="min-w-0 space-y-1 text-xs text-muted-foreground">{ui('Transaction Date')}<Input aria-label={ui('Transaction Date')} type="date" value={form.entry_date} onChange={e=>setForm({...form,entry_date:e.target.value})}/></label></div><label className="block space-y-1 text-xs text-muted-foreground">{ui('Description')}<Input aria-label={ui('Description')} value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label></>:<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <Label>{ui("Transaction Date")}</Label>
             <Input type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} />
@@ -103,11 +106,11 @@ export default function JournalEntryForm() {
             <Label>{ui("Description")}</Label>
             <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={ui("e.g. Opening balance adjustment")} />
           </div>
-        </div>
+        </div>}
 
 
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoBalance} onChange={e=>setAutoBalance(e.target.checked)}/>{ui("Auto-fill the balancing amount when selecting an empty account line")}</label>
-        <div className="overflow-x-auto">
+        {phone?<div className="space-y-2"><div className="grid grid-cols-[1.4fr_1fr_1fr] gap-2 text-[11px] font-semibold text-muted-foreground"><span>{ui('Account')}</span><span>{ui('Debit')}</span><span>{ui('Credit')}</span></div>{lines.map((line,i)=><div key={i} className="space-y-1"><div className="grid grid-cols-[1.4fr_1fr_1fr] gap-2"><Button type="button" variant="outline" className="h-auto min-h-12 min-w-0 justify-start whitespace-normal px-2 text-left text-xs" aria-label={ui('Choose account for line {0}',i+1)} aria-haspopup="dialog" aria-expanded={pickerLine===i} onClick={event=>{pickerTrigger.current=event.currentTarget;setPickerLine(current=>current===i?null:i);}}>{line.account_id?<span><span className="font-mono">{line.account_number}</span> · {line.account_name}</span>:ui('Select account')}</Button><Input aria-label={ui('Debit line {0}',i+1)} className="min-w-0 px-2 text-right text-xs" type="number" inputMode="decimal" min="0" step="0.01" value={line.debit||''} onChange={e=>updateLine(i,'debit',e.target.value)}/><Input aria-label={ui('Credit line {0}',i+1)} className="min-w-0 px-2 text-right text-xs" type="number" inputMode="decimal" min="0" step="0.01" value={line.credit||''} onChange={e=>updateLine(i,'credit',e.target.value)}/></div><details><summary className="cursor-pointer py-1 text-[11px] text-muted-foreground">{ui('Line description {0}',i+1)}</summary><Input aria-label={ui('Line description {0}',i+1)} value={line.description} onChange={e=>updateLine(i,'description',e.target.value)}/><div className="mt-1 flex gap-2">{line.account_id&&balancingAmount(lines,i)&&<Button size="sm" variant="outline" onClick={()=>setLines(prev=>prev.map((l,n)=>n===i?{...l,...balancingAmount(prev,i)}:l))}>{ui('Balance')}</Button>}{lines.length>2&&<Button size="sm" variant="outline" onClick={()=>setLines(lines.filter((_,n)=>n!==i))}>{ui('Remove')}</Button>}</div></details></div>)}<Button variant="outline" className="min-h-12 w-full gap-2 rounded-xl" onClick={()=>setLines([...lines,emptyLine()])}><Plus size={18}/>{ui('Add Line')}</Button><div className="flex justify-between gap-3 rounded-lg bg-slate-50 p-3 text-xs"><span>{ui('Debit')} · {ui('Credit')}</span><strong className="tabular-nums">{formatXAF(totalDebit)} · {formatXAF(totalCredit)}</strong></div></div>:<div className="overflow-x-auto">
           <table className="mobile-table-cards w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-slate-500">
@@ -152,7 +155,7 @@ export default function JournalEntryForm() {
               </tr>
             </tfoot>
           </table>
-        </div>
+        </div>}
 
         <div className={`text-sm font-medium ${balanced ? "text-green-700" : "text-red-600"}`}>
           {balanced
@@ -163,8 +166,8 @@ export default function JournalEntryForm() {
         </div>
 
         </fieldset>
-        <div data-accounting-form-actions data-mobile-action-bar className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" disabled={saving} onClick={() => navigate("/accounting")}>{ui("Cancel")}</Button>
+        <div data-accounting-form-actions={!embedded||undefined} data-mobile-action-bar={!embedded||undefined} className={phone?'grid grid-cols-2 gap-2 [&_button]:min-h-12 [&_button:last-child]:col-span-2':'flex flex-wrap justify-end gap-2'}>
+          <Button variant="outline" disabled={saving} onClick={() => onCancel?onCancel():navigate("/accounting")}>{ui("Cancel")}</Button>
           <Button variant="secondary" disabled={saving||loadingAccounts||!!loadError||!accounts.length} onClick={() => save("draft")}>{ui("Save as Draft")}</Button>
           <Button disabled={saving || loadingAccounts || !!loadError || !accounts.length || !balanced} onClick={() => save("posted")}>{ui("Post Journal")}</Button>
         </div>

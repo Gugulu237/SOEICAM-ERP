@@ -1,6 +1,6 @@
 'use client';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {UserRound,Save,RefreshCw,Package,History} from 'lucide-react';
+import {UserRound,Save,RefreshCw,Package,History,Pencil} from 'lucide-react';
 import {useAuth} from '@/lib/AuthContext';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {Link} from '@/lib/router';
@@ -21,13 +21,13 @@ async function profileRequest(options={}){
   return data.profile;
 }
 
-export default function MyProfile({embedded=false}){
+export default function MyProfile({embedded=false,identity}){
   useLocaleRender();
   const {applySelfProfile}=useAuth();
   const {role}=useCurrentUser();
   const [profile,setProfile]=useState(null),[form,setForm]=useState({display_name:'',phone:''});
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
-  const sequence=useRef(0),savingRef=useRef(false);
+  const sequence=useRef(0),savingRef=useRef(false),nameInput=useRef(null);
   const load=useCallback(async(signal)=>{
     const id=++sequence.current;
     setLoading(true);setError('');setSaved(false);
@@ -63,14 +63,17 @@ export default function MyProfile({embedded=false}){
         <Link to="/approval-history" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><History size={17}/>{ui('Approval history')}</Link>
       </nav></>}
       <div className={embedded?'':'grid items-start gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'}>
-        <form onSubmit={save} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-          <h2 className="text-base font-semibold text-slate-900">{ui('Personal details')}</h2>
-          <div className="space-y-2"><Label htmlFor="profile-display-name">{ui('Display name')}</Label><Input id="profile-display-name" autoComplete="nickname" value={form.display_name} required maxLength={120} disabled={saving} onChange={e=>{setSaved(false);setForm(f=>({...f,display_name:e.target.value}));}}/><p className="text-xs leading-5 text-slate-500">{ui('Shown in your workspace. Your employment name is managed by the General Manager.')}</p></div>
-          <div className="space-y-2"><Label htmlFor="profile-phone">{ui('Contact phone')}</Label><Input id="profile-phone" type="tel" autoComplete="tel" value={form.phone} maxLength={40} disabled={saving || !profile.can_edit_phone} onChange={e=>{setSaved(false);setForm(f=>({...f,phone:e.target.value}));}}/>{!profile.can_edit_phone && <p className="text-xs text-slate-500">{ui('Contact your manager to link your employee record.')}</p>}</div>
+        <form onSubmit={save} className={identity?'space-y-4 rounded-xl border bg-white p-4':'space-y-5 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6'}>
+          {identity?<div className="flex items-center gap-3"><span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-secondary text-lg font-bold text-primary">{(profile.display_name||identity.name||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</span><div className="min-w-0 flex-1"><h2 className="break-words font-bold">{profile.display_name||identity.name}</h2><p className="text-xs text-muted-foreground">{identity.role}</p></div><Button type="button" variant="outline" size="icon" className="h-12 w-12 shrink-0 rounded-lg" aria-label={ui('Edit profile')} onClick={()=>nameInput.current?.focus()}><Pencil size={18}/></Button></div>:<h2 className="text-base font-semibold text-slate-900">{ui('Personal details')}</h2>}
+          <div className={identity?'grid grid-cols-2 gap-3':'space-y-5'}>
+          <div className="min-w-0 space-y-2"><Label htmlFor="profile-display-name">{ui('Display name')}</Label><Input ref={nameInput} id="profile-display-name" autoComplete="nickname" value={form.display_name} required maxLength={120} disabled={saving} onChange={e=>{setSaved(false);setForm(f=>({...f,display_name:e.target.value}));}}/>{!identity&&<p className="text-xs leading-5 text-slate-500">{ui('Shown in your workspace. Your employment name is managed by the General Manager.')}</p>}</div>
+          <div className="space-y-2"><Label htmlFor="profile-phone">{ui(identity?'Phone':'Contact phone')}</Label><Input id="profile-phone" type="tel" autoComplete="tel" value={form.phone} maxLength={40} disabled={saving || !profile.can_edit_phone} onChange={e=>{setSaved(false);setForm(f=>({...f,phone:e.target.value}));}}/>{!profile.can_edit_phone && <p className="text-xs text-slate-500">{ui('Contact your manager to link your employee record.')}</p>}</div>
+          </div>
           <div className="space-y-2"><Label htmlFor="profile-email">{ui('Sign-in email')}</Label><Input id="profile-email" value={profile.email} readOnly className="bg-slate-50 text-slate-500"/></div>
+          {identity&&<details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">{ui('About your profile')}</summary><p className="leading-5">{ui('Shown in your workspace. Your employment name is managed by the General Manager.')}</p></details>}
           {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
           {saved && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{ui('Your profile has been updated.')}</p>}
-          <div className="flex flex-wrap gap-2"><Button type="submit" disabled={saving}><Save size={16} className="mr-2"/>{saving?ui('Saving...'):ui('Save changes')}</Button><Button type="button" variant="outline" disabled={saving} onClick={()=>load()}>{ui('Reload profile')}</Button></div>
+          <div className={identity?'grid gap-2':'flex flex-wrap gap-2'}><Button type="submit" disabled={saving} className={identity?'min-h-12 w-full rounded-xl':undefined}><Save size={16} className="mr-2"/>{saving?ui('Saving...'):ui(identity?'Save profile':'Save changes')}</Button><Button type="button" variant="outline" disabled={saving} onClick={()=>load()}>{ui('Reload profile')}</Button></div>
         </form>
         {!embedded&&<div className="space-y-6">
           <DeviceNotificationSettings/>

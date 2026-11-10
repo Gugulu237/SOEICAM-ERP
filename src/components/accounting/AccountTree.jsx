@@ -10,12 +10,12 @@ import { Layers } from "lucide-react";
 
 export default function AccountTree({
   sections, childrenMap, rollups, entryCounts, collapsed,
-  onToggleCollapse, onEdit, onAddChild, onToggleActive, onToggleHidden, onDelete, busy, canManage,
+  onToggleCollapse, onEdit, onAddChild, onToggleActive, onToggleHidden, onDelete, busy, canManage,selectedId,
 }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const phone=usePhoneLayout();
-  if(phone)return <MobileAccountTree {...{sections,childrenMap,rollups,entryCounts,collapsed,onToggleCollapse,onEdit,onAddChild,onToggleActive,onToggleHidden,onDelete,busy,canManage}}/>;
+  if(phone)return <MobileAccountTree {...{sections,childrenMap,rollups,entryCounts,collapsed,onToggleCollapse,onEdit,onAddChild,onToggleActive,onToggleHidden,onDelete,busy,canManage,selectedId}}/>;
   return (
     <div className="space-y-5">
       {sections.map((section) => (

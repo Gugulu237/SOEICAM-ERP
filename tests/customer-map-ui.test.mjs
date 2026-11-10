@@ -13,6 +13,7 @@ async function ui(){return cached ||= (async()=>{
   b.onResolve({filter:/^react$/},args=>/(CustomerMapWorkspace|CustomerDeliveryZones|CustomerInfo)\.jsx$/.test(args.importer)?{path:args.importer.split('/').at(-1).split('\\').at(-1),namespace:'hooks'}:undefined);
   b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__mapUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__mapUI.state(${JSON.stringify(key)},v);export const useRef=v=>globalThis.__mapUI.ref(${JSON.stringify(key)},v);export const useEffect=(fn,deps)=>globalThis.__mapUI.effect(${JSON.stringify(key)},fn,deps);export const useMemo=fn=>fn();`,resolveDir:process.cwd()}));
   const mocks={
+   '@/hooks/usePhoneLayout':'export const usePhoneLayout=()=>Boolean(globalThis.__mapUI.phone);',
    '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__mapUI.session;',
    '@/lib/customer-delivery-client':'export const customerDeliveryRequest=b=>globalThis.__mapUI.request(b);',
    'next/dynamic':'export default function dynamic(){return function Map(props){globalThis.__mapUI.map=props;return props.mapControls||null;};}',
@@ -44,4 +45,12 @@ test('drawing and naming a municipality zone preserves geometry on save failure 
  const render=await ui(),state=hookRuntime(),requests=[];globalThis.__mapUI=state;state.session={isAdmin:true,role:'admin'};let fail=true;state.request=async b=>{requests.push(b);if(b.action==='customerMapWorkspace')return data;if(fail)throw Error('Fixture zone failure');return {zone:{...b.zone,id:'new-zone'}};};
  const draw=()=>{state.beforeRender();return render();};
  try{draw();await state.flush();draw();state.buttons.find(b=>b.label==='Draw a zone').onClick();draw();for(const p of boundary)state.map.onVertex(p);draw();assert.equal(state.map.draft.length,4);state.buttons.find(b=>b.label==='Finish boundary').onClick();draw();state.controls.find(c=>c['aria-label']==='Zone name').onChange({target:{value:'West terrain'}});state.controls.find(c=>c['aria-label']==='Unique code').onChange({target:{value:'WEST'}});state.controls.find(c=>c['aria-label']==='Division').onChange({target:{value:'Mfoundi'}});state.controls.find(c=>c['aria-label']==='Subdivision').onChange({target:{value:'YAOUNDÉ 7'}});draw();await state.buttons.find(b=>b.label==='Save zone').onClick();assert.match(draw(),/Fixture zone failure/);assert.equal(state.controls.find(c=>c['aria-label']==='Zone name').value,'West terrain');fail=false;await state.buttons.find(b=>b.label==='Save zone').onClick();assert.deepEqual(requests[1],requests[2]);assert.deepEqual(requests[2].zone.boundary,boundary);assert.equal(requests[2].zone.division,'Mfoundi');assert.equal(requests[2].zone.subdivision,'YAOUNDÉ 7');assert.equal(requests[2].zone.service_status,'planned');assert.ok(requests.every(b=>!b.action.startsWith('assign')));}finally{state.cleanup();delete globalThis.__mapUI;}
+});
+
+
+test('phone map stays inline and retains zone tools and real scoped points',async()=>{
+ const render=await ui(),state=hookRuntime();globalThis.__mapUI=state;state.phone=true;state.session={isAdmin:false,role:'commercial'};state.request=async()=>data;
+ const draw=()=>{state.beforeRender();return render();};
+ try{draw();await state.flush();draw();assert.equal(state.map.initialExpanded,false);assert.equal(state.map.pageLayout,true);assert.equal(state.map.points[0].id,point.id);assert.ok(state.map.mapControls);assert.ok(state.map.zoneFilters);assert.ok(state.buttons.every(button=>button.label!=='Draw a zone'));}
+ finally{state.cleanup();delete globalThis.__mapUI;}
 });

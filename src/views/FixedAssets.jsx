@@ -6,6 +6,8 @@ import { uiMessage } from '@/lib/i18n';
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import MobileAssetCard from '@/components/accounting/mobile/MobileAssetCard';
+import MobileFixedAssets from '@/components/accounting/mobile/MobileFixedAssets';
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import React, { useState, useEffect, useCallback } from "react";
 import { assetAction } from "@/lib/assets";
 import {syncAssetDepreciation} from '@/lib/asset-depreciation-client';
@@ -32,6 +34,7 @@ export default function FixedAssets() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const phone=usePhoneLayout();
   const { isAdmin, isCashier, allowedModules } = useCurrentUser();
   const [assets, setAssets] = useState([]);
   const [depreciation,setDepreciation]=useState(null);
@@ -84,7 +87,31 @@ export default function FixedAssets() {
     { key: "net_book_value_after", label: ui("NBV After"), render: (v) => formatXAF(v) },
   ];
 
+  const historyContent=(<>
+          <DataTable exportTitle="Depreciation register" exportDisabled={!!error || loading} columns={entryCols} data={entries} searchFields={["asset_number", "asset_name", "period_label"]} />
+        </>);
+  const fundingContent=(<>
+          <p className="rounded-lg bg-blue-50 p-4 text-sm text-blue-900">{ui("Depreciation is an expense with no cash payment. Each new charge creates a replacement-funding target. Record actual transfers into a separate reserve treasury account below. These targets are internal savings commitments, not supplier payables. Historical charges without a target remain unchanged.")}</p>
+          <div className="grid gap-4 sm:grid-cols-3"><KPICard title={ui("Funding target")} value={formatXAF(targetTotal)} /><KPICard title={ui("Transferred to reserve")} value={formatXAF(fundedTotal)} color="green" /><KPICard title={ui("Still to set aside")} value={formatXAF(outstandingTotal)} color="red" /></div>
+          <DataTable exportTitle="Asset replacement funding" exportDisabled={!!error || loading} data={fundingEntries} searchFields={["asset_name","asset_number","period_label"]} columns={[
+            {key:'period_label',label:'Period'},{key:'asset_name',label:'Asset'},
+            {key:'replacement_target',label:'Target',render:formatXAF},{key:'replacement_funded',label:'Transferred',render:formatXAF},{key:'replacement_outstanding',label:'Outstanding',render:formatXAF},
+            {key:'funding_status',label:'Funding status',exportValue:e=>e.replacement_outstanding===0?'Funded':e.replacement_funded>0?'Partly funded':'To fund',render:(_,e)=>e.replacement_outstanding===0?'Funded':e.replacement_funded>0?'Partly funded':'To fund'},
+            {key:'actions',label:'',render:(_,e)=>canFund&&e.replacement_outstanding>0?<Button size="sm" variant="outline" onClick={()=>setFunding(e)}>{ui("Record transfer")}</Button>:null}
+          ]} />
+          <h3 className="font-semibold">{ui("Transfer history")}</h3>
+          <p className="text-xs text-slate-500">{ui("Transferred totals show recorded contributions, not the reserve account's current balance after other movements. Current balances remain in Treasury.")}</p>
+          <DataTable exportTitle="Asset replacement transfers" exportDisabled={!!error || loading} data={transfers} searchFields={["description","reference","treasury_account_name","counterparty_account_name"]} columns={[{key:'transaction_date',label:'Date',render:formatDate},{key:'description',label:'Asset / period'},{key:'treasury_account_name',label:'From'},{key:'counterparty_account_name',label:'Reserve account'},{key:'amount',label:'Amount',render:formatXAF},{key:'reference',label:'Reference'},{key:'journal_id',label:'Journal'}]} />
+        </>);
+  const dialogs=(<>      {dialog === "asset" && <AssetDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
+      {dialog === "depreciation" && <DepreciationRunDialog assets={assets} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
+      {editing&&<AssetPlanDialog asset={editing} accounts={accounts} onClose={()=>setEditing(null)} onDone={()=>{setEditing(null);load()}} />}
+      {funding&&<AssetFundingDialog entry={funding} treasuryAccounts={treasuryAccounts} onClose={()=>setFunding(null)} onDone={()=>{setFunding(null);load()}} />}
+      {disposing && <DisposeAssetDialog asset={disposing} onClose={() => setDisposing(null)} onDone={() => { setDisposing(null); load(); }} />}</>);
+
   if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
+
+  if(phone)return <><MobileFixedAssets assets={assets} summary={{totalCost,totalNbv,totalAccum,monthlyCharge}} canManage={canManage} onBack={()=>navigate('/accounting')} onNew={()=>setDialog('asset')} onRunDepreciation={()=>setDialog('depreciation')} onRefresh={load} renderActions={asset=>assetCols.find(c=>c.key==='actions').render(null,asset)} historyContent={historyContent} fundingContent={fundingContent} registerTools={<DataTable exportTitle="Fixed asset register" exportDisabled={!!error||loading} mobileRow={asset=><MobileAssetCard asset={asset} actions={assetCols.find(c=>c.key==='actions').render(null,asset)}/>} columns={assetCols} data={assets} searchFields={["asset_number","name","serial_number","location"]}/>} depreciationWarning={!!(depreciation?.pending_count||depreciation?.issues?.length)} depreciationStatus={<DepreciationStatus status={depreciation}/>} error={error?uiMessage(error):''}/>{dialogs}</>;
 
   return (
     <div data-sleek-assets>
@@ -119,29 +146,11 @@ export default function FixedAssets() {
         <TabsContent value="register" className="mt-4">
           <DataTable exportTitle="Fixed asset register" exportDisabled={!!error || loading} mobileRow={asset=><MobileAssetCard asset={asset} actions={assetCols.find(c=>c.key==='actions').render(null,asset)}/>} columns={assetCols} data={assets} searchFields={["asset_number", "name", "serial_number", "location"]} />
         </TabsContent>
-        <TabsContent value="depreciation" className="mt-4">
-          <DataTable exportTitle="Depreciation register" exportDisabled={!!error || loading} columns={entryCols} data={entries} searchFields={["asset_number", "asset_name", "period_label"]} />
-        </TabsContent>
-        <TabsContent value="funding" className="mt-4 space-y-4">
-          <p className="rounded-lg bg-blue-50 p-4 text-sm text-blue-900">{ui("Depreciation is an expense with no cash payment. Each new charge creates a replacement-funding target. Record actual transfers into a separate reserve treasury account below. These targets are internal savings commitments, not supplier payables. Historical charges without a target remain unchanged.")}</p>
-          <div className="grid gap-4 sm:grid-cols-3"><KPICard title={ui("Funding target")} value={formatXAF(targetTotal)} /><KPICard title={ui("Transferred to reserve")} value={formatXAF(fundedTotal)} color="green" /><KPICard title={ui("Still to set aside")} value={formatXAF(outstandingTotal)} color="red" /></div>
-          <DataTable exportTitle="Asset replacement funding" exportDisabled={!!error || loading} data={fundingEntries} searchFields={["asset_name","asset_number","period_label"]} columns={[
-            {key:'period_label',label:'Period'},{key:'asset_name',label:'Asset'},
-            {key:'replacement_target',label:'Target',render:formatXAF},{key:'replacement_funded',label:'Transferred',render:formatXAF},{key:'replacement_outstanding',label:'Outstanding',render:formatXAF},
-            {key:'funding_status',label:'Funding status',exportValue:e=>e.replacement_outstanding===0?'Funded':e.replacement_funded>0?'Partly funded':'To fund',render:(_,e)=>e.replacement_outstanding===0?'Funded':e.replacement_funded>0?'Partly funded':'To fund'},
-            {key:'actions',label:'',render:(_,e)=>canFund&&e.replacement_outstanding>0?<Button size="sm" variant="outline" onClick={()=>setFunding(e)}>{ui("Record transfer")}</Button>:null}
-          ]} />
-          <h3 className="font-semibold">{ui("Transfer history")}</h3>
-          <p className="text-xs text-slate-500">{ui("Transferred totals show recorded contributions, not the reserve account's current balance after other movements. Current balances remain in Treasury.")}</p>
-          <DataTable exportTitle="Asset replacement transfers" exportDisabled={!!error || loading} data={transfers} searchFields={["description","reference","treasury_account_name","counterparty_account_name"]} columns={[{key:'transaction_date',label:'Date',render:formatDate},{key:'description',label:'Asset / period'},{key:'treasury_account_name',label:'From'},{key:'counterparty_account_name',label:'Reserve account'},{key:'amount',label:'Amount',render:formatXAF},{key:'reference',label:'Reference'},{key:'journal_id',label:'Journal'}]} />
-        </TabsContent>
+        <TabsContent value="depreciation" className="mt-4">{historyContent}</TabsContent>
+        <TabsContent value="funding" className="mt-4 space-y-4">{fundingContent}</TabsContent>
       </Tabs>
 
-      {dialog === "asset" && <AssetDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
-      {dialog === "depreciation" && <DepreciationRunDialog assets={assets} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
-      {editing&&<AssetPlanDialog asset={editing} accounts={accounts} onClose={()=>setEditing(null)} onDone={()=>{setEditing(null);load()}} />}
-      {funding&&<AssetFundingDialog entry={funding} treasuryAccounts={treasuryAccounts} onClose={()=>setFunding(null)} onDone={()=>{setFunding(null);load()}} />}
-      {disposing && <DisposeAssetDialog asset={disposing} onClose={() => setDisposing(null)} onDone={() => { setDisposing(null); load(); }} />}
+      {dialogs}
     </div>
   );
 }

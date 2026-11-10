@@ -30,7 +30,7 @@ export default function SalesInvoice() {
   const phone=usePhoneLayout();
 
   const {id}=useParams(),navigate=useNavigate(),[params]=useSearchParams(),{role}=useCurrentUser();
-  const invoiceList=role==='cashier'?'/cashier?section=invoices':'/sales?tab=invoices',startEditing=params.get('edit')==='1';
+  const invoiceList=role==='cashier'?'/cashier?section=invoices':phone&&params.get('from')==='sales'?'/sales?tab=all':'/sales?tab=invoices',startEditing=params.get('edit')==='1';
   const [data,setData]=useState(null),[options,setOptions]=useState(null),[due,setDue]=useState(''),[defaults,setDefaults]=useState(false),[edit,setEdit]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[reload,setReload]=useState(0);
   useEffect(()=>{let active=true;setData(null);setError('');setEdit(false);invoiceRequest({action:'invoiceDetail',invoiceId:id}).then(result=>{if(active){setData(result);setOptions(result.options);setDue(result.invoice.due_date);setEdit(startEditing&&postedInvoiceStatuses.includes(result.invoice.status)&&result.accounting_verified!==false);}}).catch(e=>{if(active)setError(errorMessage(e));});return()=>{active=false;};},[id,reload,startEditing]);
   const [collecting,setCollecting]=useState(false),[reversing,setReversing]=useState(false);

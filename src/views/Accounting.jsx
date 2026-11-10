@@ -7,6 +7,7 @@ import React from "react";
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import {useSearchParams} from '@/lib/router';
 import MobileAccountingHome from '@/components/accounting/mobile/MobileAccountingHome';
+import MobileAccountingRegisterShell from '@/components/accounting/mobile/MobileAccountingRegisterShell';
 import {Navigate} from "@/lib/router";
 import { useNavigate } from "@/lib/router";
 import PageHeader from "@/components/shared/PageHeader";
@@ -37,6 +38,11 @@ export default function Accounting() {
   if (phone&&!params.has('tab')) return <MobileAccountingHome/>;
   if (!['admin','cashier'].includes(role)) return <ManagementAccounting/>;
 
+  if(phone)return <MobileAccountingRegisterShell title={({accounts:'Chart of Accounts',journals:'Journal Entries',payments:'Payments',periods:'Periods',rules:'Posting Rules'})[tab]} subtitle={tab==='accounts'?'Accounts and hierarchy':undefined} onBack={()=>setParams({})} tools={[
+    {label:'Accounting overview',open:()=>setParams({})},
+    {label:'Chart of Accounts',open:()=>setParams({tab:'accounts'})},{label:'Journal Entries',open:()=>setParams({tab:'journals'})},{label:'Payments',open:()=>setParams({tab:'payments'})},{label:'Periods',open:()=>setParams({tab:'periods'})},{label:'Posting Rules',open:()=>setParams({tab:'rules'})},
+    ...(canAdjust?[{label:'Quantity adjustments',open:()=>navigate('/accounting/inventory?view=adjustments')}]:[]),{label:'Confirm Customer Receipt',open:()=>navigate('/accounting/payments/new')},{label:'Opening balances',open:()=>navigate('/accounting/opening-position')},{label:'New Journal',open:()=>navigate('/accounting/journals/new')},
+  ]}>{tab==='accounts'?<ChartOfAccountsManager/>:tab==='journals'?<AccountingPanelBoundary><JournalRegister/></AccountingPanelBoundary>:tab==='payments'?<PaymentRegister/>:tab==='periods'?<PeriodsManager/>:<PostingRulesManager/>}</MobileAccountingRegisterShell>;
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader

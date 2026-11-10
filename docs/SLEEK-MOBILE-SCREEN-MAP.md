@@ -1,5 +1,7 @@
 # SOEICAM mobile screens
 
+See the [layout audit and remaining differences](SLEEK-MOBILE-FIDELITY-AUDIT.md). This route map identifies screen destinations; it is not a claim of exact visual synchronization.
+
 Implementation reference: the 40 components in `export-react.zip`, exported from [SOEICAM ERP Mobile](https://sleek.design/project/UXViqxJgxPf).
 
 The exported screen structures are connected to existing ERP records and checked operations. The later approved white SOEICAM theme and company logo take precedence over the cream palette and YOLA text in the export. These are phone layouts; desktop tools remain available.

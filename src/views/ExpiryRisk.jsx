@@ -97,9 +97,11 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
     { key: "risk", label: ui("Suggested Action"), render: v => <span className="text-slate-600">{ACTION[v]}</span> },
   ];
 
+  const suppliedDetails=<details open={!phone} className={phone?"rounded-[22px] border bg-white p-4":"mb-4 rounded-xl border bg-white p-3 sm:p-5"}><summary className="min-h-11 cursor-pointer text-sm font-semibold">{ui("Supplied batches to review")}</summary><p className="mt-1 text-xs leading-5 text-slate-500">{ui("Batches supplied to customers that expire within ")}{days}{ui(" days or have already expired. Recorded supply quantities are historical; customer shelf stock must be confirmed separately.")}</p>{supplyError && <p role="alert" className="mt-3 text-sm text-red-700">{supplyError}</p>}<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{suppliedRisk.map(batch => <button key={batch.key} type="button" onClick={() => trace(batch)} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left"><p className="font-mono text-sm font-semibold">{batch.lot_number}</p><p className="mt-1 text-sm">{batch.product_name}</p><p className="mt-2 text-xs text-slate-600">{batch.expiry_date ? 'Expires ' + formatDate(batch.expiry_date) : ui("Expiry not recorded")}{ui(" · Supplied ")}{formatNumber(batch.supplied_quantity, 3)} {batch.unit}</p><span className="mt-3 inline-block text-xs font-semibold text-blue-700 underline">{ui("Find customers and outlets")}</span></button>)}</div>{supplyLoading && <p role="status" className="mt-3 text-sm text-slate-500">{ui("Checking supplied batches...")}</p>}{!supplyLoading && !supplyError && !suppliedRisk.length && <p className="mt-3 text-sm text-slate-400">{ui("No dated supplied batches in this risk window.")}</p>}</details>;
+
   return (
-    <div data-sleek-screen="stock-alerts">
-      {embedded ? <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">{ui("Stock and supplied batches at risk")}</h2><div className="flex flex-wrap gap-1">{WINDOWS.map(d=><Button key={d} size="sm" variant={days===d?'default':'outline'} onClick={()=>setDays(d)}>{d}d</Button>)}</div></div> : <PageHeader
+    <div data-sleek-screen="stock-alerts" className={phone?"space-y-4":undefined}>
+      {phone?<header className="min-h-14 pr-24"><h1 className="text-xl font-bold">{ui("Stock alerts")}</h1><p className="mt-1 text-xs text-slate-500">{ui("Stock batches that need attention before they are lost")}</p></header>:embedded ? <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold">{ui("Stock and supplied batches at risk")}</h2><div className="flex flex-wrap gap-1">{WINDOWS.map(d=><Button key={d} size="sm" variant={days===d?'default':'outline'} onClick={()=>setDays(d)}>{d}d</Button>)}</div></div> : <PageHeader
         title={ui("Expiry Risk")}
         subtitle={ui("Stock batches that need attention before they are lost")}
         actions={
@@ -120,7 +122,7 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
         <KPICard title={ui("Value at Risk")} value={formatXAF(atRiskValue)} subtitle={ui("within {0} days", days)} icon={Clock} color="amber" />
       </div>
 
-      {canTrace && <details open={!phone} className="mb-4 rounded-xl border bg-white p-3 sm:p-5"><summary className="min-h-11 cursor-pointer text-sm font-semibold">{ui("Supplied batches to review")}</summary><p className="mt-1 text-xs leading-5 text-slate-500">{ui("Batches supplied to customers that expire within ")}{days}{ui(" days or have already expired. Recorded supply quantities are historical; customer shelf stock must be confirmed separately.")}</p>{supplyError && <p role="alert" className="mt-3 text-sm text-red-700">{supplyError}</p>}<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{suppliedRisk.map(batch => <button key={batch.key} type="button" onClick={() => trace(batch)} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left"><p className="font-mono text-sm font-semibold">{batch.lot_number}</p><p className="mt-1 text-sm">{batch.product_name}</p><p className="mt-2 text-xs text-slate-600">{batch.expiry_date ? 'Expires ' + formatDate(batch.expiry_date) : ui("Expiry not recorded")}{ui(" · Supplied ")}{formatNumber(batch.supplied_quantity, 3)} {batch.unit}</p><span className="mt-3 inline-block text-xs font-semibold text-blue-700 underline">{ui("Find customers and outlets")}</span></button>)}</div>{supplyLoading && <p role="status" className="mt-3 text-sm text-slate-500">{ui("Checking supplied batches...")}</p>}{!supplyLoading && !supplyError && !suppliedRisk.length && <p className="mt-3 text-sm text-slate-400">{ui("No dated supplied batches in this risk window.")}</p>}</details>}
+      {!phone && canTrace && suppliedDetails}
 
       <div className="hidden sm:flex justify-end mb-3">
         <ViewToggle
@@ -140,6 +142,8 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
         ? <ExpiryTriage rows={rows} onTrace={canTrace ? trace : undefined} />
         : <DataTable columns={cols} data={rows} onRowClick={canTrace ? trace : undefined} searchFields={["product_name", "lot_number", "warehouse_name"]} emptyMessage={ui("No stock at risk — every batch is in date and released.")} />
       }
+      {phone&&<details className="rounded-[22px] border bg-white p-4"><summary className="min-h-6 cursor-pointer text-sm font-semibold">{ui('Risk window')} · {days}d</summary><div className="mt-3 flex flex-wrap gap-2">{WINDOWS.map(d=><Button key={d} size="sm" variant={days===d?'default':'outline'} onClick={()=>setDays(d)}>{d}d</Button>)}</div></details>}
+      {phone&&canTrace&&suppliedDetails}
     </div>
   );
 }

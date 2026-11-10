@@ -1,0 +1,999 @@
+{
+  "date": "2026-11-10",
+  "project": "https://sleek.design/project/UXViqxJgxPf",
+  "screensReviewed": 40,
+  "scope": "Phone layouts below 640px; desktop tools preserved.",
+  "method": "Active versions checked against Sleek. Actual route dispatch, enclosing shells and component structure reviewed for every screen; focused isolated checks plus selected full-view browser fixtures at 390px and 320px. Fixtures use example records and stub transport, not production transactions.",
+  "intentionalOverrides": [
+    "White SOEICAM theme, actual logo and one account control.",
+    "Manual goods issuance with centralized stock; no per-product Receive/Count controls.",
+    "Quantity adjustments remain in Accounting with existing role restrictions.",
+    "Real records, permissions, approvals, identity verification and transaction validation take precedence over illustrative data and switches."
+  ],
+  "screens": [
+    {
+      "name": "Connexion",
+      "route": "/login; /register uses the same provider shell for signup",
+      "status": "adapted",
+      "referenceId": "Gv5zGjhh6ht",
+      "sourceComponent": "src/components/ClerkAuthScreen.jsx OR src/views/Login.jsx + src/components/AuthLayout.jsx",
+      "renderChain": [
+        "src/app/(auth)/login/page.jsx",
+        "usesClerk() ? ClerkAuthScreen : Login/AuthLayout"
+      ],
+      "mobileGate": "Auth page outside ERP shell. Active auth provider determines actual form; authenticated staff role is resolved by existing account access, never by a role-picker shortcut.",
+      "before": [
+        "Secure provider/legacy auth forms were connected but the full source login/reset composition was not implemented verbatim."
+      ],
+      "changes": [
+        "White phone theme, SOEICAM logo and configured provider form retained; provider controls own identity verification and recovery."
+      ],
+      "limitations": [
+        "Clerk-managed multi-step sign-in/recovery is an explicit adaptation of the source’s simultaneous static login/reset form.",
+        "No illustrative role-login shortcuts, fake remember-device state, or fixed 30-minute reset guarantee are added."
+      ],
+      "referenceVersion": 1
+    },
+    {
+      "name": "Accueil GM",
+      "route": "/?section=overview (admin home); /team-workspaces?section=reports&role=admin (read-only preview)",
+      "status": "adapted",
+      "referenceId": "TlRK3WoUJXR",
+      "sourceComponent": "src/components/home/MobileManagerHome.jsx",
+      "renderChain": [
+        "src/app/(erp)/page.jsx",
+        "src/views/Home.jsx",
+        "src/views/EmployeeDashboard.jsx: LiveWorkspace",
+        "src/components/home/ManagerHome.jsx",
+        "src/components/home/MobileManagerHome.jsx"
+      ],
+      "mobileGate": "usePhoneLayout() and ManagerHome section === overview; authenticated admin role and saved module permissions. Other GM sections retain their own workspaces.",
+      "before": [
+        "The existing phone role shell added a colored bordered identity card before the Sleek body and rendered role before greeting/date.",
+        "GM body already had summary, module grid, alerts and primary sale action"
+      ],
+      "changes": [
+        "EmployeeDashboard phone home shell is now plain date, Bonjour/name and role, with one refresh action; inner staff dates are suppressed where the shared welcome already supplies the date.",
+        "Supplementary treasury and quick-report controls moved into Other tools, retaining the summary → modules → alerts → sale-action hierarchy."
+      ],
+      "limitations": [
+        "No invented sample records or area names are inserted; inaccessible modules are omitted.",
+        "Management previews retain selection controls and a read-only notice beyond the reference composition.",
+        "Alerts show actual ERP risk lots and approval queues; illustrative rent notices and unverified invoice counts are not substituted for records."
+      ],
+      "referenceVersion": 3
+    },
+    {
+      "name": "Accueil Commercial",
+      "route": "/ for own commercial role; /commercial (workspace/home)",
+      "status": "adapted",
+      "referenceId": "fk6wGbxCcp0",
+      "sourceComponent": "src/components/home/MobileCommercialHome.jsx",
+      "renderChain": [
+        "src/views/EmployeeDashboard.jsx own commercial branch OR src/app/(erp)/commercial/page.jsx",
+        "src/views/CommercialWorkspace.jsx",
+        "src/components/home/CommercialDashboard.jsx",
+        "src/components/home/MobileCommercialHome.jsx"
+      ],
+      "mobileGate": "usePhoneLayout() and CommercialDashboard tab === home. CommercialWorkspace hides its old boxed mobile header only for own home; management reporting retains its existing controls.",
+      "before": [
+        "The body sections existed but old connection/status/help wrapper preceded them.",
+        "Metrics were four separate cards and recent activity used independent bordered cards rather than source grouping."
+      ],
+      "changes": [
+        "Plain date/greeting/role replaces the old own-home phone wrapper; desktop and management header stay available.",
+        "Record sale 56px, New customer 48px; one grouped two-by-two summary card with a lower divider; acquired customer queue and one divided recent-activity card.",
+        "Supplementary stock, supplies, returns, cash, commissions and central degustation functions remain in a 96px three-column module grid inside an accessible Modules disclosure.",
+        "Centralized inventory still routes sale creation through the existing own-stock sale handler."
+      ],
+      "limitations": [
+        "Acquired customer rows use available real identity/zone data; source sample per-customer money figures are not fabricated.",
+        "Recent activity uses recorded sale dates/statuses; source sample times are not invented.",
+        "GM commercial preview deliberately renders CommercialActivityReport, with no employee sale/registration controls."
+      ],
+      "referenceVersion": 1
+    },
+    {
+      "name": "Accueil Comptable",
+      "route": "/ for warehouse_manager / Accountant template; /team-workspaces?section=reports&role=warehouse_manager (read-only preview)",
+      "status": "adapted",
+      "referenceId": "HoT9YhVZ7TD",
+      "sourceComponent": "src/components/home/MobileAccountantHome.jsx",
+      "renderChain": [
+        "src/views/EmployeeDashboard.jsx: LiveWorkspace",
+        "src/components/home/OperationalStaffHome.jsx",
+        "src/components/home/MobileAccountantHome.jsx"
+      ],
+      "mobileGate": "usePhoneLayout() and OperationalStaffHome template === warehouse_manager. The historical warehouse_manager role key is the saved Accountant identity.",
+      "before": [
+        "Four metrics, modules and task sections existed, but identity wrapper differed and tasks lacked the source-sized explicit row actions."
+      ],
+      "changes": [
+        "Keeps source separate two-by-two metric cards, six main modules in three columns, real pending tasks with 48px View controls and 22px cards.",
+        "Shared phone welcome is date, Bonjour/name and role without the old colored border card.",
+        "Actual stock valuation reader and posted-ledger monthly net profit helper retained; payables/receivables remain unavailable when their readers are unavailable.",
+        "Other granted tools remain accessible in a disclosure."
+      ],
+      "limitations": [
+        "Pending rows come from actual expense/material-issue/risk queues; sample rent, handover and count discrepancy tasks are not inserted.",
+        "View opens the existing permitted workspace; it does not fabricate a direct processing operation.",
+        "No P&L derived from sales minus purchases and no depreciation sync writes are added."
+      ],
+      "referenceVersion": 2
+    },
+    {
+      "name": "Accueil Production",
+      "route": "/ for production_manager; /team-workspaces?section=reports&role=production_manager (read-only preview)",
+      "status": "adapted",
+      "referenceId": "trel5HtjKCC",
+      "sourceComponent": "src/components/home/MobileProductionHome.jsx",
+      "renderChain": [
+        "src/views/EmployeeDashboard.jsx: LiveWorkspace",
+        "src/components/home/ProductionHome.jsx",
+        "src/components/home/MobileProductionHome.jsx"
+      ],
+      "mobileGate": "usePhoneLayout(). WorkspaceAccess filters every destination and preview disables operational navigation/actions.",
+      "before": [
+        "Summary used separate small cards; the top role wrapper, 48px production action and always-visible supplementary grid differed from source geometry."
+      ],
+      "changes": [
+        "One grouped three-column assemblies/month batches/recorded output summary, horizontal real material stock cards, recent batches, and 56px sticky Record production action.",
+        "Primary production links to /manufacturing?section=build, matching grouped assembly entry; recorded grouped builds remain ProductionOrder records in monthly counters.",
+        "Legacy /manufacturing/new Plan production and existing accounting, expenses, company sales, warehouse, delivery, approval and quality tools remain under Other tools.",
+        "Shared plain date/greeting/role header and 22px cards."
+      ],
+      "limitations": [
+        "Recent batch rows show actual output/planned amounts and dates; source sample bucket/yield labels are not invented when absent from records.",
+        "Monthly output is from recorded ProductionOrder actual_output; unavailable monthly reader stays unavailable.",
+        "White SOEICAM styling intentionally replaces the source cream background."
+      ],
+      "referenceVersion": 2
+    },
+    {
+      "name": "Accueil Caissier",
+      "route": "/ for cashier; /team-workspaces?section=reports&role=cashier (read-only preview). /cashier is the separate Caisse screen.",
+      "status": "adapted",
+      "referenceId": "bNCWSklp7Ti",
+      "sourceComponent": "src/components/home/MobileCashierHome.jsx",
+      "renderChain": [
+        "src/views/EmployeeDashboard.jsx own cashier branch OR LiveWorkspace cashier preview",
+        "src/components/home/CashierHome.jsx",
+        "src/components/cashier/CashierWorkspace.jsx renderHome callback",
+        "src/components/home/MobileCashierHome.jsx"
+      ],
+      "mobileGate": "usePhoneLayout(); CashierWorkspace invokes renderHome only for home, keeping all actual receive/petty/resolve dialogs outside the mobile branch.",
+      "before": [
+        "Own cashier home lacked date/greeting/role, primary actions were side by side, summary split into cards, and handover controls were smaller than source.",
+        "The callback home bypassed the existing date picker, refresh and loading/error presentation."
+      ],
+      "changes": [
+        "Adds real cashier date, Bonjour/name and role, stacked 56px Receive cash followed by 48px Petty cash, grouped two-column summary, pending-handover avatar cards with 48px Discrepancy/Confirm controls.",
+        "Queue includes submitted/partially_received/disputed handovers, excluding already received documents.",
+        "Three main modules match source; Daily savings, Approved payments and Cheques & signatures remain under Other tools.",
+        "Cash desk date/refresh controls retained in compact overflow tools; existing errors and initial loading are shown. Procurement owner extended callback payload for these values."
+      ],
+      "limitations": [
+        "The second quick report opens existing Customer invoices, rather than inventing a new daily-credit query.",
+        "Historical source dates can be selected through the existing callback; Confirmed today refers to the active cash activity date.",
+        "Cash management preview leaves operational controls disabled. Default /cashier Caisse composition is separately owned by procurement agent."
+      ],
+      "referenceVersion": 1
+    },
+    {
+      "name": "Accueil Hôtesse",
+      "route": "/ for hotesse; /outlet-reports for own Hotesse reporting; /team-workspaces?section=reports&role=hotesse&employee=<id> for read-only preview",
+      "status": "adapted",
+      "referenceId": "7OMaFnG9Gfb",
+      "sourceComponent": "src/components/home/MobileHotesseHome.jsx",
+      "renderChain": [
+        "src/views/EmployeeDashboard.jsx: LiveWorkspace OR OutletReports -> HotesseLiveWorkspace",
+        "src/components/home/HotesseHome.jsx",
+        "src/components/outlets/HotesseWorkspace.jsx renderHome callback",
+        "src/components/home/MobileHotesseHome.jsx"
+      ],
+      "mobileGate": "usePhoneLayout() and HotesseWorkspace tab === home. Alternate /outlet-reports now uses HotesseHome instead of bypassing its mobile branch.",
+      "before": [
+        "Own home body existed with nested customer cards and a smaller report action.",
+        "Alternate /outlet-reports still mounted the legacy home directly, so the actual reporting navigation did not show the exported mobile home."
+      ],
+      "changes": [
+        "Consistent plain date/greeting/role, no-sale scope notice, separate real report counters, 56px New visit report action, one divided assigned-customer card and source three-module grid.",
+        "Shelf stock, supplies/batches and performance functions remain in Other tools; actual customer map links and map drawer stay available.",
+        "HotesseLiveWorkspace now renders HotesseHome with real identity and its unchanged load/refresh/error/submit handlers; desktop still renders the legacy workspace."
+      ],
+      "limitations": [
+        "The ERP records reports, not scheduled visit appointments; counters say Reports today and no example visit times are fabricated.",
+        "New visit report opens existing assigned outlet report task; existing stock snapshots and closing-report validations still apply."
+      ],
+      "referenceVersion": 2
+    },
+    {
+      "name": "Ventes",
+      "route": "/sales?tab=all (mobile default /sales)",
+      "status": "partially_synced",
+      "before": [
+        "Confirmed matches: quick Today/Week/Month periods, receipt/customer/employee search, All/Sales/Exchanges segmented counts, two metrics, date-grouped receipt cards and real detail navigation. Confirmed mismatches: Sales.jsx still prepends the legacy PageHeader with a back-to-menu control and a separate New sale button row; the reference has a single Ventes title/calendar header. The calendar is instead placed beside the overview line, and that line lacks the reference rounded bordered overview banner. Receipt cards use generic Receipt/Rotate icons instead of real product thumbnails and min-h-24 (96px) instead of the reference compact min-h-16 layout. Cards omit time and credit due-date text, with uniform status styling; invoice rows display invoice document numbers rather than consistently the original receipt reference. The floating plus is the global multi-action menu rather than a direct New sale action. Extra Refresh, detailed-report link and Dégustations button remain after the list."
+      ],
+      "changes": [
+        "Removed the phone legacy Sales PageHeader/back/New-sale row; restored local title/calendar header and rounded overview banner.",
+        "Added a direct New sale FAB with data-mobile-action-bar to suppress the global plus menu.",
+        "Moved refresh, detailed reports, history and the full Sales menu into an explicit Sales tools disclosure.",
+        "Compacted record cards; invoice detail links now carry from=sales to return to the originating register."
+      ],
+      "limitations": [
+        "Remaining design gap: register rows still use semantic Receipt/Exchange icons because the current companySales projection has no product-line thumbnails; receipt time and verified per-row credit due dates remain absent.",
+        "Current true metrics intentionally remain Cash at sale and Customer balances; their source is not cashier-confirmed deposits today.",
+        "Global SOEICAM brand/account shell and role-based bottom navigation remain; the strict local Sleek-only header is not reproduced pixel-for-pixel."
+      ],
+      "sourceComponent": "src/views/Sales.jsx; src/components/sales/MobileSalesRegister.jsx; src/components/sales/CompanySalesRegister.jsx",
+      "referenceId": "K3NCy1FAqfn",
+      "referenceVersion": 3
+    },
+    {
+      "name": "Nouvelle vente 1/3",
+      "route": "/sales/new (MobileSaleFlow step=0; also unposted /sales/:id)",
+      "status": "implemented_with_adaptations",
+      "before": [
+        "Confirmed matches: back/title/subtitle/1-of-3 header, thin three-segment progress, selected-customer card, conditional destination, date and locked stock source, searchable permitted-seller radios, fixed Next button. Confirmed mismatches: customer search is hidden in the legacy CustomerPicker dialog behind a large Choose customer trigger rather than the inline 48px search. After selection, both the picker trigger and a selected-customer card repeat the same customer. The selected card shows phone/address rather than the assigned-agent/neighborhood secondary line. Seller rows omit real role metadata and the reference unauthorized/disabled-person explanation. The footer adds product-count and 0-XAF total even at customer step; the reference footer contains Next only. Primary action is 48px rather than reference 56px. The global bottom nav below it moves the footer up 64px compared with the reference full-bottom action."
+      ],
+      "changes": [
+        "Replaced the legacy customer dialog trigger with inline searchable customer choices, preserving customer/branch validation and resetting replacements on customer change.",
+        "Removed the repeated picker card; selected card now uses real assigned-agent/location fields when supplied, otherwise truthful contact fallback.",
+        "Kept searchable authorized seller radio rows, with real role metadata when supplied; self-only staff remain readonly.",
+        "Step-one footer now contains only a 56px Next action."
+      ],
+      "limitations": [
+        "Authorized employee catalogue does not include disabled unauthorized staff or their client counts; these are not invented.",
+        "Branch remains mandatory when actual delivery destinations exist; manager attribution remains server-authorized.",
+        "Persistent app brand shell/bottom navigation differs from the local-reference-only form shell."
+      ],
+      "sourceComponent": "src/components/sales/MobileSaleFlow.jsx (step 0); src/views/SalesOrderForm.jsx; src/components/field/CustomerPicker.jsx",
+      "referenceId": "BRyo2jv9dhk",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Nouvelle vente 2/3",
+      "route": "/sales/new (MobileSaleFlow step=1; also unposted /sales/:id)",
+      "status": "implemented_with_adaptations",
+      "before": [
+        "Confirmed matches: step header/progress, selected-customer strip, Sale/Replacement/Dégustation tabs, real product pictures, price, available quantity, editable quantity, total and Next. Confirmed mismatches: reference product cards have a 64px image, size/flavor metadata, availability badge, and large minus/input/plus controls beneath product info; implementation has a 52px image and a lone right-side 80px number input, no +/- controls or availability badge. Extra stock-source controls, refresh/help, product search and price/discount disclosures change the hierarchy. The reference replacement-only switch below products is absent; replacement-only mode is inferred from lines/replacements in the existing separate tab. Dégustation tab is an information card opening the existing separate dialog, with no in-flow selected tasting count. Footer counts selected product lines (not total article quantity), omits tasting count, and remains above the global nav. Selected product price/discount disclosure adds row height."
+      ],
+      "changes": [
+        "Restored 64px real product image, size/flavor metadata, availability badge and large minus/direct-input/plus controls; direct decimal quantity entry remains available.",
+        "Added accessible tab labels and accurate total article quantity in the footer.",
+        "Moved stock-source help/refresh into a disclosure that opens when stock is unavailable or errors; validations remain active.",
+        "Added clear replacement-only entry using existing replacement evidence controls; with paid quantities still present, it explicitly says to clear them for an exchange-only receipt.",
+        "Dégustation remains a visibly separate verified transaction."
+      ],
+      "limitations": [
+        "Intentional transaction adaptation: Dégustation is separately posted, never combined into sale confirmation or falsely counted as a draft sale item.",
+        "Replacement declaration and damaged/expired/lot evidence remain in existing verified form instead of a decorative mode switch that could discard sale quantities.",
+        "Stock tools and product search/price-discount disclosures preserve app features beyond the static design.",
+        "The full-width product control row wraps safely on narrow phones rather than forcing the 390px reference dimensions."
+      ],
+      "sourceComponent": "src/components/sales/MobileSaleFlow.jsx (step 1); src/views/SalesOrderForm.jsx; src/components/field/SaleReplacements.jsx; src/components/distribution/CentralDegustationForm.jsx",
+      "referenceId": "aF8fyobuO7N",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Nouvelle vente 3/3",
+      "route": "/sales/new (MobileSaleFlow step=2; also unposted /sales/:id)",
+      "status": "implemented_with_adaptations",
+      "before": [
+        "Confirmed matches: payment-step header/progress, customer/product summary, attributed seller, mandatory real receipt reference, cash/credit choice, replacement summary and confirm-total action. Confirmed mismatches: payment choices are bare side-by-side buttons instead of the reference stacked full-width radio cards with cash-handover explanation and credit due-date line. Seller is a plain text card plus Edit salesperson link, rather than the compact selector with authorization explanation; the link appears even when canChooseSeller=false. Receipt field lacks the reference paper-receipt-book helper. The Exchanges and tasting combined card is replaced by Exchanges only, so no tasting status appears. The separate Total of sale summary panel is missing; total appears in footer count row and again in confirm button. Body review text uses smaller 12px lines, and fixed primary action is 48px instead of 56px, above persistent navigation."
+      ],
+      "changes": [
+        "Replaced bare side-by-side payment buttons with stacked descriptive radio cards, cashier-handover explanation and real customer payment terms.",
+        "Seller edit link appears only when canChooseSeller; profile/permission explanation is explicit.",
+        "Added mandatory paper-receipt-book helper, truthful separate-Dégustation status, and Total of sale panel.",
+        "Kept notes/tax details in disclosure and changed final action to 56px, preserving the existing atomic save, retry key and validation."
+      ],
+      "limitations": [
+        "Credit displays actual configured payment-term days rather than an invented saved due date.",
+        "Dégustation summary explicitly states it is a separate transaction; there is no false combined giveaway payload.",
+        "Cash handover is explained as pending confirmation; no unverified paid/cashier-confirmed state is asserted.",
+        "Global shell/bottom navigation remains an intentional app integration difference."
+      ],
+      "sourceComponent": "src/components/sales/MobileSaleFlow.jsx (step 2); src/views/SalesOrderForm.jsx",
+      "referenceId": "6HpC4XhEpER",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Détail vente",
+      "route": "/sales/invoices/:id and /sales/:id (locked posted order/exchange)",
+      "status": "implemented_with_remaining_data_limits",
+      "before": [
+        "Confirmed matches: both mobile detail components have local back/reference-date/status header, customer card, item/quantity/price totals and tracking. Confirmed mismatches by actual route: Sales register normally opens Invoice rows at /sales/invoices/:id. MobileInvoiceDetail shows invoice number rather than original receipt reference, generic Receipt icons rather than product thumbnails, no Exchanges section, and Tracking is balance/due/reference/tax instead of seller/recorded-by/cash-handover. The invoice branch has the 3 action buttons but all outline, and labels Print/PDF, Share/copy, Download invoice; Download saves an HTML invoice, not a PDF action. Back always routes to the invoice-management tab rather than returning to the sales register. At /sales/:id, MobileSaleDetail has product thumbnails, Exchanges and seller/recorded-by fields when present, but no confirmed cash-handover state/time, no 3 Print/Share/PDF action row; it exposes the generic ReportExport controls and an Open invoice button instead. Both branches omit receipt time and the customer confirmed-by-cashier state. Extra invoice tools/preview, collect and reversal features are disclosed below the main detail."
+      ],
+      "changes": [
+        "Created MobileSaleReceipt.jsx shared receipt hierarchy for invoice, locked order and exchange routes: reference/status/date, customer, real product images/fallback, item totals, Exchanges, truthful tracking and consistent three-action row.",
+        "Order/exchange Print and Export PDF use the existing report print pipeline/browser print dialog; Share uses native navigator.share or clipboard fallback, with visible errors. No invoice is automatically created or issued.",
+        "Invoice keeps existing verified print/share handlers; Export PDF opens its existing printable invoice. HTML download, customization, Excel, invoice preview, collection and reversal remain in Invoice tools & preview.",
+        "Extended only invoiceDetail read projection with already saved receipt_reference/salesperson_name/stored recorder name, InvoiceLine product_id and whitelisted linked-source replacements; no cost/private IDs returned. Rejects cross-customer or conflicting linked-invoice source.",
+        "Mobile invoice return from Sales register now returns to /sales?tab=all; cashier retains own invoice-list return."
+      ],
+      "limitations": [
+        "Actual receipt time and confirmed cash-handover time/status are not exposed because trustworthy existing projection/evidence is unavailable; no values invented.",
+        "Recorder name appears only if a saved name snapshot exists; a raw user ID is never displayed as a person.",
+        "Receipt product images resolve from actual product/name assets and may fall back when no matching image exists.",
+        "Export PDF is real browser Print/Save PDF, not a direct binary-PDF download. Existing .html invoice download remains truthfully labeled in tools.",
+        "Order, invoice and exchange keep their real document statuses rather than all being labeled Paid."
+      ],
+      "sourceComponent": "src/components/sales/MobileInvoiceDetail.jsx; src/components/sales/MobileSaleFlow.jsx (MobileSaleDetail); src/views/SalesInvoice.jsx; src/views/SalesOrderForm.jsx; src/server/domain/sales-invoices.js (detail read projection)",
+      "referenceId": "PbXc5VTeH7A",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Clients",
+      "route": "/customers (phone); /customers?view=list",
+      "status": "implemented_with_limitations",
+      "before": [
+        "The phone admin/employee route does render the new list directly, with real location chips, agent initials, balances and branch toggles. However, the enclosing generic PageHeader still stacks Map and Add customer on a second full-width row instead of the export's single title-and-two-icon header. CustomerQuickList renders one continuous bordered list with square avatars, rather than separate rounded customer cards with circular avatars. More materially, the admin search does not include acquired_by_name even though the export explicitly searches name/agent/zone. The commercial role branches to CustomerTasks rather than CustomerDirectory, retaining its old padded header, information popover, full Map button and select-based zone toolbar; it only inherits the redesigned row component."
+      ],
+      "changes": [
+        "Added customer-specific MobileCustomerHeader and wired full directory routes for admin/employee and commercial.",
+        "Replaced phone continuous list borders with separate rounded cards and circular avatars; desktop row styling remains.",
+        "Changed administrative chips from neighbourhood labels to saved delivery zones, with All/Unassigned and query error recovery.",
+        "Included acquired_by_name and real zone names in administrative search; commercial data remains from fieldCustomers."
+      ],
+      "limitations": [
+        "Phone layout applies at max-width 639px; existing tablet/desktop layouts remain.",
+        "Locate controls appear only for actual saved GPS. Customer names and balances remain ERP data.",
+        "Commercial fieldCustomers intentionally omits account balances, so its cards do not invent a balance."
+      ],
+      "sourceComponent": "clients.tsx / jrGcer9IrQ3; src/views/Customers.jsx; src/components/customers/MobileCustomerHeader.jsx; CustomerQuickList.jsx; CustomerTasks.jsx",
+      "referenceId": "jrGcer9IrQ3",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Fiche client",
+      "route": "/customers?view=list&customer=<id>; commercial equivalent /customers?customer=<id>",
+      "status": "implemented_with_limitations",
+      "before": [
+        "MobileCustomerOverview supplies the broad metric/contact/owner/branches/history hierarchy, but PartnerDetail inserts it above the entire old phone surface: CustomerActionGrid, payment/opening summaries, Overview/Stock & Expiry/Sales tabs, another PartnerGroupPanel and spoilage sections remain appended. This is a composed new-plus-old screen, not the export's coherent profile. The header lacks the parent/branch + area subtitle. The first card is Delivered Value across at most 200 recent orders, not current-month sales. The owner card falls back to the registrar but still labels that person Acquired by. Recent sales includes all SalesOrders, including drafts/cancelled states, rather than only actual posted sales. Branch rows omit direct locate buttons and last-sale dates. The commercial role bypasses this component completely and displays the old CustomerTasks article."
+      ],
+      "changes": [
+        "Collapsed the full retained administrative detail surface into explicit secondary tools instead of appending a second profile.",
+        "Added parent/branch and actual area subtitle; retained parent navigation and authorized Add branch in secondary tools.",
+        "Added a customer-specific posted invoice query helper with complete UTC calendar-month boundaries, a full aggregate and six recent posted invoices.",
+        "Replaced limited delivered-order monthly proxy and draft/cancelled order history with accurately labelled posted invoice data.",
+        "Corrected acquisition versus registration identity and kept both identities visible when present.",
+        "Reused MobileCustomerOverview in commercial CustomerTasks without widening its service scope; unknown totals/balances stay em dashes, with an explicit unavailable-workspace history message.",
+        "Added branch locate buttons only for actual saved GPS."
+      ],
+      "limitations": [
+        "Commercial fieldCustomers does not return invoices or financial balances; those metrics/history remain explicitly unavailable in that workspace. Adding them requires a separately scoped data contract and is not silently enabled by a design change.",
+        "Monthly metric is posted invoice face value for this customer, excluding opening balances. It is labelled Invoiced this month; it is not a commission or net-revenue report.",
+        "The reference sample 3.5% commission and branch last-sale dates are not fabricated; current profile payload does not provide them.",
+        "Sale, receipt, spoilage and GPS actions retain existing role checks."
+      ],
+      "sourceComponent": "fiche-client.tsx / ClUypg1hpLY; src/views/Customers.jsx; src/components/customers/PartnerDetail.jsx; MobileCustomerOverview.jsx; CustomerTasks.jsx; src/lib/customer-mobile-summary.js",
+      "referenceId": "ClUypg1hpLY",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Nouveau client",
+      "route": "/customers/new; commercial route redirects to /customers?new=1",
+      "status": "implemented_with_limitations",
+      "before": [
+        "For admin/non-commercial phones, MobileCustomerForm has the exported parent/branch selector, identity fields, zone/neighbourhood, GPS, acquisition attribution and sticky save, connected to the existing save handler. But the enclosing CustomerForm always shows the old Details TabsList even for a brand-new customer with only one tab, and edit mode additionally retains the old Add branch and invoice/payment shell. The shared GpsCapture is the full legacy capture/review editor rather than the compact export tile. Most importantly, commercial /customers/new always redirects to CustomerTasks, whose registration is the unchanged FieldCustomerRegistration inside a generic max-h 90dvh dialog, so the exported creation layout is not what a commercial sees."
+      ],
+      "changes": [
+        "Removed the lone Details tab in mobile create mode while retaining edit invoice/payment history.",
+        "Added compact mobile form header.",
+        "Added compact mode to the existing GPS component, retaining capture/watch/stop/discard/accuracy/map/error behavior; no GPS validation was replaced.",
+        "Adapted FieldCustomerRegistration phone markup to the exported hierarchy using its current state and checked submit handler.",
+        "Commercial attribution remains the actual linked staff/selected review context rather than an unauthorized acquirer selector.",
+        "Added data-mobile-action-bar to the full mobile registration CTA bar; existing administrative sticky marker retained."
+      ],
+      "limitations": [
+        "Admin and commercial required fields intentionally retain their existing business rules: field registration requires phone and captured GPS; management registration retains its own validation.",
+        "No fake Delete action is added to a new unsaved customer. Authorized saved-customer deletion with reason and confirmation is preserved.",
+        "Commercial users do not gain admin credit-limit/payment controls or arbitrary acquisition assignment from the visual adaptation.",
+        "Authorized editing retains invoice/payment tabs and deletion controls; the reference only specifies creation."
+      ],
+      "sourceComponent": "nouveau-client.tsx / rcENUXY14dW; src/views/CustomerForm.jsx; src/components/customers/MobileCustomerForm.jsx; GpsCapture.jsx; CustomerTasks.jsx; src/components/field/FieldCustomerRegistration.jsx",
+      "referenceId": "rcENUXY14dW",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Carte clients",
+      "route": "/customers?view=map",
+      "status": "implemented_with_limitations",
+      "before": [
+        "CustomerMapWorkspace uses real data and a real map, with zone chips and a selected customer/GPS card, but the full route still consists of a generic underlying PageHeader plus CustomerGeoMap opened immediately as a full-screen Dialog. The visible map shell remains the legacy Show pins/Close toolbar, Filters and zones disclosure, edge-to-edge flex map and provider/diagnostic footer. It does not match the export's standalone compact Back/title header, rounded inset map viewport and selected-customer sheet with two equal-width Directions/View profile actions. The current sheet puts Directions on its own primary button and Open customer profile/Delivery details beneath it as outline controls. Commercial mapping explicitly omits onOpenCustomer, so that role never sees the design's View profile action."
+      ],
+      "changes": [
+        "Added pageLayout mobile variant to CustomerGeoMap and made initialExpanded false only on phones; desktop/full map behavior remains.",
+        "Used an inset rounded viewport with bounded mobile height and a compact selected-customer card.",
+        "Added two-column Directions/View profile action row and retained delivery editing in a disclosure.",
+        "Moved full zone/filter/provider toolbar into explicit secondary tools while preserving real handlers, drawing controls, assignment review, route steps, errors and diagnostics.",
+        "Wired map profile navigation for the commercial role without changing map/customer backend scopes."
+      ],
+      "limitations": [
+        "Production map still requires an authorized Google Maps key/map ID; missing or rejected configuration shows the actual actionable error.",
+        "No selected card is fabricated before a user selects a real pin.",
+        "The reference static map imagery, invented pins and sample 185000 FCFA card amount are not reproduced; the current map point payload does not contain that financial amount.",
+        "Directions may open full map intentionally to provide room for live route guidance; returning closes that expanded view to the inline map."
+      ],
+      "sourceComponent": "carte-clients.tsx / WTk2AUxtlgn; src/views/Customers.jsx; src/components/customers/CustomerMapWorkspace.jsx; CustomerGeoMap.jsx",
+      "referenceId": "WTk2AUxtlgn",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Dégustations et échanges",
+      "route": "/sales?tab=promotions",
+      "status": "partially_synced",
+      "before": [
+        "Confirmed matches: marketing-cost explanation, two totals, All/Tasting/Exchange segmented counts, functional month/customer filters, real combined history, two fixed entry buttons. Confirmed mismatches: parent Sales.jsx legacy PageHeader adds New sale and a generic Sales-menu back action, with no selected-month subtitle beneath the screen title. Reference history uses separate rounded cards with text badges; implementation groups rows inside one divided container, puts large generic Gift/Rotate icons at left and uses type as heading rather than compact badge. Summary uses white rather than the neutral secondary panel (white theme itself is intentional). Extra Employee filter/profile sentence appears. Footer action emphasis is reversed: Dégustation primary and Exchange outline, whereas reference has Dégustation outline/Exchange primary. Both 48px actions remain above global nav rather than full-bottom 56px actions. Exchange opens generic /sales/new customer step without a replacement-only preset. History covers a single selected employee, whereas reference shows multiple employees in one unscoped month view."
+      ],
+      "changes": [
+        "Removed legacy parent PageHeader/New-sale toolbar from phone history; added local back/title/real month-and-year header.",
+        "Restored separate rounded history cards with compact type badges, real customer/quantity/date/employee and cost where permitted.",
+        "Restored outline Dégustation and primary Exchange 56px action emphasis.",
+        "Exchange deep-links to /sales/new?purpose=exchange, opening existing replacement tab after customer selection, without bypassing required evidence or inventing a new transaction mode."
+      ],
+      "limitations": [
+        "Remaining scope gap: history is verified per selected employee, not the global multi-employee month in Sleek. Admin can select employees but no All employees aggregate was added; restricted staff remain own-profile.",
+        "Legacy exchange carrying cost can be missing; dash/count is intentional rather than fake zero. Employee selection/profile text remains to make the actual scope transparent.",
+        "Existing Dégustation entry dialog remains a business form with checked stock, source/reason, retry/idempotency and separate expense posting.",
+        "Global shell/bottom navigation remains above which the fixed action bar sits."
+      ],
+      "sourceComponent": "src/components/sales/PromotionExchangeHistory.jsx; src/views/Sales.jsx; src/components/distribution/CentralDegustationForm.jsx",
+      "referenceId": "RPmUcfeSHDw",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Stock",
+      "route": "/inventory?section=items&filter=finished",
+      "status": "adapted_with_remaining_differences",
+      "before": [
+        "QdPSfXOAl6y v3 / stock.tsx: phone stock already used compact rows but lacked the reference family/size grouping and recorded prices; reference cards used 22px geometry. Stock editing opened the embedded legacy editor, bypassing the new item-details screen."
+      ],
+      "changes": [
+        "Grouped the real visible rows by family and size and displayed recorded cost/selling prices without inserting sample values.",
+        "Applied 22px geometry to stock groups, fabrication entry and inventory metrics.",
+        "Phone Edit item details now navigates to /items/:id; desktop retains the embedded editor.",
+        "Preserved white SOEICAM branding, removed row Receive/Count controls, the Accounting adjustment destination and central manual Issue goods."
+      ],
+      "limitations": [
+        "Stock row quantities remain explicitly physical on-hand, rather than claiming every unit is saleable.",
+        "Nearest expiry is not repeated on each Stock row; actual batch dates remain accessible in item lot details.",
+        "Reference sample counts, products and figures are replaced with the live permitted catalogue."
+      ],
+      "sourceComponent": "src/views/Inventory.jsx; src/components/inventory/GroupedItems.jsx; src/components/inventory/MobileStockList.jsx",
+      "referenceId": "QdPSfXOAl6y",
+      "referenceVersion": 3
+    },
+    {
+      "name": "Fiche article",
+      "route": "/items/:id",
+      "status": "corrected_with_workflow_adaptations",
+      "before": [
+        "da9a8WPBrLP v1 / fiche-article.tsx: mobile detail existed only on a direct nonembedded item route; Stock opened the embedded full editor. The route retained the generic item-setup subtitle and appended visible catalogue deletion controls after the mobile pricing actions."
+      ],
+      "changes": [
+        "Connected Stock phone editing to the actual item-details route.",
+        "Changed the focused phone subtitle to item details/pricing and collapsed catalogue maintenance into an explicit disclosure.",
+        "Applied 22px cards to product/pricing/lot/history sections and added a sticky mobile price-action bar.",
+        "Retained All item settings, price-save handler, unit correction confirmation, item restoration/removal permissions and history."
+      ],
+      "limitations": [
+        "Assembly component cost remains calculated; it is not an editable purchase-price sample.",
+        "Nonassembly selling price stays disabled because the existing save workflow does not persist that field for those item types.",
+        "The actual stock unit and available item metadata are displayed; carton-pack examples are not fabricated."
+      ],
+      "sourceComponent": "src/views/ItemForm.jsx; src/components/items/MobileItemOverview.jsx; src/components/items/ItemMaintenance.jsx",
+      "referenceId": "da9a8WPBrLP",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Réception stock",
+      "route": "/purchases?section=receiving&order=<id>&compose=receive",
+      "status": "adapted_workflow",
+      "before": [
+        "Actual receipt requires an approved order and displays outstanding lines, whereas reference allows no linked order and chooses category/article.",
+        "Actual warehouse selector follows permitted storage rules, rather than a fixed Yaoundé destination."
+      ],
+      "changes": [
+        "Receipt now uses full-screen phone back/order header, scroll-safe body and persistent 56px Confirm receipt footer, preserving desktop dialog.",
+        "Receipt quantity/batch/expiry/valuation fields remain real, packaging omits expiry, and finished goods retain Cold Room restrictions."
+      ],
+      "limitations": [
+        "Standalone no-order receipt/category/article picker is unsupported by the checked receiveSupplierOrder operation, so the receipt stays linked to an approved order.",
+        "Warehouse cannot be fixed to a sample destination; finished goods retain Cold Room checks.",
+        "Outstanding approved-order lines use real decimal quantity inputs instead of the source single-item category/article stepper."
+      ],
+      "sourceComponent": "src/components/suppliers/SupplierDialogs.jsx:SupplierReceiveForm;src/components/suppliers/SupplierTransactionLayout.jsx",
+      "referenceId": "7sKEehEmknf",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Inventaire et ajustement",
+      "route": "/accounting/inventory?view=adjustments; /accounting/inventory?view=adjustments&product=:id",
+      "status": "corrected_with_workflow_adaptations",
+      "before": [
+        "ADNgoZUrngz v1 / inventaire-et-ajustement.tsx: the reference count card was inside a large multi-item modal, preceded by warehouse/search/category/sort controls; the parent route used its legacy audit header and action cluster."
+      ],
+      "changes": [
+        "Added the focused phone Quantity adjustments / Inventory count review heading with secondary destinations in Tools.",
+        "Moved count selection/warehouse/search/group/sort/refresh controls into Count tools on phones while leaving them open on desktop.",
+        "Presented real per-item book/count/difference metrics in 22px cards; preserved explicit per-batch correction and valuation evidence.",
+        "Kept Accounting as the quantity-adjustment entry point and preserved product deep links without reintroducing Stock row Count actions."
+      ],
+      "limitations": [
+        "The checked workflow intentionally retains separate count and accounting-review stages, reference/reason inputs, batch reconciliation, scope limits and atomic journal posting; the reference single-screen confirm sample is adapted.",
+        "The landing also exposes the immutable history and audit workbench; a product query opens the focused item count modal."
+      ],
+      "sourceComponent": "src/views/AccountingInventory.jsx; src/components/inventory/StockAdjustmentDialog.jsx; src/components/inventory/MobileCountItem.jsx",
+      "referenceId": "ADNgoZUrngz",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Alertes péremption",
+      "route": "/manufacturing?section=quality&quality=expiry (alias /expiry redirects here)",
+      "status": "corrected_with_remaining_differences",
+      "before": [
+        "Z3t2NfycKxc v2 / alertes-péremption.tsx: real alias navigation rendered the Manufacturing heading/section bar plus Quality tabs/description ahead of the mobile alerts. Expiry day controls and supplied-batch tools also preceded the reference filters/cards."
+      ],
+      "changes": [
+        "Removed the duplicate phone Manufacturing wrapper heading and moved manufacturing destinations to Tools.",
+        "Moved the actual QualityControl wrapper tabs/description to a secondary Quality & batches disclosure.",
+        "Rendered a focused Stock alerts heading and the real alert chips/cards first.",
+        "Moved day-window controls to Risk window and supplied-batch review below the mobile alert cards; applied 22px cards."
+      ],
+      "limitations": [
+        "Low stock opens the existing dedicated stock-alert screen rather than merging a different inventory dataset into expiry results.",
+        "The Recover action remains in the existing separate recovery workflow; no unchecked disposal/recovery shortcut was invented.",
+        "Held/rejected stock filters and supplied-customer history are retained as additional live ERP capabilities."
+      ],
+      "sourceComponent": "src/views/Manufacturing.jsx; src/views/QualityControl.jsx; src/views/ExpiryRisk.jsx; src/components/inventory/MobileExpiryAlerts.jsx",
+      "referenceId": "Z3t2NfycKxc",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Assemblages",
+      "route": "/manufacturing?section=recipes (phone default /manufacturing)",
+      "status": "corrected_with_data_adaptations",
+      "before": [
+        "cypd2lJUSQx v1 / assemblages.tsx: the catalogue itself matched type/size grouping, but the actual route prepended a generic Production header and four-button section bar before its own Assemblies heading."
+      ],
+      "changes": [
+        "Rendered one focused Assemblies heading on phones.",
+        "Moved all existing manufacturing section destinations into explicit Tools, preserving production orders, grouped builds, recipes and quality access.",
+        "Retained real catalogue grouping, expected bucket yields, component counts, search and authorized New Recipe access.",
+        "Applied the reference 22px geometry to assembly groups."
+      ],
+      "limitations": [
+        "Only active permitted assembly/finished-product records are shown; sample flavours, names and yields are not forced onto real data.",
+        "Recipe/version editing remains available through the existing separate recipe workflow."
+      ],
+      "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/MobileAssemblyCatalogue.jsx",
+      "referenceId": "cypd2lJUSQx",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Fiche assemblage",
+      "route": "/manufacturing?section=recipes&assembly=:productId",
+      "status": "corrected_with_data_adaptations",
+      "before": [
+        "vqNDETwOYEj v1 / fiche-assemblage.tsx: the assembly detail was also preceded by the generic Production wrapper and section bar; cards used 12px geometry and its Edit/Produce controls remained ordinary end-of-page actions."
+      ],
+      "changes": [
+        "Removed the duplicate phone route wrapper, retained the back destination and used a single product h1.",
+        "Applied 22px geometry to product, yield/cost, materials and packaging cards.",
+        "Added a sticky Edit/Produce action bar with the existing role restrictions and correct preselected grouped-build route.",
+        "Kept real per-bucket material quantities and per-unit packaging based on the saved assembly definition."
+      ],
+      "limitations": [
+        "Cost / unit and cost per bucket represent the actual complete assembly estimate; the reference material-only sample wording is not used for a different accounting value.",
+        "The reference explicit material-total/yield-helper treatment is not fully reproduced; saved component rows and actual yield/cost metrics remain visible."
+      ],
+      "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/MobileAssemblyCatalogue.jsx",
+      "referenceId": "vqNDETwOYEj",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Enregistrer production",
+      "route": "/manufacturing?section=build&product=:optionalProductId",
+      "status": "corrected_with_required_review_adaptation",
+      "before": [
+        "0YK5dS4gVvA v2 / enregistrer-production.tsx: the grouped entry was behind the generic Production header and section bar; its next step rendered an old long six-column component table whose phone card transformation lacked quantity labels."
+      ],
+      "changes": [
+        "Added a focused Record production / Review components and build phone heading with manufacturing tools secondary.",
+        "Kept grouped assembly date/responsible/bucket/unit/expiry selection connected to the existing checked preview and posting handlers.",
+        "Replaced the phone component table with named, labeled cards for required, on-hand, buildable, after-build, shortages and per-location/lot evidence.",
+        "Applied 22px entry/review card geometry and sticky review/build controls while preserving desktop presentation."
+      ],
+      "limitations": [
+        "Batch IDs are generated by the server when production saves; a user-entered reference batch field is intentionally not presented as supported.",
+        "A component-check/review step, stale-stock handling, overhead allocation where applicable, retry identity and posting locks remain required.",
+        "The legacy /manufacturing/new order workflow remains available separately; grouped-build links target section=build."
+      ],
+      "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/AssemblyBuildPanel.jsx; src/components/manufacturing/MobileAssemblyEntry.jsx; src/components/manufacturing/MobileBuildMaterials.jsx",
+      "referenceId": "0YK5dS4gVvA",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Lot production",
+      "route": "/manufacturing/:assemblyBuildId; /manufacturing?section=quality&quality=traceability&batch=:lot&product=:id (alias /traceability redirects here)",
+      "status": "corrected_with_trace_data_adaptations",
+      "before": [
+        "gAyuaIJ7ydY v2 / lot-production.tsx: direct build details only used the mobile lot screen after trace success and silently reverted to the legacy table on a failed read. Alias trace routes also retained QualityControl tabs/description before the mobile screen."
+      ],
+      "changes": [
+        "Kept build details in the mobile batch layout during loading/error, showed unknown on-hand as unknown and added an explicit retry.",
+        "Moved the real redirected route Quality tabs/description to secondary tools.",
+        "Applied 22px batch/product, movement and ingredient cards and retained full production/customer/location details in a disclosure.",
+        "Rendered chronological movements, type-appropriate icons, signed quantities for known inbound/outbound movement types and an explicit expired-stock saleability notice.",
+        "Preserved full trace warnings and added missing labels to the advanced consumed-material table."
+      ],
+      "limitations": [
+        "Directions are shown only when the recorded movement type determines inbound/outbound; ambiguous adjustment/transfer quantities are not given invented signs.",
+        "Employee attribution, dates and quantities depend on recorded source data; absent history is not replaced with design samples.",
+        "Legacy nonassembly production orders retain their existing specialized order workflow."
+      ],
+      "sourceComponent": "src/components/manufacturing/AssemblyBuildDetails.jsx; src/components/quality/MobileBatchTrace.jsx; src/views/BatchTrace.jsx; src/views/QualityControl.jsx; src/views/Manufacturing.jsx",
+      "referenceId": "gAyuaIJ7ydY",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Comptabilité",
+      "route": "/accounting",
+      "status": "adapted_with_remaining_queue_difference",
+      "before": [
+        "The dedicated phone home already had the source summary and three-column quick-access structure, but its heading omitted the source Back button and month chip.",
+        "Extra ERP entries and the user-requested Quantity adjustments tile made the tile count differ from the six static source tiles.",
+        "The To review list used recurring charges only rather than the source mixture of recurring charges and cash to confirm."
+      ],
+      "changes": [
+        "Matched header order: Back to dashboard, Accounting and actual month, month/refresh chip.",
+        "Kept the existing real posted-ledger profit and authoritative treasury/payable/receivable summary.",
+        "Preserved all quick links and the exact existing canAdjustInventory permission gate on Quantity adjustments."
+      ],
+      "limitations": [
+        "The review queue still lists actual pending/unpaid recurring charges only. Cash confirmation remains in Cashier; sample cash-confirmation rows were not fabricated.",
+        "The quick-access grid has additional ERP features and may exceed six tiles. Posted journals, available module grants and live records determine contents.",
+        "White SOEICAM surfaces and green accents intentionally replace the cream source palette."
+      ],
+      "sourceComponent": "comptabilité.tsx / ECsbDoBHQxu",
+      "referenceId": "ECsbDoBHQxu",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Nouvelle dépense",
+      "route": "/expenses?new=expense (payer register); /accounting/treasury → Small Operating Expense",
+      "status": "partially_adapted_existing_workflow_difference",
+      "before": [
+        "Mobile fullscreen form already existed, but used a generic modal title without the source Back/subtitle header.",
+        "Long workflow guidance preceded the first field; payment status was a standalone Paid badge and recurring navigation used unrelated bottom buttons.",
+        "The existing financial operation records small paid petty-cash expenses only, while the reference combines paid/unpaid, bank payments and recurrence in one form."
+      ],
+      "changes": [
+        "Added Back, New expense and Recorded once header.",
+        "Matched field order: expense account, amount/date, payee, receipt reference, then required description.",
+        "Restyled payment status into two segments: Paid and a real Expense request navigation action; kept the checked petty-cash account selector.",
+        "Added a source-shaped recurring navigation row, kept cost centre/type controls behind a disclosure, and retained the sticky save/cancel actions."
+      ],
+      "limitations": [
+        "This is intentionally not a unified bank/unpaid expense writer. The checked recordExpense handler, petty-cash limit and eligible account restrictions are preserved. Unpaid/planned charges navigate to the existing request or recurring-charge workflows.",
+        "The recurring row opens the real recurring workflow; it is not a fake recurrence toggle. Supplier/payee remains the existing text field.",
+        "Existing extra required business fields remain. Desktop and payment handlers are unchanged."
+      ],
+      "sourceComponent": "nouvelle-dépense.tsx / a78M0KnlWoP",
+      "referenceId": "a78M0KnlWoP",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Charges récurrentes",
+      "route": "/accounting/recurring-expenses",
+      "status": "mobile_structure_rebuilt_with_business_adaptations",
+      "before": [
+        "The source two-value summary was followed by a duplicate pending-total panel and a permanently expanded search/status toolbar.",
+        "Rows retained the old left calendar icon, supplier-first metadata and desktop amount/status sequence before the added mobile action pair.",
+        "The initial pending-only filter hid already-accrued unpaid charges visible in the reference."
+      ],
+      "changes": [
+        "Added compact Back/title/subtitle header; Refresh and expense-account tools moved into the header menu.",
+        "Kept one two-value summary and moved search, historical status filtering and recognition guidance into Search & filters.",
+        "Phone landing now defaults to actual current-month and unpaid charges.",
+        "Rebuilt mobile cards in source order: account/due/monthly amount, status, actual period/supplier/balance, Accrue and Pay actions. Existing ChargeDialog callbacks and authorization remain."
+      ],
+      "limitations": [
+        "The second summary is all actual accrued unpaid charges, not an invented rent-only arrears total.",
+        "The current checked workflow supports pay-now recognition, partial payments and pending payment processing; button guards preserve those semantics rather than copying static source disabled states.",
+        "History and all other statuses remain available in filters."
+      ],
+      "sourceComponent": "charges-récurrentes.tsx / IupfzcaFd9o",
+      "referenceId": "IupfzcaFd9o",
+      "referenceVersion": 3
+    },
+    {
+      "name": "Plan comptable",
+      "route": "/accounting?tab=accounts",
+      "status": "mobile_structure_rebuilt_with_business_adaptations",
+      "before": [
+        "The route rendered the old action-heavy Accounting PageHeader, workspace menus and five accounting tabs before the hierarchy.",
+        "The chart also placed T-view/list/refresh buttons ahead of the tree.",
+        "Each mobile account row had permanent balance metadata and an additional Account actions disclosure row. The selected-account editor opened as a modal rather than below the tree."
+      ],
+      "changes": [
+        "Added compact Back/title/Accounts and hierarchy route header, with all ERP navigation in More.",
+        "Kept search/new/filter access compact; T-view and refresh live in filters rather than above the hierarchy.",
+        "Changed the actual hierarchy into one bordered list of compact indented account rows. Selection highlights the selected row. Row menus preserve balances, subaccount, visibility, activation and checked deletion actions.",
+        "The existing AccountFormDialog now supports an inline phone editor below the tree: code/name, parent, checked opening controls, optional Account configuration, sticky Cancel/Save. It scrolls into view after selection and retains every save/validation/locking handler."
+      ],
+      "limitations": [
+        "No sample account is selected by default. Actual account types, hierarchy and record permissions determine the tree and editable fields.",
+        "Hide remains in the account row menu; the inline footer uses Cancel/Save to preserve explicit draft cancellation.",
+        "Opening balances retain the real one-time confirmation and reconciliation workflow rather than presenting editable sample balances as ordinary account settings."
+      ],
+      "sourceComponent": "plan-comptable.tsx / FLV0lSbifKB",
+      "referenceId": "FLV0lSbifKB",
+      "referenceVersion": 2
+    },
+    {
+      "name": "Journal comptable",
+      "route": "/accounting?tab=journals; /accounting/journals/new",
+      "status": "mobile_structure_rebuilt_with_business_adaptations",
+      "before": [
+        "The Accounting route shell, journal KPI/statistics, refresh toolbar, filters and exports all preceded the recent-entry list.",
+        "A New Journal control navigated to a separate form; the source inline composer was absent from the landing page.",
+        "The separate form used the desktop multi-column journal table converted into generic mobile cards."
+      ],
+      "changes": [
+        "Added compact journal route header with preserved workspace actions in More.",
+        "Mobile landing order is source filters, search and optional detailed filters, Recent entries list, then inline New Journal Entry.",
+        "Journal statistics, refresh, integrity review, audit activity and complete exports moved below the main layout into Journal controls & export. Errors stay visible.",
+        "Reused the existing JournalEntryForm as an embedded composer with real account picker, date/description, compact account/debit/credit rows, optional line details, Add Line, actual totals, balance validation, draft save and post actions. Successful saves refresh the list; read-only roles do not receive the composer.",
+        "Desktop form/register and all checked posting, draft deletion, reversal and idempotency handlers remain."
+      ],
+      "limitations": [
+        "Source chips use actual ERP source modules rather than invented VT/CA/BQ/OD/AC journal-code categories. Manual journals retain the real manual source.",
+        "The existing default register covers all periods; source samples show one month. Actual date filters remain available.",
+        "Existing source detail metadata and checked reversal/delete controls add content absent from the static source."
+      ],
+      "sourceComponent": "journal-comptable.tsx / GGK3f5vMskU",
+      "referenceId": "GGK3f5vMskU",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Rapports financiers",
+      "route": "/accounting/statements (default pnl; balance/cashflow tabs preserved)",
+      "status": "pnl_mobile_structure_rebuilt_supplementary_tabs_preserved",
+      "before": [
+        "The compact summary existed but was surrounded by the old PageHeader, expanded date toolbar and depreciation panel.",
+        "Report exports preceded the statement; the P&L body retained multiple widely spaced desktop account sections, operating totals, empty other sections and source controls."
+      ],
+      "changes": [
+        "Added source header with Back, SOEICAM/actual month and working export-scroll action.",
+        "Phone P&L defaults to the current month; collapsed range control precedes a three-way report segment. Desktop keeps its prior date default and controls.",
+        "Kept actual net/revenue/gross-margin summary; replaced the mobile P&L body with a single bordered compact row list of real revenue, COGS, gross profit, actual expense accounts, totals, optional other income/expense and net.",
+        "PDF/Excel exports are below the statement in a two-button row. Detailed revenue/COGS, source corrections and depreciation controls stay available in disclosures. Visible review flags preserve unresolved depreciation warnings.",
+        "Balance-sheet and cash-flow exports remain available and have export-scroll targets. Report calculations, refresh-before-export, depreciation checks and source correction logic are unchanged."
+      ],
+      "limitations": [
+        "Expense rows use authoritative posted account classifications, not the source sample salaries/rent/marketing amounts. Depreciation is not guessed from account names or double-subtracted.",
+        "The reference supplies the P&L tab only. Existing balance sheet and detailed cash-flow/history layouts remain established ERP layouts rather than claiming an unseen source layout.",
+        "Validation and recurring/depreciation review notices can add visible rows when actual records need review."
+      ],
+      "sourceComponent": "rapports-financiers.tsx / iIz7LjCLYzW",
+      "referenceId": "iIz7LjCLYzW",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Immobilisations",
+      "route": "/accounting/assets",
+      "status": "mobile_landing_rebuilt_with_business_adaptations",
+      "before": [
+        "The route still rendered the old action-heavy PageHeader, DepreciationStatus, four KPI cards and three tabs before the new mobile asset card.",
+        "DataTable search, sorting/export controls and card metadata/actions added a second desktop-oriented layer before and within the list.",
+        "This was a genuine layout mismatch despite the presence of MobileAssetCard."
+      ],
+      "changes": [
+        "Dedicated phone branch now bypasses the old landing shell: compact Back/title/register-date header, one 2x2 summary panel, Assets heading, compact asset cards, then New asset.",
+        "Summary follows source order: acquisition cost/net value above accumulated depreciation/monthly charge.",
+        "Cards follow source order: name and category/location/date, real status/method badge, cost/duration/monthly charge, actual depreciation progress, accumulated value and NBV. Extra serial/schedule/disposal actions are behind Asset details & actions.",
+        "Real search, category and status filters are available from the Assets heading/header. Default current assets exclude disposed/written-off entries; All assets and status filters retain their history.",
+        "Header More preserves Register tools & export with the existing DataTable search/sort/export, depreciation history, replacement funding/transfers, depreciation controls, run depreciation and refresh. All existing dialogs and permission gates remain.",
+        "A compact visible depreciation-review flag opens the existing detailed issues when relevant; desktop layout and business operations are unchanged."
+      ],
+      "limitations": [
+        "The reference near-end badge is not copied as a fabricated financial rule; actual active/fully-depreciated/disposed/written-off state and straight-line method are displayed.",
+        "Search/category/status and preservation menus are additional useful ERP controls absent from the static source.",
+        "Source cream effects are replaced with the requested white SOEICAM theme and green accents. Live registration/depreciation/disposal/funding writes were not run during this layout audit."
+      ],
+      "sourceComponent": "immobilisations.tsx / HsJTqGNcDOA",
+      "referenceId": "HsJTqGNcDOA",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Achats",
+      "route": "/purchases",
+      "status": "aligned_with_documented_adaptations",
+      "before": [
+        "Header lacked reference back control.",
+        "Third metric showed all posted supplier payments instead of advances.",
+        "Different module icons and icon sizes.",
+        "Order status was below title rather than upper-right; chevron and missing Order total label changed row hierarchy.",
+        "CTA was 48px rather than reference 56px.",
+        "Received/billed orders with unpaid bills were missing from open-work list."
+      ],
+      "changes": [
+        "Implemented reference header, three-column summary, four 96px module buttons with 44px icons, top-right status cards, total footer, 56px primary CTA.",
+        "Advances metric now includes only posted order payments without a bill_id, labelled gross advances paid.",
+        "Outstanding bills keep associated received/billed orders in open-work list.",
+        "Root /purchases navigation confirmed via sidebar and GM module; existing filters and desktop route handling retained."
+      ],
+      "limitations": [
+        "White branding intentionally overrides original cream design.",
+        "KPI advances paid is gross posted order advances, not a claimed unapplied credit balance.",
+        "Global phone layout gate is <=639px; >=640px uses desktop menu.",
+        "Role-scoped module access can reduce the four-module layout.",
+        "Global ERP logo/header and bottom navigation remain around design content."
+      ],
+      "sourceComponent": "src/components/purchases/MobilePurchaseOverview.jsx;src/components/purchases/PurchasesWorkspace.jsx",
+      "referenceId": "cvfChl6jIFA",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Commande fournisseur",
+      "route": "/purchases?section=orders&order=<id>",
+      "status": "adapted_workflow",
+      "before": [
+        "Order modal had line cards but no advance/received-value summary.",
+        "Lifecycle ended at Billed rather than the design Paid stage.",
+        "Reference inline receiving block instead opened a separate receiving dialog."
+      ],
+      "changes": [
+        "Lifecycle now uses Ordered / Received or Partially received / Paid, with Paid based on posted order-payment totals.",
+        "Added actual gross advance-paid and received-value summaries for authorized finance roles.",
+        "Optional read-only supplier finance request failure does not block viewing order details.",
+        "Mobile order detail and order creation now use full-screen 48px back header, scrolling body and 56px checked primary-action footer; desktop modal is retained.",
+        "Supplier/date moved into phone header; progress is first, item rows grouped with dividers, and print/email/refusal/history placed in collapsed Order tools."
+      ],
+      "limitations": [
+        "Receiving remains a separate checked form rather than inline partial receipt within order detail.",
+        "Unapplied/allocated advance breakdown and Add advance operation are not inferred.",
+        "Finance figures are unavailable to roles that cannot read supplier finance.",
+        "ERP supplier-catalogue creation/approval fields remain in the order form; source design is primarily an existing-order receipt/detail screen."
+      ],
+      "sourceComponent": "src/components/purchases/PurchasesWorkspace.jsx;src/components/suppliers/SupplierDialogs.jsx;src/components/suppliers/SupplierTransactionLayout.jsx",
+      "referenceId": "xpyukiCAylL",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Fournisseur et règlement",
+      "route": "/purchases?section=suppliers&supplier=<id>; payment via bill action",
+      "status": "adapted_workflow",
+      "before": [
+        "Live layout includes a contact/actions card and horizontal detail tabs not present in reference.",
+        "Settlement form opens separately; reference shows inline settlement beneath bill/advance timeline.",
+        "Credit summary is net ledger credit, not gross available advances."
+      ],
+      "changes": [
+        "Mobile supplier profile now uses one back/name/category header; refresh/new supplier/report selection are in an explicit overflow panel.",
+        "Contact/terms and purchase/receive/pay shortcuts remain available in a collapsed secondary section; the horizontal phone tabs are removed.",
+        "Supplier edit and payment forms now use full-screen phone back header, independently scrolling content and persistent 56px primary-action footer.",
+        "Verified supplier ledger credit, bill balances, actual payment history and all checked authorization/release controls remain."
+      ],
+      "limitations": [
+        "Direct advance allocation is unsupported by the current checked UI/API; no fabricated advance source control added.",
+        "Supplier payment requests still require existing authorization/release workflow.",
+        "Remaining visual/workflow adaptation: payment request opens a focused separate form from a bill rather than reference inline settlement; bill/payment registers are separate instead of one combined bill/advance timeline."
+      ],
+      "sourceComponent": "src/components/suppliers/SupplierWorkspace.jsx;src/components/suppliers/SupplierDialogs.jsx;src/components/suppliers/SupplierTransactionLayout.jsx",
+      "referenceId": "pmyFS1jij1c",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Caisse",
+      "route": "/cashier",
+      "status": "adapted_workflow",
+      "before": [
+        "Actual cash desk shows pending deposit cards and petty cash, but amount/variance confirmation is in a separate checked dialog.",
+        "Header includes existing date/receive controls and extra cash-desk sections."
+      ],
+      "changes": [
+        "One 48px back/title/date header replaces the separate date toolbar; date picker and refresh remain reachable in explicit Cash desk tools.",
+        "The top Receive cash and Petty cash actions are retained per user override. Savings/payments/invoices/cheques are grouped under More cash desk tools.",
+        "Actual pending receipt/petty-cash cards and all treasury/account/variance validation remain in existing CashActionDialog.",
+        "CashierHome render callback also receives loading/error/onDate so the separate staff-home screen can retain date/error controls."
+      ],
+      "limitations": [
+        "Reference inline received amount/variance controls are not reproduced: confirmation opens checked CashActionDialog with actual treasury selection and receipt submission.",
+        "Top two Receive/Petty actions deliberately retained per user override rather than copying a single-source-action arrangement.",
+        "Additional ERP savings/payment/invoice/cheque features remain reachable in collapsed secondary tools."
+      ],
+      "sourceComponent": "src/components/cashier/MobileCashDeskHome.jsx;src/components/cashier/CashierWorkspace.jsx",
+      "referenceId": "OyohksqabQ8",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Équipe et profil",
+      "route": "/team-workspaces?section=people -> /employees/<employee-id>; /employees redirects to the Team directory",
+      "status": "adapted",
+      "referenceId": "yDGZpmopAhY",
+      "sourceComponent": "src/components/employees/MobileEmployeeOverview.jsx",
+      "renderChain": [
+        "src/app/(erp)/team-workspaces/page.jsx authenticates admin",
+        "src/components/employees/TeamWorkspaceScreen.jsx",
+        "src/views/EmployeeDashboard.jsx",
+        "src/views/Employees.jsx -> MobileTeamDirectory",
+        "src/app/(erp)/employees/[id]/page.jsx",
+        "src/views/EmployeeProfile.jsx -> MobileEmployeeOverview"
+      ],
+      "mobileGate": "MobileTeamDirectory selected by usePhoneLayout(); EmployeeProfile mounts MobileEmployeeOverview on phone. Profile overview API independently enforces admin and selected employee scope.",
+      "before": [
+        "Team landed on a grouped role directory, requiring a role drawer before reaching an employee profile.",
+        "Mobile profile was partial: customer-count progress mislabeled as sales progress, customer rows showed net sales instead of commission, no separate call control and status was not account-aware."
+      ],
+      "changes": [
+        "Searchable direct mobile employee roster; each real employee row opens /employees/:id. Role directory/editor, employee editor, removed staff and all Team sections remain available.",
+        "Source back/title/profile header, 64px initials, name/role/department/hired date, real employment and login status row, telephone/email rows and separate 48px call action.",
+        "Commercial month selector reads existing customerCommissions and companySales APIs, scopes exact employee id, uses approved-supply total against actual monthly_supply_target, and omits progress when no target exists.",
+        "Customer rows now display eligible net-sales basis and exact-decimal commission estimates; authoritative estimated_total and bonus remain from the existing monthly report. Unconfigured/failed readers show unavailable states.",
+        "56px payslip workspace link and 48px existing Edit employee action; all prior employment records remain in an accessible disclosure."
+      ],
+      "limitations": [
+        "Account appearance is read-only and distinguishes employment from login state; the existing employee editor controls changes. No invented active account or unchecked account toggle.",
+        "Actual configured target is approved supplies including tax, not a fabricated general sales target; labels state this explicitly.",
+        "Commission API basis is eligible net sales, not the source illustration’s paid-base wording; estimates still require management review.",
+        "Payslip link opens the existing employee-filtered payroll workspace; its current period picker selects the month rather than claiming an exact source payslip exists.",
+        "Performance/commission panels are shown for Commercial employees; unrelated employee roles do not get invented sales metrics."
+      ],
+      "referenceVersion": 1
+    },
+    {
+      "name": "Paie",
+      "route": "/team-workspaces?section=payroll",
+      "status": "adapted_workflow",
+      "before": [
+        "Summary showed Outstanding in place of design Adjustments.",
+        "Existing new-run/refresh/period/approval toolbar is above summary rather than reference bottom submit/adjustment buttons."
+      ],
+      "changes": [
+        "Summary now shows actual aggregate net change from requested base beside total net and review count.",
+        "Outstanding total remains available under Payroll totals.",
+        "Mobile payroll now has one back/title/period header; period selector, refresh, sync employee data, new run and return-for-review are secondary overflow tools.",
+        "Existing checked Approve & record payables action is a 56px bottom primary button; per-payslip review/payment controls remain accessible."
+      ],
+      "limitations": [
+        "Payroll uses existing GM per-payslip review and approval/payable workflow; no unsupported Submit to GM operation invented.",
+        "Reference generic Add adjustment footer remains individual per-payslip Review actions.",
+        "Review/payment histories remain actual stored events; sample event text is not reproduced.",
+        "Review/payment dialogs retain the existing detailed payroll field layout; this pass aligned the payroll landing composition."
+      ],
+      "sourceComponent": "src/components/payroll/PayrollWorkspace.jsx;src/components/payroll/MobilePayslipCard.jsx",
+      "referenceId": "M0NVWkLVQs6",
+      "referenceVersion": 1
+    },
+    {
+      "name": "Plus",
+      "route": "/profile?section=more through mobile More tab",
+      "status": "adapted",
+      "referenceId": "hSRIYmF24Vc",
+      "sourceComponent": "src/views/MoreWorkspace.jsx;src/views/MyProfile.jsx;src/components/employees/MoreRoleAccess.jsx;src/components/layout/LanguageSelector.jsx",
+      "renderChain": [
+        "src/components/layout/AppSidebar.jsx mobile More link",
+        "src/app/(erp)/profile/page.jsx section=more branch",
+        "src/views/MoreWorkspace.jsx"
+      ],
+      "mobileGate": "Explicit section=more route Embedded MyProfile hides its standalone preferences via !embedded; preferences are not duplicated.",
+      "before": [
+        "Identity and editor were separate blocks and Role access was principally a link to the existing settings workspace."
+      ],
+      "changes": [
+        "Identity and checked profile editor share one card; saved role catalogue appears as role chips and module summaries with the existing role editor.",
+        "FR/EN/company-default language choices use segmented controls; actual device notification settings, module navigation and sign out are retained."
+      ],
+      "limitations": [
+        "Individual notification-topic toggles from source are not fabricated; device notification capabilities remain the real settings component.",
+        "Source password-change row is not a new unchecked password editor; secure authentication/account recovery remains managed by the existing provider.",
+        "Role module indicators are read-only summaries; permission writes use the existing reviewed role editor."
+      ],
+      "referenceVersion": 1
+    }
+  ]
+}

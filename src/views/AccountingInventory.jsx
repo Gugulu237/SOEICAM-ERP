@@ -4,6 +4,7 @@ import { loadReportPages } from '@/lib/report-pages';
 import StockAdjustmentDialog from '@/components/inventory/StockAdjustmentDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { canAdjustInventory } from '@/lib/inventory-adjustment-access';
+import { usePhoneLayout } from '@/hooks/usePhoneLayout';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -40,6 +41,7 @@ function Status({ value }) {
 
 export default function AccountingInventory() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
+  const phone=usePhoneLayout();
 
   const {role,principalRole,employee,allowedModules}=useCurrentUser();
   const canAdjust=canAdjustInventory(principalRole||role,employee,allowedModules);
@@ -71,7 +73,7 @@ export default function AccountingInventory() {
   const pageRows = filtered.slice((stockPage - 1) * 50, stockPage * 50);
   return <div className="space-y-5">
     {canAdjust && showAdjust && <StockAdjustmentDialog open productId={params.get('product')||''} warehouseId={warehouse} itemGroup={params.get('filter')||''} onOpenChange={value=>{setShowAdjust(value);if(!value&&params.get('product')){const next=new URLSearchParams(params);next.delete('product');setParams(next,{replace:true});}}} onSaved={()=>{setAdjustmentVersion(n=>n+1);if(!adjustmentsView)refresh(historyPage).catch(e=>setError(e.message));}}/>}
-    <PageHeader title={ui("Inventory Audit & Adjustments")} subtitle={ui("Accounting controls for physical stock, variances and inventory value.")} actions={<>{canAdjust && <><Button onClick={()=>setShowAdjust(true)}>{ui("Adjust quantity")}</Button><Button variant="outline" onClick={()=>setParams(adjustmentsView?{}:{view:'adjustments'})}>{ui(adjustmentsView?'Inventory count review':'Adjustment history')}</Button></>}<Button variant="outline" asChild><Link to="/accounting">{ui("Accounting")}</Link></Button></>} />
+    {phone?<header className="space-y-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-bold">{ui(adjustmentsView?'Quantity adjustments':'Inventory count review')}</h1><p className="mt-1 text-xs text-slate-500">{ui('Accounting controls for physical stock, variances and inventory value.')}</p></div><details className="relative shrink-0"><summary className="flex min-h-11 cursor-pointer list-none items-center rounded-full border bg-white px-3 text-xs font-semibold text-primary">{ui('Tools')}</summary><div className="absolute right-0 z-20 mt-2 grid w-60 gap-2 rounded-[22px] border bg-white p-3 shadow-lg">{canAdjust&&<Button variant="outline" onClick={()=>setParams(adjustmentsView?{}:{view:'adjustments'})}>{ui(adjustmentsView?'Inventory count review':'Adjustment history')}</Button>}<Button variant="outline" asChild><Link to="/accounting">{ui('Accounting')}</Link></Button></div></details></div>{canAdjust&&<Button className="min-h-11 rounded-full" onClick={()=>setShowAdjust(true)}>{ui('Adjust quantity')}</Button>}</header>:<PageHeader title={ui("Inventory Audit & Adjustments")} subtitle={ui("Accounting controls for physical stock, variances and inventory value.")} actions={<>{canAdjust && <><Button onClick={()=>setShowAdjust(true)}>{ui("Adjust quantity")}</Button><Button variant="outline" onClick={()=>setParams(adjustmentsView?{}:{view:'adjustments'})}>{ui(adjustmentsView?'Inventory count review':'Adjustment history')}</Button></>}<Button variant="outline" asChild><Link to="/accounting">{ui("Accounting")}</Link></Button></>} />}
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{uiMessage(error)}<Button variant="outline" size="sm" className="ml-3" disabled={busy} onClick={() => { setError(''); Promise.all([refresh(historyPage), ...(auditId ? [loadDetail(auditId)] : [])]).catch(e => setError(e.message)); }}>{ui("Reload saved data")}</Button></div>}
     {adjustmentsView ? canAdjust ? <Suspense fallback={<p role="status">{ui('Loading adjustments...')}</p>}><AdjustmentHistory refreshKey={adjustmentVersion}/></Suspense> : <p role="alert">{ui('Stock adjustments are managed in Accounting by top administrators.')}</p> : auditId ? detail && workspace ? <CountDetail key={`${detail.audit.id}:${detail.audit.revision}`} detail={detail} workspace={workspace} busy={busy} perform={perform} back={() => setParams({})} reload={() => loadDetail(auditId).catch(e => setError(e.message))} /> : <p role="status">{error ? ui("The count could not be loaded.") : ui("Loading count...")}</p> : <>
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">{ui("Accountants prepare physical counts. An independent General Manager approves variances, and only top administrators can post stock adjustments. Stock and accounting entries post together; changed lots must be recounted.")}</div>
