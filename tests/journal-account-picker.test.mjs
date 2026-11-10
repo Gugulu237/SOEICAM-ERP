@@ -122,3 +122,23 @@ test('account load errors are recoverable and preserve the journal draft during 
  fail=false;await r.buttons.find(b=>b.label==='Retry loading accounts').onClick();draw();assert.equal(r.buttons.some(b=>b.label==='Retry loading accounts'),false);assert.equal(r.buttons.find(b=>b['aria-label']==='Choose account for line 1').disabled,false);
  }finally{r.cleanup();delete globalThis.__journalPicker;}
 });
+
+
+test('draft editor saves checked optimistic edits without posting, preserves failed values and retries the identical request',async()=>{
+ const {render}=await loadUI(),r=runtime(),saved=[],done=[];globalThis.__journalPicker=r;let fail=true;
+ r.client={entities:{Account:{filter:async()=>({items:accounts,has_more:false})}},accounting:{saveJournal:async body=>{saved.push(structuredClone(body));if(fail)throw Error('Connection interrupted');return {id:'draft',journal_number:'JV-DRAFT',status:'draft'};}}};
+ const draft={id:'draft',journal_number:'JV-DRAFT',entry_date:'2026-10-01',description:'Original draft',source_module:'manual',source_document_type:'manual_journal',status:'draft',total_debit:100,total_credit:100};
+ const props={embedded:true,draftJournal:draft,draftLines:[{id:'a',journal_id:'draft',status:'draft',account_id:'cash',account_number:'1000',account_name:'Cash',debit:100,credit:0},{id:'b',journal_id:'draft',status:'draft',account_id:'sales',account_number:'4000',account_name:'Product sales',debit:0,credit:100}],onSaved:value=>done.push(value)};
+ const draw=()=>{r.beforeRender();return render('form',props);};
+ try{draw();for(let i=0;i<3;i++){await r.flush();draw();}assert.match(draw(),/Edit draft journal/);assert.equal(r.buttons.some(button=>button.label==='Post Journal'),false);change(r,'Debit line 1','200');change(r,'Credit line 2','200');draw();await r.buttons.find(button=>button.label==='Save draft changes').onClick();assert.match(draw(),/Connection interrupted/);assert.equal(field(r,'Debit line 1').value,'200');assert.equal(saved[0].action,'updateDraft');assert.equal(saved[0].journalId,'draft');assert.match(saved[0].expectedFingerprint,/^[a-f0-9]{64}$/);fail=false;await r.buttons.find(button=>button.label==='Retry draft edits').onClick();assert.deepEqual(saved[1],saved[0]);assert.equal(done.length,1);assert.equal(saved.some(body=>body.status==='posted'||body.action==='postDraft'),false);
+ }finally{r.cleanup();delete globalThis.__journalPicker;}
+});
+
+test('posted correction editor reviews prefilled replacement values without creating an independent journal',async()=>{
+ const {render}=await loadUI(),r=runtime(),reviews=[];globalThis.__journalPicker=r;
+ r.client={entities:{Account:{filter:async()=>({items:accounts,has_more:false})}},accounting:{saveJournal:async()=>assert.fail('Review cannot post a journal')}};
+ const props={embedded:true,correctionJournal:{id:'posted',journal_number:'JV-POSTED',entry_date:'2026-10-01',description:'Wrong amount',status:'posted'},correctionLines:[{id:'a',account_id:'cash',account_number:'1000',account_name:'Cash',debit:100,credit:0},{id:'b',account_id:'sales',account_number:'4000',account_name:'Product sales',debit:0,credit:100}],onReviewCorrection:review=>reviews.push(review)};
+ const draw=()=>{r.beforeRender();return render('form',props);};
+ try{draw();for(let i=0;i<3;i++){await r.flush();draw();}assert.match(draw(),/posted original stays unchanged/i);change(r,'Debit line 1','250');change(r,'Credit line 2','250');draw();r.buttons.find(button=>button.label==='Review correction').onClick();assert.equal(reviews.length,1);assert.equal(reviews[0].lines[0].debit,'250');assert.equal(reviews[0].lines[1].credit,'250');assert.match(reviews[0].expectedFingerprint,/^[a-f0-9]{64}$/);assert.ok(reviews[0].requestKey);assert.match(reviews[0].description,/JV-POSTED/);
+ }finally{r.cleanup();delete globalThis.__journalPicker;}
+});

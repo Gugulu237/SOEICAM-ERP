@@ -71,7 +71,7 @@ test('Operations approval inbox never requests payroll, cash releases or custome
   try {
     const { loadPendingApprovals, canDecide } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
     assert.deepEqual(await loadPendingApprovals(role), []);
-    assert.deepEqual(reads.sort(), ['PurchaseOrder', 'ProductionOrder', 'ExpenseRequest', 'Recipe'].sort());
+    assert.deepEqual(reads.sort(), ['PurchaseOrder', 'ProductionOrder', 'ExpenseRequest'].sort());
     assert.equal(canDecide('dispatch', role), false);
     for (const type of ['cash', 'customer_receipt', 'payroll', 'po', 'production']) assert.equal(canDecide(type, role), false);
   } finally { delete globalThis.__operationsClient; }

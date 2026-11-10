@@ -18,7 +18,7 @@ import {
 const COMMANDS = [
   { get label(){return ui("New Sales Order");}, path: "/sales/new" },
   { get label(){return ui("New Purchase Order");}, path: "/purchases/new" },
-  { get label(){return ui("New Production Order");}, path: "/manufacturing/new" },
+  { get label(){return ui("Build assemblies");}, path: "/manufacturing?section=build" },
   { get label(){return ui("Record Payment");}, path: "/accounting/payments/new" },
   { get label(){return ui("New Customer");}, path: "/customers/new" },
 ];

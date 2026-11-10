@@ -34,7 +34,7 @@ export async function cashierData(svc, date, role='cashier') {
 
 export async function productionData(svc, date, allowedModules = null) {
   const can = module => !allowedModules || allowedModules.includes(module);
-  const [orders, balances, cheques, recipes, expenses] = await Promise.all([
+  const [orders, balances, cheques, expenses] = await Promise.all([
     can('manufacturing') ? readRecords(svc.entities.ProductionOrder, { $or: [
       { status: { $in: ['draft', 'awaiting_approval', 'approved', 'materials_reserved', 'materials_issued', 'in_production', 'awaiting_qc', 'completed'] } },
       { production_date: date, status: 'released' },
@@ -43,7 +43,6 @@ export async function productionData(svc, date, allowedModules = null) {
       { qc_status: { $in: ['quarantine', 'quarantined', 'rejected'] } }, { expiry_date: { $lte: plusDays(date, 7) } },
     ] }) : [],
     can('cashier') ? readRecords(svc.entities.Payment, { payment_method: 'cheque', status: 'draft' }) : [],
-    can('approvals') && can('manufacturing') ? readRecords(svc.entities.Recipe, { status: 'draft' }) : [],
     can('approvals') && can('expenses') ? readRecords(svc.entities.ExpenseRequest, { status: 'pending_approval' }) : [],
   ]);
   return {
@@ -52,7 +51,6 @@ export async function productionData(svc, date, allowedModules = null) {
     products: await productsFor(svc, [...orders, ...balances].map(row => row.product_id)),
     cheques: view(cheques.filter(p => !p.cheque_pm_signed_at), ['id', 'payment_number', 'party_name', 'amount']),
     productionApprovals: [
-      { key: 'recipes', title: 'Recipes to approve', count: recipes.length, path: '/approvals' },
       { key: 'expenses', title: 'Expense requests to review', count: expenses.length, path: '/approvals' },
     ],
   };
@@ -80,7 +78,7 @@ export async function managerData(svc, date) {
   const monthStart = date.slice(0, 8) + '01';
   const since = monthStart < plusDays(date, -6) ? monthStart : plusDays(date, -6);
   const invoiceStatuses = ['posted', 'partially_paid', 'paid', 'overdue'];
-  const [cash, production, invoices, receivables, dispatches, fieldSales, pos, requests, expenses, payments, recipes, payroll, acquisitions, outletReports, recordedFieldSales] = await Promise.all([
+  const [cash, production, invoices, receivables, dispatches, fieldSales, pos, requests, expenses, payments, payroll, acquisitions, outletReports, recordedFieldSales] = await Promise.all([
     cashierData(svc, date, 'admin'), productionData(svc, date),
     readRecords(svc.entities.Invoice, { invoice_date: { $gte: since, $lte: date }, status: { $in: invoiceStatuses } }),
     readRecords(svc.entities.Invoice, { status: { $in: invoiceStatuses }, balance: { $gt: 0 } }),
@@ -90,7 +88,6 @@ export async function managerData(svc, date) {
     readRecords(svc.entities.DispatchRequest, { status: 'pending_approval' }),
     readRecords(svc.entities.ExpenseRequest, { status: 'pending_approval' }),
     readRecords(svc.entities.Payment, { status: { $in: ['pending_approval', 'approved'] } }),
-    readRecords(svc.entities.Recipe, { status: 'draft' }),
     readRecords(svc.entities.PayrollRun, { status: 'calculated' }),
     readRecords(svc.entities.Customer, { acquisition_verified: 'pending', acquired_by_id: { $ne: '' } }),
     readRecords(svc.entities.OutletVisit, { status: 'submitted' }),
@@ -110,7 +107,6 @@ export async function managerData(svc, date) {
       queue('receipts', 'Customer receipts', payments.filter(p => p.payment_type === 'customer_payment').length, '/?section=approvals'),
       queue('expense', 'Expense requests', expenses.length, '/?section=approvals'),
       queue('dispatch', 'Stock requests', requests.length, '/?section=approvals'),
-      queue('recipe', 'Recipes', recipes.length, '/?section=approvals'),
       queue('payroll', 'Payroll runs', payroll.length, '/?section=approvals'),
     ],
     pendingAcquisitions: acquisitions.filter(c => c.acquired_by_id).length,

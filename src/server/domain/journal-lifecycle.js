@@ -1,17 +1,21 @@
 import {createHash} from 'node:crypto';
 import {requireActiveContext,forbidden} from '../access.js';
 import {requireAccountant} from './account-definitions.js';
+import {updateManualDraft,correctManualJournal,previewManualCorrection} from './manual-journal-corrections.js';
 import {saveManualJournal} from './manual-journals.js';
 import {audit,today} from './field-ops.js';
 import {journalDate,journalCents,checkedJournalLines} from './journal-validation.js';
 import {isManualJournal} from '../../lib/journal-reversal.js';
 import {manualReversalPlan,normalizedReversalReview,reversalReviewHash,verifyReversalReview} from './manual-reversal-plan.js';
 
-export async function journalLifecycle(stores,context,body){
+export async function journalLifecycle(stores,context,body,{atomicCorrectionPlan=null}={}){
  requireAccountant(context);
  const journal=await stores.JournalEntry.get(String(body.journalId||''));
  if(!journal)throw Error('Choose an existing journal.');
  if(!isManualJournal(journal))throw Error('Use the original business workflow to correct this journal and its linked stock, cash or payroll records.');
+ if(body.action==='updateDraft')return updateManualDraft(stores,context,body,journal);
+ if(body.action==='previewCorrection')return previewManualCorrection(stores,context,body,journal);
+ if(body.action==='correctManual')return correctManualJournal(stores,context,body,journal,(next,plan)=>journalLifecycle(stores,context,next,{atomicCorrectionPlan:plan}));
  if(body.action==='deleteDraft'){
   if(requireActiveContext(context)!=='admin')throw forbidden('Only the General Manager may delete a draft journal.');
   if(journal.status!=='draft'||journal.is_immutable||journal.posted_at||journal.reversal_of||journal.reversed_by_journal)throw Error('Only unposted manual drafts can be deleted. Reverse a posted journal to correct its balances.');
@@ -61,7 +65,9 @@ export async function journalLifecycle(stores,context,body){
  const checked=checkedJournalLines(original);
  if(journalCents(journal.total_debit)!==journalCents(checked.debit)||journalCents(journal.total_credit)!==journalCents(checked.credit))throw Error('Reconcile the original journal totals and lines before reversal.');
  const plan=await manualReversalPlan(stores,context,journal,original);
- verifyReversalReview(plan,review);
+ if(atomicCorrectionPlan){
+  if(atomicCorrectionPlan.journalId!==journal.id||!/^[a-f0-9]{64}$/.test(atomicCorrectionPlan.snapshot||'')||JSON.stringify(plan.reversal_lines)!==JSON.stringify(atomicCorrectionPlan.reversal_lines)||plan.requires_review||plan.blocked.some(message=>message!=='A manual journal cannot create a negative cash balance.')||plan.accounts.some(row=>row.ledger_balance!==atomicCorrectionPlan.accounts.find(expected=>expected.id===row.id)?.ledger_balance))throw Object.assign(Error('Balances changed after the combined correction review. Reload the final balance review.'),{status:409});
+ }else verifyReversalReview(plan,review);
  const reversal=await saveManualJournal(stores,context,{
   requestKey:'reverse-'+createHash('sha256').update(journal.id).digest('hex'),
   entryDate,description:('Reversal of '+journal.journal_number+': '+reason).slice(0,1000),status:'posted',

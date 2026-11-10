@@ -22,7 +22,7 @@ async function renderer(){
       '@/lib/router':"import React from 'react';export const useNavigate=()=>()=>{},useSearchParams=()=>[new URLSearchParams(),()=>{}];export const Link=({to,children,...p})=>React.createElement('a',{href:to,...p},children);",
       '@/components/ui/input':"import React from 'react';export const Input=p=>{globalThis.__assetUI.capture('input',p);return React.createElement('input',p);};",
       '@/components/ui/button':"import React from 'react';export const Button=({children,variant,...p})=>{globalThis.__assetUI.capture('button',p,children);return React.createElement('button',p,children);};",
-      '@/components/ui/dialog':"import React from 'react';export const Dialog=({children})=>React.createElement('div',null,children),DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogFooter=Dialog;",
+      '@/components/ui/dialog':"import React from 'react';export const Dialog=({children})=>React.createElement('div',null,children),DialogContent=Dialog,DialogHeader=Dialog,DialogTitle=Dialog,DialogFooter=Dialog,DialogDescription=Dialog;",
       '@/components/ui/tabs':"import React from 'react';export const Tabs=({children})=>React.createElement('div',null,children),TabsList=Tabs,TabsContent=Tabs,TabsTrigger=Tabs;",
       './AssetDialog':'export const AccountSelect=()=>null;',
       '@/components/shared/PageHeader':'export default ()=>null;',

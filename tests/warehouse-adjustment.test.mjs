@@ -678,3 +678,42 @@ test('a new counted finished lot can be explicitly approved with its missing exp
  const result=await f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'NEW-VERIFIED',reason:'Verified finished goods counted',rows:[{product_id:f.product.id,lot_number:'NEW',unit_cost:10,counted_quantity:14,ready_for_sale:true,confirm_missing_expiry:true}]});
  const lot=await s.StockBalance.get(result.rows[0].balance_id);assert.equal(lot.qc_status,'approved');assert.equal(lot.expiry_date,'');assert.equal(lot.quantity,14);assert.equal(lot.total_value,140);assert.equal(result.rows[0].missing_expiry_confirmed,true);assert.equal((await s.JournalEntry.list()).length,1);
 });
+
+test('opening stock corrections keep both increases and decreases on the balance sheet, in simple and detailed counts',async()=>{
+ for(const simple of [false,true])for(const counts of [[12,6],[8,4]]){
+  const f=await setup(),s=f.entities;
+  const equity=await s.Account.create({name:'Opening inventory equity',account_number:'1100',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
+  const ws=await f.workspace(),body={...await f.body(counts),purpose:'opening_correction',correctionAccountId:equity.id,correctionConfirmed:true};
+  if(simple)body.item_counts=[{product_id:f.product.id,item_fingerprint:ws.items.find(p=>p.id===f.product.id).count_fingerprint,counted_quantity:counts.reduce((n,q)=>n+q,0),snapshots:ws.rows.map(r=>({balance_id:r.balance_id,fingerprint:r.fingerprint}))}];
+  const expenseBefore=await s.Account.get('expense'),result=await f.call(body),lines=await s.JournalLine.filter({journal_id:result.journal_id}),delta=(counts[0]+counts[1]-15)*10;
+  assert.equal(result.purpose,'opening_correction');assert.equal(result.correction_account.id,equity.id);assert.equal(result.value_difference,delta);
+  assert.deepEqual(new Set(lines.map(l=>l.account_id)),new Set([f.inventory.id,equity.id]));assert.equal(lines.reduce((n,l)=>n+l.debit-l.credit,0),0);
+  assert.equal(lines.filter(l=>l.account_id===f.inventory.id).reduce((n,l)=>n+l.debit-l.credit,0),delta);
+  assert.deepEqual(await s.Account.get('expense'),expenseBefore);assert.equal((await s.StockBalance.filter({product_id:f.product.id})).reduce((n,b)=>n+b.total_value,0),150+delta);
+  const before=JSON.stringify(await s.JournalEntry.list());assert.equal((await f.call(body)).reused,true);assert.equal(JSON.stringify(await s.JournalEntry.list()),before);
+  assert.equal((await f.workspace()).correction_accounts.find(a=>a.id===equity.id).account_type,'equity');
+ }
+});
+
+test('opening correction requires a declared purpose, confirmation and a real noncash posting equity account before any stock write',async()=>{
+ const f=await setup(),s=f.entities,body={...await f.body([12,6]),purpose:'opening_correction'},before=JSON.stringify(await s.StockBalance.list());
+ const eq=await s.Account.create({name:'Setup equity',account_number:'1100',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true});
+ await assert.rejects(f.call({...body,correctionAccountId:eq.id}),/confirm/);
+ await assert.rejects(f.call({...body,purpose:'anything'}),/purpose/);
+ for(const patch of [{account_type:'other_income'},{normal_balance:'debit'},{is_active:false},{is_posting:false},{currency:'EUR'},{is_treasury:true}]){
+  await s.Account.update(eq.id,{account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,currency:'XAF',is_treasury:false,...patch});
+  await assert.rejects(f.call({...body,correctionAccountId:eq.id,correctionConfirmed:true}),/equity account/);
+ }
+ await s.Account.update(eq.id,{account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,currency:'XAF',is_treasury:false});
+ await s.TreasuryAccount.create({name:'Invalid equity cash link',gl_account_id:eq.id,is_active:true});
+ await assert.rejects(f.call({...body,correctionAccountId:eq.id,correctionConfirmed:true}),/equity account/);
+ assert.equal(JSON.stringify(await s.StockBalance.list()),before);assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('neutral opening quantity correction cannot hide current-cost revaluation or mix operating correction fields',async()=>{
+ const f=await setup(),s=f.entities,eq=await s.Account.create({name:'Setup equity',account_number:'1100',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true});
+ const body={...await f.body([12,6]),purpose:'opening_correction',correctionAccountId:eq.id,correctionConfirmed:true};
+ for(const flag of ['use_current_cost','confirm_reconciliation'])await assert.rejects(f.call({...body,rows:body.rows.map(r=>({...r,[flag]:true}))}),/cannot revalue/);
+ await assert.rejects(f.call({...body,purpose:'operating'}),/cannot be used for an operating count/);
+ assert.equal((await s.JournalEntry.list()).length,0);
+});

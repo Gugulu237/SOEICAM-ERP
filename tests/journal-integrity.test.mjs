@@ -7,6 +7,7 @@ import { saveManualJournal } from '../src/server/domain/manual-journals.js';
 import { journalLifecycle } from '../src/server/domain/journal-lifecycle.js';
 import { payrollAction } from '../src/server/domain/payroll-workspace.js';
 import { matches } from './helpers/commercial-supply.mjs';
+import {journalFingerprint} from '../src/lib/journal-corrections.js';
 import { businessDate } from '../src/lib/business-date.js';
 
 const date=businessDate(), context={user:{id:'gm',role:'admin',email:'gm@example.test'},role:'admin',employee:null};
@@ -25,7 +26,7 @@ async function fixture(db) {
     const all=async()=>db?(await db.query('SELECT data FROM journal_fixture WHERE entity=$1 ORDER BY id',[name])).rows.map(row=>row.data):structuredClone(data);
     const get=async id=>(await all()).find(row=>row.id===id);
     const create=async input=>{
-      const row={...structuredClone(input),id:crypto.randomUUID(),created_date:new Date().toISOString()};
+      const row={...structuredClone(input),id:input.id||crypto.randomUUID(),created_date:new Date().toISOString()};
       if(db)await db.query('INSERT INTO journal_fixture VALUES($1,$2,$3)',[name,row.id,JSON.stringify(row)]);else data.push(row);
       return structuredClone(row);
     };
@@ -298,4 +299,65 @@ test('the read-only preview protects bank information and a failed reconciliatio
   s.AuditLog.create=create;assert.equal((await post(route,body)).status,200);assert.equal((await post(route,body)).status,200);
   assert.equal((await s.JournalEntry.list()).length,2);assert.equal((await s.TreasuryAccount.get(f.till.id)).balance,0);assert.equal((await s.AuditLog.list()).filter(a=>a.action==='reconcile_reversal_balances').length,1);
  }finally{delete globalThis.__journalTest;await db.close();}
+});
+
+
+test('manual draft edit updates only unposted header/lines, audits snapshots, retries once and rejects stale or protected states',async()=>{
+ const f=await fixture(),s=f.stores,draft=await saveManualJournal(s,context,{...journalBody(),status:'draft'}),lines=await s.JournalLine.filter({journal_id:draft.id});
+ const input={action:'updateDraft',journalId:draft.id,requestKey:crypto.randomUUID(),expectedFingerprint:await journalFingerprint(draft,lines),entryDate:date,description:'Corrected draft description',lines:[{account_id:'wages',debit:400},{account_id:'capital',credit:400}]};
+ const saved=await journalLifecycle(s,context,input);assert.equal(saved.id,draft.id);assert.equal(saved.journal_number,draft.journal_number);assert.equal(saved.status,'draft');assert.equal(saved.total_debit,400);assert.equal((await s.Account.get('cash')).balance,0);assert.equal((await s.Account.get('wages')).balance,0);
+ const evidence=(await s.AuditLog.list()).find(event=>event.action==='edit_draft_journal');assert.equal(evidence.before_lines.length,2);assert.equal(evidence.after_lines.length,2);assert.equal(evidence.before_journal.description,'Opening capital');
+ await journalLifecycle(s,context,input);assert.equal((await s.AuditLog.list()).filter(event=>event.action==='edit_draft_journal').length,1);
+ await assert.rejects(journalLifecycle(s,context,{...input,requestKey:crypto.randomUUID(),description:'Stale second window'}),/changed in another window/);
+ for(const patch of [{status:'posted'},{is_immutable:true},{posted_at:new Date().toISOString()},{source_document_type:'Invoice',source_module:'sales'}]){await s.JournalEntry.update(draft.id,{status:'draft',is_immutable:false,posted_at:'',source_module:'manual',source_document_type:'manual_journal',...patch});await assert.rejects(journalLifecycle(s,context,{...input,requestKey:crypto.randomUUID()}));}
+});
+
+test('draft edits reject closed periods, control accounts, posted lines and unauthorized readers without touching balances',async()=>{
+ for(const mode of ['period','control','posted-line','reader']){
+  const f=await fixture(),s=f.stores,draft=await saveManualJournal(s,context,{...journalBody(),status:'draft'}),lines=await s.JournalLine.filter({journal_id:draft.id});
+  if(mode==='period')await s.AccountingPeriod.update('period',{status:'closed'});if(mode==='control')await s.Account.update('capital',{is_control_account:true});if(mode==='posted-line')await s.JournalLine.update(lines[0].id,{status:'posted'});
+  const latest=await s.JournalLine.filter({journal_id:draft.id}),input={action:'updateDraft',journalId:draft.id,requestKey:crypto.randomUUID(),expectedFingerprint:await journalFingerprint(draft,latest),entryDate:date,description:'Reviewed change',lines:[{account_id:'cash',debit:300},{account_id:'capital',credit:300}]};
+  await assert.rejects(journalLifecycle(s,mode==='reader'?{user:{id:'reader',role:'user'},role:'production_manager',employee:{status:'active',role:'production_manager'}}:context,input));assert.equal((await s.Account.get('cash')).balance,0);assert.equal((await s.JournalEntry.get(draft.id)).description,'Opening capital');assert.equal((await s.AuditLog.list()).some(event=>event.action==='edit_draft_journal'),false);
+ }
+});
+
+async function correctionBody(stores,journal,patch={}){
+ const input={action:'correctManual',journalId:journal.id,requestKey:crypto.randomUUID(),expectedFingerprint:await journalFingerprint(journal,await stores.JournalLine.filter({journal_id:journal.id})),reversalDate:date,reason:'Entered the wrong amount',replacement:{description:'Reviewed replacement amount',lines:[{account_id:'cash',debit:800},{account_id:'capital',credit:800}]},...patch};
+ const preview=await journalLifecycle(stores,context,{...input,action:'previewCorrection'});
+ return {...input,treasuryReview:{snapshot:preview.snapshot,confirmed:true,verifiedBalances:preview.treasury.map(row=>({treasuryId:row.id,balance:row.balance_after}))}};
+}
+
+test('atomic manual correction posts linked reversal/replacement once and keeps original lines immutable through the real API transaction',async()=>{
+ const db=new PGlite();try{const f=await fixture(db),s=f.stores;await s.Account.update('cash',{account_type:'asset'});await s.TreasuryAccount.create({id:'till',name:'Factory cash',account_type:'cash',gl_account_id:'cash',balance:0,is_active:true});const original=await saveManualJournal(s,context,journalBody()),originalLines=await s.JournalLine.filter({journal_id:original.id}),input=await correctionBody(s,original),route=await bundle('src/app/api/accounting/journals/route.js');globalThis.__journalTest=f;
+ const response=await post(route,input);assert.equal(response.status,200);const result=await response.json();assert.equal(result.replacement.correction_of,original.id);assert.equal(result.replacement.correction_reversal_id,result.reversal.id);assert.equal(result.original.corrected_by_journal,result.replacement.id);assert.deepEqual(await s.JournalLine.filter({journal_id:original.id}),originalLines);assert.equal((await s.Account.get('cash')).balance,800);assert.equal((await s.TreasuryAccount.get('till')).balance,800);assert.equal((await s.JournalEntry.list()).length,3);
+ const retry=await post(route,input);assert.equal(retry.status,200);const again=await retry.json();assert.equal(again.reused,true);assert.equal(again.replacement.id,result.replacement.id);assert.equal(again.reversal.id,result.reversal.id);assert.equal((await s.JournalEntry.list()).length,3);assert.equal((await s.AuditLog.list()).filter(event=>event.action==='correct_manual_journal').length,1);
+ assert.equal((await post(route,{...input,replacement:{...input.replacement,description:'Different correction'}})).status,409);
+ }finally{delete globalThis.__journalTest;await db.close();}
+});
+
+test('late replacement failure rolls back its reversal and every balance through the real API transaction',async()=>{
+ const db=new PGlite();try{const f=await fixture(db),s=f.stores;await s.Account.update('cash',{account_type:'asset'});await s.TreasuryAccount.create({id:'till',name:'Factory cash',account_type:'cash',gl_account_id:'cash',balance:0,is_active:true});const original=await saveManualJournal(s,context,{...journalBody(),lines:[{account_id:'wages',debit:100},{account_id:'capital',credit:100}]}),input=await correctionBody(s,original,{replacement:{description:'Late replacement failure',lines:[{account_id:'cash',debit:200},{account_id:'capital',credit:200}]}}),before=await s.JournalLine.list(),route=await bundle('src/app/api/accounting/journals/route.js');globalThis.__journalTest=f;
+ const audit=s.AuditLog.create;s.AuditLog.create=async value=>{if(value.description?.includes('Late replacement failure'))throw Error('Late replacement audit failure');return audit(value);};
+ const response=await post(route,input);assert.equal(response.status,400);assert.match((await response.json()).error,/Late replacement audit failure/);assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.JournalEntry.get(original.id)).reversed_by_journal,undefined);assert.deepEqual(await s.JournalLine.list(),before);assert.equal((await s.Account.get('wages')).balance,100);assert.equal((await s.Account.get('capital')).balance,100);assert.equal((await s.TreasuryAccount.get('till')).balance,0);assert.equal((await s.CompanySettings.get('settings')).next_journal_number,2);assert.equal((await s.AuditLog.list()).some(event=>event.action==='reverse_journal'),false);
+ }finally{delete globalThis.__journalTest;await db.close();}
+});
+
+test('manual correction rejects stale source, closed dates, blocked accounts and non-manager roles before correction writes',async()=>{
+ for(const mode of ['stale','period','account','role']){const f=await fixture(),s=f.stores,original=await saveManualJournal(s,context,{...journalBody(),lines:[{account_id:'wages',debit:100},{account_id:'capital',credit:100}]}),input=await correctionBody(s,original);if(mode==='stale')await s.JournalEntry.update(original.id,{description:'Changed during review'});if(mode==='period')await s.AccountingPeriod.update('period',{status:'closed'});if(mode==='account')await s.Account.update('cash',{allow_manual_journal:false});await assert.rejects(journalLifecycle(s,mode==='role'?{...context,user:{id:'cashier',role:'cashier'},role:'cashier'}:context,input));assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.JournalEntry.get(original.id)).reversed_by_journal,undefined);}
+});
+
+
+test('combined correction safely replaces a cash receipt after subsequent spending while standalone negative reversal stays blocked',async()=>{
+ const db=new PGlite();try{const f=await fixture(db),s=f.stores;await s.Account.update('cash',{account_type:'asset'});await s.TreasuryAccount.create({id:'till',name:'Factory cash',account_type:'cash',gl_account_id:'cash',balance:0,is_active:true});const original=await saveManualJournal(s,context,journalBody());await saveManualJournal(s,context,{...journalBody(),description:'Later wages paid',lines:[{account_id:'wages',debit:900},{account_id:'cash',credit:900}]});assert.equal((await s.TreasuryAccount.get('till')).balance,100);
+ await assert.rejects(journalLifecycle(s,context,{action:'reverse',journalId:original.id,reversalDate:date,reason:'Incorrect receipt',atomicCorrectionPlan:{allowNegative:true}}),/negative cash/);
+ const input=await correctionBody(s,original,{replacement:{description:'Correct cash receipt 1200',lines:[{account_id:'cash',debit:1200},{account_id:'capital',credit:1200}]}}),preview=await journalLifecycle(s,context,{...input,action:'previewCorrection'});assert.equal(preview.treasury[0].balance_after,300);assert.deepEqual(preview.blocked,[]);
+ const route=await bundle('src/app/api/accounting/journals/route.js');globalThis.__journalTest=f;const response=await post(route,input);assert.equal(response.status,200);const result=await response.json();assert.equal((await s.TreasuryAccount.get('till')).balance,300);assert.equal((await s.Account.get('cash')).balance,300);assert.equal((await s.Account.get('capital')).balance,1200);assert.equal((await s.JournalEntry.list()).length,4);assert.equal((await post(route,input)).status,200);assert.equal((await s.JournalEntry.list()).length,4);assert.equal(result.replacement.correction_of,original.id);
+ }finally{delete globalThis.__journalTest;await db.close();}
+});
+
+test('combined correction refuses negative final cash, missing/stale review and confirms mismatched final balances explicitly',async()=>{
+ const f=await fixture(),s=f.stores;await s.Account.update('cash',{account_type:'asset'});await s.TreasuryAccount.create({id:'till',name:'Factory cash',account_type:'cash',gl_account_id:'cash',balance:0,is_active:true});const original=await saveManualJournal(s,context,journalBody());await saveManualJournal(s,context,{...journalBody(),description:'Later expense',lines:[{account_id:'wages',debit:900},{account_id:'cash',credit:900}]});
+ const negative=await correctionBody(s,original);await assert.rejects(journalLifecycle(s,context,negative),/negative cash/);assert.equal((await s.JournalEntry.list()).length,2);
+ const valid=await correctionBody(s,original,{replacement:{description:'Correct receipt',lines:[{account_id:'cash',debit:1200},{account_id:'capital',credit:1200}]}});await assert.rejects(journalLifecycle(s,context,{...valid,treasuryReview:undefined}),/Review the final/);await assert.rejects(journalLifecycle(s,context,{...valid,treasuryReview:{...valid.treasuryReview,snapshot:'a'.repeat(64)}}),/changed after/);
+ await s.TreasuryAccount.update('till',{balance:300});const reviewed=await correctionBody(s,original,{replacement:valid.replacement}),preview=await journalLifecycle(s,context,{...reviewed,action:'previewCorrection'});assert.equal(preview.requires_review,true);assert.equal(preview.treasury[0].balance_after,300);await assert.rejects(journalLifecycle(s,context,{...reviewed,treasuryReview:{...reviewed.treasuryReview,verifiedBalances:[]}}),/verified cash or bank/);await journalLifecycle(s,context,reviewed);assert.equal((await s.TreasuryAccount.get('till')).balance,300);assert.equal((await s.Account.get('cash')).balance,300);assert.equal((await s.AuditLog.list()).find(event=>event.action==='correct_manual_journal').accounting_correction_review.reconciled,true);
 });

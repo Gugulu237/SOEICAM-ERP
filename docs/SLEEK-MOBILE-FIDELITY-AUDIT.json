@@ -8,7 +8,8 @@
     "White SOEICAM theme, actual logo and one account control.",
     "Manual goods issuance with centralized stock; no per-product Receive/Count controls.",
     "Quantity adjustments remain in Accounting with existing role restrictions.",
-    "Real records, permissions, approvals, identity verification and transaction validation take precedence over illustrative data and switches."
+    "Real records, permissions, approvals, identity verification and transaction validation take precedence over illustrative data and switches.",
+    "Recipe creation/version workflows hidden; assembly definitions/builds and batch/expiry tracking retained."
   ],
   "screens": [
     {
@@ -524,11 +525,13 @@
         "Added the focused phone Quantity adjustments / Inventory count review heading with secondary destinations in Tools.",
         "Moved count selection/warehouse/search/group/sort/refresh controls into Count tools on phones while leaving them open on desktop.",
         "Presented real per-item book/count/difference metrics in 22px cards; preserved explicit per-batch correction and valuation evidence.",
-        "Kept Accounting as the quantity-adjustment entry point and preserved product deep links without reintroducing Stock row Count actions."
+        "Kept Accounting as the quantity-adjustment entry point and preserved product deep links without reintroducing Stock row Count actions.",
+        "Counts now require explicit operating vs opening-stock correction treatment. Confirmed setup corrections use reviewed equity with no P&L effect; genuine operating differences retain loss/surplus accounts. Approval binds the selected treatment to its financial plan."
       ],
       "limitations": [
         "The checked workflow intentionally retains separate count and accounting-review stages, reference/reason inputs, batch reconciliation, scope limits and atomic journal posting; the reference single-screen confirm sample is adapted.",
-        "The landing also exposes the immutable history and audit workbench; a product query opens the focused item count modal."
+        "The landing also exposes the immutable history and audit workbench; a product query opens the focused item count modal.",
+        "Previously posted setup mistakes require review in the existing setup correction tool. No automatic historical reclassification or hidden operating losses/gains."
       ],
       "sourceComponent": "src/views/AccountingInventory.jsx; src/components/inventory/StockAdjustmentDialog.jsx; src/components/inventory/MobileCountItem.jsx",
       "referenceId": "ADNgoZUrngz",
@@ -558,7 +561,7 @@
     },
     {
       "name": "Assemblages",
-      "route": "/manufacturing?section=recipes (phone default /manufacturing)",
+      "route": "/manufacturing?section=assemblies (phone default /manufacturing)",
       "status": "corrected_with_data_adaptations",
       "before": [
         "cypd2lJUSQx v1 / assemblages.tsx: the catalogue itself matched type/size grouping, but the actual route prepended a generic Production header and four-button section bar before its own Assemblies heading."
@@ -567,11 +570,13 @@
         "Rendered one focused Assemblies heading on phones.",
         "Moved all existing manufacturing section destinations into explicit Tools, preserving production orders, grouped builds, recipes and quality access.",
         "Retained real catalogue grouping, expected bucket yields, component counts, search and authorized New Recipe access.",
-        "Applied the reference 22px geometry to assembly groups."
+        "Applied the reference 22px geometry to assembly groups.",
+        "Recipe setup/version navigation is removed per user instruction. Assemblies and their existing product/component editor remain."
       ],
       "limitations": [
         "Only active permitted assembly/finished-product records are shown; sample flavours, names and yields are not forced onto real data.",
-        "Recipe/version editing remains available through the existing separate recipe workflow."
+        "Recipe/version editing remains available through the existing separate recipe workflow.",
+        "Historical recipe data is retained; retired recipe URLs redirect to the assembly catalogue."
       ],
       "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/MobileAssemblyCatalogue.jsx",
       "referenceId": "cypd2lJUSQx",
@@ -579,7 +584,7 @@
     },
     {
       "name": "Fiche assemblage",
-      "route": "/manufacturing?section=recipes&assembly=:productId",
+      "route": "/manufacturing?section=assemblies&assembly=:productId",
       "status": "corrected_with_data_adaptations",
       "before": [
         "vqNDETwOYEj v1 / fiche-assemblage.tsx: the assembly detail was also preceded by the generic Production wrapper and section bar; cards used 12px geometry and its Edit/Produce controls remained ordinary end-of-page actions."
@@ -589,11 +594,13 @@
         "Applied 22px geometry to product, yield/cost, materials and packaging cards.",
         "Added a sticky Edit/Produce action bar with the existing role restrictions and correct preselected grouped-build route.",
         "Kept real per-bucket material quantities and per-unit packaging based on the saved assembly definition.",
-        "Added explicit materials/other-component totals and packaging totals on their labelled per-unit/per-bucket basis, using existing cost resolution, conversions and manual overrides. Added the saved yield helper."
+        "Added explicit materials/other-component totals and packaging totals on their labelled per-unit/per-bucket basis, using existing cost resolution, conversions and manual overrides. Added the saved yield helper.",
+        "The product assembly definition remains editable without the retired separate recipe workflow."
       ],
       "limitations": [
         "Missing component costs and unrecorded/invalid bucket yield remain unknown rather than zero.",
-        "Services, asset allocations and other components remain visible under accurate materials-and-other-components labels. Complete assembly cost includes all configured components."
+        "Services, asset allocations and other components remain visible under accurate materials-and-other-components labels. Complete assembly cost includes all configured components.",
+        "Assembly building still requires valid configured components, costs and stock."
       ],
       "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/MobileAssemblyCatalogue.jsx",
       "referenceId": "vqNDETwOYEj",
@@ -610,12 +617,14 @@
         "Added a focused Record production / Review components and build phone heading with manufacturing tools secondary.",
         "Kept grouped assembly date/responsible/bucket/unit/expiry selection connected to the existing checked preview and posting handlers.",
         "Replaced the phone component table with named, labeled cards for required, on-hand, buildable, after-build, shortages and per-location/lot evidence.",
-        "Applied 22px entry/review card geometry and sticky review/build controls while preserving desktop presentation."
+        "Applied 22px entry/review card geometry and sticky review/build controls while preserving desktop presentation.",
+        "Build assemblies is the primary new-production action; Batches & expiry is primary tracking. Existing production history and quality controls remain secondary."
       ],
       "limitations": [
         "Batch IDs are generated by the server when production saves; a user-entered reference batch field is intentionally not presented as supported.",
         "A component-check/review step, stale-stock handling, overhead allocation where applicable, retry identity and posting locks remain required.",
-        "The legacy /manufacturing/new order workflow remains available separately; grouped-build links target section=build."
+        "The legacy /manufacturing/new order workflow remains available separately; grouped-build links target section=build.",
+        "Checked component review and atomic stock/accounting posting remain required; no historical records are deleted."
       ],
       "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/AssemblyBuildPanel.jsx; src/components/manufacturing/MobileAssemblyEntry.jsx; src/components/manufacturing/MobileBuildMaterials.jsx",
       "referenceId": "0YK5dS4gVvA",
@@ -754,12 +763,14 @@
         "Mobile landing order is source filters, search and optional detailed filters, Recent entries list, then inline New Journal Entry.",
         "Journal statistics, refresh, integrity review, audit activity and complete exports moved below the main layout into Journal controls & export. Errors stay visible.",
         "Reused the existing JournalEntryForm as an embedded composer with real account picker, date/description, compact account/debit/credit rows, optional line details, Add Line, actual totals, balance validation, draft save and post actions. Successful saves refresh the list; read-only roles do not receive the composer.",
-        "Desktop form/register and all checked posting, draft deletion, reversal and idempotency handlers remain."
+        "Desktop form/register and all checked posting, draft deletion, reversal and idempotency handlers remain.",
+        "Unposted manual drafts can be edited through a checked save. Posted manual journals have a linked correction workflow; source-generated journals direct correction to the original operation."
       ],
       "limitations": [
         "Source chips use actual ERP source modules rather than invented VT/CA/BQ/OD/AC journal-code categories. Manual journals retain the real manual source.",
         "The existing default register covers all periods; source samples show one month. Actual date filters remain available.",
-        "Existing source detail metadata and checked reversal/delete controls add content absent from the static source."
+        "Existing source detail metadata and checked reversal/delete controls add content absent from the static source.",
+        "Posted originals retain their history; sales and other source corrections keep their document, stock, cash and period restrictions."
       ],
       "sourceComponent": "journal-comptable.tsx / GGK3f5vMskU",
       "referenceId": "GGK3f5vMskU",
@@ -778,12 +789,14 @@
         "Phone P&L defaults to the current month; collapsed range control precedes a three-way report segment. Desktop keeps its prior date default and controls.",
         "Kept actual net/revenue/gross-margin summary; replaced the mobile P&L body with a single bordered compact row list of real revenue, COGS, gross profit, actual expense accounts, totals, optional other income/expense and net.",
         "PDF/Excel exports are below the statement in a two-button row. Detailed revenue/COGS, source corrections and depreciation controls stay available in disclosures. Visible review flags preserve unresolved depreciation warnings.",
-        "Balance-sheet and cash-flow exports remain available and have export-scroll targets. Report calculations, refresh-before-export, depreciation checks and source correction logic are unchanged."
+        "Balance-sheet and cash-flow exports remain available and have export-scroll targets. Report calculations, refresh-before-export, depreciation checks and source correction logic are unchanged.",
+        "Account rows now open reconciled, read-only journal detail by tap/click, keyboard or double-click. P&L, balance-sheet opening/current effects and cash-flow allocations keep their exact date/sign basis."
       ],
       "limitations": [
         "Expense rows use authoritative posted account classifications, not the source sample salaries/rent/marketing amounts. Depreciation is not guessed from account names or double-subtracted.",
         "The reference supplies the P&L tab only. Existing balance sheet and detailed cash-flow/history layouts remain established ERP layouts rather than claiming an unseen source layout.",
-        "Validation and recurring/depreciation review notices can add visible rows when actual records need review."
+        "Validation and recurring/depreciation review notices can add visible rows when actual records need review.",
+        "Cash-flow component opening/closing names without per-account source lines remain summary values; category/account allocation rows drill down."
       ],
       "sourceComponent": "rapports-financiers.tsx / iIz7LjCLYzW",
       "referenceId": "iIz7LjCLYzW",
@@ -1027,5 +1040,18 @@
       "mobile-speed": 4,
       "navigation-browser": 1
     }
+  },
+  "accountingAndAssemblyVerification": {
+    "date": "2026-11-10",
+    "tests": {
+      "total": 2302,
+      "passed": 2291,
+      "preExistingFailures": 10,
+      "skipped": 1
+    },
+    "lint": "passed",
+    "browser": "Actual statement/drilldown, treatment and Manufacturing components with isolated example data; phone390/320 and desktop keyboard/doubleclick. No production business transactions.",
+    "details": "docs/accounting-corrections-and-assemblies.md",
+    "productionBuild": "passed"
   }
 }

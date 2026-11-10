@@ -195,6 +195,8 @@ export default function JournalRegister({readOnly=false}) {
           <JournalTable
             rows={rows}
             onOpen={(journal) => navigate(`/accounting/journals/${journal.id}`)}
+            onEdit={readOnly?undefined:journal=>navigate('/accounting/journals/'+journal.id+'?edit=1')}
+            onCorrect={isAdmin&&!readOnly?journal=>navigate('/accounting/journals/'+journal.id+'?correct=1'):undefined}
             onPost={readOnly?undefined:handlePost}
             onDelete={journal=>{setDeleteReason("");setDeleteNumber("");setDeleteError("");setDeleteTarget(journal);}}
             onReverse={handleReverse}

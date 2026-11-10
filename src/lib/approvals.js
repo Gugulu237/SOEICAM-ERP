@@ -50,13 +50,12 @@ export const APPROVAL_OWNER = {
 export const canDecide = (type, role) => (APPROVAL_ROLES[type] || []).includes(role);
 
 export async function loadPendingApprovals(role = 'admin') {
-  const [pos, production, stockRequests, expenses, cashRequests, recipes, payroll, customerReceipts] = await Promise.all([
+  const [pos, production, stockRequests, expenses, cashRequests, payroll, customerReceipts] = await Promise.all([
     erp.entities.PurchaseOrder.filter({ status: "pending_approval" }),
     ['admin', 'production_manager', 'warehouse_manager'].includes(role) ? erp.entities.ProductionOrder.filter({ status: "awaiting_approval" }) : [],
     canDecide('dispatch', role) ? erp.entities.DispatchRequest.filter({ status: "pending_approval" }) : [],
     canDecide('expense', role) ? erp.entities.ExpenseRequest.filter({ status: "pending_approval" }) : [],
     canDecide('cash', role) ? erp.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }) : [],
-    canDecide('recipe', role) ? erp.entities.Recipe.filter({ status: "draft" }) : [],
     canDecide('payroll', role) ? erp.entities.PayrollRun.filter({ status: "calculated" }) : [],
     canDecide('customer_receipt', role) ? erp.entities.Payment.filter({ payment_type: 'customer_payment', status: { $in: ['pending_approval', 'approved'] } }, { sort: '-created_date', limit: 50 }) : { items: [] },
   ]);
@@ -71,7 +70,6 @@ export async function loadPendingApprovals(role = 'admin') {
     ...stockRequests.map(r => row(r, "dispatch", r.request_number, [r.vehicle_name, r.driver_name].filter(Boolean).join(" · "), null, `/distribution/requests/${r.id}`)),
     ...expenses.map(e => row(e, "expense", e.request_number, [e.title, e.requester_name].filter(Boolean).join(" · "), e.amount, "/expenses")),
     ...cashRequests.map(p => row(p, "cash", p.payment_number, p.party_name, p.amount, "/cashier")),
-    ...recipes.map(r => row(r, "recipe", `${r.recipe_name} v${r.version || 1}`, r.product_name, null, `/manufacturing/recipes/${r.id}`)),
     ...payroll.map(r => row(r, "payroll", r.period_name, `${r.employee_count || 0} employees`, r.total_net, "/team-workspaces?section=payroll&run="+encodeURIComponent(r.id))),
     ...customerReceipts.items.map(p => row(p, 'customer_receipt', p.payment_number, `${p.party_name} · ${p.invoice_numbers || ''} · Cashier: ${p.cashier_confirmed_name || 'Not confirmed'}`, p.amount, '/accounting?tab=payments')),
   ].sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)));

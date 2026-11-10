@@ -12,6 +12,8 @@ import { erp } from '@/api/erpClient';
 import { Link } from '@/lib/router';
 import { businessDate } from '@/lib/business-date';
 import { cashFlowCsv, cashFlowDates, CASH_FLOW_ACTIVITIES } from '@/lib/cash-flow';
+import {buildCashAllocationDrilldown} from '@/lib/statement-drilldown';
+import StatementAccountDrilldown from './StatementAccountDrilldown';
 import { formatDate } from '@/lib/formatters';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +28,7 @@ export default function CashFlowStatement() {
   const initialRange = useMemo(() => { const to = businessDate(); return { from: to.slice(0, 4) + '-01-01', to }; }, []);
   const [range, setRange] = useState(initialRange), [report, setReport] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(false);
   const [search, setSearch] = useState(''), [account, setAccount] = useState('all'), [activity, setActivity] = useState('all'), [page, setPage] = useState(1);
+  const [drilldown,setDrilldown]=useState(null);
   const request = useRef(0);
   const run = useCallback(async dates => {
     const version = ++request.current;
@@ -49,6 +52,11 @@ export default function CashFlowStatement() {
     const url = URL.createObjectURL(new Blob([cashFlowCsv(report)], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a'); link.href = url; link.download = `SOEICAM-Cash-Flow-${report.from}-to-${report.to}.csv`; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const openAllocation=(activity,row)=>{
+    const title=[ui(row.label),row.account_number,row.account_name==='Source document'?'':row.account_name].filter(Boolean).join(' · ');
+    try{setDrilldown({title,detail:buildCashAllocationDrilldown(report,{title,activity,label:row.label,accountId:row.account_id,expectedInflow:row.inflow,expectedOutflow:row.outflow})});}
+    catch(cause){setDrilldown({title,error:cause.message});}
+  };
   return <div className="space-y-5">
     <form data-statement-export className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4 print:hidden" onSubmit={e => { e.preventDefault(); run(range); }}>
       <div><Label htmlFor="cashflow-from">{ui("From")}</Label><Input id="cashflow-from" type="date" required disabled={loading} value={range.from} onChange={e => setRange({ ...range, from: e.target.value })} /></div>
@@ -67,11 +75,12 @@ export default function CashFlowStatement() {
       </div>
       {!!report.opening_adjustments&&<p className="rounded-lg border bg-white p-3 text-sm">{ui('Opening balance imports')}: {amount(report.opening_adjustments)}. {ui('These migration balances are excluded from operating cash receipts and payments.')}</p>}
       {!!report.issues.length && <details open className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-900"><summary className="cursor-pointer font-semibold">{ui("Review required — ")}{report.issues.length}{ui(" issue")}{report.issues.length === 1 ? '' : 's'}</summary><p className="mt-2">{ui("Resolve these items before relying on this report as a complete cash statement. The General Manager can set account activity under Accounting → Chart of Accounts → Account list.")}</p><ul className="mt-2 list-disc space-y-1 pl-5">{report.issues.slice(0, 20).map((issue, index) => <li key={index}>{uiMessage(issue)}</li>)}</ul>{report.issues.length > 20 && <p className="mt-2">{ui("Showing the first 20 issues. Export the statement for the complete review list.")}</p>}</details>}
+      <p className="text-xs text-muted-foreground">{ui('Tap or double-click an account to view its journal entries.')}</p>
       <div className="overflow-x-auto rounded-lg border bg-white">
         <table className="w-full text-sm"><caption className="sr-only">{ui("Cash receipts and payments by activity and account")}</caption><thead className="bg-slate-50 text-slate-600"><tr><th className="p-3 text-left">{ui("Activity / account")}</th><th className="p-3 text-right">{ui("Receipts")}</th><th className="p-3 text-right">{ui("Payments")}</th><th className="p-3 text-right">{ui("Net cash")}</th></tr></thead>
           <tbody>{report.activities.filter(a => a.key !== 'unclassified' || a.rows.length).map(a => <React.Fragment key={a.key}>
             <tr className={a.key === 'unclassified' ? 'bg-slate-50 font-semibold' : 'bg-slate-50 font-semibold'}><th className="p-3 text-left" scope="row">{ui(a.label)}</th><td className="p-3 text-right">{amount(a.inflow)}</td><td className="p-3 text-right">{amount(a.outflow)}</td><td className="p-3 text-right">{amount(a.net)}</td></tr>
-            {a.rows.map((r, i) => <tr key={i} className="border-t border-slate-100"><td className="p-3 pl-6">{ui(r.label)}<p className="text-xs text-slate-500">{r.account_number} {r.account_name === 'Source document' ? ui("Cash amount from sales / asset source documents") : r.account_name}</p></td><td className="p-3 text-right text-green-700">{amount(r.inflow)}</td><td className="p-3 text-right text-red-700">{amount(r.outflow)}</td><td className="p-3 text-right">{amount(r.net)}</td></tr>)}
+            {a.rows.map((r, i) => <tr key={i} className="border-t border-slate-100"><td className="p-3 pl-6"><button type="button" aria-haspopup="dialog" aria-label={ui('View journal entries for {0}',r.account_name==='Source document'?ui(r.label):r.account_name)} onClick={()=>openAllocation(a.key,r)} onDoubleClick={()=>openAllocation(a.key,r)} className="min-h-11 rounded text-left underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{ui(r.label)}<span className="block text-xs text-slate-500">{r.account_number} {r.account_name === 'Source document' ? ui("Cash amount from sales / asset source documents") : r.account_name}</span></button></td><td className="p-3 text-right text-green-700">{amount(r.inflow)}</td><td className="p-3 text-right text-red-700">{amount(r.outflow)}</td><td className="p-3 text-right">{amount(r.net)}</td></tr>)}
             {!a.rows.length && <tr><td colSpan={4} className="p-3 pl-6 text-slate-400">{ui("No cash movements")}</td></tr>}
           </React.Fragment>)}</tbody>
           <tfoot className="border-t-2 font-semibold"><tr><th className="p-3 text-left">{ui("Net change in cash")}</th><td className="p-3 text-right">{amount(report.inflow)}</td><td className="p-3 text-right">{amount(report.outflow)}</td><td className="p-3 text-right">{amount(report.net)}</td></tr></tfoot>
@@ -94,5 +103,6 @@ export default function CashFlowStatement() {
         <div className="mt-3 flex items-center justify-between gap-2 text-sm"><span>{history.length}{ui(" movements · Page ")}{page}{ui(" of ")}{pages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>{ui("Previous")}</Button><Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{ui("Next")}</Button></div></div>
       </section>
     </>}
+    {drilldown&&<StatementAccountDrilldown {...drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }

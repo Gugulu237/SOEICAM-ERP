@@ -1,4 +1,6 @@
-'use client';
-import dynamic from 'next/dynamic';
-const Screen = dynamic(() => import('@/views/ProductionOrderForm'), { ssr: false });
-export default function Page() { return <Screen />; }
+import {redirect} from 'next/navigation';
+import {assemblyBuildPath} from '@/lib/manufacturing-workspace';
+
+export default async function Page({searchParams}){
+  redirect(assemblyBuildPath(await searchParams));
+}

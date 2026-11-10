@@ -1,4 +1,4 @@
-import React,{useState,useRef} from 'react';
+import React,{useState,useRef,useEffect} from 'react';
 import {Button} from '@/components/ui/button';
 import {ui,uiMessage} from '@/lib/i18n';
 import {formatAccountingXAF as formatXAF} from '@/lib/formatters';
@@ -55,7 +55,8 @@ function SupplierPayableReview({review}) {
 
 export default function AccountingIntegrityCheck({onCorrected}) {
   const [data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),flight=useRef(false);
-  const [correctionOpened,setCorrectionOpened]=useState(false);
+  const [correctionOpened,setCorrectionOpened]=useState(false),[correctionExpanded,setCorrectionExpanded]=useState(false);
+  useEffect(()=>{if(typeof window==='undefined')return;const openTarget=()=>{if(window.location.hash==='#setup-stock-corrections'){setCorrectionOpened(true);setCorrectionExpanded(true);}};openTarget();window.addEventListener('hashchange',openTarget);return()=>window.removeEventListener('hashchange',openTarget);},[]);
   const [consolidationOpened,setConsolidationOpened]=useState(false);
   const run=async()=>{
     if(flight.current)return;
@@ -74,7 +75,7 @@ export default function AccountingIntegrityCheck({onCorrected}) {
       <SupplierPayableReview review={data.supplier_payable_mismatches}/>
       <DuplicateSourceReview groups={data.duplicate_source_journals}/>
     </>}
-    <details id="setup-stock-corrections" className="border-t pt-3" onToggle={event=>{if(event.currentTarget.open)setCorrectionOpened(true);}}>
+    <details id="setup-stock-corrections" open={correctionExpanded} className="border-t pt-3" onToggle={event=>{setCorrectionExpanded(event.currentTarget.open);if(event.currentTarget.open)setCorrectionOpened(true);}}>
       <summary className="cursor-pointer py-1 text-sm font-semibold">{ui('Correct setup inventory entries')}</summary>
       {correctionOpened&&<SetupStockCorrection onCorrected={result=>{setData(null);onCorrected?.(result);}}/>}
     </details>

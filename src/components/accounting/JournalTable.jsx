@@ -4,13 +4,14 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React from "react";
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
+import {canEditManualDraft} from '@/lib/journal-corrections';
 import {isManualJournal,canReverseManualJournal} from "@/lib/journal-reversal";
 import { formatAccountingXAF as formatXAF, formatDate, formatDateTime } from "@/lib/formatters";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Eye, RotateCcw, CheckCircle2, Trash2 } from "lucide-react";
+import { Eye, Pencil, RotateCcw, CheckCircle2, Trash2 } from "lucide-react";
 
-export default function JournalTable({ rows, onOpen, onPost, onReverse, onDelete, canReverse, working }) {
+export default function JournalTable({ rows, onOpen, onPost, onEdit, onCorrect, onReverse, onDelete, canReverse, working }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const phone=usePhoneLayout();
@@ -20,7 +21,7 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, onDelete
     );
   }
 
-  if(phone)return <div data-sleek-journal-list className="divide-y overflow-hidden rounded-xl border bg-white">{rows.map(j=><article key={j.id} className="p-3"><button type="button" onClick={()=>onOpen(j)} className="flex min-h-14 w-full min-w-0 items-start gap-3 text-left"><span className="shrink-0 rounded-lg bg-slate-50 p-2 text-[11px] font-semibold">{formatDate(j.entry_date)}</span><span className="min-w-0 flex-1"><strong className="block break-words text-sm">{j.description || j.journal_number}</strong><span className="mt-1 block break-words text-xs text-muted-foreground">{j.journal_number} · {(j.source_module||ui('manual')).replace(/_/g,' ')}</span></span><span className="text-right"><strong className="block text-xs tabular-nums">{formatXAF(j.total_debit||0)}</strong><span className="mt-1 block"><StatusBadge status={j.reversed_by_journal?'reversed':j.status}/></span></span></button><div className="mt-2 flex flex-wrap justify-end gap-2">{onPost&&j.status==='draft'&&isManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onPost(j)}>{ui('Post this draft')}</Button>}{canReverse&&onDelete&&j.status==='draft'&&isManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onDelete(j)}>{ui('Delete draft journal')}</Button>}{canReverse&&canReverseManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onReverse(j)}>{ui('Reverse this journal')}</Button>}</div></article>)}</div>;
+  if(phone)return <div data-sleek-journal-list className="divide-y overflow-hidden rounded-xl border bg-white">{rows.map(j=><article key={j.id} className="p-3"><button type="button" onClick={()=>onOpen(j)} className="flex min-h-14 w-full min-w-0 items-start gap-3 text-left"><span className="shrink-0 rounded-lg bg-slate-50 p-2 text-[11px] font-semibold">{formatDate(j.entry_date)}</span><span className="min-w-0 flex-1"><strong className="block break-words text-sm">{j.description || j.journal_number}</strong><span className="mt-1 block break-words text-xs text-muted-foreground">{j.journal_number} · {(j.source_module||ui('manual')).replace(/_/g,' ')}</span></span><span className="text-right"><strong className="block text-xs tabular-nums">{formatXAF(j.total_debit||0)}</strong><span className="mt-1 block"><StatusBadge status={j.reversed_by_journal?'reversed':j.status}/></span></span></button><div className="mt-2 flex flex-wrap justify-end gap-2">{onEdit&&canEditManualDraft(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onEdit(j)}>{ui('Edit draft')}</Button>}{canReverse&&onCorrect&&canReverseManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onCorrect(j)}>{ui('Correct journal')}</Button>}{onPost&&j.status==='draft'&&isManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onPost(j)}>{ui('Post this draft')}</Button>}{canReverse&&onDelete&&j.status==='draft'&&isManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onDelete(j)}>{ui('Delete draft journal')}</Button>}{canReverse&&canReverseManualJournal(j)&&<Button size="sm" variant="outline" disabled={working} onClick={()=>onReverse(j)}>{ui('Reverse this journal')}</Button>}</div></article>)}</div>;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-sm">
@@ -73,6 +74,7 @@ export default function JournalTable({ rows, onOpen, onPost, onReverse, onDelete
                     <Button variant="ghost" size="icon" title={ui("Open journal")} onClick={() => onOpen(j)}>
                       <Eye size={15} />
                     </Button>
+                    {onEdit&&canEditManualDraft(j)&&<Button variant="ghost" size="icon" aria-label={ui('Edit draft')} title={ui('Edit draft')} disabled={working} onClick={()=>onEdit(j)}><Pencil size={15}/></Button>}{canReverse&&onCorrect&&canReverseManualJournal(j)&&<Button variant="outline" size="sm" disabled={working} onClick={()=>onCorrect(j)}>{ui('Correct journal')}</Button>}
                     {onPost && j.status === "draft" && isManualJournal(j) && (
                       <Button variant="ghost" size="icon" title={ui("Post this draft")} disabled={working} onClick={() => onPost(j)}>
                         <CheckCircle2 size={15} className="text-green-600" />

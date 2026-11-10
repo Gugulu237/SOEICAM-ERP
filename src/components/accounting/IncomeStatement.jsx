@@ -14,6 +14,7 @@ import {recurringExpenseRequest} from '@/lib/recurring-expense-client';
 import {Link} from '@/lib/router';
 import IncomeStatementSources from './IncomeStatementSources';
 import MobileIncomeStatementBody from './mobile/MobileIncomeStatementBody';
+import {statementAccountMembers} from '@/lib/statement-drilldown';
 
 export function summarizeIncome(accounts, activity) {
   const sum = (rows) => round2(rows.reduce((s, r) => s + r.amount, 0));
@@ -43,13 +44,14 @@ function incomeDocument({summary,fromDate,toDate,depreciation,recurring}) {
   ]};
 }
 
-export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation, refreshStatement, journalsById, lines, canCorrectSetup = false }) {
+export default function IncomeStatement({ accounts, activity, fromDate, toDate, depreciation, refreshStatement, journalsById, lines, canCorrectSetup = false,onAccountOpen }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const phone=usePhoneLayout();
   const recurring=useRecurringExpenseReview(fromDate,toDate);
   const summary=summarizeIncome(accounts,activity);
   const {revenue,otherIncome,cogs,expenses,otherExpenses,totalRevenue,totalCogs,grossProfit,totalExpenses,operatingProfit,net}=summary;
   const sum=rows=>round2(rows.reduce((total,row)=>total+row.amount,0));
+  const openAccount=onAccountOpen?(row,{sign,expectedAmount=row.amount}={})=>onAccountOpen({title:[row.account_number,row.name].filter(Boolean).join(' · '),accountIds:statementAccountMembers(accounts,row.id,[row.account_type]),basis:'period',sign:sign??(['revenue','other_income'].includes(row.account_type)?-1:1),expectedAmount}):undefined;
   const document=incomeDocument({summary,fromDate,toDate,depreciation,recurring});
   const getReport=refreshStatement?async()=>{
     // Capture the chosen report period before any await, even if the person
@@ -66,18 +68,19 @@ export default function IncomeStatement({ accounts, activity, fromDate, toDate, 
       <section className="mb-5 rounded-xl border bg-white p-4 sm:hidden"><p className="text-xs text-muted-foreground">{ui('Net profit / loss')}</p><strong className="mt-1 block text-2xl font-bold tabular-nums text-primary">{formatXAF(net)}</strong><div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3"><div><p className="text-[11px] text-muted-foreground">{ui('Revenue')}</p><strong className="text-xs tabular-nums">{formatXAF(totalRevenue)}</strong></div><div><p className="text-[11px] text-muted-foreground">{ui('Gross margin')}</p><strong className="text-xs tabular-nums">{totalRevenue?Number(grossProfit/totalRevenue*100).toFixed(1)+'%':'—'}</strong></div></div></section>
       {(recurring.loading||recurring.error||recurring.count>0)&&<div role="status" className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{ui(recurring.loading?'Checking recurring expenses...':recurring.error?'Recurring expense review is unavailable. Refresh before finalizing this report.':'Recurring charges awaiting recognition: {0}. These are not yet deducted from the reported profit.',formatXAF(recurring.total))}{!recurring.loading&&recurring.canReview&&<Link className="mt-2 block font-medium underline" to="/accounting/recurring-expenses">{ui('Review recurring expenses')}</Link>}</div>}
       {!phone&&<div className="mb-5"><ReportExport report={document} getReport={getReport} disabled={recurring.loading||!!recurring.error}/></div>}
-      {phone?<MobileIncomeStatementBody summary={summary}/>:<><StatementSection title={ui("Revenue")} rows={revenue} total={totalRevenue} />
-      <StatementSection title={ui("Cost of Goods Sold")} rows={cogs} total={totalCogs} />
+      {onAccountOpen&&<p className="mb-3 text-xs text-muted-foreground">{ui('Tap or double-click an account to view its journal entries.')}</p>}
+      {phone?<MobileIncomeStatementBody summary={summary} onAccountOpen={openAccount}/>:<><StatementSection title={ui("Revenue")} rows={revenue} total={totalRevenue} onAccountOpen={openAccount}/>
+      <StatementSection title={ui("Cost of Goods Sold")} rows={cogs} total={totalCogs} onAccountOpen={openAccount}/>
       <div className="flex justify-between py-2 font-bold text-sm bg-slate-50 px-3 rounded">
         <span>{ui("Gross Profit")}</span><span>{formatXAF(grossProfit)}</span>
       </div>
       <p className="mb-6 mt-2 break-words text-xs text-slate-500">{ui('Gross profit = Revenue − Cost of goods sold')}: {formatAccountingXAF(totalRevenue)} − ({formatAccountingXAF(totalCogs)}) = {formatAccountingXAF(grossProfit)}</p>
-      <StatementSection title={ui("Operating Expenses")} rows={expenses} total={totalExpenses} />
+      <StatementSection title={ui("Operating Expenses")} rows={expenses} total={totalExpenses} onAccountOpen={openAccount}/>
       <div className="flex justify-between py-2 mb-6 font-bold text-sm bg-slate-50 px-3 rounded">
         <span>{ui("Operating Profit")}</span><span>{formatXAF(operatingProfit)}</span>
       </div>
-      <StatementSection title={ui("Other Income")} rows={otherIncome} total={sum(otherIncome)} />
-      <StatementSection title={ui("Other Expenses")} rows={otherExpenses} total={sum(otherExpenses)} />
+      <StatementSection title={ui("Other Income")} rows={otherIncome} total={sum(otherIncome)} onAccountOpen={openAccount}/>
+      <StatementSection title={ui("Other Expenses")} rows={otherExpenses} total={sum(otherExpenses)} onAccountOpen={openAccount}/>
       <div className={`flex justify-between py-3 font-bold px-3 rounded ${net >= 0 ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
         <span>{ui("Net ")}{net >= 0 ? ui("Profit") : ui("Loss")}</span><span>{formatXAF(net)}</span>
       </div></>}

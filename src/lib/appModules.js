@@ -37,7 +37,7 @@ export const APP_MODULES = [
   },
   {
     key: "production", get label(){return ui("Manufacturing");}, path: "/manufacturing", icon: Factory,
-    description: "Production, recipes, quality & batch tracking",
+    description: "Assemblies, production, batches & expiry",
     color: "bg-blue-50 text-blue-700", ring: "hover:border-blue-300",
     roles: QUALITY_ROLES,
     statKey: "production", badgeKey: "productionAwaitingQC",

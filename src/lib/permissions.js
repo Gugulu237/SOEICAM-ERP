@@ -65,7 +65,7 @@ export const ROLE_DEFINITIONS = [
       'Views company sales and Commercial performance across all agents',
       'Manages inventory and oversees delivery teams and returns',
       'Oversees quality control, batch release, expiry and traceability',
-      'Reviews recipes and expense requests within the existing approval workflow',
+      'Reviews production and expense requests within the existing approval workflow',
       'Provides the Operations / Production Manager cheque signature',
       'Submits production directly to Warehouse; purchases retain General Manager approval',
     ],

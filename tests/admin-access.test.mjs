@@ -65,13 +65,13 @@ test('second management level cannot request the GM dashboard or another staff i
   const employee = decorateEmployee(user, { id: 'operations-a', user_id: user.id, role: 'Operations / Production Manager', status: 'active' }, catalogueFromStored(null));
   const reads = [];
   const entities = new Proxy({}, { get: (_, name) => {
-    assert.ok(['ProductionOrder', 'StockBalance', 'Payment', 'Recipe', 'ExpenseRequest'].includes(name), 'Unexpected entity: ' + name);
+    assert.ok(['ProductionOrder', 'StockBalance', 'Payment', 'ExpenseRequest'].includes(name), 'Unexpected entity: ' + name);
     return { filter: async query => { reads.push(name); if (name === 'Payment') assert.equal(query.payment_method, 'cheque'); return []; } };
   } });
   const client = { entities: { Employee: { filter: async () => [employee] } }, asServiceRole: { entities } };
   const result = await employeeWorkspaceAction(client, user, { action: 'employeeDashboard', mode: 'admin' });
   assert.equal(result.mode, 'production_manager'); assert.equal(result.employee.id, employee.id);
-  assert.equal(result.accounts, undefined); assert.equal(result.invoices, undefined); assert.equal(reads.length, 5);
+  assert.equal(result.accounts, undefined); assert.equal(result.invoices, undefined); assert.equal(reads.length, 4);
   reads.length = 0;
   await assert.rejects(employeeWorkspaceAction(client, user, { action: 'employeeDashboard', mode: 'admin', employeeId: 'other' }), /own workspace/);
   assert.equal(reads.length, 0);
