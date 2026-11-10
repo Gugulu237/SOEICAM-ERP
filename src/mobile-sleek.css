@@ -1,68 +1,24 @@
-@font-face {
-  font-family: 'Nunito Sans';
-  font-style: normal;
-  font-weight: 400;
-  font-stretch: normal;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/nunitosans/v19/pe1mMImSLYBIv1o4X1M8ce2xCx3yop4tQpF_MeTm0lfGWVpNn64CL7U8upHZIbMV51Q42ptCp5F5bxqqtQ1yiU4G1ilntA.ttf) format('truetype');
-}
-@font-face {
-  font-family: 'Nunito Sans';
-  font-style: normal;
-  font-weight: 600;
-  font-stretch: normal;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/nunitosans/v19/pe1mMImSLYBIv1o4X1M8ce2xCx3yop4tQpF_MeTm0lfGWVpNn64CL7U8upHZIbMV51Q42ptCp5F5bxqqtQ1yiU4GCC5ntA.ttf) format('truetype');
-}
-@font-face {
-  font-family: 'Nunito Sans';
-  font-style: normal;
-  font-weight: 700;
-  font-stretch: normal;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/nunitosans/v19/pe1mMImSLYBIv1o4X1M8ce2xCx3yop4tQpF_MeTm0lfGWVpNn64CL7U8upHZIbMV51Q42ptCp5F5bxqqtQ1yiU4GMS5ntA.ttf) format('truetype');
-}
-@font-face {
-  font-family: 'Nunito Sans';
-  font-style: normal;
-  font-weight: 800;
-  font-stretch: normal;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/nunitosans/v19/pe1mMImSLYBIv1o4X1M8ce2xCx3yop4tQpF_MeTm0lfGWVpNn64CL7U8upHZIbMV51Q42ptCp5F5bxqqtQ1yiU4GVi5ntA.ttf) format('truetype');
-}
-@font-face {
-  font-family: 'Nunito Sans';
-  font-style: normal;
-  font-weight: 900;
-  font-stretch: normal;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/nunitosans/v19/pe1mMImSLYBIv1o4X1M8ce2xCx3yop4tQpF_MeTm0lfGWVpNn64CL7U8upHZIbMV51Q42ptCp5F5bxqqtQ1yiU4Gfy5ntA.ttf) format('truetype');
-}
-/* SOEICAM ERP Mobile — Sleek UXViqxJgxPf, active designs 10 November 2026.
-   Phone-only presentation. Existing operations, permissions and desktop stay authoritative. */
+/* SOEICAM mobile workspace: white surfaces, original branding and compact controls. */
 @media (max-width: 639px) {
   :root:not(.dark) {
-    --background: 42 62% 96%; --foreground: 136 15% 14%;
-    --primary: 140 48% 23%; --primary-foreground: 0 0% 100%;
-    --secondary: 106 30% 92%; --secondary-foreground: 140 48% 23%;
-    --muted: 42 38% 91%; --muted-foreground: 95 6% 42%;
-    --accent: 106 36% 91%; --accent-foreground: 140 48% 23%;
-    --card: 0 0% 100%; --card-foreground: 136 15% 14%;
-    --popover: 0 0% 100%; --popover-foreground: 136 15% 14%;
-    --border: 43 33% 86%; --input: 43 33% 86%; --ring: 140 48% 23%;
+    --background: 0 0% 100%; --foreground: 209 67% 22%;
+    --primary: 105 55% 28%; --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 98%; --secondary-foreground: 209 67% 22%;
+    --muted: 210 20% 97%; --muted-foreground: 215 16% 45%;
+    --accent: 210 20% 96%; --accent-foreground: 105 55% 25%;
+    --card: 0 0% 100%; --card-foreground: 209 67% 22%;
+    --popover: 0 0% 100%; --popover-foreground: 209 67% 22%;
+    --border: 214 20% 89%; --input: 214 20% 89%; --ring: 105 55% 28%;
     --radius: .75rem;
-    --font-body: 'Nunito Sans', ui-sans-serif, system-ui, sans-serif;
-    --font-heading: 'Nunito Sans', ui-sans-serif, system-ui, sans-serif;
-    --sidebar-background: 42 62% 96%; --sidebar-foreground: 136 15% 14%;
-    --sidebar-border: 43 33% 86%; --sidebar-accent: 106 30% 92%;
+    --sidebar-background: 0 0% 100%; --sidebar-foreground: 209 67% 22%;
+    --sidebar-border: 214 20% 89%; --sidebar-accent: 210 20% 97%;
   }
   html { scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
-  [data-erp-content] { padding: 1rem 1.25rem calc(7rem + env(safe-area-inset-bottom)); }
-  [data-erp-topbar] { background: hsl(var(--background)); border: 0; backdrop-filter: none; }
-  [data-topbar-row] { padding: 1rem 1.25rem .5rem; gap: .5rem; }
-  .sleek-brand { display: flex; flex-direction: column; margin-right: auto; min-width: 0; }
-  .sleek-brand strong { color: hsl(var(--primary)); font-size: 1.35rem; font-weight: 900; line-height: 1.1; letter-spacing: -.04em; }
-  .sleek-brand span { font-size: .68rem; color: hsl(var(--muted-foreground)); margin-top: .25rem; }
+  [data-erp-content] { padding: 1rem 1rem calc(7rem + env(safe-area-inset-bottom)); }
+  [data-erp-topbar] { background: hsl(var(--background)); border-bottom: 1px solid hsl(var(--border)); backdrop-filter: none; }
+  [data-topbar-row] { min-height: 68px; padding: .5rem 1rem; gap: .4rem; }
+  .sleek-brand { display: flex; align-items: center; margin-right: auto; min-width: 0; flex-shrink: 1; }
+  .sleek-brand-logo { display: block; width: 120px; max-width: 100%; height: 40px; object-fit: contain; object-position: left center; }
   .sleek-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; display: flex; border-top: 1px solid hsl(var(--border)); background: hsl(var(--card)); padding-bottom: env(safe-area-inset-bottom); }
   .sleek-bottom-item { flex: 1; min-width: 0; min-height: 64px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; color: hsl(var(--muted-foreground)); font-size: 10px; padding: 5px 2px; text-align: center; }
   .sleek-bottom-item[aria-current=page], .sleek-bottom-item[aria-expanded=true] { color: hsl(var(--primary)); font-weight: 800; }
@@ -86,25 +42,25 @@
   [data-workspace-actions] > button { flex-direction: column; align-items: center; justify-content: center; padding: .75rem .35rem; text-align: center; gap: .5rem; }
   [data-workspace-actions] > button > span:last-child { flex: initial; }
   [data-workspace-actions] > button .text-sm { font-size: .72rem; }
-  [data-workspace-metrics] > div { background: hsl(var(--secondary)); box-shadow: none; }
+  [data-workspace-metrics] > div { background: hsl(var(--card)); box-shadow: none; }
   header:has(> [data-mobile-identity]) { border: 0; background: transparent; padding-left: 0; padding-top: .25rem; }
   [data-mobile-identity] { display: flex; flex-direction: column-reverse; gap: .2rem; }
   [data-mobile-identity] p { text-transform: none; letter-spacing: 0; font-size: .85rem; }
   [data-phone-records] > article { border-radius: 1.25rem; }
-  .sleek-summary { border: 1px solid hsl(var(--border)); border-radius: 1.5rem; background: hsl(var(--secondary)); padding: 1rem; }
+  .sleek-summary { border: 1px solid hsl(var(--border)); border-radius: 1rem; background: hsl(var(--card)); padding: 1rem; }
   .sleek-summary h2,.sleek-section-label { color: hsl(var(--primary)); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: .7rem; }
   .sleek-section-label { margin-bottom: .75rem; }
   .sleek-summary p { color: hsl(var(--muted-foreground)); font-size: .7rem; }
   .sleek-summary strong { display: block; font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: .25rem; }
   .sleek-module-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
-  .sleek-module { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; min-height: 96px; padding: .75rem .25rem; background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 1.4rem; font-size: .7rem; font-weight: 700; }
+  .sleek-module { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; min-height: 96px; padding: .75rem .25rem; background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 1rem; font-size: .7rem; font-weight: 700; }
   .sleek-module > span,.sleek-alert-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: .8rem; background: hsl(var(--secondary)); color: hsl(var(--primary)); flex-shrink: 0; }
   .sleek-alert { display: flex; align-items: center; gap: .75rem; border: 1px solid hsl(var(--border)); border-radius: 1.25rem; padding: .75rem; background: hsl(var(--card)); }
   .sleek-home-action { position: fixed; bottom: calc(64px + env(safe-area-inset-bottom)); left: 0; right: 0; padding: .75rem 1.25rem; background: hsl(var(--card)); border-top: 1px solid hsl(var(--border)); z-index: 35; }
   .sleek-home-action > a { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: .5rem; border-radius: .9rem; background: hsl(var(--primary)); color: white; font-weight: 700; font-size: .9rem; }
   .sleek-manager { padding-bottom: 3.5rem; }
   .sleek-login-brand { display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem; color: hsl(var(--primary)); }
-  .sleek-login-brand strong { font-size: 2.5rem; font-weight: 900; letter-spacing: -.06em; }
+  .sleek-login-brand img { width: 180px; height: auto; }
   .sleek-login-brand span { font-size: .8rem; }
   [data-auth-layout] { padding-block: 2rem; }
   [data-auth-layout] .text-center > .inline-flex { display: none; }
@@ -121,8 +77,15 @@
 @media (max-width: 639px) {
   .sleek-sale-card { display: flex; align-items: flex-start; gap: .75rem; padding: .85rem; border: 1px solid hsl(var(--border)); border-radius: 1.25rem; background: hsl(var(--card)); }
   .sleek-sale-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 48px; flex-shrink: 0; color: hsl(var(--primary)); background: hsl(var(--secondary)); border-radius: .8rem; }
-  [data-sales-register] > .grid > div { background: hsl(var(--secondary)); border-radius: 1.25rem; padding: .8rem; }
+  [data-sales-register] > .grid > div { background: hsl(var(--card)); border-radius: 1.25rem; padding: .8rem; }
 }
 @media (max-width: 639px) {
   body:has([data-erp-content] button.fixed) .sleek-quick-actions { display: none; }
+}
+@media (max-width: 379px) {
+  [data-task-grid], [data-workspace-actions] { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 639px) {
+  [data-account-menu] { min-width: 44px; min-height: 44px; justify-content: center; }
+  [data-account-menu] button { min-width: 44px; min-height: 44px; justify-content: center; }
 }
