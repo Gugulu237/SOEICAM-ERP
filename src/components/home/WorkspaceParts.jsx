@@ -31,7 +31,7 @@ export function WorkspaceButton({ path, preview, children, ...props }) {
 export function WorkspaceMetrics({ metrics, ready }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  return <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map(({ label, value, note }) => <div key={label} className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs text-slate-500">{label}</p><p className="my-2 break-words text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{ready ? value : '—'}</p><p className="hidden text-[11px] leading-5 text-slate-500 sm:block">{note}</p></div>)}</div>;
+  return <div data-workspace-metrics className="grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map(({ label, value, note }) => <div key={label} className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs text-slate-500">{label}</p><p className="my-2 break-words text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{ready ? value : '—'}</p><p className="hidden text-[11px] leading-5 text-slate-500 sm:block">{note}</p></div>)}</div>;
 }
 export function WorkspaceActions({ actions, preview }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -39,7 +39,7 @@ export function WorkspaceActions({ actions, preview }) {
   const navigate = useNavigate();
   const { canOpen } = useWorkspaceAccess();
   actions = actions.filter(action => canOpen(action.path));
-  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{actions.map(({ title, detail, path, icon: Icon }) => <button key={title} disabled={preview} onClick={() => { if (!preview) navigate(path); }} className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left transition hover:border-primary/40 disabled:cursor-default disabled:opacity-70"><span className="rounded-xl bg-secondary p-3 text-primary"><Icon size={21} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-1 hidden text-xs leading-5 text-slate-500 sm:block">{detail}</span></span></button>)}</div>;
+  return <div data-workspace-actions className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{actions.map(({ title, detail, path, icon: Icon }) => <button key={title} disabled={preview} onClick={() => { if (!preview) navigate(path); }} className="flex items-start gap-3 rounded-2xl border bg-white p-4 text-left transition hover:border-primary/40 disabled:cursor-default disabled:opacity-70"><span className="rounded-xl bg-secondary p-3 text-primary"><Icon size={21} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-1 hidden text-xs leading-5 text-slate-500 sm:block">{detail}</span></span></button>)}</div>;
 }
 export function WorkspacePanel({ title, subtitle, children, className = '', help=false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
