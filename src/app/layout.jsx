@@ -1,4 +1,5 @@
 import '@/index.css';
+import '@/mobile-sleek.css';
 import Providers from './providers';
 
 // ERP pages belong to the current session; render them per request.

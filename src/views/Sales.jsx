@@ -1,3 +1,4 @@
+import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import {useMenuBack} from '@/hooks/useMenuBack';
 import ReportExport from '@/components/shared/ReportExport';
 import {salesStatusDocument} from '@/lib/sales-report-documents';
@@ -34,6 +35,7 @@ export default function Sales() {
   return <SalesWorkspace readOnly={['production_manager','warehouse_manager'].includes(role)}/>;
 }
 function SalesWorkspace({readOnly=false}) {
+  const phone=usePhoneLayout();
   useInterfaceLanguage();
   const {role}=useCurrentUser(),navigate=useNavigate(),[params,setParams]=useSearchParams(),backToMenu=useMenuBack('/sales');
   const choices=readOnly?[{key:'all',label:ui('Company sales'),Icon:ReceiptText}]:[
@@ -43,11 +45,11 @@ function SalesWorkspace({readOnly=false}) {
     {key:'invoices',label:ui('Invoices'),Icon:FileText},
     ...(role==='admin'?[{key:'field',label:ui('Field sales'),Icon:Truck},{key:'outlets',label:ui('Outlet reports'),Icon:Store}]:[])
   ];
-  const tab=choices.some(choice=>choice.key===params.get('tab')&&choice.key!=='new')?params.get('tab'):'home';
+  const tab=choices.some(choice=>choice.key===params.get('tab')&&choice.key!=='new')?params.get('tab'):params.get('tab')==='home'?'home':phone?'all':'home';
   const selected=choices.find(choice=>choice.key===tab);
   const menuChoices=choices.filter(choice=>choice.key!=='field');
   return <div className="min-w-0 space-y-5">
-    <PageHeader back={tab!=='home'?{onClick:backToMenu,label:ui('Sales menu')}:undefined} title={selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>
+    <PageHeader back={tab!=='home'?{onClick:()=>phone?setParams({tab:'home'}):backToMenu(),label:ui('Sales menu')}:undefined} title={selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>
     {tab==='home'?<nav aria-label={ui('Sales sections')} className={'mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 '+(menuChoices.length>4?'lg:grid-cols-3':'lg:grid-cols-4')}>
       {menuChoices.map(({key,label,Icon})=><button key={key} type="button" aria-label={label} onClick={()=>key==='new'?navigate('/sales/new'):setParams({tab:key})} className="flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span>

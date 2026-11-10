@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   Receipt, UserCheck, Truck, Wallet, BarChart3,
   Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
-  ShoppingBag, Loader2
+  ShoppingBag, Loader2, MoreHorizontal
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -82,6 +82,9 @@ export default function AppSidebar() {
     return location.pathname.startsWith(path);
   };
 
+  const mobileTabs = ['/', role === 'commercial' ? '/commercial' : '/sales', INVENTORY_PATH, '/customers']
+    .map(path => visibleItems.find(item => item.path === path)).filter(Boolean);
+  const mobilePath = path => path === '/sales' ? '/sales?tab=all' : path === INVENTORY_PATH ? '/inventory?section=items&filter=finished&area=all' : targetPath(path);
   const sidebar = (mobile=false) => { const compact=collapsed&&!mobile; return (
     <div className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ${mobile ? "w-full" : compact ? "w-16" : "w-60"}`}>
       <div className={`flex min-h-20 items-center gap-2 border-b border-sidebar-border bg-sidebar ${compact ? 'justify-center px-2 py-4' : 'justify-between px-3 py-3'}`}>
@@ -132,7 +135,11 @@ export default function AppSidebar() {
 
   return (
     <>
-      <button aria-label={ui("Open navigation")} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)} className="fixed left-2 top-2 z-40 flex h-10 w-10 items-center justify-center rounded-xl bg-[#347623] text-white shadow-sm xl:hidden"><Menu size={21}/></button>
+      <button aria-label={ui("Open navigation")} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)} className="fixed left-2 top-2 z-40 hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-[#347623] text-white shadow-sm xl:hidden"><Menu size={21}/></button>
+      <nav aria-label={ui('Navigation')} className="sleek-bottom-nav sm:hidden">
+        {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={false} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path === INVENTORY_PATH ? ui('Stock') : item.label}</span></Link>)}
+        <button type="button" className="sleek-bottom-item" aria-label={ui('Open navigation')} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={()=>setMobileOpen(true)}><MoreHorizontal size={23}/><span>{ui('More')}</span></button>
+      </nav>
       <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
       <div className="sticky top-0 hidden h-dvh xl:block">{sidebar()}</div>
     </>
