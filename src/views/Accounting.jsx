@@ -12,7 +12,7 @@ import { useNavigate } from "@/lib/router";
 import PageHeader from "@/components/shared/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronDown } from "lucide-react";
+import { Plus, ChevronDown, ClipboardCheck } from "lucide-react";
 import PeriodsManager from "@/components/accounting/PeriodsManager";
 import PostingRulesManager from "@/components/accounting/PostingRulesManager";
 import ChartOfAccountsManager from "@/components/accounting/ChartOfAccountsManager";
@@ -21,6 +21,7 @@ import JournalRegister from "@/components/accounting/JournalRegister";
 import PaymentRegister from "@/components/accounting/PaymentRegister";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ManagementAccounting from '@/components/accounting/ManagementAccounting';
+import {canAdjustInventory} from '@/lib/inventory-adjustment-access';
 
 export default function Accounting() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
@@ -29,7 +30,8 @@ export default function Accounting() {
   const phone=usePhoneLayout();
   const [params,setParams]=useSearchParams();
   const tab=['accounts','journals','payments','periods','rules'].includes(params.get('tab'))?params.get('tab'):'accounts';
-  const { role } = useCurrentUser();
+  const { role,principalRole,employee,allowedModules } = useCurrentUser();
+  const canAdjust=canAdjustInventory(principalRole||role,employee,allowedModules);
 
   if(role==='cashier')return <Navigate to="/cashier" replace/>;
   if (phone&&!params.has('tab')) return <MobileAccountingHome/>;
@@ -42,6 +44,7 @@ export default function Accounting() {
         title={ui(phone?({accounts:"Chart of Accounts",journals:"Journal Entries",payments:"Payments",periods:"Periods",rules:"Posting Rules"})[tab]:"Accounting")}
         subtitle={ui("Accounts, transactions and financial reporting")}
         actions={<div className="flex flex-wrap gap-2">
+          {canAdjust&&<Button variant="outline" onClick={()=>navigate('/accounting/inventory?view=adjustments')}><ClipboardCheck size={16} className="mr-1"/>{ui('Quantity adjustments')}</Button>}
           {['admin','cashier'].includes(role) && <Button variant="outline" onClick={()=>navigate("/accounting/payments/new")}><Plus size={16} className="mr-1"/>{ui("Confirm Customer Receipt")}</Button>}
           {role==='admin'&&<Button variant="outline" onClick={()=>navigate('/accounting/opening-position')}>{ui('Opening balances')}</Button>}
           <Button onClick={()=>navigate("/accounting/journals/new")}><Plus size={16} className="mr-1"/>{ui("New Journal")}</Button>

@@ -30,7 +30,8 @@ test('Inventory keeps four categories, opens issue locally and exposes alerts th
   try{
     const html=paint();
     for(const label of ['Finished products','Ingredients','Packaging','All items'])assert.match(html,new RegExp(label));
-    assert.doesNotMatch(html,/role="tablist"|Manufacturing|Build assembly|Expiry &amp; recovery|Adjust quantity|Correct existing stock/);assert.match(html,/aria-label="Inventory actions" class="grid gap-2 grid-cols-2"/);
+    assert.doesNotMatch(html,/role="tablist"|Manufacturing|Build assembly|Expiry &amp; recovery|Adjust quantity|Correct existing stock/);assert.match(html,/aria-label="Inventory actions" class="grid gap-2 grid-cols-1"/);
+    assert.equal(r.buttons.some(b=>b['aria-label']==='Receive inventory'),false,'finished goods are added through recorded production, not purchase receiving');
     r.buttons.find(b=>b['aria-label']==='Issue goods').onClick();paint();
     assert.ok(r.lazy.some(v=>v.name==='issue'));assert.deepEqual(r.navigation,[]);
     r.lazy.find(v=>v.name==='issue').props.onClose();paint();
