@@ -4,6 +4,7 @@ import {ui,uiMessage} from '@/lib/i18n';
 import {formatXAF,formatQuantity} from '@/lib/formatters';
 import {quantityAfterReplacements} from '@/lib/product-quantity';
 import {normalizeProductText} from '@/lib/product-images';
+import {catalogueProduct,catalogueSections} from '@/lib/product-catalogue';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import ProductThumb from '@/components/shared/ProductThumb';
@@ -19,7 +20,7 @@ export default function MobileSaleFlow({step,initialPurpose='sale',goTo,advance,
  const [employeeSearch,setEmployeeSearch]=useState(''),[search,setSearch]=useState(''),[tab,setTab]=useState(initialPurpose),[giveaway,setGiveaway]=useState(false),[shown,setShown]=useState(36),[customerSearch,setCustomerSearch]=useState(''),[customerOpen,setCustomerOpen]=useState(false);
  const names=['Customer','Products','Payment'];
  const sellers=(catalogue.sellers||[]).filter(person=>normalizeProductText(person.name).includes(normalizeProductText(employeeSearch)));
- const matching=products.filter(product=>normalizeProductText([product.name,product.sku].join(' ')).includes(normalizeProductText(search))),visible=matching.slice(0,shown);
+ const matching=catalogueSections(products.filter(product=>normalizeProductText([product.name,product.sku].join(' ')).includes(normalizeProductText(search))).map(catalogueProduct)).flatMap(section=>section.rows.map(row=>row.product)),visible=matching.slice(0,shown);
  const customerChoices=catalogue.customers.filter(c=>(!c.parent_id||c.id===form.customer_id)&&normalizeProductText([c.business_name,c.phone,c.customer_number].join(' ')).includes(normalizeProductText(customerSearch)));
  const articleCount=lines.reduce((n,line)=>n+(Number(line.quantity)||0),0);
  const selectCustomer=id=>{setCustomerOpen(false);setCustomerSearch('');const c=catalogue.customers.find(c=>c.id===id);setReplacements([]);setForm(f=>({...f,replacements_declared:null,customer_id:id,location_id:'',payment_type:Number(c?.payment_terms_days)>0?'credit':'cash'}));};
