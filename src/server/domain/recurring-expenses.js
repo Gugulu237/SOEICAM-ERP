@@ -21,6 +21,11 @@ const cents=(value,label)=>{
 };
 const active=a=>a&&a.is_active!==false&&a.is_posting!==false&&(!a.currency||a.currency==='XAF');
 function pendingTotal(rows){let total=0;for(const row of rows.filter(r=>r.status==='pending')){total+=journalCents(row.amount);if(!Number.isSafeInteger(total))throw Error('Use a narrower recurring expense reporting period.');}return total/100;}
+function overdueAlerts(rows,today){
+ const overdue=rows.filter(row=>row.due_date<today&&Number(row.balance)>0),pending=overdue.filter(row=>row.status==='pending'),accrued=overdue.filter(row=>['open','partially_paid','overdue'].includes(row.status));
+ const total=entries=>{let value=0;for(const row of entries){value+=journalCents(row.balance);if(!Number.isSafeInteger(value))throw Error('Use a narrower recurring expense reporting period.');}return value/100;};
+ return {date:today,overdue_accrued_count:accrued.length,overdue_accrued_total:total(accrued),overdue_pending_count:pending.length,overdue_pending_total:total(pending)};
+}
 function access(context,write=false,reportOnly=false){
   const role=requireActiveContext(context);assertModule({...context,role},'accounting');
   if((!['admin','cashier'].includes(role)&&!(reportOnly&&canReadManagementAccounting(role,context.employee)))||write&&role!=='admin')throw forbidden('Only administrators can authorize recurring expenses.');
@@ -61,7 +66,7 @@ function occurrence(account,month){
   const row={id:recurringBillId(account.id,month),account_id:account.id,account_name:account.name,account_number:account.account_number,period:month,bill_date:billDate,due_date:recurringDueDate(month,version.due_day),amount:version.amount,supplier_id:version.supplier_id,supplier_name:version.supplier_name,payable_account_id:version.payable_account_id};
   return {...row,token:hash({...row,version})};
 }
-export async function recurringExpenseWorkspace(stores,context,{from,to,reportOnly=false,today=businessDate()}={}){
+export async function recurringExpenseWorkspace(stores,context,{from,to,reportOnly=false,alertsOnly=false,today=businessDate()}={}){
   const role=access(context,false,reportOnly),[accounts,bills,suppliers,treasury,payments]=await Promise.all([
     readRecords(stores.Account),readRecords(stores.Bill,{accounting_source:'recurring_expense'}),reportOnly?[]:readRecords(stores.Supplier),reportOnly?[]:readRecords(stores.TreasuryAccount),reportOnly?[]:readRecords(stores.Payment,{recurring_bill_payment:true,status:{$in:['pending_approval','approved','confirmed']}})
   ]);
@@ -75,7 +80,7 @@ export async function recurringExpenseWorkspace(stores,context,{from,to,reportOn
     if(rows.length>10000)throw Error('Use a narrower recurring expense reporting period.');
   }
   rows.sort((a,b)=>a.period.localeCompare(b.period)||a.account_name.localeCompare(b.account_name));
-  if(reportOnly)return {pending_total:pendingTotal(rows),pending_count:rows.filter(r=>r.status==='pending').length,can_review:['admin','cashier'].includes(role)};
+  if(reportOnly)return alertsOnly?overdueAlerts(rows,today):{pending_total:pendingTotal(rows),pending_count:rows.filter(r=>r.status==='pending').length,can_review:['admin','cashier'].includes(role)};
   return {date:today,can_manage:role==='admin',rows,pending_total:pendingTotal(rows),suppliers:suppliers.filter(s=>s.is_active!==false&&!s.supplier_removed_at).map(s=>({id:s.id,name:s.name})),treasury:treasury.filter(t=>t.is_active&&canUseTreasury(role,t)).map(t=>({id:t.id,name:t.name,balance:t.balance})),accounts:accounts.filter(recurringExpenseAccount).map(a=>({id:a.id,name:a.name,account_number:a.account_number,recurring_expense:a.recurring_expense}))};
 }
 async function paymentTreasury(stores,id,amount){

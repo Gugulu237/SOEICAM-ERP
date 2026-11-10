@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
 import {fixture,date,user} from './helpers/cashier.mjs';
 import {centralDegustationAction} from '../src/server/domain/central-degustation.js';
@@ -127,4 +128,62 @@ test('a late failure rolls back stock, expense, sequence and audit; the same per
   await assert.rejects(transaction(()=>f.run()),/Simulated final/);assert.deepEqual(await state(f.s),before);
   f.s.AuditLog.create=create;await transaction(()=>f.run());const after=await state(f.s);assert.equal((await transaction(()=>f.run())).reused,true);assert.deepEqual(await state(f.s),after);
  }finally{await db.close();}
+});
+
+
+test('principal GM reads all dated verified history with saved attribution without loading stock or party catalogues',async()=>{
+ const f=await setup();await f.run();const other=await f.s.Employee.create({role:'commercial',user_id:'other-login',status:'active',full_name:'Agent Two',phone:'private phone',base_salary:999999});
+ await f.run({...f.body,requestKey:crypto.randomUUID(),employeeId:other.id,customerId:f.customer.id,lines:[{product_id:'product-a',quantity:3}]},gm);
+ await f.s.Employee.update('cashier',{full_name:'Renamed Agent One'});await f.s.Employee.update(other.id,{full_name:'Renamed Agent Two',status:'inactive'});await f.s.Customer.update(f.customer.id,{business_name:'Renamed customer',is_active:false});
+ const before=await state(f.s);
+ for(const name of ['Product','StockBalance','Customer','Dispatch','Employee','Account','PostingRule'])f.s[name].filter=async()=>{throw Error('Unexpected history catalogue read: '+name);};
+ const result=await f.run({action:'centralDegustationHistory',allEmployees:true,from:date,to:date},gm);
+ assert.equal(result.allEmployees,true);assert.equal(result.employee,null);assert.equal(result.employeeId,'');assert.equal(result.canChooseEmployee,true);assert.equal(result.costs_visible,true);assert.equal(result.records.length,2);
+ assert.deepEqual(new Set(result.records.map(row=>row.employee_name)),new Set(['Agent One','Agent Two']));assert.equal(result.records.find(row=>row.employee_id===other.id).customer_name,'Other agent customer');assert.equal(result.records.reduce((n,row)=>n+row.cost,0),1000);
+ assert.ok(result.employees.every(row=>Object.keys(row).sort().join(',')==='full_name,id'));assert.ok(result.customers.every(row=>Object.keys(row).sort().join(',')==='business_name,id'));assert.deepEqual(new Set(result.employees.map(row=>row.full_name)),new Set(['Agent One','Agent Two']));
+ assert.deepEqual(await state(f.s),before);
+});
+
+test('all-employees scope rejects staff, spoofed feature authority and every writer/workspace flag before mutation',async()=>{
+ const f=await setup(),before=await state(f.s),scope={action:'centralDegustationHistory',allEmployees:true,from:date,to:date};
+ await assert.rejects(f.run(scope),error=>error.status===403&&/General Manager/.test(error.message));
+ await assert.rejects(f.run(scope,{...user,[FEATURE_AUTHORITY]:{role:'admin',module:'sales'}}),error=>error.status===403&&/General Manager/.test(error.message));
+ for(const action of ['centralDegustationWorkspace','recordCentralDegustation'])for(const allEmployees of [true,false])await assert.rejects(f.run({...f.body,action,allEmployees},gm),error=>error.status===403&&/read-only/.test(error.message));
+ await assert.rejects(f.run({...scope,allEmployees:'true'},gm),/read-only/);await assert.rejects(f.run({...scope,employeeId:'cashier'},gm),/all employees or one employee/);
+ f.client.auth.assertModule=()=>{throw Object.assign(Error('Module disabled'),{status:403});};await assert.rejects(f.run(scope,gm),/Module disabled/);
+ assert.deepEqual(await state(f.s),before);
+});
+
+test('all-employees history verifies corrupted evidence belonging to another employee instead of omitting it',async()=>{
+ const changes=[
+  async(f,event)=>f.s.AuditLog.update(event.id,{central_degustation_checksum:'bad-checksum'}),
+  async(f,event)=>{const movement=(await f.s.StockMovement.filter({central_degustation_id:event.id}))[0];await f.s.StockMovement.update(movement.id,{customer_id:'wrong-customer'});},
+  async(f,event)=>{const line=(await f.s.JournalLine.filter({journal_id:event.central_degustation_record.journal.id}))[0];await f.s.JournalLine.update(line.id,{description:'Changed journal evidence'});},
+  async(f,event)=>f.s.AuditLog.update(event.id,{central_degustation_employee_id:'cashier'}),
+ ];
+ for(const change of changes){const f=await setup();await f.run();const other=await f.s.Employee.create({role:'commercial',user_id:'other-login',status:'active',full_name:'Agent Two'});await f.run({...f.body,requestKey:crypto.randomUUID(),employeeId:other.id},gm);const event=(await f.s.AuditLog.filter({central_degustation_employee_id:other.id}))[0];await change(f,event);const before=await state(f.s);await assert.rejects(f.run({action:'centralDegustationHistory',allEmployees:true,from:date,to:date},gm),/Reconcile/);assert.deepEqual(await state(f.s),before);}
+});
+
+test('personal history keeps self scope and cost redaction, including fields outside the public line whitelist',async()=>{
+ const f=await setup();await f.run();const other=await f.s.Employee.create({role:'commercial',user_id:'other-login',status:'active',full_name:'Agent Two'});await f.run({...f.body,requestKey:crypto.randomUUID(),employeeId:other.id},gm);
+ const event=(await f.s.AuditLog.filter({central_degustation_employee_id:'cashier'}))[0],proof=event.central_degustation_record;Object.assign(proof.lines[0],{unit_cost:200,total_value:400,internal_note:'private'});
+ const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+ await f.s.AuditLog.update(event.id,{central_degustation_record:proof,central_degustation_checksum:createHash('sha256').update(JSON.stringify(canonical(proof))).digest('hex')});
+ const result=await f.run({action:'centralDegustationHistory',allEmployees:false,from:date,to:date});assert.equal(result.records.length,1);assert.equal(result.records[0].employee_id,'cashier');assert.equal(result.costs_visible,false);assert.equal(result.canChooseEmployee,false);assert.equal(result.allEmployees,false);assert.equal(result.records[0].cost,undefined);assert.equal(result.records[0].journal_id,undefined);assert.equal(result.records[0].journal_number,undefined);assert.deepEqual(Object.keys(result.records[0].lines[0]).sort(),['product_id','product_name','quantity']);assert.equal(result.employees.length,1);
+ await assert.rejects(f.run({action:'centralDegustationHistory',employeeId:other.id}),/own profile/);
+});
+
+test('aggregate legacy history keeps reused documents separate by actual employee and leaves unassigned movements unattributed',async()=>{
+ const f=await setup();for(const [employee_id,employee_name,quantity] of [['cashier','Saved Agent One',2],['other','Saved Agent Two',3],['','Unlinked saved name',4],['','Another unlinked name',5]])await f.s.StockMovement.create({document_type:'Degustation',document_id:'REUSED-LEGACY-REF',status:'approved',movement_type:'promotional_issue',movement_date:date,product_id:'product-a',product_name:'YOLA',quantity,total_value:quantity*10,employee_id,employee_name,customer_id:'customer-a',customer_name:'Saved customer',recorded_by:'legacy-recorder'});
+ const result=await f.run({action:'centralDegustationHistory',allEmployees:true,from:date,to:date},gm);assert.equal(result.records.length,4);assert.equal(new Set(result.records.map(row=>row.id)).size,4);assert.deepEqual(result.records.filter(row=>row.employee_id).map(row=>[row.employee_id,row.employee_name,row.lines[0].quantity]).sort(),[['cashier','Saved Agent One',2],['other','Saved Agent Two',3]]);assert.equal(result.records.filter(row=>row.employee_attribution_missing).length,2);assert.ok(result.records.filter(row=>row.employee_attribution_missing).every(row=>row.employee_id===''));assert.equal(result.records.reduce((n,row)=>n+row.cost,0),140);assert.ok(!result.employees.some(row=>row.id===''));
+ const personal=await f.run({action:'centralDegustationHistory',from:date,to:date});assert.equal(personal.records.length,1);assert.equal(personal.records[0].id,'REUSED-LEGACY-REF');assert.equal(personal.records[0].employee_name,'Saved Agent One');assert.equal(personal.records[0].cost,undefined);
+});
+
+test('aggregate history bounds reporting days and filter choices without silently truncating history rows',async()=>{
+ const f=await setup();for(let index=0;index<501;index++)await f.s.StockMovement.create({document_type:'Degustation',document_id:'legacy-'+index,status:'approved',movement_type:'promotional_issue',movement_date:date,product_id:'product-a',product_name:'YOLA',quantity:1,total_value:1,employee_id:'employee-'+index,employee_name:'Employee '+index,customer_id:'customer-'+index,customer_name:'Customer '+index});
+ const result=await f.run({action:'centralDegustationHistory',allEmployees:true,from:date,to:date},gm);assert.equal(result.records.length,501);assert.equal(result.employees.length,500);assert.equal(result.customers.length,500);assert.equal(result.filter_choices_truncated,true);
+ const start=days=>{const value=new Date(date+'T12:00:00Z');value.setUTCDate(value.getUTCDate()-days);return value.toISOString().slice(0,10);};
+ assert.equal((await f.run({action:'centralDegustationHistory',allEmployees:true,from:start(365),to:date},gm)).records.length,501);
+ await assert.rejects(f.run({action:'centralDegustationHistory',allEmployees:true,from:start(366),to:date},gm),/at most 366 days/);
+ assert.equal((await f.run({action:'centralDegustationHistory',from:start(366),to:date})).records.length,0);
 });

@@ -7,6 +7,7 @@ import { reconcileDailyCash, dailyCashSettlements } from '../../lib/cash-settlem
 import { effectiveRole } from './roles.js';
 import { requestDailyCash } from './daily-cash-handover.js';
 import {billSupplierPayable,supplierPrepaymentAccount} from './supplier-payables.js';
+import {cashDepositors} from '../../lib/cashier-receipts.js';
 
 // All mutations run in the API route's serializable transaction. Request keys
 // survive lost responses; balances, journals and source documents commit once.
@@ -102,11 +103,25 @@ async function workspace(svc, date, role) {
   };
 }
 
+// The Accounting landing page needs only already recorded cash awaiting the
+// cash desk. Keep this under the existing cashierWorkspace authority, without
+// loading invoices, customer balances, employee records or payment tools.
+async function confirmationQueue(svc,date,role){
+ const [accounts,handovers,collections]=await Promise.all([
+  readRecords(svc.entities.TreasuryAccount),
+  readRecords(svc.entities.CashHandover,{status:{$in:['submitted','partially_received','disputed']}}),
+  readRecords(svc.entities.Payment,{payment_type:'customer_payment',status:'awaiting_cashier',receipt_channel:'staff_collection'}),
+ ]);
+ const source={handovers:visibleTreasuryDocuments(role,handovers,accounts),staffCollections:visibleTreasuryDocuments(role,collections,accounts)};
+ const queue=cashDepositors(source).map(row=>({...pick(row,['id','name','reference','date','kind']),amount:round2(row.amount)})).filter(row=>Number.isFinite(row.amount)&&row.amount>0);
+ return {date,rows:queue};
+}
+
 export async function cashierAction(base44, user, body) {
   const { employee, role } = await requireStaff(base44, user, ['admin', 'cashier'], 'cash desk operations');
   if (role !== 'admin' && (!employee || employee.status !== 'active')) throw Error('An active Cashier staff account is required');
   const svc = base44.asServiceRole, action = body.action, date = dateOf(body.date), actor = employee?.full_name || user.full_name || user.email;
-  if (action === 'cashierWorkspace') return workspace(svc, date, role);
+  if (action === 'cashierWorkspace') return body.view==='confirmations'?confirmationQueue(svc,date,role):workspace(svc, date, role);
   for(const id of [body.accountId,body.treasuryAccountId,body.toAccountId].filter(Boolean))assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(id));
   if(action==='cashierReceiveDailyCash'){
     const collectionDate=dateOf(body.collectionDate);

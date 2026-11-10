@@ -13,6 +13,7 @@ async function uiBundle() {
     export {modulesForRole};export const render=(kind,props={})=>renderToStaticMarkup(React.createElement({driver:Driver,hotesse:Hotesse,manager:Manager,reports:Reports,form:Form,notice:Notice}[kind],props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'management-fixtures',setup(b){
       const mocks={
         '@/api/erpClient':`export const erp={};`,
+        '@/lib/recurring-expense-client':`export const recurringExpenseRequest=async()=>({date:'2026-10-21',overdue_accrued_count:0,overdue_accrued_total:0,overdue_pending_count:0,overdue_pending_total:0});`,
         '@/lib/router':`import React from 'react';export const Navigate=()=>null;export const useNavigate=()=>()=>{};export const useParams=()=>({});export const useSearchParams=()=>[new URLSearchParams(globalThis.__reportParams||''),()=>{}];export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);`,
         '@/hooks/useCurrentUser':`export const useCurrentUser=()=>({role:'admin',isAdmin:true,employee:null,loading:false});`,
         '@/components/ui/use-toast':`export const useToast=()=>({toast(){}});`,

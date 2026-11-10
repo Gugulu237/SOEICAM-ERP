@@ -54,12 +54,13 @@
       ],
       "changes": [
         "EmployeeDashboard phone home shell is now plain date, Bonjour/name and role, with one refresh action; inner staff dates are suppressed where the shared welcome already supplies the date.",
-        "Supplementary treasury and quick-report controls moved into Other tools, retaining the summary → modules → alerts → sale-action hierarchy."
+        "Supplementary treasury and quick-report controls moved into Other tools, retaining the summary → modules → alerts → sale-action hierarchy.",
+        "Added actual overdue recurring-payable totals and separately labelled overdue charges not yet recognized, from the existing authorized recurring reader. Read-only previews skip finance reads."
       ],
       "limitations": [
         "No invented sample records or area names are inserted; inaccessible modules are omitted.",
         "Management previews retain selection controls and a read-only notice beyond the reference composition.",
-        "Alerts show actual ERP risk lots and approval queues; illustrative rent notices and unverified invoice counts are not substituted for records."
+        "Overdue alerts depend on configured recurring schedules and saved balances; overdue unrecognized charges are not claimed as posted expenses."
       ],
       "referenceVersion": 3
     },
@@ -112,7 +113,8 @@
         "Keeps source separate two-by-two metric cards, six main modules in three columns, real pending tasks with 48px View controls and 22px cards.",
         "Shared phone welcome is date, Bonjour/name and role without the old colored border card.",
         "Actual stock valuation reader and posted-ledger monthly net profit helper retained; payables/receivables remain unavailable when their readers are unavailable.",
-        "Other granted tools remain accessible in a disclosure."
+        "Other granted tools remain accessible in a disclosure.",
+        "Read-only management previews now skip the finance-summary request and suppress previously loaded finance values."
       ],
       "limitations": [
         "Pending rows come from actual expense/material-issue/risk queues; sample rent, handover and count discrepancy tasks are not inserted.",
@@ -218,12 +220,13 @@
         "Removed the phone legacy Sales PageHeader/back/New-sale row; restored local title/calendar header and rounded overview banner.",
         "Added a direct New sale FAB with data-mobile-action-bar to suppress the global plus menu.",
         "Moved refresh, detailed reports, history and the full Sales menu into an explicit Sales tools disclosure.",
-        "Compacted record cards; invoice detail links now carry from=sales to return to the originating register."
+        "Compacted record cards; invoice detail links now carry from=sales to return to the originating register.",
+        "Phone-only metadata enrichment adds the first recorded sold product and current permitted image, saved outstanding-credit due date and validated recorded timestamp. Enrichment is bounded to journal-verified display rows; summary readers keep their existing queries."
       ],
       "limitations": [
-        "Remaining design gap: register rows still use semantic Receipt/Exchange icons because the current companySales projection has no product-line thumbnails; receipt time and verified per-row credit due dates remain absent.",
-        "Current true metrics intentionally remain Cash at sale and Customer balances; their source is not cashier-confirmed deposits today.",
-        "Global SOEICAM brand/account shell and role-based bottom navigation remain; the strict local Sleek-only header is not reproduced pixel-for-pixel."
+        "Missing/deleted product images retain a placeholder/name fallback; absent or invalid timestamps and unsaved due dates display a dash.",
+        "Current true metrics remain Cash at sale and Customer balances, not cashier-confirmed deposits today.",
+        "Global SOEICAM brand/account shell and role-based bottom navigation remain an app integration adaptation."
       ],
       "sourceComponent": "src/views/Sales.jsx; src/components/sales/MobileSalesRegister.jsx; src/components/sales/CompanySalesRegister.jsx",
       "referenceId": "K3NCy1FAqfn",
@@ -310,14 +313,15 @@
         "Order/exchange Print and Export PDF use the existing report print pipeline/browser print dialog; Share uses native navigator.share or clipboard fallback, with visible errors. No invoice is automatically created or issued.",
         "Invoice keeps existing verified print/share handlers; Export PDF opens its existing printable invoice. HTML download, customization, Excel, invoice preview, collection and reversal remain in Invoice tools & preview.",
         "Extended only invoiceDetail read projection with already saved receipt_reference/salesperson_name/stored recorder name, InvoiceLine product_id and whitelisted linked-source replacements; no cost/private IDs returned. Rejects cross-customer or conflicting linked-invoice source.",
-        "Mobile invoice return from Sales register now returns to /sales?tab=all; cashier retains own invoice-list return."
+        "Mobile invoice return from Sales register now returns to /sales?tab=all; cashier retains own invoice-list return.",
+        "Authorized invoice detail now projects current product images and validated saved recorded timestamps; shared receipts use those fields without inferring transaction times."
       ],
       "limitations": [
-        "Actual receipt time and confirmed cash-handover time/status are not exposed because trustworthy existing projection/evidence is unavailable; no values invented.",
-        "Recorder name appears only if a saved name snapshot exists; a raw user ID is never displayed as a person.",
-        "Receipt product images resolve from actual product/name assets and may fall back when no matching image exists.",
-        "Export PDF is real browser Print/Save PDF, not a direct binary-PDF download. Existing .html invoice download remains truthfully labeled in tools.",
-        "Order, invoice and exchange keep their real document statuses rather than all being labeled Paid."
+        "Confirmed cash-handover time/status is not inferred from invoice or sale dates.",
+        "Recorder name appears only when a saved name snapshot exists; missing historical timestamps remain a dash.",
+        "Locked-order/exchange images use saved data/name fallbacks where the existing reader supplies no custom image.",
+        "Export PDF remains browser Print/Save PDF; the existing HTML download stays truthfully labelled.",
+        "Order, invoice and exchange keep their actual document statuses."
       ],
       "sourceComponent": "src/components/sales/MobileInvoiceDetail.jsx; src/components/sales/MobileSaleFlow.jsx (MobileSaleDetail); src/views/SalesInvoice.jsx; src/views/SalesOrderForm.jsx; src/server/domain/sales-invoices.js (detail read projection)",
       "referenceId": "PbXc5VTeH7A",
@@ -431,13 +435,13 @@
         "Removed legacy parent PageHeader/New-sale toolbar from phone history; added local back/title/real month-and-year header.",
         "Restored separate rounded history cards with compact type badges, real customer/quantity/date/employee and cost where permitted.",
         "Restored outline Dégustation and primary Exchange 56px action emphasis.",
-        "Exchange deep-links to /sales/new?purpose=exchange, opening existing replacement tab after customer selection, without bypassing required evidence or inventing a new transaction mode."
+        "Exchange deep-links to /sales/new?purpose=exchange, opening existing replacement tab after customer selection, without bypassing required evidence or inventing a new transaction mode.",
+        "GM All employees history now combines verified Dégustation records and permitted exchanges for the month, with employee/customer filters. Restricted staff remain scoped to their profile with cost redaction. All employees view is read-only and does not pass history filters to entry forms."
       ],
       "limitations": [
-        "Remaining scope gap: history is verified per selected employee, not the global multi-employee month in Sleek. Admin can select employees but no All employees aggregate was added; restricted staff remain own-profile.",
-        "Legacy exchange carrying cost can be missing; dash/count is intentional rather than fake zero. Employee selection/profile text remains to make the actual scope transparent.",
-        "Existing Dégustation entry dialog remains a business form with checked stock, source/reason, retry/idempotency and separate expense posting.",
-        "Global shell/bottom navigation remains above which the fixed action bar sits."
+        "Historical replacement costs or employee attribution can be missing and remain explicitly unknown.",
+        "Filter choices are capped at 500 per list with an explicit notice; history records are not silently truncated. The aggregate read accepts at most 366 days.",
+        "Existing Dégustation entry remains a separate checked form with stock/source/reason, recording-employee selection and retry protection."
       ],
       "sourceComponent": "src/components/sales/PromotionExchangeHistory.jsx; src/views/Sales.jsx; src/components/distribution/CentralDegustationForm.jsx",
       "referenceId": "RPmUcfeSHDw",
@@ -454,11 +458,12 @@
         "Grouped the real visible rows by family and size and displayed recorded cost/selling prices without inserting sample values.",
         "Applied 22px geometry to stock groups, fabrication entry and inventory metrics.",
         "Phone Edit item details now navigates to /items/:id; desktop retains the embedded editor.",
-        "Preserved white SOEICAM branding, removed row Receive/Count controls, the Accounting adjustment destination and central manual Issue goods."
+        "Preserved white SOEICAM branding, removed row Receive/Count controls, the Accounting adjustment destination and central manual Issue goods.",
+        "Rows show nearest recorded expiry from existing positive physical-batch balances, flag expired/unknown finished-product dates and omit expiry warnings for packaging. No extra query or per-product Receive/Count action is added."
       ],
       "limitations": [
-        "Stock row quantities remain explicitly physical on-hand, rather than claiming every unit is saleable.",
-        "Nearest expiry is not repeated on each Stock row; actual batch dates remain accessible in item lot details.",
+        "Physical on-hand and expiry evidence do not establish saleability or quality release.",
+        "Undated material batches remain quiet; finished products distinguish unknown dates. Exhausted batches do not revive historical expiry dates.",
         "Reference sample counts, products and figures are replaced with the live permitted catalogue."
       ],
       "sourceComponent": "src/views/Inventory.jsx; src/components/inventory/GroupedItems.jsx; src/components/inventory/MobileStockList.jsx",
@@ -583,11 +588,12 @@
         "Removed the duplicate phone route wrapper, retained the back destination and used a single product h1.",
         "Applied 22px geometry to product, yield/cost, materials and packaging cards.",
         "Added a sticky Edit/Produce action bar with the existing role restrictions and correct preselected grouped-build route.",
-        "Kept real per-bucket material quantities and per-unit packaging based on the saved assembly definition."
+        "Kept real per-bucket material quantities and per-unit packaging based on the saved assembly definition.",
+        "Added explicit materials/other-component totals and packaging totals on their labelled per-unit/per-bucket basis, using existing cost resolution, conversions and manual overrides. Added the saved yield helper."
       ],
       "limitations": [
-        "Cost / unit and cost per bucket represent the actual complete assembly estimate; the reference material-only sample wording is not used for a different accounting value.",
-        "The reference explicit material-total/yield-helper treatment is not fully reproduced; saved component rows and actual yield/cost metrics remain visible."
+        "Missing component costs and unrecorded/invalid bucket yield remain unknown rather than zero.",
+        "Services, asset allocations and other components remain visible under accurate materials-and-other-components labels. Complete assembly cost includes all configured components."
       ],
       "sourceComponent": "src/views/Manufacturing.jsx; src/components/manufacturing/MobileAssemblyCatalogue.jsx",
       "referenceId": "vqNDETwOYEj",
@@ -650,11 +656,12 @@
       "changes": [
         "Matched header order: Back to dashboard, Accounting and actual month, month/refresh chip.",
         "Kept the existing real posted-ledger profit and authoritative treasury/payable/receivable summary.",
-        "Preserved all quick links and the exact existing canAdjustInventory permission gate on Quantity adjustments."
+        "Preserved all quick links and the exact existing canAdjustInventory permission gate on Quantity adjustments.",
+        "Added actual cash-awaiting-confirmation rows from a lightweight read under the existing Cashier authority, alongside recurring-charge review. Links open the existing checked Caisse workflow."
       ],
       "limitations": [
-        "The review queue still lists actual pending/unpaid recurring charges only. Cash confirmation remains in Cashier; sample cash-confirmation rows were not fabricated.",
-        "The quick-access grid has additional ERP features and may exceed six tiles. Posted journals, available module grants and live records determine contents.",
+        "General Accounting access alone does not grant access to cash confirmations. Read-only previews skip these reads.",
+        "The quick-access grid retains additional ERP features and may exceed six tiles. Posted journals, saved module grants and live records determine contents.",
         "White SOEICAM surfaces and green accents intentionally replace the cream source palette."
       ],
       "sourceComponent": "comptabilité.tsx / ECsbDoBHQxu",
@@ -876,12 +883,13 @@
         "Mobile supplier profile now uses one back/name/category header; refresh/new supplier/report selection are in an explicit overflow panel.",
         "Contact/terms and purchase/receive/pay shortcuts remain available in a collapsed secondary section; the horizontal phone tabs are removed.",
         "Supplier edit and payment forms now use full-screen phone back header, independently scrolling content and persistent 56px primary-action footer.",
-        "Verified supplier ledger credit, bill balances, actual payment history and all checked authorization/release controls remain."
+        "Verified supplier ledger credit, bill balances, actual payment history and all checked authorization/release controls remain.",
+        "Mobile overview now combines bills, posted advances and payments chronologically, with actual references/statuses and existing approval/release actions. Detailed registers and supplier tools remain accessible."
       ],
       "limitations": [
-        "Direct advance allocation is unsupported by the current checked UI/API; no fabricated advance source control added.",
-        "Supplier payment requests still require existing authorization/release workflow.",
-        "Remaining visual/workflow adaptation: payment request opens a focused separate form from a bill rather than reference inline settlement; bill/payment registers are separate instead of one combined bill/advance timeline."
+        "Direct advance allocation is unsupported; historical gross advance payments are not presented as available unapplied credit.",
+        "Supplier payment requests retain the existing authorization/release workflow and focused form.",
+        "The timeline uses recorded document dates/current statuses, not invented historical status-transition times."
       ],
       "sourceComponent": "src/components/suppliers/SupplierWorkspace.jsx;src/components/suppliers/SupplierDialogs.jsx;src/components/suppliers/SupplierTransactionLayout.jsx",
       "referenceId": "pmyFS1jij1c",
@@ -899,12 +907,13 @@
         "One 48px back/title/date header replaces the separate date toolbar; date picker and refresh remain reachable in explicit Cash desk tools.",
         "The top Receive cash and Petty cash actions are retained per user override. Savings/payments/invoices/cheques are grouped under More cash desk tools.",
         "Actual pending receipt/petty-cash cards and all treasury/account/variance validation remain in existing CashActionDialog.",
-        "CashierHome render callback also receives loading/error/onDate so the separate staff-home screen can retain date/error controls."
+        "CashierHome render callback also receives loading/error/onDate so the separate staff-home screen can retain date/error controls.",
+        "Commercial handover/daily-cash cards now embed the same checked confirmation form, with Expected/Received/Variance, required treasury/date, shortfall explanation and retained retry identity. Read-only/disputed guards remain."
       ],
       "limitations": [
-        "Reference inline received amount/variance controls are not reproduced: confirmation opens checked CashActionDialog with actual treasury selection and receipt submission.",
-        "Top two Receive/Petty actions deliberately retained per user override rather than copying a single-source-action arrangement.",
-        "Additional ERP savings/payment/invoice/cheque features remain reachable in collapsed secondary tools."
+        "Top Receive cash/Petty cash actions remain per user override.",
+        "Customer/staff receipt approvals retain their existing dialogs; inline confirmation covers handovers and daily cash.",
+        "Required operational fields add content beyond the static reference. Additional savings/payment/invoice/cheque tools remain reachable."
       ],
       "sourceComponent": "src/components/cashier/MobileCashDeskHome.jsx;src/components/cashier/CashierWorkspace.jsx",
       "referenceId": "OyohksqabQ8",
@@ -995,5 +1004,28 @@
       ],
       "referenceVersion": 1
     }
-  ]
+  ],
+  "verification": {
+    "date": "2026-11-10",
+    "scope": "Resumed metadata/read-layout completion; no production financial transactions run.",
+    "tests": {
+      "total": 2250,
+      "passed": 2239,
+      "preExistingFailures": 10,
+      "skipped": 1,
+      "postNarrowLayoutTestsPassed": 17
+    },
+    "lint": "passed",
+    "productionBuild": "passed",
+    "browser": "Selected real Stock, Assembly detail, Supplier timeline, Sales register, shared receipt and inline Caisse components checked with isolated example data at 390px and 320px. No horizontal document overflow; variance updated and required the explanation for a shortfall.",
+    "remainingVerificationLimit": "Authenticated production company records and financial transactions were not exercised. Live rollout is checked using deployed assets.",
+    "baselineFailures": {
+      "batch-financial-position": 2,
+      "catalogue-attributes-ui": 1,
+      "management-access": 1,
+      "management-reports-ui": 1,
+      "mobile-speed": 4,
+      "navigation-browser": 1
+    }
+  }
 }
