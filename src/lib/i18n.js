@@ -1,4 +1,6 @@
-import french from './locales/fr.json' with {type:'json'};
+import frenchBase from './locales/fr.json' with {type:'json'};
+import frenchMobile from './locales/mobile-fr.json' with {type:'json'};
+const french={...frenchBase,...frenchMobile};
 const listeners=new Set();
 // Build fallback indexes only when needed; ordinary labels use direct lookups.
 let foldedFrench,reverseFrench,patterns;
