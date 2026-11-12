@@ -11,6 +11,11 @@ export function cashDepositors(source){
  for(const p of source.staffCollections||[])items.push({id:'staff-receipt:'+p.id,name:p.collector_name,group:'Staff customer collections',reference:p.payment_number+' · '+p.party_name,date:p.collection_date,amount:p.amount,kind:'staff_receipt',document:p});
  for(const h of source.handovers||[]){const remaining=money(Number(h.expected_amount||0)-Number(h.received_amount||0));if(remaining>0&&['submitted','partially_received','disputed'].includes(h.status))items.push({id:'handover:'+h.id,name:h.commercial_name,group:'Commercial deposits',reference:h.handover_number,date:h.handover_date,amount:remaining,kind:'handover',document:h});}
  for(const day of source.depositDays||source.dailyCash||[]){if(day.requestable>0)items.push({id:'daily:'+day.id,name:day.commercial_name,group:'Commercial deposits',reference:day.collection_date,date:day.collection_date,amount:day.requestable,kind:'daily',blocked:!!day.disputed,document:{...day,expected_amount:day.requestable,received_amount:0}});}
+ for(const p of source.receipts||[])items.push({
+  id:'confirmed-receipt:'+p.id,name:p.party_name,group:'Payments ready to post',
+  reference:[p.payment_number,p.invoice_numbers].filter(Boolean).join(' · '),
+  date:p.payment_date,amount:p.amount,kind:'confirmed_receipt',document:p,
+ });
  const customers=new Map();
  for(const i of source.invoices||[]){if(!(i.available_amount>0))continue;
   if(i.payment_type==='cash'){items.push({id:'invoice:'+i.id,name:i.stock_holder_name||i.salesperson_name||i.customer_name,group:'Recorded cash sales',reference:i.invoice_number+' · '+i.customer_name,date:i.invoice_date,amount:i.available_amount,kind:'receipt',document:i});continue;}

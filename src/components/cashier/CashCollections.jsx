@@ -125,7 +125,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
               <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">{ui("No cash received from commercials yet")}</td></tr>
             ) : receipts.map(r => (
               <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium">{r.acknowledgement_reference || r.collection_number}<div className="text-xs text-muted-foreground">{r.journal_id ? ui("Posted to ledger") : ui("Awaiting GM approval")}</div></td>
+                <td className="px-4 py-3 font-medium">{r.acknowledgement_reference || r.collection_number}<div className="text-xs text-muted-foreground">{r.journal_id ? ui("Posted to ledger") : ui("Pending posting")}</div></td>
                 <td className="px-4 py-3">{formatDate(r.collection_date)}</td>
                 <td className="px-4 py-3">{r.commercial_name || "—"}</td>
                 <td className="px-4 py-3">{r.invoice_number || r.sale_number}</td>

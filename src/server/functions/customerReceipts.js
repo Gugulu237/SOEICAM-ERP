@@ -4,7 +4,7 @@ import {cashSaleOptions} from '../domain/sale-treasury.js';
 import { createClientFromRequest } from '../request-client.js';
 import { isTransactionConflict } from '../transaction-errors.js';
 import { requireStaff, audit, claimField } from '../domain/field-ops.js';
-import { recordDirectCustomerReceipt, approveReceipt } from '../domain/customer-receipts.js';
+import { recordDirectCustomerReceipt, approveReceipt, completeRecordedCustomerReceipt, receiptView } from '../domain/customer-receipts.js';
 
 export default async function(req) {
   try {
@@ -14,12 +14,17 @@ export default async function(req) {
     const body = await req.json();
     base44.auth.assertModule?.('cashier');
     if(body.action==='confirmCollection')return Response.json(await confirmCustomerCollection(base44,user,body));
-    if (!['confirm', 'depositOptions', 'approve', 'reject'].includes(body.action)) return Response.json({ error: 'Unknown receipt action' }, { status: 400 });
+    if (!['confirm', 'depositOptions', 'postConfirmed', 'approve', 'reject'].includes(body.action)) return Response.json({ error: 'Unknown receipt action' }, { status: 400 });
     const svc = base44.asServiceRole;
-    if (['confirm','depositOptions'].includes(body.action)) {
-      const { employee } = await requireStaff(base44, user, ['cashier', 'admin'], 'recording customer receipts');
+    if (['confirm','depositOptions','postConfirmed'].includes(body.action)) {
+      const { employee, role } = await requireStaff(base44, user, ['cashier', 'admin'], 'recording customer receipts');
       if (employee?.employee_removed_at || employee?.status && employee.status !== 'active') throw Error('An active staff account is required.');
       if (body.action === 'depositOptions') return Response.json(await cashSaleOptions(svc.entities));
+      if (body.action === 'postConfirmed') {
+        const payment = await svc.entities.Payment.get(body.paymentId);
+        if (!payment || payment.payment_type !== 'customer_payment') throw Error('Customer receipt not found');
+        return Response.json({payment:receiptView(await completeRecordedCustomerReceipt(svc,payment,user,role))});
+      }
       return Response.json(await recordDirectCustomerReceipt(svc,user,body,{employee}));
     }
     const approver = await requireStaff(base44, user, ['admin'], 'approving or rejecting customer receipts');

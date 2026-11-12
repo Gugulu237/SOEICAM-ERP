@@ -22,15 +22,19 @@ test('cash confirmations use recorded pending facts, preserve bank visibility an
  await s.CashHandover.create({handover_number:'ZERO',handover_date:date,commercial_name:'Resolved',expected_amount:500,received_amount:500,status:'disputed'});
  await s.Payment.create({payment_number:'STAFF',payment_type:'customer_payment',status:'awaiting_cashier',receipt_channel:'staff_collection',collector_name:'Staff A',party_name:'Customer A',amount:'600',collection_date:date,collector_user_id:'private-id'});
  await s.Payment.create({payment_number:'UNRECORDED',payment_type:'customer_payment',status:'pending_approval',amount:800});
+ const confirmed={payment_type:'customer_payment',status:'pending_approval',amount:400,party_id:'customer-a',party_name:'Customer A',payment_date:date,invoice_numbers:'INV-READY',cashier_confirmed_by:user.id,receipt_allocations:[{invoice_id:'ready',amount:400}]};
+ await s.Payment.create({...confirmed,payment_number:'READY',payment_method:'cash',treasury_account_id:'till'});
+ await s.Payment.create({...confirmed,payment_number:'BANK-READY',payment_method:'bank_transfer',treasury_account_id:'bank'});
  await s.Payment.create({payment_number:'OTHER',payment_type:'supplier_payment',status:'awaiting_cashier',receipt_channel:'staff_collection',amount:900});
  const before=structuredClone(f.rows),reads=new Set();
  f.client.asServiceRole.entities=limitedStores(s,['TreasuryAccount','CashHandover','Payment'],reads);
  const queue=await cashierAction(f.client,user,{action:'cashierWorkspace',view:'confirmations',date});
  assert.deepEqual([...reads].sort(),['CashHandover','Payment','TreasuryAccount']);
- assert.equal(queue.rows.length,3);assert.equal(queue.rows.find(r=>r.reference==='PART').amount,1700);assert.equal(queue.rows.find(r=>r.reference.startsWith('STAFF')).amount,600);
+ assert.equal(queue.rows.length,4);assert.equal(queue.rows.find(r=>r.reference==='PART').amount,1700);assert.equal(queue.rows.find(r=>r.reference.startsWith('STAFF')).amount,600);
  assert.ok(queue.rows.every(r=>Object.keys(r).every(k=>['id','name','reference','date','kind','amount'].includes(k))));
- assert.ok(!queue.rows.some(r=>['BANK','DONE','ZERO','UNRECORDED','OTHER'].includes(r.reference)));
- const gm=await cashierAction(f.client,{id:'gm',role:'admin'},{action:'cashierWorkspace',view:'confirmations',date});assert.ok(gm.rows.some(r=>r.reference==='BANK'));
+ assert.equal(queue.rows.find(r=>r.reference==='READY · INV-READY').kind,'confirmed_receipt');
+ assert.ok(!queue.rows.some(r=>['BANK','DONE','ZERO','UNRECORDED','OTHER','BANK-READY'].some(ref=>r.reference===ref||r.reference.startsWith(ref+' · '))));
+ const gm=await cashierAction(f.client,{id:'gm',role:'admin'},{action:'cashierWorkspace',view:'confirmations',date});assert.ok(gm.rows.some(r=>r.reference==='BANK'));assert.ok(gm.rows.some(r=>r.reference==='BANK-READY · INV-READY'));
  assert.deepEqual(f.rows,before,'read projection must not create journals, receipts, cash movements or audit writes');
 });
 

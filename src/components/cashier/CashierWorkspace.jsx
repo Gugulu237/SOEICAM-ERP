@@ -84,7 +84,7 @@ export default function CashierWorkspace({ data, preview = false, afterPrimaryAc
   const operatingAccounts=accounts.filter(a=>a.account_type!=='petty_cash'&&a.gl_account_id);
   const canAct=!!source&&!preview,refresh=()=>setReload(n=>n+1);
   const open=(kind,document)=>{if(canAct)setDialog({kind,document,requestKey:crypto.randomUUID()});};
-  const done=outcome=>{setDialog(null);refresh();toast({title:outcome?.customerReceipt?ui(outcome.payment?.status==='posted'?'Payment posted directly to treasury':'Earlier receipt awaiting approval'):outcome?.acknowledgementReference?ui('Cash received'):ui('Cash desk updated'),description:outcome?.payment?.treasury_account_name||outcome?.acknowledgementReference});};
+  const done=outcome=>{setDialog(null);refresh();toast({title:outcome?.customerReceipt?ui(outcome.payment?.status==='posted'?'Payment posted directly to treasury':'Payment ready to post'):outcome?.acknowledgementReference?ui('Cash received'):ui('Cash desk updated'),description:outcome?.payment?.treasury_account_name||outcome?.acknowledgementReference});};
   const floats=accounts.filter(a=>a.account_type==='petty_cash');
   const approved=payments.filter(p=>p.status==='approved'),approvedExpenses=expenses.filter(e=>e.status==='approved');
   const receipts=movements.filter(m=>m.transaction_type==='receipt');
@@ -118,7 +118,6 @@ export default function CashierWorkspace({ data, preview = false, afterPrimaryAc
         <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm"><strong>{pendingDeposits.length}</strong> {ui('deposits or customer payments to receive')}</p><Button variant="outline" disabled={preview} onClick={()=>setTab('invoices')}>{ui('Customer invoices')}</Button></div>
         <h3 className="mb-2 mt-5 text-xs font-semibold text-slate-500">{ui('Recent cash receipts')}</h3>
         {receipts.length?<div className="divide-y">{receipts.slice(0,5).map(m=><div key={m.id} className="flex items-start justify-between gap-3 py-3 text-sm"><div className="min-w-0"><p className="break-words">{m.description}</p><p className="mt-1 text-xs text-slate-500">{m.transaction_number}</p></div><strong className="shrink-0">{formatXAF(m.amount)}</strong></div>)}</div>:<p className="py-3 text-sm text-slate-500">{ui('No cash received on this date.')}</p>}
-        {(s.receipts||[]).length>0&&<p className="mt-3 text-xs text-slate-600">{ui('Earlier receipts awaiting approval: {0}',s.receipts.length)}</p>}
         <Button className="mt-3" variant="outline" onClick={toggleHistory} aria-expanded={historyOpen}>{historyOpen?ui('Hide receipt history'):ui('Receipt history & reconciliation')}</Button>
       </WorkspacePanel>{historyOpen&&<CashHandoverPanel handovers={handovers} dailyCash={s.dailyCash||[]} commercials={s.commercials||[]} date={date} collections={s.collections||[]} canAct={canAct} preview={preview} onReceive={h=>open('handover',h)} onResolve={h=>open('resolve',h)} onRefresh={refresh} refreshKey={reload}/>}</div>}
       {tab==='expenses'&&<WorkspacePanel help title={ui('Petty cash budget')} subtitle={ui('The balance is the funded float still available. The administrator sets float limits; small expenses consume the float and transfers replenish it.')}>
@@ -145,12 +144,50 @@ export default function CashierWorkspace({ data, preview = false, afterPrimaryAc
   </div>;
 }
 
-export function CashActionDialog({kind,document:doc,requestKey,source,onBack,onClose,onDone,embedded=false,readOnly=false}){
+function ConfirmedReceiptDialog({document:receipt,onBack,onClose,onDone}){
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),flight=useRef(false);
+ async function submit(event){
+  event.preventDefault();
+  if(flight.current)return;
+  flight.current=true;setBusy(true);setError('');
+  try{
+   const result=await customerReceiptAction('postConfirmed',{paymentId:receipt.id});
+   onDone({...result,customerReceipt:true});
+  }catch(error){setError(errorMessage(error));}
+  finally{flight.current=false;setBusy(false);}
+ }
+ return <Dialog open onOpenChange={value=>{if(!value&&!busy)onClose();}}><DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+  <DialogHeader><DialogTitle>{ui('Post confirmed payment')}</DialogTitle></DialogHeader>
+  <form className="space-y-4" onSubmit={submit}>
+   <div className="rounded-xl bg-slate-50 p-3 text-sm">
+    <p className="font-semibold">{receipt.party_name} · {formatXAF(receipt.amount)}</p>
+    <p className="mt-1 text-xs text-muted-foreground">{[receipt.payment_number,receipt.invoice_numbers].filter(Boolean).join(' · ')}</p>
+   </div>
+   <dl className="grid grid-cols-2 gap-3 text-sm">
+    <div><dt className="text-muted-foreground">{ui('Receive into account')}</dt><dd className="font-medium">{receipt.treasury_account_name}</dd></div>
+    <div><dt className="text-muted-foreground">{ui('Transaction date')}</dt><dd className="font-medium">{formatDate(receipt.payment_date)}</dd></div>
+   </dl>
+   {error&&<p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
+   <DialogFooter className="flex-wrap gap-2">
+    {onBack&&<Button type="button" variant="outline" onClick={onBack} disabled={busy}>{ui('Choose another depositor')}</Button>}
+    <Button type="button" variant="outline" onClick={onClose} disabled={busy}>{ui('Cancel')}</Button>
+    <Button type="submit" disabled={busy}>{ui(busy?'Saving...':'Post payment')}</Button>
+   </DialogFooter>
+  </form>
+ </DialogContent></Dialog>;
+}
+
+export function CashActionDialog(props){
+ return props.kind==='confirmed_receipt'?<ConfirmedReceiptDialog {...props}/>:<CashEntryDialog {...props}/>;
+}
+
+function CashEntryDialog({kind,document:doc,requestKey,source,onBack,onClose,onDone,embedded=false,readOnly=false}){
  const interfaceLanguage=useInterfaceLanguage();void interfaceLanguage;
  const handover=kind==='handover'||kind==='daily',expense=kind==='petty'||kind==='expense',transfer=['transfer','savings','replenish'].includes(kind);
  const titles={attachment:'File expense receipt',resolve:'Resolve a received handover',transfer:'Transfer funds',savings:'Record daily savings',replenish:'Top up petty cash',petty:'Petty cash',expense:'Pay approved expense',request:'Record purchase payment',release:'Release approved supplier payment',receipt:'Receive customer payment',handover:'Receive cash',daily:'Receive daily cash',staff_receipt:'Receive staff customer collection'};
  const [receiptOptions,setReceiptOptions]=useState(null),[receiptOptionsError,setReceiptOptionsError]=useState('');
  const invoiceReceipt=kind==='receipt',customerReceipt=invoiceReceipt||kind==='staff_receipt';
+ const recordedDeposit=kind==='staff_receipt'||invoiceReceipt&&doc.payment_type==='cash';
  const accounts=customerReceipt?(receiptOptions?.cashAccounts||[]).filter(a=>invoiceReceipt||a.account_type==='cash'):(source.accounts||[]).filter(a=>a.gl_account_id&&(kind==='petty'?a.account_type==='petty_cash':['savings','replenish'].includes(kind)?a.account_type!=='petty_cash':true));
  const destinations=(source.accounts||[]).filter(a=>a.gl_account_id&&(kind==='replenish'?a.account_type==='petty_cash':kind==='savings'?a.account_type!=='petty_cash':true));
  const [form,setForm]=useState({date:businessDate(),accountId:kind==='release'?doc.treasury_account_id:accounts.length===1?accounts[0].id:'',toAccountId:kind==='replenish'&&destinations.length===1?destinations[0].id:'',amount:doc?.available_amount??(handover?Math.max(0,Number(doc.expected_amount||0)-Number(doc.received_amount||0)):doc?.amount)??'',description:kind==='savings'?ui('Daily savings'):kind==='replenish'?ui('Petty cash top-up'):doc?.title||'',reference:'',payee:'',category:'other',departmentId:source.departments?.length===1?source.departments[0].id:'',expenseAccountId:doc?.expense_account_id||'',orderId:'',varianceReason:'',disputed:doc?.status==='disputed',receiptFileUri:doc?.receipt_url||''});
@@ -182,7 +219,7 @@ export function CashActionDialog({kind,document:doc,requestKey,source,onBack,onC
   try{
    if(customerReceipt){
     const paymentDetails=invoiceReceipt?{customerId:doc.customer_id,allocations:receiptAllocations(invoiceRows,form.amount)}:{paymentId:doc.id};
-    const result=await customerReceiptAction(invoiceReceipt?'confirm':'confirmCollection',{...paymentDetails,requestKey:retainedRequestKey,treasuryAccountId:form.accountId,date:form.date,amount:Number(form.amount),reference:form.reference});
+    const result=await customerReceiptAction(invoiceReceipt?'confirm':'confirmCollection',{...paymentDetails,requestKey:retainedRequestKey,treasuryAccountId:form.accountId,date:form.date,amount:Number(form.amount),...(recordedDeposit?{}:{reference:form.reference})});
     onDone({...result,customerReceipt:true});
    }
    else{const actions={transfer:'cashierTransfer',savings:'cashierTransfer',replenish:'cashierTransfer',petty:'cashierPettyExpense',expense:'cashierPayExpense',request:'recordPurchasePayment',release:'cashierReleasePayment',handover:'confirmHandover',daily:'cashierReceiveDailyCash',attachment:'cashierAttachReceipt',resolve:'cashierResolveHandover'};
@@ -205,7 +242,7 @@ export function CashActionDialog({kind,document:doc,requestKey,source,onBack,onC
  {expense&&<Field title={kind==='petty'?ui('Expense category'):ui('Expense ledger account')}><Select value={form.expenseAccountId} onChange={value=>set('expenseAccountId',value)} options={(kind==='petty'?pettyAccounts:source.expenseAccounts||[]).map(a=>({id:a.id,name:a.name}))}/></Field>}
  {kind==='petty'&&<><Field title={ui('Payee')}><Input required value={form.payee} onChange={e=>set('payee',e.target.value)}/></Field><Field title={ui('Cost centre')}><Select value={form.departmentId} onChange={value=>set('departmentId',value)} options={source.departments||[]}/></Field></>}
  {(transfer||kind==='petty'||kind==='request')&&<div className="sm:col-span-2"><Field title={ui('Purpose / description')}><Input required maxLength={1000} value={form.description} onChange={e=>set('description',e.target.value)}/></Field></div>}
- {!handover&&kind!=='petty'&&<div className="sm:col-span-2"><Field title={ui('Receipt / transaction reference')}><Input aria-label={ui('Receipt / transaction reference')} required={kind==='receipt'||kind==='staff_receipt'||transfer||kind==='request'} value={form.reference} onChange={e=>set('reference',e.target.value)}/></Field></div>}
+ {!handover&&!recordedDeposit&&kind!=='petty'&&<div className="sm:col-span-2"><Field title={ui('Receipt / transaction reference')}><Input aria-label={ui('Receipt / transaction reference')} required={invoiceReceipt||transfer||kind==='request'} value={form.reference} onChange={e=>set('reference',e.target.value)}/></Field></div>}
  {handover&&<div className={embedded?"col-span-2 space-y-3":"space-y-3 sm:col-span-2"}>{(!embedded||variance!==0||form.disputed)&&<Field title={ui('Shortfall / variance explanation')}><Input required={embedded&&variance<0} value={form.varianceReason} onChange={e=>set('varianceReason',e.target.value)} placeholder={ui('Required if the cash received is short')}/></Field>}<div className="flex items-center justify-between gap-2"><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.disputed} onChange={e=>set('disputed',e.target.checked)}/>{ui('Flag this handover for reconciliation')}</label>{embedded&&cashHelp}</div></div>}
  </div>}
  {kind==='receipt'&&allocations.length>0&&<div className="rounded-xl border p-3"><h3 className="mb-2 text-xs font-semibold">{ui('Applied to invoices')}</h3>{allocations.map(a=><p key={a.invoice_id} className="flex justify-between gap-3 py-1 text-xs"><span>{invoiceRows.find(i=>i.id===a.invoice_id)?.invoice_number}</span><strong>{formatXAF(a.amount)}</strong></p>)}{doc.more_invoices&&<p className="mt-2 text-xs text-slate-500">{ui('The first 50 unpaid invoices are included. Remaining invoices appear after these are settled.')}</p>}</div>}
@@ -221,7 +258,7 @@ export function CashActionDialog({kind,document:doc,requestKey,source,onBack,onC
  {!receiptOnly&&!resolveOnly&&(!customerReceipt||receiptOptions)&&!accounts.length&&<p role="alert" className="text-sm text-slate-700">{kind==='petty'?ui('A General Manager must configure an active petty cash float with a ledger account first.'):ui('A General Manager must configure an active treasury account linked to the ledger first.')}</p>}
  {transfer&&!destinations.some(a=>a.id!==form.accountId)&&<p role="status" className="text-xs text-slate-600">{ui('An administrator must configure a separate permitted destination account first.')}</p>}
  {error&&<p role="alert" className="text-sm text-red-700">{uiMessage(error)}</p>}
- <DialogFooter className="flex-wrap gap-2">{onBack&&<Button type="button" variant="outline" disabled={busy} onClick={onBack}>{ui('Choose another depositor')}</Button>}{!embedded&&<Button type="button" variant="outline" disabled={busy} onClick={onClose}>{ui('Cancel')}</Button>}<Button type="submit" className={embedded?'w-full rounded-xl '+(variance<0?'min-h-12':'min-h-14'):undefined} variant={embedded&&variance<0?'outline':'default'} disabled={busy||readOnly||!!pettyIssue||(receiptOnly?!form.receiptFileUri:resolveOnly?!form.varianceReason.trim():!form.accountId||!accounts.length||transfer&&!form.toAccountId)}>{busy?ui('Saving...'):embedded&&handover?ui(variance<0?'Confirm with variance':'Confirm receipt'):kind==='request'?ui('Record payment'):customerReceipt?ui('Record payment'):ui('Confirm and save')}</Button></DialogFooter>
+ <DialogFooter className="flex-wrap gap-2">{onBack&&<Button type="button" variant="outline" disabled={busy} onClick={onBack}>{ui('Choose another depositor')}</Button>}{!embedded&&<Button type="button" variant="outline" disabled={busy} onClick={onClose}>{ui('Cancel')}</Button>}<Button type="submit" className={embedded?'w-full rounded-xl '+(variance<0?'min-h-12':'min-h-14'):undefined} variant={embedded&&variance<0?'outline':'default'} disabled={busy||readOnly||!!pettyIssue||(receiptOnly?!form.receiptFileUri:resolveOnly?!form.varianceReason.trim():!form.accountId||!accounts.length||transfer&&!form.toAccountId)}>{busy?ui('Saving...'):embedded&&handover?ui(variance<0?'Confirm with variance':'Confirm receipt'):recordedDeposit?ui('Confirm receipt'):kind==='request'||customerReceipt?ui('Record payment'):ui('Confirm and save')}</Button></DialogFooter>
  </fieldset></form></>;
  return embedded?<div data-inline-cash-receipt data-cash-shortfall={variance<0?'':undefined}>{content}</div>:<Dialog open onOpenChange={value=>{if(!value&&!busy)onClose();}}><DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">{content}</DialogContent></Dialog>;
 }

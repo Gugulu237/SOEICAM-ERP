@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/use-toast";
 import ReceiptField from "./ReceiptField";
 import { HandCoins } from "lucide-react";
 
-// Reconcile cash from older deliveries using the commercial's physical receipt.
+// Reconcile cash from older deliveries against the recorded invoice.
 export default function ReceiveCashDialog({ row, commercials = [], treasuryAccounts, userId, userName, onClose, onDone }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
@@ -24,7 +24,6 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
     treasury_account_id: treasuryAccounts[0]?.id || "",
     amount: invoice.balance || 0,
     date: new Date().toISOString().slice(0, 10),
-    receipt_reference: "",
     received_from: order?.salesperson_name || (commercials.length === 1 ? commercials[0].name : ""),
     notes: "",
     receipt: "",
@@ -34,23 +33,23 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
 
   async function handleReceive() {
     const account = treasuryAccounts.find(a => a.id === form.treasury_account_id);
-    if (!account || Number(form.amount) <= 0 || !form.receipt_reference.trim()) {
-      toast({ title: ui("Missing details"), description: ui("Enter the cash received, the account and the receipt number"), variant: "destructive" });
+    const amount = Number(form.amount);
+    if (!account || !Number.isFinite(amount) || amount <= 0) {
+      toast({ title: ui("Missing details"), description: account ? ui("Enter a positive received amount") : ui("Select the treasury account used for this payment."), variant: "destructive" });
       return;
     }
     setSaving(true);
     try {
       const collection = await receiveCashFromCommercial({
         invoice, order, treasuryAccount: account,
-        amount: Number(form.amount), date: form.date,
-        receiptReference: form.receipt_reference.trim(),
+        amount, date: form.date,
         receiptFileUris: form.receipt ? [form.receipt] : [],
         collectedBy: form.received_from, notes: form.notes,
         userId, userName, requestKey,
       });
       toast({
         title: ui("Cash received — {0}", collection.acknowledgement_reference),
-        description: [ui(collection.status==='posted'?'Payment posted directly to treasury':'Earlier receipt awaiting approval'), collection.treasury_account_name].filter(Boolean).join(' · '),
+        description: [ui(collection.status==='posted'?'Payment posted directly to treasury':'Payment ready to post'), collection.treasury_account_name].filter(Boolean).join(' · '),
       });
       onDone();
     } catch (e) {
@@ -116,15 +115,6 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
                 <p className="text-xs text-slate-400 mt-1">{ui("No commercials with outstanding deliveries")}</p>
               )}
             </div>
-          </div>
-
-          <div>
-            <Label>{ui("Physical Receipt No. *")}</Label>
-            <Input
-              value={form.receipt_reference}
-              onChange={e => setForm(f => ({ ...f, receipt_reference: e.target.value }))}
-              placeholder={ui("Number on the receipt the commercial handed over")}
-            />
           </div>
 
           <ReceiptField

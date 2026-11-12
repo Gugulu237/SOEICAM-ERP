@@ -2,7 +2,7 @@
 //
 // A cash sale debits the cash clearing account (1050 Undeposited Funds) at the
 // point of sale. The commercial collects the money on the road and hands it over;
-// the cashier receives it against the physical receipt the commercial carries,
+// the cashier receives it against the recorded invoice,
 // and the receipt moves the money from clearing into a real treasury account.
 //
 // The ledger entry is the deposit; the cash collection record is the proof of
@@ -51,7 +51,7 @@ export async function loadCashReceipts(limit = 50) {
 }
 
 // Confirm a physical receipt for cash from an older delivery.
-export async function receiveCashFromCommercial({ invoice, treasuryAccount, amount, date, receiptReference, receiptFileUris = [], collectedBy = "", notes = "", requestKey }) {
-  const payment = await confirmCustomerReceipt({ customerId: invoice.customer_id, treasuryAccountId: treasuryAccount?.id, amount, date, reference: receiptReference, receiptFileUris, collectedBy, notes, commercialReceipt: true, requestKey: requestKey || crypto.randomUUID(), allocations: [{ invoice_id: invoice.id, amount }] });
+export async function receiveCashFromCommercial({ invoice, treasuryAccount, amount, date, receiptFileUris = [], collectedBy = "", notes = "", requestKey }) {
+  const payment = await confirmCustomerReceipt({ customerId: invoice.customer_id, treasuryAccountId: treasuryAccount?.id, amount, date, receiptFileUris, collectedBy, notes, commercialReceipt: true, requestKey: requestKey || crypto.randomUUID(), allocations: [{ invoice_id: invoice.id, amount }] });
   return { ...payment, acknowledgement_reference: payment.payment_number };
 }
