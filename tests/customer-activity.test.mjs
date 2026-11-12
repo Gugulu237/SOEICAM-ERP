@@ -104,11 +104,11 @@ test('collection guards reject changed retry payloads, duplicate receipts, over-
   f.setActor({id:'driver',role:'user'},{id:'driver',role:'driver',status:'active'});await assert.rejects(customerActivityAction(f.client,{id:'driver',role:'user'},f.body),/restricted/);
 });
 
-test('earlier staff-held cash posts on physical receipt and rejects a self-confirmation, shortfall or changed destination',async()=>{
+test('earlier staff-held cash posts on physical receipt with its saved reference and rejects a self-confirmation, shortfall or changed destination',async()=>{
   const f=await setup(),s=f.entities;
   const {payment,collection}=await earlierCollection(f,{collectedBy:gm,employeeId:gm.id});
   f.setActor(gm);
-  const body={paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'ACK',amount:400,treasuryAccountId:'till'};
+  const body={paymentId:payment.id,requestKey:crypto.randomUUID(),date,amount:400,treasuryAccountId:'till'};
   await assert.rejects(confirmCustomerCollection(f.client,gm,body),/cash you collected/);
   f.setActor(cashier,await s.Employee.get('cashier'));
   const before=await cashierAction(f.client,cashier,{action:'cashierWorkspace',date});
@@ -122,6 +122,8 @@ test('earlier staff-held cash posts on physical receipt and rejects a self-confi
   const settled=await s.CashCollection.get(collection.id);
   assert.equal(settled.outstanding_amount,0);
   assert.equal(settled.journal_id,result.payment.journal_id);
+  assert.equal(settled.acknowledgement_reference,payment.reference);
+  assert.equal((await s.TreasuryTransaction.list())[0].reference,payment.reference);
   assert.equal(dailyCashSettlements([settled])[0].status,'settled');
   assert.equal((await confirmCustomerCollection(f.client,cashier,body)).reused,true);
   await assert.rejects(confirmCustomerCollection(f.client,cashier,{...body,reference:'changed'}),/different details/);
@@ -132,6 +134,20 @@ test('earlier staff-held cash posts on physical receipt and rejects a self-confi
   assert.deepEqual(after.staffCollections,[]);
   assert.deepEqual(after.receipts,[]);
   assert.deepEqual(after.cashCustomers.filter(r=>r.document_number===f.invoice.invoice_number).map(r=>[r.received,r.status]),[[400,'posted']]);
+});
+
+test('staff collection receipt uses a saved collection reference and accepts retries of earlier cashier references',async()=>{
+  for(const explicit of [undefined,'EARLIER-ACK']){
+    const f=await setup(),s=f.entities,{payment,collection}=await earlierCollection(f);
+    await s.Payment.update(payment.id,{reference:''});
+    await s.CashCollection.update(collection.id,{receipt_reference:'COLLECTION-REF'});
+    f.setActor(cashier,await s.Employee.get('cashier'));
+    const body={paymentId:payment.id,requestKey:crypto.randomUUID(),date,amount:400,treasuryAccountId:'till'};
+    await confirmCustomerCollection(f.client,cashier,{...body,reference:explicit});
+    assert.equal((await s.CashCollection.get(collection.id)).acknowledgement_reference,explicit||'COLLECTION-REF');
+    assert.equal((await confirmCustomerCollection(f.client,cashier,body)).reused,true);
+    assert.equal((await s.TreasuryTransaction.list()).length,1);
+  }
 });
 
 test('invoice collections remain visible in staff liability but cannot enter the sales cash handover twice',()=>{
@@ -245,4 +261,129 @@ test('cash-desk invoice confirmation posts the full payment through the checked 
     assert.equal((await s.JournalEntry.list()).length,1);
     assert.throws(()=>guardMutation({role:'admin',user:gm},'Payment','update',{amount:1},{...payment,payment_type:'customer_payment'}),/immutable/);
   }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+});
+
+test('a cashier posts a previously confirmed invoice receipt using its saved date, amount, account and reference',async()=>{
+  const f=await setup(),s=f.entities,{payment,collection}=await earlierCollection(f,{confirmedBy:gm});
+  await s.Payment.update(payment.id,{cashier_confirmed_at:date+'T11:00:00Z',cashier_receipt_reference:'EXISTING-ACK'});
+  const route=await functionRoute();
+  globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
+  const invoke=body=>route(request(body),{params:Promise.resolve({name:'customerReceipts'})});
+  try {
+    const body={action:'postConfirmed',paymentId:payment.id};
+    assert.equal((await invoke(body)).status,403);
+    f.setActor(cashier,await s.Employee.get('cashier'));
+    for(let attempt=0;attempt<2;attempt++){
+      const result=await invoke({...body,treasuryAccountId:'bank',reference:'UNTRUSTED',amount:900});
+      assert.equal(result.status,200,await result.clone().text());
+      const {payment:posted}=await result.json();
+      assert.equal(posted.status,'posted');
+      assert.equal(posted.receipt_posting_snapshot,undefined);
+    }
+    const posted=await s.Payment.get(payment.id);
+    assert.equal(posted.receipt_recorded_by,gm.id);
+    assert.equal(posted.receipt_recorded_at,date+'T11:00:00Z');
+    assert.equal(posted.approved_at,undefined);
+    assert.equal((await s.Invoice.get(f.invoice.id)).balance,600);
+    assert.equal((await s.Invoice.get(f.invoice.id)).deposited_by,gm.id);
+    assert.equal((await s.Customer.get('customer-a')).balance,600);
+    assert.equal((await s.CashCollection.get(collection.id)).journal_id,posted.journal_id);
+    assert.equal((await s.TreasuryAccount.get('till')).balance,100400);
+    assert.equal((await s.TreasuryAccount.get('bank')).balance,100000);
+    assert.equal((await s.JournalEntry.list()).length,1);
+    const [movement,...duplicates]=await s.TreasuryTransaction.list();
+    assert.equal(duplicates.length,0);
+    assert.equal(movement.reference,'EXISTING-ACK');
+    assert.equal(movement.created_by,gm.id);
+    assert.equal(movement.transaction_date,date);
+    assert.equal((await s.AuditLog.list()).filter(r=>r.action==='post_customer_receipt').length,1);
+
+    await s.Payment.update(payment.id,{status:'approved'});
+    await s.JournalEntry.update(posted.journal_id,{status:'reversed',reversed_by_journal:'reversal'});
+    const reversed=await invoke(body);
+    assert.equal(reversed.status,400);
+    assert.match((await reversed.json()).error,/journal needs reconciliation/);
+    assert.equal((await s.Payment.get(payment.id)).status,'approved');
+    assert.equal((await s.TreasuryTransaction.list()).length,1);
+  } finally {delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+});
+
+test('confirmed receipt completion keeps bank history scoped and rolls back failed ledger posting',async()=>{
+  const db=new PGlite();
+  try{
+    const f=await setup(db),s=f.entities,{payment,collection}=await earlierCollection(f,{confirmedBy:cashier});
+    await s.Payment.update(payment.id,{status:'approved',treasury_account_id:'bank',treasury_account_name:'bank'});
+    const route=await functionRoute();globalThis.__cashierClient=f.client;
+    globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
+    const invoke=()=>route(request({action:'postConfirmed',paymentId:payment.id}),{params:Promise.resolve({name:'customerReceipts'})});
+    f.setActor(cashier,await s.Employee.get('cashier'));
+    assert.equal((await invoke()).status,403);
+    f.setActor(gm);
+    await s.CashCollection.update(collection.id,{outstanding_amount:1});
+    const inconsistent=await invoke();
+    assert.equal(inconsistent.status,400);
+    assert.match((await inconsistent.json()).error,/collection needs reconciliation/);
+    await s.CashCollection.update(collection.id,{outstanding_amount:0});
+    const mismatched=await s.TreasuryTransaction.create({source:'customer_receipt',source_document_id:payment.id,treasury_account_id:'till',amount:payment.amount,transaction_date:date,transaction_type:'receipt'});
+    const invalidMovement=await invoke();
+    assert.equal(invalidMovement.status,400);
+    assert.match((await invalidMovement.json()).error,/treasury receipt needs reconciliation/);
+    assert.equal((await s.Invoice.get(f.invoice.id)).balance,1000);
+    assert.equal((await s.JournalEntry.list()).length,0);
+    await s.TreasuryTransaction.deleteMany({id:mismatched.id});
+    const audit=s.AuditLog.create;
+    s.AuditLog.create=async data=>{if(data.action==='post_customer_receipt')throw Error('Audit unavailable');return audit(data);};
+    assert.equal((await invoke()).status,400);
+    assert.equal((await s.Payment.get(payment.id)).status,'approved');
+    assert.equal((await s.Invoice.get(f.invoice.id)).balance,1000);
+    assert.equal((await s.TreasuryAccount.get('bank')).balance,100000);
+    assert.equal((await s.TreasuryTransaction.list()).length,0);
+    assert.equal((await s.JournalEntry.list()).length,0);
+    s.AuditLog.create=audit;
+    const result=await invoke();
+    assert.equal(result.status,200,await result.clone().text());
+    assert.equal((await s.Payment.get(payment.id)).status,'posted');
+    assert.equal((await s.TreasuryAccount.get('bank')).balance,100400);
+  } finally {delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
+});
+
+test('verified earlier cash invoices use the sale reference once and generate stable references for later installments',async()=>{
+  const f=await setup(),s=f.entities;
+  const invoice=await s.Invoice.create({invoice_number:'INV-CASH-OLD',receipt_reference:'SALE-ORIGINAL',customer_id:'customer-a',customer_name:'Customer A',invoice_date:date,status:'posted',payment_type:'cash',total:700,balance:700,amount_paid:0});
+  const journal=await s.JournalEntry.create({source_document_type:'Invoice',source_document_id:invoice.id,status:'posted'});
+  await s.Invoice.update(invoice.id,{journal_id:journal.id});
+  const [clearing]=await s.Account.filter({account_number:'1050'});
+  await s.Account.update(clearing.id,{balance:700});
+  const cashLine=await s.JournalLine.create({journal_id:journal.id,account_id:clearing.id,debit:700,credit:0,party_id:'customer-a'});
+  f.setActor(cashier,await s.Employee.get('cashier'));
+  const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
+  const invoke=body=>route(request(body),{params:Promise.resolve({name:'customerReceipts'})});
+  const first={action:'confirm',customerId:'customer-a',requestKey:crypto.randomUUID(),date,treasuryAccountId:'till',amount:300,allocations:[{invoice_id:invoice.id,amount:300}]};
+  try {
+    const credit=await invoke({...first,allocations:[{invoice_id:f.invoice.id,amount:300}]});
+    assert.equal(credit.status,400);
+    assert.match((await credit.json()).error,/receipt or transaction reference/);
+    await s.JournalLine.update(cashLine.id,{debit:100});
+    const unverified=await invoke(first);
+    assert.equal(unverified.status,400);
+    assert.match((await unverified.json()).error,/original cash invoice journal/);
+    await s.JournalLine.update(cashLine.id,{debit:700});
+    const res=await invoke(first);
+    assert.equal(res.status,200,await res.clone().text());
+    assert.equal((await res.json()).payment.reference,'SALE-ORIGINAL');
+    assert.equal((await (await invoke(first)).json()).reused,true);
+    const second={...first,commercialReceipt:true,requestKey:crypto.randomUUID(),amount:400,allocations:[{invoice_id:invoice.id,amount:400}]};
+    const next=await invoke(second);
+    assert.equal(next.status,200,await next.clone().text());
+    const {payment}=await next.json();
+    assert.match(payment.reference,/^RCP-[0-9A-F]{20}$/);
+    assert.equal(payment.reference,payment.payment_number);
+    assert.equal((await (await invoke(second)).json()).payment.reference,payment.reference);
+    assert.equal((await s.Invoice.get(invoice.id)).status,'paid');
+    assert.equal((await s.Invoice.get(invoice.id)).cash_deposited,true);
+    assert.equal((await s.Customer.get('customer-a')).balance,1000);
+    assert.equal((await s.TreasuryAccount.get('till')).balance,100700);
+    assert.equal((await s.Account.get(clearing.id)).balance,0);
+    assert.equal((await s.TreasuryTransaction.list()).length,2);
+  } finally {delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
 });

@@ -9,6 +9,7 @@ import { forbidden } from '../access.js';
 import { requestDailyCash } from './daily-cash-handover.js';
 import {billSupplierPayable,supplierPrepaymentAccount} from './supplier-payables.js';
 import {cashDepositors} from '../../lib/cashier-receipts.js';
+import {isConfirmedPendingCustomerReceipt} from '../../lib/customer-receipt-status.js';
 
 // All mutations run in the API route's serializable transaction. Request keys
 // survive lost responses; balances, journals and source documents commit once.
@@ -97,7 +98,7 @@ async function workspace(svc, date, role, purchasingAdmin) {
     cashCustomers,
     invoices: invoices.filter(i => Number(i.balance) > 0).map(i => ({ ...pick(i, 'id invoice_number customer_id customer_name invoice_date due_date balance payment_type salesperson_name stock_holder_name'.split(' ')), pending_amount: reserved(i), available_amount: Math.max(0, round2(i.balance - reserved(i))) })),
     customerBalances: rows(customers, 'id business_name balance'),
-    receipts: rows(visibleTreasuryDocuments(role,receipts.filter(p => ['pending_approval', 'approved'].includes(p.status)),accounts), 'id payment_number party_name amount payment_date invoice_numbers status treasury_account_name'),
+    receipts: rows(visibleTreasuryDocuments(role,receipts.filter(isConfirmedPendingCustomerReceipt),accounts), 'id payment_number party_name amount payment_date invoice_numbers treasury_account_name'),
     payments: rows(visibleTreasuryDocuments(role,payments,accounts), 'id payment_number party_name amount payment_date status payment_method treasury_account_id treasury_account_name po_id cheque_gm_signed_at cheque_pm_signed_at'),
     orders: rows(orders.filter(po => !payments.some(p => p.po_id === po.id && ['draft', 'pending_approval', 'approved', 'confirmed'].includes(p.status))).map(po => ({ ...po, total: Math.max(0, round2(Number(po.total) - paidOrders.filter(p => p.po_id === po.id).reduce((sum, p) => sum + Number(p.amount || 0), 0))) })).filter(po => po.total > 0), 'id po_number supplier_name total'),
     expenses: rows(visibleTreasuryDocuments(role,expenses,accounts), 'id request_number title amount status payee department_name department_id expense_account_id treasury_account_name receipt_url'),
@@ -110,12 +111,17 @@ async function workspace(svc, date, role, purchasingAdmin) {
 // cash desk. Keep this under the existing cashierWorkspace authority, without
 // loading invoices, customer balances, employee records or payment tools.
 async function confirmationQueue(svc,date,role){
- const [accounts,handovers,collections]=await Promise.all([
+ const [accounts,handovers,payments]=await Promise.all([
   readRecords(svc.entities.TreasuryAccount),
   readRecords(svc.entities.CashHandover,{status:{$in:['submitted','partially_received','disputed']}}),
-  readRecords(svc.entities.Payment,{payment_type:'customer_payment',status:'awaiting_cashier',receipt_channel:'staff_collection'}),
+  readRecords(svc.entities.Payment,{payment_type:'customer_payment',status:{$in:['awaiting_cashier','pending_approval','approved']}}),
  ]);
- const source={handovers:visibleTreasuryDocuments(role,handovers,accounts),staffCollections:visibleTreasuryDocuments(role,collections,accounts)};
+ const visible=visibleTreasuryDocuments(role,payments,accounts);
+ const source={
+  handovers:visibleTreasuryDocuments(role,handovers,accounts),
+  staffCollections:visible.filter(p=>p.status==='awaiting_cashier'&&p.receipt_channel==='staff_collection'),
+  receipts:visible.filter(isConfirmedPendingCustomerReceipt),
+ };
  const queue=cashDepositors(source).map(row=>({...pick(row,['id','name','reference','date','kind']),amount:round2(row.amount)})).filter(row=>Number.isFinite(row.amount)&&row.amount>0);
  return {date,rows:queue};
 }

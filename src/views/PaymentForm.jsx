@@ -70,7 +70,7 @@ export default function PaymentForm() {
         method, reference: form.reference,
         allocations, treasuryAccountId: form.treasury_account_id, requestKey,
       });
-      toast({ title: ui(payment.status==='posted'?'Payment posted directly to treasury':'Earlier receipt awaiting approval'), description: [payment.payment_number, payment.treasury_account_name].filter(Boolean).join(' · ') });
+      toast({ title: ui(payment.status==='posted'?'Payment posted directly to treasury':'Payment ready to post'), description: [payment.payment_number, payment.treasury_account_name].filter(Boolean).join(' · ') });
       navigate("/accounting/receivables");
     } catch (e) {
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });

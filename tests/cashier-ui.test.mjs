@@ -12,7 +12,7 @@ async function ui() {
     plugins: [{ name: 'cashier-ui', setup(b) {
       b.onResolve({ filter: /^react$/ }, args => /(?:CashierWorkspace|CashHandoverPanel|CashDepositorPicker)\.jsx$/.test(args.importer) ? { path: args.importer.endsWith('CashHandoverPanel.jsx')?'panel':args.importer.endsWith('CashDepositorPicker.jsx')?'picker':'workspace', namespace: 'fixture' } : undefined);
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({path}) => ({ contents: `import React from ${JSON.stringify(require.resolve('react'))};
-        const key=()=>['panel','picker'].includes(${JSON.stringify(path)})?${JSON.stringify(path)}:new Error().stack.includes('CashActionDialog')?'cashform':'workspace';
+        const key=()=>['panel','picker'].includes(${JSON.stringify(path)})?${JSON.stringify(path)}:/(?:CashEntryDialog|ConfirmedReceiptDialog)/.test(new Error().stack)?'cashform':'workspace';
         export default {...React,createElement:(tag,props,...children)=>{globalThis.__cashierUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};
         export const useState=v=>globalThis.__cashierUI.state(key(),v); export const useEffect=(fn,deps)=>globalThis.__cashierUI.effect(key(),fn,deps); export const useRef=v=>globalThis.__cashierUI.ref(key(),v);`, resolveDir: process.cwd() }));
       const mocks = {
@@ -138,6 +138,59 @@ test('the cashier customer invoice receipt can post to a bank account without sh
     assert.deepEqual(calls.map(c=>c.action),['depositOptions','confirm']);
     assert.equal(calls[1].treasuryAccountId,'bank');assert.deepEqual(calls[1].allocations,[{invoice_id:'invoice',amount:500}]);
     assert.equal(outcomes[0].payment.status,'posted');
+  } finally {r.cleanup();delete globalThis.__cashierUI;}
+});
+
+test('the deposit picker opens staff-held and confirmed payments with their saved details', async () => {
+  const render=await ui(),r=runtime(),{client,entities}=await fixture(),calls=[];
+  await entities.Payment.create({payment_type:'customer_payment',status:'awaiting_cashier',receipt_channel:'staff_collection',payment_number:'RCP-HELD',collector_name:'Collector',party_name:'Customer A',collection_date:date,amount:600});
+  const confirmed=await entities.Payment.create({payment_type:'customer_payment',status:'pending_approval',payment_number:'RCP-CONFIRMED',party_id:'customer-b',party_name:'Customer B',payment_date:date,amount:400,treasury_account_id:'till',treasury_account_name:'Till',cashier_confirmed_by:user.id,invoice_numbers:'INV-OLD',receipt_allocations:[{invoice_id:'old',amount:400}]});
+  r.invoke=async(name,body)=>{
+    calls.push({name,...body});
+    if(name==='fieldOps')return {data:await cashierAction(client,user,body)};
+    if(body.action==='depositOptions')return {data:{cashAccounts:[{id:'till',name:'Till',account_type:'cash'}],defaultCashAccountId:'till'}};
+    return {data:{payment:{id:confirmed.id,status:'posted',treasury_account_name:'Till'}}};
+  };
+  globalThis.__cashierUI=r;
+  const draw=()=>{r.beforeRender();return render({});};
+  try {
+    draw();await r.flush();draw();
+    r.buttons.find(b=>b.label==='Receive cash').onClick();
+    const picker=draw();
+    assert.match(picker,/Staff customer collections/);assert.match(picker,/Payments ready to post/);
+    r.buttons.find(b=>b['aria-label']==='Receive cash from Collector').onClick();
+    draw();await r.flush();let html=draw();
+    assert.match(html,/RCP-HELD/);assert.doesNotMatch(html,/Receipt \/ transaction reference/);
+    assert.equal(r.selects[0].value,'till');
+    await r.submit({preventDefault(){}});
+    assert.deepEqual(calls.filter(c=>c.action==='confirmCollection').map(c=>[c.amount,c.treasuryAccountId,Object.hasOwn(c,'reference')]),[[600,'till',false]]);
+    draw();await r.flush();draw();
+    r.buttons.find(b=>b.label==='Receive cash').onClick();draw();
+    r.buttons.find(b=>b['aria-label']==='Post payment from Customer B').onClick();
+    html=draw();assert.match(html,/RCP-CONFIRMED/);assert.match(html,/INV-OLD/);assert.match(html,/Till/);
+    assert.doesNotMatch(html,/Receipt \/ transaction reference/);assert.equal(r.selects.length,0);
+    await r.submit({preventDefault(){}});
+    assert.deepEqual(calls.find(c=>c.action==='postConfirmed'),{name:'customerReceipts',action:'postConfirmed',paymentId:confirmed.id});
+    assert.equal(r.notifications.at(-1).title,'Payment posted directly to treasury');
+  } finally {r.cleanup();delete globalThis.__cashierUI;}
+});
+
+test('a recorded cash sale deposit submits its invoice and amount without a second reference', async () => {
+  const render=await ui(),r=runtime(),calls=[];
+  r.invoke=async(name,body)=>{
+    calls.push(body);
+    return {data:body.action==='depositOptions'?{cashAccounts:[{id:'till',name:'Till',account_type:'cash'}],defaultCashAccountId:'till'}:{payment:{status:'posted'}}};
+  };
+  globalThis.__cashierUI=r;
+  const props={kind:'receipt',document:{id:'old-cash',invoice_number:'INV-CASH',customer_id:'customer',payment_type:'cash',available_amount:450},requestKey:'legacy-cash-form',source:{},onClose:()=>{},onDone:()=>{}};
+  const draw=()=>{r.beforeRender();return render(props,true);};
+  try {
+    draw();await r.flush();
+    assert.doesNotMatch(draw(),/Receipt \/ transaction reference/);
+    await r.submit({preventDefault(){}});
+    const saved=calls.find(c=>c.action==='confirm');
+    assert.equal(Object.hasOwn(saved,'reference'),false);
+    assert.deepEqual(saved.allocations,[{invoice_id:'old-cash',amount:450}]);
   } finally {r.cleanup();delete globalThis.__cashierUI;}
 });
 

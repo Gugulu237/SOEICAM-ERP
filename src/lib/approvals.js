@@ -50,13 +50,12 @@ export const APPROVAL_OWNER = {
 export const canDecide = (type, role) => (APPROVAL_ROLES[type] || []).includes(role);
 
 export async function loadPendingApprovals(role = 'admin') {
-  const [production, stockRequests, expenses, cashRequests, payroll, customerReceipts] = await Promise.all([
+  const [production, stockRequests, expenses, cashRequests, payroll] = await Promise.all([
     ['admin', 'production_manager', 'warehouse_manager'].includes(role) ? erp.entities.ProductionOrder.filter({ status: "awaiting_approval" }) : [],
     canDecide('dispatch', role) ? erp.entities.DispatchRequest.filter({ status: "pending_approval" }) : [],
     canDecide('expense', role) ? erp.entities.ExpenseRequest.filter({ status: "pending_approval" }) : [],
     canDecide('cash', role) ? erp.entities.Payment.filter({ payment_type: "supplier_payment", status: "pending_approval" }) : [],
     canDecide('payroll', role) ? erp.entities.PayrollRun.filter({ status: "calculated" }) : [],
-    canDecide('customer_receipt', role) ? erp.entities.Payment.filter({ payment_type: 'customer_payment', status: { $in: ['pending_approval', 'approved'] } }, { sort: '-created_date', limit: 50 }) : { items: [] },
   ]);
 
   const row = (rec, type, ref, summary, amount, link) => ({
@@ -69,7 +68,6 @@ export async function loadPendingApprovals(role = 'admin') {
     ...expenses.map(e => row(e, "expense", e.request_number, [e.title, e.requester_name].filter(Boolean).join(" · "), e.amount, "/expenses")),
     ...cashRequests.map(p => row(p, "cash", p.payment_number, p.party_name, p.amount, "/cashier")),
     ...payroll.map(r => row(r, "payroll", r.period_name, `${r.employee_count || 0} employees`, r.total_net, "/team-workspaces?section=payroll&run="+encodeURIComponent(r.id))),
-    ...customerReceipts.items.map(p => row(p, 'customer_receipt', p.payment_number, `${p.party_name} · ${p.invoice_numbers || ''} · Cashier: ${p.cashier_confirmed_name || 'Not confirmed'}`, p.amount, '/accounting?tab=payments')),
   ].sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)));
 }
 
@@ -92,7 +90,7 @@ export async function approveItem(item, { userId = "", userName = "", role } = {
 
   switch (item._type) {
     case 'customer_receipt':
-      await customerReceiptAction('approve', { paymentId: item.id });
+      await customerReceiptAction('postConfirmed', { paymentId: item.id });
       return;
     case "po":
       await erp.functions.invoke('fieldOps',{action:'approveSupplierOrder',orderId:item.id});

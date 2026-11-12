@@ -1,5 +1,6 @@
 import ReportExport from '@/components/shared/ReportExport';
 import { paymentRegisterDocument } from '@/lib/payment-register';
+import { isConfirmedPendingCustomerReceipt } from '@/lib/customer-receipt-status';
 
 /* localized-messages */
 import { uiMessage } from '@/lib/i18n';
@@ -24,13 +25,13 @@ import { useToast } from '@/components/ui/use-toast';
 export default function PaymentRegister() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { isAdmin } = useCurrentUser(); const { toast } = useToast();
+  const { isAdmin, isCashier } = useCurrentUser(); const { toast } = useToast();
   const { filters, setFilters, page, loading, error, refresh, loadMore } = usePaymentRegister();
   const [busy, setBusy] = useState(null); const [reject, setReject] = useState(null);
   const change = (key, value) => setFilters(f => ({ ...f, [key]: value }));
   async function decide(payment, action, reason) {
     setBusy(payment.id);
-    try { await customerReceiptAction(action, { paymentId: payment.id, reason }); toast({ title: action === 'approve' ? ui("GM approved; payment posted to ledger") : ui("Receipt rejected; no ledger posting") }); setReject(null); await refresh(); }
+    try { await customerReceiptAction(action, { paymentId: payment.id, reason }); toast({ title: action === 'postConfirmed' ? ui("Payment posted directly to treasury") : ui("Receipt rejected; no ledger posting") }); setReject(null); await refresh(); }
     catch (e) { toast({ title: ui("Could not process receipt"), description: e.response?.data?.error || e.message, variant: 'destructive' }); }
     setBusy(null);
   }
@@ -42,13 +43,12 @@ export default function PaymentRegister() {
     { key: 'amount', label: ui("Received amount"), render: formatXAF },
     { key: 'treasury_account_name', label: ui("Received into") },
     { key: 'cashier_confirmed_name', label: ui("Recorded by"), render: (v, p) => <div>{p.receipt_recorded_by_name || v || ui("Not recorded")}{(p.receipt_recorded_at || p.cashier_confirmed_at) && <div className="text-xs text-muted-foreground">{formatDate(p.receipt_recorded_at || p.cashier_confirmed_at)}</div>}</div> },
-    { key: 'approved_by', label: ui("GM approval"), render: (v, p) => p.receipt_posted_directly ? ui("Posted directly") : v || (p.status === 'posted' ? ui("Legacy posting") : ui("Awaiting approval")) },
-    { key: 'status', label: ui("Status"), render: v => <StatusBadge status={v} /> },
-    { key: 'actions', label: ui("Ledger / Action"), sortable: false, render: (_, p) => <PaymentReceiptActions payment={p} isGM={isAdmin} busy={busy === p.id} onApprove={p => decide(p, 'approve')} onReject={setReject} /> },
+    { key: 'status', label: ui("Status"), render: (value, payment) => isConfirmedPendingCustomerReceipt(payment) ? ui("Ready to post") : <StatusBadge status={value} /> },
+    { key: 'actions', label: ui("Ledger / Action"), sortable: false, render: (_, payment) => <PaymentReceiptActions payment={payment} canPost={isAdmin || isCashier} canReject={isAdmin} busy={busy === payment.id} onPost={p => decide(p, 'postConfirmed')} onReject={setReject} /> },
   ];
   return <div className="space-y-4">
     <p className="text-sm text-muted-foreground">{ui("New customer payments post directly to the selected treasury account and update invoice balances immediately.")}</p>
-    <div className="flex flex-wrap gap-3"><Input className="max-w-sm" placeholder={ui("Search customer, invoice, receipt or reference")} value={filters.q} onChange={e => change('q', e.target.value)} /><select className="rounded-md border border-input bg-background px-3 py-2" value={filters.type} onChange={e => change('type', e.target.value)}><option value="customer_payment">{ui("Customer receipts")}</option><option value="supplier_payment">{ui("Supplier payments")}</option><option value="salary_payment">{ui("Salary payments")}</option><option value="all">{ui("All payments")}</option></select><select className="rounded-md border border-input bg-background px-3 py-2" value={filters.status} onChange={e => change('status', e.target.value)}><option value="all">{ui("All statuses")}</option><option value="pending">{ui("Awaiting GM / posting")}</option><option value="posted">{ui("Posted to ledger")}</option><option value="rejected">{ui("Rejected")}</option></select><Button variant="outline" disabled={loading} onClick={refresh}>{ui("Refresh")}</Button></div>
+    <div className="flex flex-wrap gap-3"><Input className="max-w-sm" placeholder={ui("Search customer, invoice, receipt or reference")} value={filters.q} onChange={e => change('q', e.target.value)} /><select className="rounded-md border border-input bg-background px-3 py-2" value={filters.type} onChange={e => change('type', e.target.value)}><option value="customer_payment">{ui("Customer receipts")}</option><option value="supplier_payment">{ui("Supplier payments")}</option><option value="salary_payment">{ui("Salary payments")}</option><option value="all">{ui("All payments")}</option></select><select className="rounded-md border border-input bg-background px-3 py-2" value={filters.status} onChange={e => change('status', e.target.value)}><option value="all">{ui("All statuses")}</option><option value="pending">{ui("Pending posting")}</option><option value="posted">{ui("Posted to ledger")}</option><option value="rejected">{ui("Rejected")}</option></select><Button variant="outline" disabled={loading} onClick={refresh}>{ui("Refresh")}</Button></div>
     <ReportExport disabled={loading || !!error || !!busy} getReport={()=>paymentRegisterDocument(filters)}/>
     {error && <p role="alert" className="text-destructive">{uiMessage(error)}</p>}
     {loading && <p className="text-muted-foreground">{ui("Loading payments…")}</p>}

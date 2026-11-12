@@ -117,7 +117,7 @@ test('partial handovers can be completed without posting the company sale or col
 test('cash customer list avoids duplicate confirmations and invoice collection excludes pending receipts', async () => {
   const { client, entities } = await fixture();
   const invoice = await entities.Invoice.create({ invoice_number: 'INV-1', customer_id: 'customer-a', customer_name: 'Customer A', status: 'posted', balance: 1000 });
-  await entities.Payment.create({ payment_type: 'customer_payment', payment_method: 'cash', status: 'pending_approval', amount: 400, payment_date: date, collection_id: 'collection', receipt_allocations: [{ invoice_id: invoice.id, amount: 400 }], party_name: 'Customer A' });
+  await entities.Payment.create({ payment_type: 'customer_payment', payment_method: 'cash', status: 'pending_approval', amount: 400, payment_date: date, payment_number:'RCP-1', party_id:'customer-a', cashier_confirmed_by:user.id, treasury_account_id:'till', collection_id: 'collection', receipt_allocations: [{ invoice_id: invoice.id, amount: 400 }], party_name: 'Customer A' });
   const view = await cashierAction(client, user, args('cashierWorkspace'));
   assert.equal(view.cashCustomers.length, 1); assert.equal(view.cashCustomers[0].status, 'pending_approval');
   assert.equal(view.invoices[0].available_amount, 600); assert.equal(view.invoices[0].pending_amount, 400);

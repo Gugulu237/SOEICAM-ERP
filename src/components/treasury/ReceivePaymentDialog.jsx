@@ -47,7 +47,7 @@ export default function ReceivePaymentDialog({ accounts, defaultAccountId, onClo
         invoice, treasuryAccount: account, amount: Number(form.amount),
         date: form.date, reference: form.reference, requestKey,
       });
-      toast({ title: ui(payment.status==='posted'?'Payment posted directly to treasury':'Earlier receipt awaiting approval'), description: [payment.payment_number, payment.treasury_account_name].filter(Boolean).join(' · ') });
+      toast({ title: ui(payment.status==='posted'?'Payment posted directly to treasury':'Payment ready to post'), description: [payment.payment_number, payment.treasury_account_name].filter(Boolean).join(' · ') });
       onDone({payment});
     } catch (e) {
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });

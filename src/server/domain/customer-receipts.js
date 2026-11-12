@@ -4,6 +4,8 @@ import {readRecords} from './commercial-workspace.js';
 import {verifiedOpeningDocument} from './opening-payments.js';
 import { round2, getRuleAccount, getAccountByNumber, postJournal, claimField, audit, today } from './field-ops.js';
 import { isTransactionConflict } from '../transaction-errors.js';
+import {isConfirmedPendingCustomerReceipt} from '../../lib/customer-receipt-status.js';
+import {guardTreasuryReferences} from '../../lib/treasury-access.js';
 
 export async function validateAllocations(svc, allocations, customerId, excludePaymentId = '') {
   if (!Array.isArray(allocations) || !allocations.length || allocations.length > 50) throw new Error('Allocate the payment to between 1 and 50 invoices');
@@ -36,10 +38,34 @@ export function postConfirmedReceipt(svc, payment, user, {destination, rows} = {
   return postReceipt(svc, payment, user, {direct:true, destination, rows});
 }
 
-async function postReceipt(svc, payment, user, {topAdmin = false, direct = false, destination, rows} = {}) {
+export async function completeRecordedCustomerReceipt(svc, payment, user, role) {
+  const stores = svc.entities;
+  await guardTreasuryReferences(stores,role,payment);
+  if (role !== 'admin' && ['bank','bank_transfer'].includes(payment.payment_method)) throw Object.assign(Error('Bank accounts are restricted to administrators.'),{status:403});
+  if (payment.status === 'posted' && payment.cashier_confirmed_by && payment.journal_id) return payment;
+  if (!isConfirmedPendingCustomerReceipt(payment)) throw Error('Only a previously confirmed customer payment can be posted here.');
+  const destination = await cashSaleDestination(stores,payment.treasury_account_id);
+  if (payment.account_id && payment.account_id !== destination.gl.id) throw Error('The recorded treasury ledger account has changed. Reconcile this receipt before posting.');
+  if (payment.collection_id || payment.receipt_channel === 'staff_collection') {
+    const collection = payment.collection_id ? await stores.CashCollection.get(payment.collection_id) : null;
+    if (!collection || collection.status !== 'received' || collection.customer_id !== payment.party_id ||
+        Number(collection.received_amount) !== Number(payment.amount) || Number(collection.outstanding_amount) !== 0 ||
+        (payment.receipt_channel === 'staff_collection' && collection.payment_id !== payment.id) ||
+        (collection.payment_id && collection.payment_id !== payment.id) ||
+        (collection.treasury_account_id && collection.treasury_account_id !== payment.treasury_account_id)) {
+      throw Error('The recorded cash collection needs reconciliation before posting.');
+    }
+  }
+  const snapshot = payment.receipt_posting_snapshot;
+  if (snapshot?.invoices && (snapshot.lines?.[0]?.account_id !== destination.gl.id ||
+      Number(snapshot.lines[0].debit) !== Number(payment.amount))) throw Error('The recorded treasury ledger account has changed. Reconcile this receipt before posting.');
+  return postReceipt(svc,payment,user,{direct:true,earlier:true,destination});
+}
+
+async function postReceipt(svc, payment, user, {topAdmin = false, direct = false, earlier = false, destination, rows} = {}) {
   if (payment.status === 'posted') return payment;
-  const statuses = direct ? ['draft', 'awaiting_cashier'] : ['pending_approval', 'approved'];
-  if (!statuses.includes(payment.status) || (!direct && !payment.cashier_confirmed_by)) throw new Error('Receipt confirmation is required before posting');
+  const statuses = direct && !earlier ? ['draft', 'awaiting_cashier'] : ['pending_approval', 'approved'];
+  if (!statuses.includes(payment.status) || ((!direct || earlier) && !payment.cashier_confirmed_by)) throw new Error('Receipt confirmation is required before posting');
   if (!direct && !topAdmin && (payment.cashier_confirmed_by === user.id || payment.collector_user_id === user.id)) throw new Error('You cannot approve a receipt you recorded; another administrator must approve it');
   const token = crypto.randomUUID();
   if (!await claimField(svc, 'Payment', payment.id, 'receipt_posting_token', token)) throw new Error('This receipt is already being processed');
@@ -83,15 +109,22 @@ async function postReceipt(svc, payment, user, {topAdmin = false, direct = false
         approved_by: user.full_name || user.email, approved_at: new Date().toISOString(), status: 'approved',
       }) });
     }
-    const depositor = direct ? user.id : payment.cashier_confirmed_by;
+    const depositor = direct && !earlier ? user.id : payment.cashier_confirmed_by;
     const { journal } = await postJournal(svc, { entryDate: payment.payment_date, description: `Customer receipt ${payment.payment_number}: ${payment.invoice_numbers}`, sourceModule: 'payments', sourceDocumentType: 'Payment', sourceDocumentId: payment.id, userId: user.id, lines: snapshot.lines });
+    if (earlier && (journal.status !== 'posted' || journal.reversed_by_journal || (payment.journal_id && payment.journal_id !== journal.id))) {
+      throw Error('The recorded customer payment journal needs reconciliation before posting.');
+    }
     await svc.entities.Payment.update(payment.id, { journal_id: journal.id });
     for (const inv of snapshot.invoices) {
       const currentInvoice = await svc.entities.Invoice.get(inv.id);
       const unchanged = round2(currentInvoice.amount_paid) === inv.paid_before && round2(currentInvoice.balance) === inv.balance_before;
       const alreadyApplied = round2(currentInvoice.amount_paid) === inv.paid && round2(currentInvoice.balance) === inv.balance;
       if ((!unchanged && !alreadyApplied) || ['cancelled', 'credited'].includes(currentInvoice.status)) throw new Error(`${inv.number} changed during posting; reconcile the linked journal before proceeding`);
-      const existing = await svc.entities.PaymentAllocation.filter({ payment_id: payment.id, document_id: inv.id }, { limit: 1 });
+      const existing = await svc.entities.PaymentAllocation.filter({ payment_id: payment.id, document_id: inv.id }, { limit: 2 });
+      if (earlier && (existing.items.length > 1 || existing.items.some(row => row.document_type !== 'invoice' ||
+          row.party_id !== payment.party_id || Number(row.amount) !== Number(inv.amount)))) {
+        throw Error('The recorded invoice allocation needs reconciliation before posting.');
+      }
       if (!existing.items.length) await svc.entities.PaymentAllocation.create({ payment_id: payment.id, payment_number: payment.payment_number, document_type: 'invoice', document_id: inv.id, document_number: inv.number, party_type: 'customer', party_id: payment.party_id, party_name: payment.party_name, amount: inv.amount, allocation_date: payment.payment_date });
       await svc.entities.Invoice.update(inv.id, { amount_paid: inv.paid, balance: inv.balance, status: inv.balance <= 0 ? 'paid' : 'partially_paid', ...(inv.cash ? { cash_deposited: inv.balance <= 0 } : {}), deposit_treasury_account_id: payment.treasury_account_id, deposit_treasury_account_name: payment.treasury_account_name, deposited_at: new Date().toISOString(), deposited_by: depositor, deposit_journal_id: journal.id });
       if(inv.field_sale_id) {
@@ -100,8 +133,13 @@ async function postReceipt(svc, payment, user, {topAdmin = false, direct = false
         await svc.entities.FieldSale.update(sale.id,{amount_due:inv.balance,customer_receipts_paid:round2(Number(sale.total)-Number(sale.amount_collected || 0)-inv.balance)});
       }
     }
-    const tx = await svc.entities.TreasuryTransaction.filter({ source: 'customer_receipt', source_document_id: payment.id }, { limit: 1 });
-    if (!tx.items.length) await svc.entities.TreasuryTransaction.create({ transaction_number: `RCP-${payment.id.slice(-10)}`, treasury_account_id: payment.treasury_account_id, treasury_account_name: payment.treasury_account_name, transaction_type: 'receipt', amount: payment.amount, transaction_date: payment.payment_date, source: 'customer_receipt', source_document_id: payment.id, source_document_number: payment.payment_number, description: `Customer receipt ${payment.invoice_numbers}`, reference: payment.cashier_receipt_reference || payment.reference, journal_id: journal.id, created_by: depositor });
+    const tx = await svc.entities.TreasuryTransaction.filter({ source: 'customer_receipt', source_document_id: payment.id }, { limit: 2 });
+    if (earlier && (tx.items.length > 1 || tx.items.some(row => row.transaction_type !== 'receipt' ||
+        row.treasury_account_id !== payment.treasury_account_id || row.journal_id !== journal.id ||
+        row.transaction_date !== payment.payment_date || Number(row.amount) !== Number(payment.amount)))) {
+      throw Error('The recorded treasury receipt needs reconciliation before posting.');
+    }
+    if (!tx.items.length) await svc.entities.TreasuryTransaction.create({ transaction_number: `RCP-${payment.id.slice(-10)}`, treasury_account_id: payment.treasury_account_id, treasury_account_name: payment.treasury_account_name, transaction_type: 'receipt', amount: payment.amount, transaction_date: payment.payment_date, source: 'customer_receipt', source_document_id: payment.id, source_document_number: payment.payment_number, description: `Customer receipt ${payment.invoice_numbers}`, reference: payment.cashier_receipt_reference || payment.reference || payment.payment_number, journal_id: journal.id, created_by: depositor });
     const currentTreasury = await svc.entities.TreasuryAccount.get(payment.treasury_account_id);
     if (round2(currentTreasury.balance) !== snapshot.treasury_balance) {
       if (round2(currentTreasury.balance) !== snapshot.treasury_balance_before) throw new Error('Treasury changed during receipt posting. Review the linked journal before reconciling the balance.');
@@ -123,9 +161,9 @@ async function postReceipt(svc, payment, user, {topAdmin = false, direct = false
     return await svc.entities.Payment.update(payment.id, {
       status:'posted', receipt_posting_token:'', receipt_posting_error:'',
       ...(direct ? {
-        receipt_posted_directly:true, receipt_recorded_by:user.id,
-        receipt_recorded_by_name:payment.cashier_confirmed_name || payment.receipt_recorded_by_name || user.full_name || user.email || '',
-        receipt_recorded_at:payment.cashier_confirmed_at || payment.prepared_at || new Date().toISOString(),
+        receipt_posted_directly:true, receipt_recorded_by:depositor,
+        receipt_recorded_by_name:payment.cashier_confirmed_name || payment.receipt_recorded_by_name || (earlier ? '' : user.full_name || user.email || ''),
+        receipt_recorded_at:payment.cashier_confirmed_at || (earlier ? payment.receipt_recorded_at || '' : payment.prepared_at || new Date().toISOString()),
       } : {}),
     });
   } catch (error) {
@@ -147,14 +185,39 @@ export function receiptView(payment) {
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const validAmount = value => ['string','number'].includes(typeof value) && Number.isFinite(Number(value)) && Number(value) > 0 && round2(value) === Number(value);
 
+async function recordedCashInvoiceReference(svc, invoice) {
+  if (invoice.payment_type !== 'cash' || invoice.cash_sale_settlement || invoice.cash_deposited || invoice.field_sale_id ||
+      !['posted','partially_paid','overdue'].includes(invoice.status) || !validAmount(invoice.total) ||
+      round2(Number(invoice.balance) + Number(invoice.amount_paid || 0)) !== Number(invoice.total)) {
+    throw Error('Enter a receipt or transaction reference of at most 150 characters.');
+  }
+  const stores = svc.entities;
+  const journal = invoice.journal_id ? await stores.JournalEntry.get(invoice.journal_id) : null;
+  if (!journal || journal.status !== 'posted' || journal.reversed_by_journal ||
+      journal.source_document_type !== 'Invoice' || journal.source_document_id !== invoice.id) {
+    throw Error('Reconcile the original cash invoice journal before receiving this deposit.');
+  }
+  const clearing = await getAccountByNumber(svc,'1050');
+  const lines = await readRecords(stores.JournalLine,{journal_id:journal.id,account_id:clearing.id});
+  if (!lines.length || lines.some(line => (line.party_id && line.party_id !== invoice.customer_id) || Number(line.credit || 0) !== 0) ||
+      round2(lines.reduce((sum,line) => sum + Number(line.debit || 0),0)) !== Number(invoice.total)) {
+    throw Error('Reconcile the original cash invoice journal before receiving this deposit.');
+  }
+  const order = !invoice.receipt_reference && invoice.sales_order_id ? await stores.SalesOrder.get(invoice.sales_order_id) : null;
+  const reference = [invoice.receipt_reference,order?.customer_id === invoice.customer_id ? order.receipt_reference : '',invoice.invoice_number]
+    .find(value => typeof value === 'string' && value.trim() && value.trim().length <= 150);
+  return reference?.trim() || '';
+}
+
 export async function recordDirectCustomerReceipt(svc, user, body, {customer: scopedCustomer, employee, staffCollection = false} = {}) {
   const stores = svc.entities;
   if (!validAmount(body.amount)) throw Error('Enter a positive received amount with at most two decimal places.');
   const amount = Number(body.amount), date = body.date;
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) ||
       new Date(date + 'T12:00:00Z').toISOString().slice(0,10) !== date || date > today()) throw Error('Choose a valid receipt date no later than today.');
-  const reference = typeof body.reference === 'string' ? body.reference.trim() : '';
-  if (!reference || reference.length > 150) throw Error('Enter a receipt or transaction reference of at most 150 characters.');
+  const suppliedReference = typeof body.reference === 'string' ? body.reference.trim() : '';
+  if ((body.reference != null && typeof body.reference !== 'string') || suppliedReference.length > 150 ||
+      (!suppliedReference && staffCollection)) throw Error('Enter a receipt or transaction reference of at most 150 characters.');
   if (typeof body.requestKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(body.requestKey)) throw Error('A valid receipt request key is required. Reopen the receipt form.');
   const customerId = scopedCustomer?.id || body.customerId;
   const depositTo = cashDestinationId(body.treasuryAccountId);
@@ -163,17 +226,18 @@ export async function recordDirectCustomerReceipt(svc, user, body, {customer: sc
     if (typeof row?.invoice_id !== 'string' || !row.invoice_id || !validAmount(row.amount)) throw Error('Choose valid invoice amounts.');
     return {invoice_id:row.invoice_id, amount:Number(row.amount)};
   }).sort((a,b) => a.invoice_id.localeCompare(b.invoice_id));
+  if (!suppliedReference && allocations.length !== 1) throw Error('Enter a receipt or transaction reference of at most 150 characters.');
   const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0,1000) : '';
   const method = body.method || '';
   if (!['','cash','bank_transfer','mobile_money','cheque'].includes(method)) throw Error('Choose a valid payment method.');
   const collectionEvidence = !staffCollection && body.commercialReceipt === true && allocations.length === 1;
   const files = collectionEvidence && Array.isArray(body.receiptFileUris) ? body.receiptFileUris : [];
   const key = user.id + (staffCollection ? ':customer-collection:' : ':') + body.requestKey;
-  const intent = fingerprint([customerId,date,reference,amount,allocations,depositTo,method,notes,collectionEvidence,files]);
+  const intent = fingerprint([customerId,date,suppliedReference,amount,allocations,depositTo,method,notes,collectionEvidence,files]);
   const {items:[prior]} = await stores.Payment.filter({receipt_request_key:key},{limit:1});
   if (prior) {
     const matches = prior.receipt_intent ? prior.receipt_intent === intent
-      : prior.party_id === customerId && (staffCollection ? prior.collection_date : prior.payment_date) === date && prior.reference === reference &&
+      : prior.party_id === customerId && (staffCollection ? prior.collection_date : prior.payment_date) === date && prior.reference === suppliedReference &&
         Number(prior.amount) === amount && (!depositTo || prior.treasury_account_id === depositTo) &&
         fingerprint((prior.receipt_allocations || []).map(a => ({invoice_id:a.invoice_id,amount:Number(a.amount)})).sort((a,b)=>a.invoice_id.localeCompare(b.invoice_id))) === fingerprint(allocations);
     if (!matches) throw Error('This save reference already belongs to different payment details.');
@@ -187,13 +251,20 @@ export async function recordDirectCustomerReceipt(svc, user, body, {customer: sc
   if (staffCollection && rows.some(({invoice}) => invoice.payment_type === 'cash')) throw Error('This earlier cash sale already has a settlement workflow. Open its receipt from Treasury.');
   if (rows.some(({invoice}) => date < (invoice.opening_date || invoice.invoice_date || ''))) throw Error('Payment cannot precede its invoice date.');
   if (round2(rows.reduce((sum,row) => sum + row.amount,0)) !== amount) throw Error('Allocate the entire received amount to invoices.');
-  if ((await readRecords(stores.Payment,{payment_type:'customer_payment',party_id:customerId,reference,status:{$ne:'rejected'}})).length)
-    throw Error('This customer receipt reference is already recorded. Review the existing payment.');
+  const paymentNumber = suppliedReference
+    ? 'RCP-' + crypto.randomUUID().slice(0,12).toUpperCase()
+    : 'RCP-' + fingerprint([key,rows[0].invoice.id]).slice(0,20).toUpperCase();
+  let reference = suppliedReference || await recordedCashInvoiceReference(svc,rows[0].invoice);
+  if (reference && (await readRecords(stores.Payment,{payment_type:'customer_payment',party_id:customerId,reference,status:{$ne:'rejected'}})).length) {
+    if (suppliedReference) throw Error('This customer receipt reference is already recorded. Review the existing payment.');
+    reference = '';
+  }
+  reference ||= paymentNumber;
   const destination = await cashSaleDestination(stores,depositTo), treasury = destination.account;
   const paymentMethod = method || ({bank:'bank_transfer',mobile_money:'mobile_money'})[treasury.account_type] || 'cash';
   const now = new Date().toISOString(), name = employee?.full_name || user.full_name || user.email;
   let payment = await stores.Payment.create({
-    payment_number:'RCP-' + crypto.randomUUID().slice(0,12).toUpperCase(), payment_type:'customer_payment',
+    payment_number:paymentNumber, payment_type:'customer_payment',
     party_type:'customer', party_id:customerId, party_name:customer.business_name, amount, payment_date:date,
     payment_method:paymentMethod, reference, notes, status:'draft', account_id:destination.gl.id,
     treasury_account_id:treasury.id, treasury_account_name:treasury.name, prepared_by:user.id, prepared_at:now,
