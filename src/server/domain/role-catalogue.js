@@ -1,6 +1,6 @@
 // A template chooses the native dashboard. Explicit module selections grant
 // access to that feature; checked workflows retain their data invariants.
-import { ROLE_KEYS, normalizeRole, FEATURE_AUTHORITY } from './roles.js';
+import { ROLE_KEYS, normalizeRole, FEATURE_AUTHORITY, principalRole } from './roles.js';
 import {ui} from '../../lib/i18n.js';
 import { activeStaffRole,deletedRoleKeys } from '../../lib/staff-role-assignments.js';
 import { businessDate } from '../../lib/business-date.js';
@@ -18,11 +18,11 @@ export const MODULES = [
 
 export const TEMPLATE_MODULES = {
   admin: MODULES.map(m => m.key),
-  procurement:['purchases','inventory','expenses','approvals'],
-  warehouse_manager:['purchases','inventory','inventory_adjustments','manufacturing','quality','accounting','sales','sales_reports','customers','expenses','approvals','payroll'],
-  production_manager:['accounting','purchases','inventory','manufacturing','quality','distribution','sales','commercial','cashier','expenses','approvals'],
-  cashier:['purchases','cashier','payroll','accounting','expenses'],
-  employee:['purchases','inventory','distribution','sales','customers','expenses'],
+  procurement:['inventory','expenses','approvals'],
+  warehouse_manager:['inventory','inventory_adjustments','manufacturing','quality','accounting','sales','sales_reports','customers','expenses','approvals','payroll'],
+  production_manager:['accounting','inventory','manufacturing','quality','distribution','sales','commercial','cashier','expenses','approvals'],
+  cashier:['cashier','payroll','accounting','expenses'],
+  employee:['inventory','distribution','sales','customers','expenses'],
   commercial:['commercial','customers','cashier'],
   driver:['distribution'],
   hotesse:['outlets'],
@@ -30,9 +30,9 @@ export const TEMPLATE_MODULES = {
 
 export const SUPPLY_CHAIN_MANAGER = {
   key:'supply_chain_manager', label:'Supply Chain Manager', category:'Management',
-  summary:'Coordinates suppliers, purchasing, receiving, inventory, quality and deliveries.',
-  duties:['Maintains suppliers and plans replenishment orders','Oversees receiving, stock and batch quality','Coordinates vehicle loads, returns and deliveries'],
-  template_role:'warehouse_manager', modules:['purchases','inventory','manufacturing','quality','distribution','expenses','approvals','sales_reports','sales','accounting'],
+  summary:'Coordinates stock replenishment, inventory, quality and deliveries.',
+  duties:['Plans stock replenishment with administrators','Oversees receiving, stock and batch quality','Coordinates vehicle loads, returns and deliveries'],
+  template_role:'warehouse_manager', modules:['inventory','manufacturing','quality','distribution','expenses','approvals','sales_reports','sales','accounting'],
 };
 const keyPattern = /^[a-z][a-z0-9_]{2,39}$/;
 const categories = ['Management','Finance','Operations','Commercial'];
@@ -56,7 +56,7 @@ export function catalogueFromStored(stored) {
     if (['constructor','prototype','__proto__'].includes(key) || !keyPattern.test(key) || !profile || typeof profile !== 'object') continue;
     const template = ['admin','driver','commercial'].includes(key) ? key : profile.template_role || defaults[key]?.template_role || (key === 'supply_chain_manager' ? 'warehouse_manager' : '');
     if (!template || (template === 'admin' && key !== 'admin') || !Object.hasOwn(TEMPLATE_MODULES,template)) continue;
-    const max = MODULES.map(m=>m.key);
+    const max = MODULES.map(m=>m.key).filter(module=>key==='admin'||module!=='purchases');
     const managementDefaults=['admin','production_manager','supply_chain_manager'].includes(key) && Number(profile.module_permissions_version || 0)<3 ? ['sales','accounting','expenses'] : [];
     const adjustmentDefaults=key==='admin' && Number(profile.module_permissions_version || 0)<4 && (!Array.isArray(profile.modules) || profile.modules.includes('inventory'))?['inventory_adjustments']:[];
     const payrollDefaults=template==='cashier' && Number(profile.module_permissions_version || 0)<5 && (!Array.isArray(profile.modules) || profile.modules.includes('cashier'))?['payroll']:[];
@@ -89,7 +89,7 @@ export function validateRoleProfile(input, current) {
   if(key==='admin'&&(!input.modules.includes('admin')||!input.modules.includes('employees')))throw new Error('Super Admin must retain Administration and Employees & roles access.');
   const duties = Array.isArray(input.duties) ? input.duties.map(v => String(v).trim()).filter(Boolean) : [];
   if (duties.length > 8 || duties.some(v => v.length > 200)) throw new Error('Add up to eight concise responsibilities.');
-  return { key,label,category:input.category,summary,duties,template_role:template,modules:[...new Set(input.modules)],module_permissions_version:5 };
+  return { key,label,category:input.category,summary,duties,template_role:template,modules:[...new Set(input.modules.filter(module=>key==='admin'||module!=='purchases'))],module_permissions_version:5 };
 }
 
 export function decorateEmployee(user, employee, catalogue) {
@@ -103,6 +103,7 @@ export function decorateEmployee(user, employee, catalogue) {
 export const approvalActionTargets={approveSupplierOrder:'purchases',rejectSupplierOrder:'purchases',approvePurchasePayment:'purchases',rejectPurchasePayment:'purchases',approveProductionOrder:'manufacturing',rejectProductionOrder:'manufacturing',approveYogurtRecipe:'manufacturing',rejectYogurtRecipe:'manufacturing',approveDispatch:'distribution',approveDispatchRequest:'distribution',approveSale:'commercial',rejectSale:'commercial',returnSale:'commercial'};
 export function assertModule(context, module) {
   if(!module)return;
+  if(module==='purchases'&&(context.user?principalRole(context.user,context.employee):context.role)!=='admin')throw Object.assign(Error('Purchases are reserved for administrators.'),{status:403});
   const scope=context.user?.[FEATURE_AUTHORITY];
   if(scope?.module==='approvals'&&approvalActionTargets[scope.action]===module)return;
   if(context.role==='admin'&&!context.user?.[FEATURE_AUTHORITY]){const modules=context.roleCatalogue?.roles?.admin?.modules;if(!modules||['admin','employees'].includes(module)||modules.includes(module))return;throw Object.assign(new Error('This module is disabled in the Super Admin role configuration.'),{status:403});}

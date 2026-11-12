@@ -1,7 +1,7 @@
-import { requireStaff, round3 } from './field-ops.js';
+import { round3 } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { productionRequirements } from './production-batches.js';
-import { purchaseWorkspace } from './purchase-workspace.js';
+import { purchaseWorkspace,requirePurchasingAdmin } from './purchase-workspace.js';
 import { supplierAction } from './supplier-workspace.js';
 import { businessDate } from '../../lib/business-date.js';
 import { createHash } from 'node:crypto';
@@ -12,9 +12,7 @@ function sourceKey(body) {
 }
 
 export async function productionPurchaseAction(client, user, body) {
-  const { role, employee } = await requireStaff(client, user, ['admin','production_manager','warehouse_manager'], 'production purchasing');
-  if (role !== 'admin' && employee?.status !== 'active') throw Error('An active production staff account is required');
-  client.auth.assertModule?.('purchases');
+  await requirePurchasingAdmin(client,user);
   const stores = client.asServiceRole.entities, source = sourceKey(body);
   const sending = body.action === 'requestProductionPurchase';
   const request = `${user.id}:${body.requestKey}`, payload = JSON.stringify([source, body.lines]);
@@ -35,7 +33,7 @@ export async function productionPurchaseAction(client, user, body) {
     return { ...row, on_order, purchase_quantity: Math.max(0, round3(row.missing-on_order)) };
   });
   const data = await purchaseWorkspace(client,user,{compose:true});
-  const base = { shortages, products:data.products, suppliers:data.suppliers, open_orders:orders.map(po=>({id:po.id,po_number:po.po_number,status:po.status})), can_manage_suppliers: role==='admin' || employee?.assigned_role==='supply_chain_manager' };
+  const base = { shortages, products:data.products, suppliers:data.suppliers, open_orders:orders.map(po=>({id:po.id,po_number:po.po_number,status:po.status})), can_manage_suppliers:true };
   if (!sending) return base;
   const required = shortages.filter(row=>row.purchase_quantity>0), rows=body.lines;
   if (!required.length) throw Error('These shortages are already covered by stock or open purchase requests. Refresh the material check.');
@@ -53,7 +51,7 @@ export async function productionPurchaseAction(client, user, body) {
   for (const [groupKey, group] of groups) {
     const hash=createHash('sha256').update(body.requestKey+':'+groupKey).digest('hex').slice(0,32);
     const vendorKey=[hash.slice(0,8),hash.slice(8,12),hash.slice(12,16),hash.slice(16,20),hash.slice(20)].join('-');
-    const result=await supplierAction(client,user,{action:'saveSupplierOrder',requestKey:vendorKey, status:'pending_approval',order:{supplier_id:group.supplierId,order_date:businessDate(),warehouse_id:group.warehouseId,payment_terms:'credit',catalogue_only:true,notes:`Production materials: ${plan.order?.order_number || 'planned production'}; receive at ${group.warehouseName}.`,lines:group.lines}},{allowUnlistedProductionRequest:true});
+    const result=await supplierAction(client,user,{action:'saveSupplierOrder',requestKey:vendorKey, status:'confirmed',order:{supplier_id:group.supplierId,order_date:businessDate(),warehouse_id:group.warehouseId,payment_terms:'credit',catalogue_only:true,notes:`Production materials: ${plan.order?.order_number || 'planned production'}; receive at ${group.warehouseName}.`,lines:group.lines}});
     const po=await stores.PurchaseOrder.update(result.order.id,{production_purchase_source:source,production_source_order_id:body.orderId || '',production_purchase_request:request,production_purchase_payload:payload});
     saved.push({id:po.id,po_number:po.po_number,status:po.status,supplier_catalogue_review_required:!!po.supplier_catalogue_review_required});
   }

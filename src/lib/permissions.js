@@ -48,7 +48,7 @@ export const ROLE_DEFINITIONS = [
     category: 'Management',
     get summary(){return ui("Full ERP administration across every dashboard, department and management function.");},
     duties: [
-      'Final approval of purchase orders and field sales; reviews production activity',
+      'Records purchases and reviews field sales and production activity',
       'Reviews financial statements, budgets and company Reports',
       'Manages employees, user accounts and company settings',
       'Full administration of every ERP module and staff dashboard',
@@ -67,16 +67,16 @@ export const ROLE_DEFINITIONS = [
       'Oversees quality control, batch release, expiry and traceability',
       'Reviews production and expense requests within the existing approval workflow',
       'Provides the Operations / Production Manager cheque signature',
-      'Submits production directly to Warehouse; purchases retain General Manager approval',
+      'Submits production directly to Warehouse',
     ],
   },
   {
     key: 'supply_chain_manager',
     get label(){return ui("Supply Chain Manager");},
     category: 'Management',
-    get summary(){return ui("Coordinates suppliers, purchasing, receiving, inventory, quality and deliveries.");},
+    get summary(){return ui("Coordinates stock replenishment, inventory, quality and deliveries.");},
     duties: [
-      'Maintains suppliers and plans replenishment orders',
+      'Plans stock replenishment with administrators',
       'Oversees receiving, stock and batch quality',
       'Coordinates vehicle loads, returns and deliveries',
     ],
@@ -88,7 +88,7 @@ export const ROLE_DEFINITIONS = [
     get summary(){return ui("Handles money in and money out.");},
     duties: [
       'Disburses payments and records treasury receipts and expenses',
-      'Confirms cash physically received from Commercials',
+      'Reconciles outstanding cash handovers',
       'Runs the Cashier dashboard and expense payments',
       'Handles cash and mobile money; bank accounts are restricted to administrators',
     ],
@@ -97,12 +97,10 @@ export const ROLE_DEFINITIONS = [
     key: 'procurement',
     get label(){return ui("Procurement Officer");},
     category: 'Operations',
-    get summary(){return ui("Buys what the factory and sales need.");},
+    get summary(){return ui("Tracks factory and sales replenishment needs.");},
     duties: [
-      'Creates purchase orders and follows them through to receipt',
-      'Maintains supplier accounts and price agreements',
       'Tracks stock levels and reorder needs',
-      'Submits purchases for General Manager approval',
+      'Shares purchase needs with administrators',
     ],
   },
   {
@@ -125,7 +123,7 @@ export const ROLE_DEFINITIONS = [
     get summary(){return ui("General staff with day-to-day operational access.");},
     duties: [
       'Raises expense requests and records their own activity',
-      'Sees sales, customers, procurement and stock screens',
+      'Sees sales, customers and stock screens',
       'Reports stock movements and delivery information',
       'No approval or financial posting rights',
     ],
@@ -175,10 +173,9 @@ export function roleLabel(role) {
   return roleDefinition(role)?.label || ROLE_LABELS[role] || role || 'Unassigned';
 }
 
-// Who can approve purchase orders (GM only — procurement/production manager submit, GM approves)
+// Administrators can confirm outstanding legacy purchase requests.
 export const PO_APPROVERS = ['admin'];
-// Who can see all purchase orders (vs only their department's)
-export const PO_FULL_ACCESS = ['admin', 'procurement', 'cashier'];
+export const PO_FULL_ACCESS = PURCHASE_ROLES;
 // Who can disburse payments
 export const PAYMENT_DISBURSERS = ['admin', 'cashier'];
 // Who can approve production orders (GM only)
@@ -227,7 +224,7 @@ export const NAV_ROLE_ACCESS = {
   '/cockpit': ['admin'],
   '/accounting': ['admin', 'cashier','production_manager','warehouse_manager'],
   '/purchases': PURCHASE_ROLES,
-  '/suppliers': ['admin', 'procurement', 'cashier'],
+  '/suppliers': PURCHASE_ROLES,
   '/inventory': INVENTORY_ROLES,
   '/items': INVENTORY_ROLES,
   '/manufacturing': QUALITY_ROLES,
@@ -274,6 +271,7 @@ export function canOpenFieldPath(role, path, allowedModules) {
   role = normalizeRole(role);
   if (!role) return false;
   if (role === 'admin') return true;
+  if(['/purchases','/suppliers'].some(root=>path===root||path.startsWith(root+'/')))return false;
   if(path==='/approval-history')return true;
   if(path==='/my-stock'||path==='/my-stock/new'||path==='/my-stock/returns')return role!=='hotesse';
   if (path === '/profile' || path === '/profile/') return true;

@@ -42,13 +42,13 @@ function sum(rows, field) {
 }
 
 // Returns cash position plus period totals for sales, purchases, expenses and spoilage.
-export async function getFinancePulse(periodKey) {
+export async function getFinancePulse(periodKey, {includePurchases=true}={}) {
   const { start, end } = periodRange(periodKey);
 
   const [accounts, invoices, purchases, treasuryTx, movements] = await Promise.all([
     erp.entities.TreasuryAccount.filter({ is_active: true }),
     erp.entities.Invoice.list("-invoice_date", 1000),
-    erp.entities.PurchaseOrder.list("-order_date", 1000),
+    includePurchases?erp.entities.PurchaseOrder.list("-order_date", 1000):[],
     erp.entities.TreasuryTransaction.list("-transaction_date", 1000),
     erp.entities.StockMovement.list("-created_date", 1000),
   ]);

@@ -3,6 +3,7 @@ import MobileInvoiceDetail from '@/components/sales/MobileInvoiceDetail';
 import SaleCorrectionChooser,{ReversedSaleGuidance} from '@/components/sales/SaleCorrectionChooser';
 import SaleReversalDialog from '@/components/sales/SaleReversalDialog';
 import CustomerCollectionDialog from '@/components/customers/CustomerCollectionDialog';
+import CustomerReceivePayment from '@/components/customers/CustomerReceivePayment';
 import LearnMore from '@/components/shared/LearnMore';
 
 /* localized-messages */
@@ -37,19 +38,26 @@ export default function SalesInvoice() {
   const [collecting,setCollecting]=useState(false),[reversing,setReversing]=useState(false),[correcting,setCorrecting]=useState(params.get('correct')==='1');
   const canCorrect=['admin','employee'].includes(role);
   const issued=data&&postedInvoiceStatuses.includes(data.invoice.status)&&data.accounting_verified!==false;
+  const canCollect=(canCorrect||role==='cashier')&&issued&&data.invoice.payment_type==='credit'&&data.invoice.customer_balance>0;
   const preview=useMemo(()=>data?invoiceHtml({...data,options:options || data.options,invoice:{...data.invoice,due_date:due}}).replace(/<div class="toolbar">.*?<\/div>/,''):'',[data, options, due, interfaceLanguage]);
   async function save(){if(busy)return;setBusy(true);setError('');setNotice('');try{const next=await invoiceRequest({action:'customizeSalesInvoice',invoiceId:id,options,dueDate:due,saveCustomerDefaults:defaults,revision:data.revision});setData(next);setOptions(next.options);setDue(next.invoice.due_date);setEdit(false);setDefaults(false);setNotice(sourceMessage("Invoice details saved."));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function share(){setError('');try{const result=await shareInvoice(data);setNotice(result==='copied'?sourceMessage("Invoice text copied. Paste it into your preferred messaging app."):sourceMessage("Invoice shared."));}catch(e){if(e.name!=='AbortError')setError(sourceMessage("Sharing is unavailable here. Download the invoice or use Print / PDF to save a copy."));}}
   const correctionDialogs=data&&<>{correcting&&issued&&<SaleCorrectionChooser onClose={()=>setCorrecting(false)} onMetadata={()=>{setCorrecting(false);setEdit(true);}} canReverse={canCorrect} onReverse={()=>{setCorrecting(false);setReversing(true);}}/>}{reversing&&canCorrect&&<SaleReversalDialog invoiceId={id} onClose={()=>setReversing(false)} onDone={()=>{setReversing(false);setNotice(sourceMessage('Sale reversed. Received money is retained as customer credit.'));setReload(n=>n+1);}}/>}</>;
   const replacementGuidance=data?.invoice.sale_reversal&&canCorrect?<ReversedSaleGuidance customerId={data.invoice.customer_id} onNewSale={()=>navigate('/sales/new?customer='+encodeURIComponent(data.invoice.customer_id))}/>:null;
+  const customer=canCollect?{id:data.invoice.customer_id,business_name:data.invoice.customer_name}:null;
+  const closePayment=()=>setCollecting(false);
+  const paymentSaved=()=>{closePayment();setNotice(sourceMessage('Payment posted directly to treasury'));setReload(n=>n+1);};
+  const paymentDialog=collecting&&canCollect&&(role==='cashier'
+    ?<CustomerReceivePayment customer={customer} initialInvoice={{...data.invoice,balance:data.invoice.customer_balance}} onClose={closePayment} onDone={paymentSaved}/>
+    :<CustomerCollectionDialog customer={customer} invoiceId={id} onClose={closePayment} onDone={paymentSaved}/>);
   if(phone&&data&&!edit)return <>
-    <MobileInvoiceDetail data={data} issued={issued} busy={busy} error={error} notice={notice} onBack={()=>navigate(invoiceList)} onPrint={()=>printInvoice(data)} onDownload={()=>downloadInvoice(data)} onShare={share} onEmail={()=>{window.location.href=invoiceEmail(data);}} onCustomize={()=>{setNotice('');setEdit(true);}} onCollect={()=>setCollecting(true)} onReverse={()=>setCorrecting(true)} onReload={()=>setReload(n=>n+1)} canManage={canCorrect}>
+    <MobileInvoiceDetail data={data} issued={issued} busy={busy} error={error} notice={notice} onBack={()=>navigate(invoiceList)} onPrint={()=>printInvoice(data)} onDownload={()=>downloadInvoice(data)} onShare={share} onEmail={()=>{window.location.href=invoiceEmail(data);}} onCustomize={()=>{setNotice('');setEdit(true);}} onCollect={canCollect?()=>setCollecting(true):undefined} onReverse={()=>setCorrecting(true)} onReload={()=>setReload(n=>n+1)} canManage={canCorrect}>
       {replacementGuidance}
       {(!data.company.tax_id||!data.company.registration_number)&&<p className="text-xs text-muted-foreground">{ui('Ask the General Manager to verify the company legal details before sharing.')}</p>}
       {data.has_letterhead_snapshot===false&&<p className="text-xs text-muted-foreground">{ui('This older invoice uses the current company letterhead. Saving its first customization will retain a copy with this document.')}</p>}
       <iframe title={ui('Invoice preview')} sandbox="" srcDoc={preview} className="h-[700px] w-full rounded border bg-white"/>
     </MobileInvoiceDetail>
-    {collecting&&<CustomerCollectionDialog customer={{id:data.invoice.customer_id,business_name:data.invoice.customer_name}} invoiceId={id} onClose={()=>setCollecting(false)} onDone={()=>{setCollecting(false);setNotice(sourceMessage('Cash collection recorded. Hand it to the cashier for confirmation and GM approval.'));setReload(n=>n+1);}}/>}
+    {paymentDialog}
     {correctionDialogs}
   </>;
   return <div className="space-y-4">
@@ -59,8 +67,8 @@ export default function SalesInvoice() {
     {!data&&!error&&<p role="status" className="py-12 text-sm text-slate-500">{ui("Loading invoice…")}</p>}
     {data&&<>
       {data.invoice.sale_reversal&&<div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm"><strong>{ui('Sale reversed')} · {data.invoice.sale_reversal.date}</strong><p>{data.invoice.sale_reversal.reason}</p><p>{ui('Customer credit')}: {formatXAF(data.invoice.sale_reversal.customer_credit)} · {data.invoice.sale_reversal.journal_number}</p></div>}
-      {!edit&&issued&&canCorrect&&<div className="flex flex-wrap gap-2">{data.invoice.payment_type==='credit'&&data.invoice.customer_balance>0&&<Button onClick={()=>setCollecting(true)}>{ui('Collect cash for handover')}</Button>}<Button variant="outline" onClick={()=>setCorrecting(true)}>{ui('Correct sale')}</Button></div>}
-      {collecting&&<CustomerCollectionDialog customer={{id:data.invoice.customer_id,business_name:data.invoice.customer_name}} invoiceId={id} onClose={()=>setCollecting(false)} onDone={()=>{setCollecting(false);setNotice(sourceMessage('Cash collection recorded. Hand it to the cashier for confirmation and GM approval.'));setReload(n=>n+1);}}/>}
+      {!edit&&issued&&(canCorrect||canCollect)&&<div className="flex flex-wrap gap-2">{canCollect&&<Button onClick={()=>setCollecting(true)}>{ui('Receive Payment')}</Button>}{canCorrect&&<Button variant="outline" onClick={()=>setCorrecting(true)}>{ui('Correct sale')}</Button>}</div>}
+      {paymentDialog}
       {correctionDialogs}
       {replacementGuidance}
       <ReportExport formats={['xlsx']} disabled={!issued || edit || busy || !!error} getReport={()=>salesInvoiceDocument(data)}/>

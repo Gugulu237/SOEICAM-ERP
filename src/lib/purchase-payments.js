@@ -1,16 +1,13 @@
-// Cash disbursement for approved purchase orders.
+// Purchase payments post directly. Legacy requests can still be reviewed.
 // Cash released before delivery uses the configured supplier-prepayment asset.
 // The receipt records Inventory/AP, then its verified advance allocation clears
 // the prepayment asset against that receipt's original payable account.
 //
-// No cash leaves the till on the cashier's word alone:
-//   prepareCashDisbursement (cashier asks) → approveCashDisbursement (General Manager)
-//   → releaseCashDisbursement (cashier hands the money over, the ledger moves).
 import { erp } from "@/api/erpClient";
 
 
 export async function prepareCashDisbursement({ po, treasuryAccount, amount, date, reference = '', notes = '', requestKey = crypto.randomUUID() }) {
-  const { data } = await erp.functions.invoke('fieldOps', { action: 'cashierRequestPayment', requestKey, orderId: po.id, accountId: treasuryAccount?.id, amount, date, reference, description: notes });
+  const { data } = await erp.functions.invoke('fieldOps', { action: 'recordPurchasePayment', requestKey, orderId: po.id, accountId: treasuryAccount?.id, amount, date, reference, description: notes });
   return data.payment;
 }
 

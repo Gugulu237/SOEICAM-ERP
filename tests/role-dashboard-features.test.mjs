@@ -23,7 +23,7 @@ test('saved reporting permission gives every operational template a usable repor
 test('template dashboards include newly selected modules once and preserve existing task labels',()=>{
  const rows=mergeRoleWorkspaces('production_manager',['sales_reports','purchases','quality'],[{title:'Quality queue',path:'/manufacturing?section=quality'},{title:'Unselected sales',path:'/sales'}]).filter(m=>permitsWorkspace(m.path,['sales_reports','purchases','quality']));
  assert.equal(rows.filter(m=>m.path==='/manufacturing?section=quality').length,1);
- assert.ok(rows.some(m=>m.path==='/sales-reports'));assert.ok(rows.some(m=>m.path==='/purchases'));assert.ok(!rows.some(m=>m.path==='/sales'));
+ assert.ok(rows.some(m=>m.path==='/sales-reports'));assert.ok(!rows.some(m=>m.path==='/purchases'));assert.ok(!rows.some(m=>m.path==='/sales'));
 });
 let compiled;
 async function renderer(){
@@ -62,11 +62,12 @@ test('saved operational grants appear beyond legacy template lists and disappear
   const catalogue=catalogueFromStored({roles:{sync_worker:validateRoleProfile({key:'sync_worker',label:'Sync worker',category:'Operations',template_role:template,modules:['customers','inventory','purchases']})}});
   const staff=decorateEmployee({role:'user'},{id:'staff',role:'sync_worker',status:'active'},catalogue);
   const cards=modulesForRole(template,staff.allowed_modules);
-  for(const path of ['/customers','/inventory','/purchases']){
+  for(const path of ['/customers','/inventory']){
    assert.ok(cards.some(c=>c.path===path),template+' must show '+path);
    assert.equal(canOpenFieldPath(template,path,staff.allowed_modules),true);
    assert.equal(permitsWorkspace(path,staff.allowed_modules),true);
   }
+  assert.equal(canOpenFieldPath(template,'/purchases',staff.allowed_modules),false);assert.ok(!cards.some(c=>c.path==='/purchases'));
   assert.deepEqual(modulesForRole(template,[]).map(m=>m.path),[]);
   assert.equal(permitsWorkspace('/customers',[]),false);
  }
@@ -95,7 +96,7 @@ test('disabled native workspace still offers every remaining assigned feature',a
 });
 
 
-test('Cashier receives explicit links for accounting and purchasing outside the cash desk',async()=>{
+test('Cashier receives accounting links and cannot open purchases from a stale grant',async()=>{
  const render=await renderer(),r=hookRuntime();r.session={role:'cashier',assignedRole:'cashier',employee:{id:'staff'},user:{id:'login'},allowedModules:['cashier','accounting','purchases'],loading:false};globalThis.__roleUI=r;
- try{r.beforeRender();const page=render('dashboard');assert.match(page,/Assigned features/);assert.match(page,/Finance/);assert.match(page,/Purchases/);}finally{r.cleanup();delete globalThis.__roleUI;}
+ try{r.beforeRender();const page=render('dashboard');assert.match(page,/Assigned features/);assert.match(page,/Finance/);assert.doesNotMatch(page,/Purchases/);}finally{r.cleanup();delete globalThis.__roleUI;}
 });

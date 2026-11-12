@@ -118,6 +118,29 @@ test('the real transfer form retains a failed draft and request key, then saves 
   } finally {r.cleanup();delete globalThis.__cashierUI;}
 });
 
+test('the cashier customer invoice receipt can post to a bank account without showing treasury balances', async () => {
+  const render=await ui(),r=runtime(),calls=[],outcomes=[];
+  r.invoke=async(name,body)=>{
+    calls.push({name,...body});
+    if(body.action==='depositOptions')return {data:{cashAccounts:[{id:'till',name:'Main Cash'},{id:'bank',name:'Operating Bank'}],defaultCashAccountId:'till'}};
+    return {data:{payment:{id:'receipt',status:'posted',treasury_account_name:'Operating Bank'}}};
+  };
+  globalThis.__cashierUI=r;
+  const source={accounts:[{id:'till',name:'Main Cash',balance:100000,gl_account_id:'gl-till'}]};
+  const document={id:'invoice',invoice_number:'INV-01',customer_id:'customer',available_amount:500};
+  const props={kind:'receipt',document,requestKey:'checked-receipt',source,onClose:()=>{},onDone:outcome=>outcomes.push(outcome)};
+  const draw=()=>{r.beforeRender();return render(props,true);};
+  try {
+    draw();await r.flush();const html=draw();assert.match(html,/Operating Bank/);assert.doesNotMatch(html,/Current recorded balance|approval/);
+    assert.equal(r.selects[0].value,'till');r.selects[0].onChange({target:{value:'bank'}});
+    r.inputs.find(i=>i['aria-label']==='Receipt / transaction reference').onChange({target:{value:'BANK-REF'}});
+    draw();await r.submit({preventDefault(){}});
+    assert.deepEqual(calls.map(c=>c.action),['depositOptions','confirm']);
+    assert.equal(calls[1].treasuryAccountId,'bank');assert.deepEqual(calls[1].allocations,[{invoice_id:'invoice',amount:500}]);
+    assert.equal(outcomes[0].payment.status,'posted');
+  } finally {r.cleanup();delete globalThis.__cashierUI;}
+});
+
 test('Cashier cannot edit approved amounts or approve their own expense via generic table writes',()=>{
   const context={user,employee:{id:'cashier',role:'cashier',status:'active'}};
   const pending={status:'pending_approval',requester_id:'cashier',amount:5000},expense={status:'approved',requester_id:'cashier',amount:5000},payment={status:'approved',amount:5000};

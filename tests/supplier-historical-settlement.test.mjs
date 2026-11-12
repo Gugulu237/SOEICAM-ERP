@@ -72,7 +72,7 @@ test('archived setup receipts and orders cannot create a second bill or cash pay
   await postHistoricalSettlement(s,context,'supplier',await confirmation(f));
   const before=structuredClone(f.rows);
   await assert.rejects(supplierAction(f.client,context.user,{action:'registerSupplierBill',orderId:'po',receiptId:f.receipt.id}),/cannot be billed again/);
-  await assert.rejects(cashierAction(f.client,context.user,{action:'cashierRequestPayment',orderId:'po',accountId:'till',amount:1,reference:'Duplicate',requestKey:'duplicate-payment-request'}),/No further payment can be requested/);
+  await assert.rejects(cashierAction(f.client,context.user,{action:'recordPurchasePayment',orderId:'po',accountId:'till',amount:1,reference:'Duplicate',requestKey:'duplicate-payment-request'}),/No further payment can be requested/);
   assert.deepEqual(f.rows,before);
   const payment=await s.Payment.create({payment_type:'supplier_payment',po_id:'po',party_id:'supplier',treasury_account_id:'till',payment_method:'cash',status:'approved',approved_by:'gm',approved_at:new Date().toISOString(),amount:1});
   const pending=structuredClone(f.rows);

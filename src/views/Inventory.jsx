@@ -56,7 +56,7 @@ export default function Inventory() {
   const backToMenu = useMenuBack('/inventory');
   const { user,role, principalRole, employee, allowedModules, loading: authLoading } = useCurrentUser(), { toast } = useToast();
   const hasModule=key=>role==='admin' || !allowedModules || allowedModules.includes(key);
-  const canReceive = purchasePermissions(role, employee?.assigned_role).receive && hasModule('purchases');
+  const canReceive = purchasePermissions(principalRole||role).receive && hasModule('purchases');
   const showCatalogueReceiving = canReceive && workspace.filter!=='finished';
   const canEdit = ["admin", "warehouse_manager", "procurement", "production_manager"].includes(role);
   const canMoveStock = ["admin", "warehouse_manager", "production_manager"].includes(role);

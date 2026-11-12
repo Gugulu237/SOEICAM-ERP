@@ -7,7 +7,7 @@ const require=createRequire(import.meta.url);
 let compiled;
 async function bundle(){
   compiled ||= build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Form from './src/views/SalesOrderForm.jsx';export const render=(props)=>renderToStaticMarkup(React.createElement(Form,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'sales-order-ui',setup(b){
-    b.onResolve({filter:/^react$/},a=>(/(?:SalesOrderForm|SaleReplacements|MobileSaleFlow)\.jsx$/.test(a.importer))?{path:'hooks',namespace:'fixture'}:undefined);
+    b.onResolve({filter:/^react$/},a=>(/(?:SalesOrderForm|SaleReplacements|MobileSaleFlow|CashSaleDepositSelect)\.jsx$/.test(a.importer))?{path:'hooks',namespace:'fixture'}:undefined);
     b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__suppliedOrderUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__suppliedOrderUI.state('form',v),useRef=v=>globalThis.__suppliedOrderUI.ref('form',v),useMemo=fn=>fn(),useEffect=(f,d)=>globalThis.__suppliedOrderUI.effect('form',f,d);",resolveDir:process.cwd()}));
     const mocks={
       '@/components/sales/SaleStockPicker':"import React from 'react';export const vehicleSaleLabel=r=>r.vehicle_registration||r.vehicle_name||r.dispatch_number;export default function Picker(p){globalThis.__suppliedOrderUI.sourcePicker=p;return React.createElement('button',{'aria-label':'Stock source',onClick:()=>p.onOpenChange(true)},p.options.find(o=>o.id===p.value)?.label||p.fallbackLabel);}",
@@ -399,8 +399,8 @@ test('a headquarters sale deep link keeps the intended branch, credit defaults a
  }finally{f.close();globalThis.window=priorWindow;}
 });
 
-test('exported phone sale flow keeps customer, inline quantity, replacement declaration and receipt validation before atomic submission',async()=>{
- const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',centralized_inventory:{enabled:true},currentSeller:{id:'seller',name:'Salesperson A'}});f.r.phone=true;
+test('phone sale flow defaults to cash in hand and carries a chosen account through a retry',async()=>{
+ const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',centralized_inventory:{enabled:true},currentSeller:{id:'seller',name:'Salesperson A'},defaultCashAccountId:'till',cashAccounts:[{id:'till',name:'Main Cash'},{id:'wallet',name:'Mobile Money'}]});f.r.phone=true;
  const confirm=()=>f.r.buttons.find(button=>button.label.startsWith('Confirm sale'));
  try{
   let html=await f.ready();assert.match(html,/Step 1 of 3/);assert.match(html,/Salesperson A/);assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
@@ -408,12 +408,14 @@ test('exported phone sale flow keeps customer, inline quantity, replacement decl
   await selectCustomer(f);f.button('Next').onClick();html=f.paint();assert.match(html,/Step 2 of 3/);assert.equal(f.control('Search customers'),undefined);
   f.r.buttons.find(b=>b['aria-label']==='Add one YOLA 500 g').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,1);f.r.buttons.find(b=>b['aria-label']==='Remove one YOLA 500 g').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,'');
   f.control('Units sold for YOLA 500 g').onChange({target:{value:'6'}});f.paint();
-  f.button('Replacement').onClick();f.paint();f.button('No replacements').onClick();f.paint();f.button('Next').onClick();html=f.paint();assert.match(html,/Step 3 of 3/);assert.match(html,/Handed to the cashier/);assert.equal(f.button('Edit salesperson'),undefined);assert.equal(f.r.controls.find(c=>c.name==='sale-payment'&&c.checked)?.type,'radio');
+  f.button('Replacement').onClick();f.paint();f.button('No replacements').onClick();f.paint();f.button('Next').onClick();html=f.paint();assert.match(html,/Step 3 of 3/);assert.match(html,/Payment posted directly to treasury/);assert.equal(f.button('Edit salesperson'),undefined);assert.equal(f.r.controls.find(c=>c.name==='sale-payment'&&c.checked)?.type,'radio');
+  assert.equal(f.control('Cash deposited to').value,'till');
+  f.control('Cash deposited to').onChange({target:{value:'wallet'}});f.paint();
   assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
   await confirm().onClick();assert.match(f.paint(),/reference number of the receipt/);
   f.control('Receipt reference number').onChange({target:{value:'  PHONE-007  '}});f.paint();const save=confirm().onClick;await Promise.all([save(),save()]);assert.match(f.paint(),/Connection interrupted/);
   assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,1);assert.equal(f.control('Receipt reference number').value,'  PHONE-007  ');
   f.r.buttons.find(button=>button['aria-label']==='Back').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,'6');f.button('Next').onClick();f.paint();
-  f.r.fail=false;await confirm().onClick();const writes=f.calls.filter(call=>call.action==='recordSuppliedOrder');assert.equal(writes.length,2);assert.equal(writes[0].requestKey,writes[1].requestKey);assert.equal(writes[1].receiptReference,'PHONE-007');assert.equal(writes[1].lines[0].quantity,'6');assert.deepEqual(f.r.navigation,['/sales/invoices/invoice']);
+  f.r.fail=false;await confirm().onClick();const writes=f.calls.filter(call=>call.action==='recordSuppliedOrder');assert.equal(writes.length,2);assert.equal(writes[0].requestKey,writes[1].requestKey);assert.deepEqual(writes.map(write=>write.treasuryAccountId),['wallet','wallet']);assert.equal(writes[1].receiptReference,'PHONE-007');assert.equal(writes[1].lines[0].quantity,'6');assert.deepEqual(f.r.navigation,['/sales/invoices/invoice']);
  }finally{f.close();}
 });

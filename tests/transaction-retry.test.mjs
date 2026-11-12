@@ -169,13 +169,14 @@ test('real supply handler retries after a late ledger conflict, rereads the body
 test('receipt handler preserves database conflicts for retry and validation responses roll back once', async () => {
   let calls = 0;
   const client = { auth: { me: async () => ({ id: 'gm', role: 'admin' }) }, entities: { Employee: { filter: async () => [] } },
-    asServiceRole: { entities: { Payment: { filter: async () => { if (++calls === 1) throw conflict('40P01'); return { items: [{ id: 'existing', treasury_account_id: 'cash' }] }; } },
+    asServiceRole: { entities: { Payment: { filter: async () => { if (++calls === 1) throw conflict('40P01'); return { items: [{ id: 'existing', party_id:'customer-a', payment_date:'2026-10-21', reference:'test', amount:1,
+      treasury_account_id:'cash',receipt_allocations:[{invoice_id:'invoice',amount:1}] }] }; } },
       TreasuryAccount: { get: async () => ({ id: 'cash', account_type: 'cash', is_active: true }) } } } };
   globalThis.__retryClient = client;
   try {
     const post = await functionRoute();
     await withPool(async (_, state) => {
-      const response = await post(request({ action: 'confirm', amount: 1, date: '2026-10-21', reference: 'test', requestKey: 'one' }), { params: Promise.resolve({ name: 'customerReceipts' }) });
+      const response = await post(request({ action: 'confirm', customerId:'customer-a', amount: 1, date: '2026-10-21', reference: 'test', requestKey: 'receipt-one', treasuryAccountId:'cash', allocations:[{invoice_id:'invoice',amount:1}] }), { params: Promise.resolve({ name: 'customerReceipts' }) });
       assert.equal(response.status, 200, await response.clone().text());
       assert.equal((await response.json()).payment.id, 'existing'); assert.equal(state.attempts, 2);
     });

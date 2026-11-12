@@ -13,6 +13,7 @@ import {FACTORY_SALES_LOCATION_TYPES,companySalesWarehouse} from '../../lib/sale
 import {stockUnit} from '../../lib/item-units.js';
 import {salesDeliveryPoints} from './sales-delivery-points.js';
 import {principalRole} from './roles.js';
+import {cashDestinationId,cashSaleOptions} from './sale-treasury.js';
 import {centralizedInventoryPolicy,assertCentralInventory,assertCentralSalesAccess,centralEmployeeCustomers,assertCentralCustomer} from './centralized-inventory-policy.js';
 
 export const SALES_ORDER_ACTIONS=['salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','recordSuppliedOrder'];
@@ -60,15 +61,16 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
     if(body.sourceType!=='issued'||!run||run.salesperson_id!==employee.id||body.orderId)throw Error('Use only goods issued to your own employee account.');
   }
   if(body.action==='salesOrderWorkspace'){
-    const [runs,warehouses,rawStaff,customers,vehicles]=await Promise.all([
+    const [runs,warehouses,rawStaff,customers,vehicles,cashOptions]=await Promise.all([
       centralPolicy?[]:readRecords(s.Dispatch,{status:{$in:['loaded','in_transit']},...(ownIssuedStock?{salesperson_id:employee.id}:{})}),readRecords(s.Warehouse),readRecords(s.Employee,{status:'active'}),readRecords(s.Customer,{is_active:true}),centralPolicy?[]:readRecords(s.Vehicle),
+      cashSaleOptions(s),
     ]);
     const staff=await stockStaff(s,rawStaff);
     const sources=runs.filter(r=>r.vehicle_warehouse_id && !r.return_date && r.dispatch_date<=date && staff.some(e=>e.id===r.salesperson_id&&eligibleStockRecipient(e)) && (!r.driver_id||staff.some(e=>e.id===r.driver_id&&(e.access_template||e.role)==='driver')))
       .map(r=>({id:r.id,dispatch_number:r.dispatch_number,salesperson_id:r.salesperson_id,commercial_name:staff.find(e=>e.id===r.salesperson_id)?.full_name,driver_name:staff.find(e=>e.id===r.driver_id)?.full_name,vehicle_name:r.vehicle_name,vehicle_registration:vehicles.find(v=>v.id===r.vehicle_id)?.registration||'',dispatch_date:r.dispatch_date}));
     const sellers=[currentSeller,...(canChooseSeller?staff.filter(e=>e.id!==currentSellerId&&selectableSeller(e)).map(e=>({id:e.id,name:e.full_name,user_id:e.user_id||''})):[])];
     const visibleCustomers=ownIssuedStock&&centralPolicy?centralEmployeeCustomers(customers,employee,user):customers.filter(c=>!c.customer_removed_at);
-    return {sellers,currentSeller,currentSellerId,canChooseSeller,centralized_inventory:centralPolicy||{enabled:false},defaultSource:(centralPolicy||!ownIssuedStock)&&warehouses.some(companySalesWarehouse)?'company':'',runs:sources,warehouses:warehouses.filter(w=>!centralPolicy&&!ownIssuedStock&&w.is_active!==false&&!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:visibleCustomers.map(c=>({id:c.id,business_name:c.business_name,customer_number:c.customer_number,phone:c.phone,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
+    return {...cashOptions,sellers,currentSeller,currentSellerId,canChooseSeller,centralized_inventory:centralPolicy||{enabled:false},defaultSource:(centralPolicy||!ownIssuedStock)&&warehouses.some(companySalesWarehouse)?'company':'',runs:sources,warehouses:warehouses.filter(w=>!centralPolicy&&!ownIssuedStock&&w.is_active!==false&&!w.vehicle_id&&FACTORY_SALES_LOCATION_TYPES.includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),customers:visibleCustomers.map(c=>({id:c.id,business_name:c.business_name,customer_number:c.customer_number,phone:c.phone,parent_id:c.parent_id,parent_name:c.parent_name,balance:c.balance,credit_limit:c.credit_limit,payment_terms_days:c.payment_terms_days,financial_centralization_mode:c.financial_centralization_mode})),date};
   }
   if(body.action==='salesOrderDeliveryPoints'){
     const customer=typeof body.customerId==='string'?await s.Customer.get(body.customerId):null;
@@ -89,6 +91,8 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   if(!/^[a-f0-9-]{36}$/i.test(body.requestKey||''))throw Error('Reopen this sale for a valid save reference.');
   const sellerId=selectedSellerId(body,currentSeller,user,canChooseSeller);
   const input={orderId:text(body.orderId,100),updatedDate:text(body.updatedDate,100),sourceType:body.sourceType||(centralPolicy?'company':body.sourceType),dispatchId:text(body.dispatchId,100),warehouseId:text(body.warehouseId,100),sellerId,customerId:text(body.customerId,100),locationId:text(body.locationId,100),date:body.date,paymentType:body.paymentType,expectedTotal:body.expectedTotal,notes:text(body.notes,2000),lines:body.lines};
+  const depositTo=cashDestinationId(body.treasuryAccountId);
+  if(depositTo)input.treasuryAccountId=depositTo;
   if(body.stockReplacements!=null)input.stockReplacements=body.stockReplacements;
   if(body.replacementsDeclared!=null)input.replacementsDeclared=body.replacementsDeclared;
   if(body.receiptReference!=null){if(typeof body.receiptReference!=='string'||body.receiptReference.length>200||/[\x00-\x1f\x7f]/.test(body.receiptReference))throw Error('Enter a receipt reference of at most 200 characters.');input.receiptReference=body.receiptReference.trim();}
@@ -110,6 +114,7 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   const seller=await resolveSeller(s,sellerId,currentSeller,currentSellerRole);
   const exchangeOnly=Array.isArray(body.lines)&&body.lines.length===0&&replacements.length>0;
   if(!exchangeOnly&&!['cash','credit'].includes(body.paymentType))throw Error('Choose cash or credit for this sale.');
+  if(depositTo&&(exchangeOnly||body.paymentType!=='cash'))throw Error('Only cash sales use a deposit account.');
   const customer=await s.Customer.get(input.customerId);
   if(!customer||customer.is_active===false||customer.customer_removed_at)throw Error('Choose an active customer.');
   if(ownIssuedStock&&centralPolicy)await assertCentralCustomer(s,employee,user,customer.id);
@@ -152,7 +157,7 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   await s.SalesOrderLine.bulkCreate(lines.map(l=>({...l,order_id:order.id,sales_supply_order_id:order.id})));
   const due=new Date(Date.parse(suppliedOn+'T00:00:00Z')+(body.paymentType==='credit'?terms:0)*86400000).toISOString().slice(0,10);
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);
-  const result=exchangeOnly?null:await invoiceAction(client,user,{action:'createSalesInvoice',sourceType:'order',sourceId:order.id,invoiceDate:suppliedOn,dueDate:due,options:{...invoiceDefaults(customer,company),reference:input.receiptReference}},{ownIssuedStock});
+  const result=exchangeOnly?null:await invoiceAction(client,user,{action:'createSalesInvoice',sourceType:'order',sourceId:order.id,invoiceDate:suppliedOn,dueDate:due,treasuryAccountId:depositTo,options:{...invoiceDefaults(customer,company),reference:input.receiptReference}},{ownIssuedStock});
   await postSaleReplacements(svc,user,{...order,...context,id:order.id,source_order_id:order.id,sale_number:order.order_number,transaction_date:suppliedOn,commercial_id:context.salesperson_id||seller.id,commercial_name:context.salesperson_name||seller.name,recorded_by:user.id},replacements,context);
   if(exchangeOnly)await s.SalesOrder.update(order.id,{status:'delivered',amount_collected:0,amount_due:0,exchange_completed_at:now});
   const posted=await s.SalesOrder.get(order.id);

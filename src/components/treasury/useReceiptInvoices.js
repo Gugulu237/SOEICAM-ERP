@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { erp } from '@/api/erpClient';
 
-export default function useReceiptInvoices(customerId, search) {
+export default function useReceiptInvoices(customerId, search, enabled = true) {
   const [term, setTerm] = useState('');
   useEffect(() => { const timer = setTimeout(() => setTerm(search.trim()), 250); return () => clearTimeout(timer); }, [search]);
   const query = useInfiniteQuery({
-    queryKey: ['receipt-open-invoices', customerId || '', term], initialPageParam: undefined,
+    queryKey: ['receipt-open-invoices', customerId || '', term], initialPageParam: undefined, enabled,
     queryFn: ({ pageParam }) => {
       const filter = { balance: { $gt: 0 }, status: { $in: ['posted', 'partially_paid', 'overdue'] } };
       if (customerId) filter.customer_id = customerId;

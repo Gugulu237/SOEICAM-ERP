@@ -16,6 +16,7 @@ import PartyStatement from "@/components/accounting/PartyStatement";
 import DataTable from "@/components/shared/DataTable";
 import NewBillDialog from "@/components/accounting/NewBillDialog";
 import PayBillDialog from "@/components/accounting/PayBillDialog";
+import {useCurrentUser} from '@/hooks/useCurrentUser';
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Banknote } from "lucide-react";
@@ -24,6 +25,7 @@ export default function Payables() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const {principalRole,role}=useCurrentUser(),isPurchasingAdmin=(principalRole||role)==='admin';
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,setError] = useState('');
@@ -50,7 +52,7 @@ export default function Payables() {
     { key: "balance", label: ui("Balance"), render: (v) => <span className="font-semibold">{formatXAF(v)}</span> },
     { key: "status", label: ui("Status"), render: (v) => <StatusBadge status={v} /> },
     {
-      key: "actions", label: "", render: (v, bill) => bill.balance > 0 && bill.status !== "cancelled" ? (
+      key: "actions", label: "", render: (v, bill) => bill.balance > 0 && bill.status !== "cancelled" && (isPurchasingAdmin||!bill.po_id) ? (
         <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setPaySupplierId(bill.supplier_id); }}>
           <Banknote size={14} className="mr-1" />{ui(" Pay")}</Button>
       ) : null,

@@ -4,7 +4,7 @@ import {FEATURE_AUTHORITY,principalRole} from './roles.js';
 import {isOpeningRecord} from '../../lib/opening-records.js';
 import {salesStockSource} from './sales-stock-source.js';
 import {assertRunSupplyStock} from './commercial-runs.js';
-import { requireStaff, nextSequence, postJournal, stockIssue, getRuleAccount, getAccountByNumber, audit, round2, round3, today } from './field-ops.js';
+import { requireStaff, nextSequence, postJournal, stockIssue, getRuleAccount, audit, round2, round3, today } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { periodDates, finishedProduct } from './commercial-rules.js';
 import { saleItemPostings } from '../../lib/item-posting.js';
@@ -13,6 +13,7 @@ import { INVOICE_COMPANY_FIELDS, invoiceCompany, invoiceDefaults, cleanInvoiceOp
 import { postedInvoiceStatuses, saleReadMetadata, saleProductMetadata } from '../../lib/company-sales.js';
 import {salesDeliveryPoints} from './sales-delivery-points.js';
 import {centralizedInventoryPolicy,assertCentralInventory} from './centralized-inventory-policy.js';
+import {cashDestinationId,cashSaleDestination,cashSaleOptions,recordCashSaleReceipt} from './sale-treasury.js';
 
 export const CASHIER_INVOICE_ACTIONS=['invoiceWorkspace','invoiceDetail','customizeSalesInvoice'];
 export const INVOICE_ACTIONS = ['invoiceWorkspace','invoiceDetail','invoiceSource','createSalesInvoice','customizeSalesInvoice','saveInvoiceCompany'];
@@ -44,8 +45,7 @@ async function detail(stores,id) {
     if(!field || field.status!=='approved_posted' || field.journal_id!==invoice.journal_id)throw Error('The linked Commercial supply needs reconciliation.');
     customerBalance=round2(field.amount_due); customerPaid=field.sale_reversal?round2(field.sale_reversal.customer_credit):round2(Number(field.total)-customerBalance);
   } else if(invoice.payment_type==='cash' && postedInvoiceStatuses.includes(invoice.status)) {
-    // A cash invoice debits cash in transit. Bank deposit status is not a debt
-    // owed by the customer and must never appear as an unpaid customer invoice.
+    // Historical cash awaiting deposit is also excluded from customer debt.
     customerBalance=0; customerPaid=round2(invoice.total);
   }
   // This is the invoice's already linked source, never a company-wide lookup.
@@ -115,7 +115,8 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     const company=invoiceCompany(settings[0]),defaults=invoiceDefaults(customer,company),billTo=await billing(s,source,customer);
     const options={...defaults,bill_to_address:billTo.options.bill_to_address || defaults.bill_to_address};
     const invoiceDate=body.sourceType==='field'?source.transaction_date:today(),terms=Number(source.payment_terms_days ?? customer.payment_terms_days ?? 0);
-    return {options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id price_includes_vat customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?fieldDiscount(l,source):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
+    const cashOptions=body.sourceType==='order'&&source.payment_type==='cash'?await cashSaleOptions(s):{};
+    return {...cashOptions,options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id price_includes_vat customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?fieldDiscount(l,source):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
   }
   if(body.action==='saveInvoiceCompany') {
     const settings=(await readRecords(s.CompanySettings))[0]; if(!settings)throw Error('Company settings are missing.');
@@ -144,9 +145,14 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   // The source is the retry key. One legal invoice per source, even after an
   // unknown network outcome or simultaneous clicks from different windows.
   const sourceField=body.sourceType==='order'?'sales_order_id':'field_sale_id';
+  const depositTo=cashDestinationId(body.treasuryAccountId);
   const previous=(await readRecords(s.Invoice,{[sourceField]:body.sourceId})).find(i=>issued(i)||i.sale_reversal);
-  if(previous)return {...await detail(s,previous.id),reused:true};
+  if(previous){
+    if(depositTo&&depositTo!==previous.cash_sale_settlement?.treasury_account_id)throw Error('This invoice was already issued. Review its recorded payment before making any correction.');
+    return {...await detail(s,previous.id),reused:true};
+  }
   const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');
+  if(depositTo&&(body.sourceType!=='order'||source.payment_type!=='cash'))throw Error('Only cash sales use a deposit account.');
   if(centralPolicy&&body.sourceType==='order'){
     const marker=source.sales_supply_centralized_inventory;
     if(source.sales_supply_source!=='company'||source.dispatch_id||source.warehouse_id||marker?.policy!==centralPolicy.policy||marker.activation_id!==centralPolicy.activation_id||marker.employee_id!==source.salesperson_id||marker.recorded_by!==source.sales_supply_recorded_by)throw Error('Record this order through the centralized sales form before issuing stock.');
@@ -155,6 +161,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   const customer=await s.Customer.get(source.customer_id);if(!customer)throw Error('The billing customer is missing.');
   const invoiceDate=dateOf(body.invoiceDate),sourceDate=source.order_date || source.transaction_date,due=dateOf(body.dueDate);
   if(invoiceDate>today() || invoiceDate<sourceDate || due<invoiceDate)throw Error('Choose an invoice date from the sale date through today, and a due date on or after it.');
+  const destination=body.sourceType==='order'&&source.payment_type==='cash'?await cashSaleDestination(s,depositTo):null;
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);if(!company.company_name)throw Error('Set up the company letterhead before issuing invoices.');
   const billTo=await billing(s,source,customer,options),number=await uniqueNumber(svc);
   let invoice,lines;
@@ -197,13 +204,18 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     invoice=await s.Invoice.create({...base,sales_order_id:source.id,accounting_source:'sales_order',subtotal,tax_total:tax,total,amount_paid:0,balance:total,status:'posted',payment_type:cash?'cash':'credit',cash_deposited:false,warehouse_id:sourceContext.stock_warehouse_id,dispatch_id:sourceContext.dispatch_id,salesperson_id:sellerId,salesperson_name:sellerName,stock_holder_id:sourceContext.salesperson_id||'',stock_holder_name:sourceContext.salesperson_name||'',recorded_by:user.id});
     let cogs=0;
     for(const l of lines){const result=await stockIssue(svc,{productId:l.product_id,productName:l.product_name,warehouseId:sourceContext.stock_warehouse_id,warehouseIds:sourceContext.stock_warehouse_ids,quantity:l.quantity,movementType:'customer_delivery',documentType:'SalesOrder',documentId:source.id,movementDate:invoiceDate,reason:customer.business_name,saleableOnly:true,dispatchId:sourceContext.dispatch_id || undefined});l.cogs_total=result.totalValue;l.unit_cost=result.totalValue/l.quantity;cogs=round2(cogs+result.totalValue);}
-    const debit=cash?await getAccountByNumber(svc,'1050'):await getRuleAccount(svc,'customer_receivable');
+    const debit=destination?.gl||await getRuleAccount(svc,'customer_receivable');
     const itemLines=await saleItemPostings(s,lines,{netTotal:subtotal,costTotal:cogs,fallback:field=>getRuleAccount(svc,{revenue_account_id:'sales_revenue',cogs_account_id:'direct_material_cogs',inventory_account_id:'finished_goods_inventory'}[field])});
-    const plan=[{account_id:debit.id,account_number:debit.account_number,account_name:debit.account_name,debit:total,credit:0,party_type:'customer',party_id:customer.id},...itemLines];
+    const plan=[{account_id:debit.id,debit:total,credit:0,party_type:'customer',party_id:customer.id},...itemLines];
     if(tax){const account=await getRuleAccount(svc,'tax_payable');plan.push({account_id:account.id,account_number:account.account_number,account_name:account.account_name,debit:0,credit:tax});}
     for(const l of plan){const account=await s.Account.get(l.account_id);if(!account || account.is_active===false || account.is_posting===false)throw Error('Configure active posting accounts before invoicing.');}
     const {journal}=await postJournal(svc,{entryDate:invoiceDate,description:`Invoice ${number} — ${customer.business_name}`,sourceModule:'sales',sourceDocumentType:'Invoice',sourceDocumentId:invoice.id,userId:user.id,lines:plan});
-    invoice=await s.Invoice.update(invoice.id,{journal_id:journal.id});
+    const settlement=destination?await recordCashSaleReceipt(s,{destination,journal,document:invoice,date:invoiceDate,amount:total,actor:user.id,reference:source.receipt_reference,documentNumber:number}):null;
+    invoice=await s.Invoice.update(invoice.id,{journal_id:journal.id,...(settlement?{
+      status:'paid',amount_paid:total,balance:0,cash_deposited:true,cash_sale_settlement:settlement,
+      deposit_journal_id:journal.id,deposit_treasury_account_id:destination.account.id,deposit_treasury_account_name:destination.account.name,
+      deposited_by:user.id,deposited_at:new Date().toISOString(),
+    }:{})});
     if(!cash)await s.Customer.update(customer.id,{balance:round2(Number(customer.balance || 0)+total)});
     await s.SalesOrder.update(source.id,{status:'invoiced',invoice_id:invoice.id,amount_collected:cash?total:0,amount_due:cash?0:total,...(source.sales_supply_recorded_at?{sales_supply_journal_id:journal.id}:{}),...(sourceContext.dispatch_id?{salesperson_id:sellerId,salesperson_name:sellerName,driver_id:sourceContext.driver_id,driver_name:sourceContext.driver_name,vehicle_id:sourceContext.vehicle_id,vehicle_name:sourceContext.vehicle_name}: {})});
   }

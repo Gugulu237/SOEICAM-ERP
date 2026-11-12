@@ -39,7 +39,7 @@ export default function CashierDashboard() {
 function ChequeDesk() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { user, canDisburse, canReceiveHandover, isAdmin, canSignChequeGM, canSignChequePM } = useCurrentUser();
+  const { user, principalRole, canDisburse, canReceiveHandover, isAdmin, canSignChequeGM, canSignChequePM } = useCurrentUser();
   const { toast } = useToast();
   const [approvedPOs, setApprovedPOs] = useState([]);
   const [treasuryAccounts, setTreasuryAccounts] = useState([]);
@@ -59,7 +59,7 @@ function ChequeDesk() {
     setLoading(true);
     try {
       const [pos, pays, cheques, treasury, requested, approved] = await Promise.all([
-        erp.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50),
+        (principalRole||user?.role)==='admin'?erp.entities.PurchaseOrder.filter({ status: "approved" }, "-created_date", 50):[],
         erp.entities.Payment.filter({ payment_type: "supplier_payment" }, "-created_date", 20),
         erp.entities.Payment.filter({ payment_type: "supplier_payment", status: "draft" }, "-created_date", 50),
         canDisburse ? erp.entities.TreasuryAccount.filter({ is_active: true }) : Promise.resolve([]),
@@ -92,7 +92,7 @@ function ChequeDesk() {
   function openDisburse(po) {
     setDisbursePO(po);
     setPayForm({
-      payment_method: "cash", treasury_account_id: treasuryAccounts[0]?.id || "", reference: "", amount: po.total || 0,
+      payment_method: "cash", treasury_account_id: treasuryAccounts[0]?.id || "", reference: "", amount: po.total || 0, requestKey:crypto.randomUUID(),
       payment_date: new Date().toISOString().split("T")[0], notes: ""
     });
   }
@@ -114,9 +114,9 @@ function ChequeDesk() {
         await prepareCashDisbursement({
           po: disbursePO, treasuryAccount: account, amount: Number(payForm.amount),
           date: payForm.payment_date, reference: payForm.reference, notes: payForm.notes,
-          userId: user?.id || "",
+          requestKey:payForm.requestKey,
         });
-        toast({ title: ui("Sent for approval"), description: ui("{0} for {1} is waiting for the General Manager's approval", formatXAF(payForm.amount), disbursePO.po_number) });
+        toast({ title: ui("Purchase payment recorded") });
         setDisbursePO(null);
         await loadData();
         setSaving(false);

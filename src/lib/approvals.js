@@ -50,8 +50,7 @@ export const APPROVAL_OWNER = {
 export const canDecide = (type, role) => (APPROVAL_ROLES[type] || []).includes(role);
 
 export async function loadPendingApprovals(role = 'admin') {
-  const [pos, production, stockRequests, expenses, cashRequests, payroll, customerReceipts] = await Promise.all([
-    erp.entities.PurchaseOrder.filter({ status: "pending_approval" }),
+  const [production, stockRequests, expenses, cashRequests, payroll, customerReceipts] = await Promise.all([
     ['admin', 'production_manager', 'warehouse_manager'].includes(role) ? erp.entities.ProductionOrder.filter({ status: "awaiting_approval" }) : [],
     canDecide('dispatch', role) ? erp.entities.DispatchRequest.filter({ status: "pending_approval" }) : [],
     canDecide('expense', role) ? erp.entities.ExpenseRequest.filter({ status: "pending_approval" }) : [],
@@ -65,7 +64,6 @@ export async function loadPendingApprovals(role = 'admin') {
   });
 
   return [
-    ...pos.map(p => row(p, "po", p.po_number, [p.supplier_name, p.requested_department_name].filter(Boolean).join(" · "), p.total, `/purchases/${p.id}`)),
     ...production.map(o => row(o, "production", o.order_number, o.product_name, null, `/manufacturing/${o.id}`)),
     ...stockRequests.map(r => row(r, "dispatch", r.request_number, [r.vehicle_name, r.driver_name].filter(Boolean).join(" · "), null, `/distribution/requests/${r.id}`)),
     ...expenses.map(e => row(e, "expense", e.request_number, [e.title, e.requester_name].filter(Boolean).join(" · "), e.amount, "/expenses")),

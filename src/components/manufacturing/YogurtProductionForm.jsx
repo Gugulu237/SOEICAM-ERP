@@ -24,7 +24,7 @@ import BatchOutputSummary from './BatchOutputSummary';
 const flavorLabel=flavor=>ui(PRODUCT_FLAVOURS.find(f=>f.value===flavor)?.label || flavor);
 const phaseLabel=phase=>ui({fermentation:'Fermentation',additives:'Additives',flavouring:'Flavouring',packaging:'Packaging',complete:'Output recorded'}[phase] || phase);
 export default function YogurtProductionForm({initialOrder=null}) {
-  useLocaleRender();const navigate=useNavigate(),[params]=useSearchParams(),{role}=useCurrentUser();
+  useLocaleRender();const navigate=useNavigate(),[params]=useSearchParams(),{role,principalRole}=useCurrentUser();
   const [data,setData]=useState({recipes:[],products:[],warehouses:[],lossAccounts:[],materials:[],availability:[]}),[order,setOrder]=useState(initialOrder),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[shortages,setShortages]=useState([]),[requestKey]=useState(()=>crypto.randomUUID()),[clock,setClock]=useState(Date.now());
   const [form,setForm]=useState({recipe_id:'',buckets:1,allocations:[],outputs:[],production_date:businessDate(),notes:'',material_warehouses:{}}),[baseLitres,setBaseLitres]=useState(''),[checks,setChecks]=useState(''),[measured,setMeasured]=useState([]),[actual,setActual]=useState([]),[lossReason,setLossReason]=useState(''),[lossAccount,setLossAccount]=useState(''),[destination,setDestination]=useState('');
   const [purchase,setPurchase]=useState(null);
@@ -57,7 +57,7 @@ export default function YogurtProductionForm({initialOrder=null}) {
     {error&&<p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
     {order?.status==='approved'&&<p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{ui('Production order is ready for Warehouse material issue.')}</p>}
     {shortages.length>0&&<div role="alert" className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium">{ui('Materials are not ready. Replenish stock or select the correct source store.')}</p>{shortages.map(r=><p key={r.material_id}>{r.material_name}: {formatNumber(r.available)} / {formatNumber(r.required)} {r.unit} · {r.warehouse_name}</p>)}</div>}
-    {order&&(shortages.length>0 || data.availability.some(r=>r.missing>0))&&<Button variant="outline" disabled={busy} onClick={preparePurchase}>{ui('Prepare purchase request')}</Button>}
+    {(principalRole||role)==='admin'&&order&&(shortages.length>0 || data.availability.some(r=>r.missing>0))&&<Button variant="outline" disabled={busy} onClick={preparePurchase}>{ui('Prepare purchase order')}</Button>}
     {purchase&&<ProductionPurchaseRequest data={purchase} context={{orderId:order.id,sourceWarehouses:form.material_warehouses}} onClose={()=>setPurchase(null)} onRefresh={preparePurchase} onNavigate={navigate}/>}
     {draft&&canPlan&&config&&!yogurtRecipeHasStickers(config,data.products)&&<p role="status" className="rounded-lg border bg-white p-3 text-sm">{ui('Review the product stickers before requesting production.')}</p>}
     <fieldset disabled={busy} className="space-y-5">

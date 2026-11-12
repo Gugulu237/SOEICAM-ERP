@@ -7,7 +7,7 @@ const roles=['admin','procurement','warehouse_manager','cashier','production_man
 const types={
  Payment:{label:'Payment',roles:['cashier'],ref:'payment_number',amount:'amount',actions:['approve_customer_receipt','approve_cash_disbursement']},
  CashHandover:{label:'Cash handover',roles:['cashier'],ref:'handover_number',amount:'received_amount',actions:['confirm_handover']},
- PurchaseOrder:{label:'Purchase order',roles:['procurement'],ref:'po_number',amount:'total',actions:['approve','approve_po']},
+ PurchaseOrder:{label:'Purchase order',roles:[],ref:'po_number',amount:'total',actions:['approve','approve_po']},
  ProductionOrder:{label:'Production order',roles:['production_manager','warehouse_manager'],ref:'order_number',actions:['approve_production']},
  DispatchRequest:{label:'Stock request',roles:['warehouse_manager','production_manager'],ref:'request_number',actions:['approve_dispatch_request']},
  Dispatch:{label:'Goods issue',roles:['warehouse_manager','production_manager'],ref:'dispatch_number',actions:['approve_dispatch']},
@@ -28,6 +28,7 @@ export async function approvalHistory(client,user,body){
  const names=new Map(staff.flatMap(e=>[[e.id,e.full_name],[e.user_id,e.full_name]]).filter(([id])=>id));names.set(user.id,user.full_name||employee?.full_name||user.email);
  const identities=[employee?.id,user.id,user.email].filter(Boolean),rows=[];
  for(const [entity,type] of Object.entries(types)){
+   if(entity==='PurchaseOrder'&&role!=='admin')continue;
    const documents=await readRecords(s[entity]);
    for(const doc of documents){
      const related=events.filter(e=>e.entity_type===entity&&e.entity_id===doc.id&&type.actions.includes(e.action)&&e.audit_source==='server_verified');

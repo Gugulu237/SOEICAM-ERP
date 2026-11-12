@@ -35,9 +35,36 @@ test('receiving form keeps a failed draft and retry key, then submits exact quan
     assert.equal(calls[0].requestKey,calls[1].requestKey);assert.equal(calls[1].action,'receiveSupplierOrder');assert.equal(calls[1].lines[0].quantity,6);assert.equal(calls[1].lines[0].lot_number,'MILK-01');assert.equal(saved,1);assert.equal(closed,1);assert.equal(r.navigation.length,0);
   }finally{r.cleanup();delete globalThis.__supplierUI;}
 });
-test('bill payment form requires a treasury account and reference and requests approval without claiming cash release',async()=>{
+test('purchase bill payment records directly and requires a treasury account and reference',async()=>{
   const render=await ui(),r=runtime();r.invoke=async()=>{throw Error('Should not run without required fields');};globalThis.__supplierUI=r;
-  try{r.beforeRender();const html=render({data:{accounts:[{id:'till',name:'Cash till',balance:1000}]},bill:{id:'bill',bill_number:'BILL-01',balance:500},onClose:()=>{},onSaved:()=>{}},true);assert.match(html,/Cash and the bill balance change only on release/);assert.equal(r.buttons.find(b=>b.label==='Request payment approval').disabled,true);assert.match(html,/Cash till/);}finally{r.cleanup();delete globalThis.__supplierUI;}
+  try{r.beforeRender();const html=render({data:{accounts:[{id:'till',name:'Cash till',balance:1000}]},bill:{id:'bill',bill_number:'BILL-01',po_id:'po',balance:500},onClose:()=>{},onSaved:()=>{}},true);assert.match(html,/Record the payment after paying the supplier/);assert.equal(r.buttons.find(b=>b.label==='Record payment').disabled,true);assert.match(html,/Cash till/);}finally{r.cleanup();delete globalThis.__supplierUI;}
+});
+
+test('cash orders post a treasury payment against the order before receiving its bill',async()=>{
+  const render=await ui(),r=runtime(),calls=[];
+  r.invoke=async(name,body)=>{calls.push(body);return {data:{payment:{status:'posted'}}};};
+  globalThis.__supplierUI=r;
+  const props={
+    data:{accounts:[{id:'till',name:'Cash till',balance:1000}]},
+    order:{id:'po',po_number:'PO-CASH',supplier_name:'Supplier'},
+    advanceRemaining:500,onClose:()=>{},onSaved:()=>{},
+  };
+  try{
+    r.beforeRender();
+    const html=render(props,true);
+    assert.match(html,/PO-CASH/);
+    assert.match(html,/Unpaid order amount/);
+    r.controls.find(c=>c.tag==='select').onChange({target:{value:'till'}});
+    r.inputs.find(c=>!c.type).onChange({target:{value:'Cash receipt 123'}});
+    r.beforeRender();render(props,true);
+    const submit=r.buttons.find(b=>b.label==='Record payment');
+    assert.equal(submit.disabled,false);
+    await submit.onClick();
+    const {requestKey,date,...payment}=calls[0];
+    assert.ok(requestKey);
+    assert.ok(date);
+    assert.deepEqual(payment,{action:'recordPurchasePayment',orderId:'po',accountId:'till',amount:500,reference:'Cash receipt 123'});
+  }finally{r.cleanup();delete globalThis.__supplierUI;}
 });
 
 test('finished goods receipt ignores the old materials destination and uses only an active Cold Room',async()=>{

@@ -1,8 +1,8 @@
 import {createHash} from 'node:crypto';
 import {requireStaff,round2,today,audit} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
-import {validateAllocations} from './customer-receipts.js';
-import {assertTreasuryAccess} from '../../lib/treasury-access.js';
+import {validateAllocations,recordDirectCustomerReceipt,postConfirmedReceipt,receiptView} from './customer-receipts.js';
+import {cashSaleDestination,cashSaleOptions} from './sale-treasury.js';
 
 export const CUSTOMER_ACTIVITY_ACTIONS=['customerCollectionWorkspace','recordCustomerCollection','customerSpoilageWorkspace','reportCustomerSpoilage','reviewCustomerSpoilage'];
 const receiptStates=['awaiting_cashier','pending_approval','approved'];
@@ -12,7 +12,6 @@ const fingerprint=value=>createHash('sha256').update(JSON.stringify(value)).dige
 function text(value,label,max=1000){if(typeof value!=='string'||!value.trim()||value.trim().length>max)throw Error('Enter '+label+'.');return value.trim();}
 function dateOf(value){if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value+'T12:00:00Z').toISOString().slice(0,10)!==value||value>today())throw Error('Choose a valid date no later than today.');return value;}
 function requestKey(value){if(typeof value!=='string'||!/^[a-f0-9-]{36}$/i.test(value))throw Error('Reopen the form to create a valid save reference.');return value;}
-const paymentView=p=>pick(p,'id payment_number party_name amount payment_date collection_date reference status collector_name collector_user_id cashier_confirmed_name invoice_numbers');
 export async function customerActivityActor(client,user,customerId) {
   const {role,employee}=await requireStaff(client,user,['admin','employee','commercial'],'customer activity');
   if(employee?.employee_removed_at||employee?.status&&employee.status!=='active'||role!=='admin'&&!employee?.id)throw Error('An active staff account is required.');
@@ -24,35 +23,19 @@ export async function customerActivityActor(client,user,customerId) {
 export async function customerActivityAction(client,user,body) {
   const actor=await customerActivityActor(client,user,body.customerId),{customer,role}=actor,svc=client.asServiceRole,s=svc.entities;
   if(body.action==='customerCollectionWorkspace') {
-    const [invoices,payments,collections]=await Promise.all([
+    const [invoices,payments,collections,depositOptions]=await Promise.all([
       readRecords(s.Invoice,{customer_id:customer.id,status:{$in:['posted','partially_paid','overdue']},balance:{$gt:0},payment_type:{$ne:'cash'}}),
       readRecords(s.Payment,{payment_type:'customer_payment',party_id:customer.id,status:{$in:receiptStates}}),
-      readRecords(s.CashCollection,{collector_user_id:user.id,collection_origin:'customer_receipt',outstanding_amount:{$gt:0}})
+      readRecords(s.CashCollection,{collector_user_id:user.id,collection_origin:'customer_receipt',outstanding_amount:{$gt:0}}),
+      cashSaleOptions(s)
     ]);
     const available=invoices.map(i=>({...pick(i,'id invoice_number invoice_date due_date balance'),available_amount:Math.max(0,round2(Number(i.balance)-payments.reduce((n,p)=>n+(p.receipt_allocations||[]).filter(a=>a.invoice_id===i.id).reduce((n,a)=>n+Number(a.amount),0),0)))}));
-    return {collector:{id:actor.id,user_id:user.id,name:actor.name},date:today(),invoices:available.filter(i=>i.available_amount>0).sort((a,b)=>String(a.due_date||a.invoice_date).localeCompare(String(b.due_date||b.invoice_date))),pending:payments.map(paymentView),cash_to_deposit:round2(collections.reduce((n,c)=>n+Number(c.outstanding_amount),0))};
+    return {...depositOptions,collector:{id:actor.id,user_id:user.id,name:actor.name},date:today(),invoices:available.filter(i=>i.available_amount>0).sort((a,b)=>String(a.due_date||a.invoice_date).localeCompare(String(b.due_date||b.invoice_date))),pending:payments.map(payment=>pick(payment,'id payment_number party_name amount payment_date collection_date reference status collector_name collector_user_id cashier_confirmed_name invoice_numbers')),cash_to_deposit:round2(collections.reduce((n,c)=>n+Number(c.outstanding_amount),0))};
   }
   if(body.action==='recordCustomerCollection') {
-    const date=dateOf(body.date),reference=text(body.reference,'the customer receipt reference',150),key=user.id+':customer-collection:'+requestKey(body.requestKey);
-    if(typeof body.amount!=='number'||!Number.isFinite(body.amount)||body.amount<=0||round2(body.amount)!==body.amount)throw Error('Enter a positive cash amount with at most two decimal places.');
-    const amount=body.amount;
-    if(!Array.isArray(body.allocations)||body.allocations.length<1||body.allocations.length>50)throw Error('Choose between 1 and 50 invoices.');
-    const allocations=body.allocations.map(a=>{if(typeof a.invoice_id!=='string'||typeof a.amount!=='number'||!Number.isFinite(a.amount)||a.amount<=0||round2(a.amount)!==a.amount)throw Error('Choose valid invoice amounts.');return {invoice_id:a.invoice_id,amount:a.amount};}).sort((a,b)=>a.invoice_id.localeCompare(b.invoice_id));
-    const signature=fingerprint([customer.id,date,reference,amount,allocations]);
-    const prior=(await readRecords(s.Payment,{receipt_request_key:key}))[0];
-    if(prior){if(prior.collection_fingerprint!==signature)throw Error('This save reference already belongs to different payment details.');return {payment:paymentView(prior),reused:true};}
-    const rows=await validateAllocations(svc,allocations,customer.id);
-    if(rows.some(r=>r.invoice.payment_type==='cash'))throw Error('Cash sales already have a collection record. Use their existing cashier handover.');
-    if(rows.some(r=>date<(r.invoice.opening_date||r.invoice.invoice_date||'')))throw Error('Payment cannot precede its invoice date.');
-    if(round2(rows.reduce((n,r)=>n+r.amount,0))!==amount)throw Error('Allocate the full cash amount to invoices.');
-    const duplicate=await readRecords(s.Payment,{payment_type:'customer_payment',party_id:customer.id,reference,status:{$ne:'rejected'}});
-    if(duplicate.length)throw Error('This customer receipt reference is already recorded. Review the existing payment.');
-    const now=new Date().toISOString(),number='COL-'+crypto.randomUUID().slice(0,12).toUpperCase();
-    const payment=await s.Payment.create({payment_number:number,payment_type:'customer_payment',party_type:'customer',party_id:customer.id,party_name:customer.business_name,amount,payment_date:date,collection_date:date,payment_method:'cash',reference,status:'awaiting_cashier',receipt_channel:'staff_collection',prepared_by:user.id,prepared_at:now,collector_user_id:user.id,collector_employee_id:actor.employee?.id||'',collector_name:actor.name,receipt_request_key:key,collection_fingerprint:signature,receipt_posting_token:'',allocated_to_invoices:rows.map(r=>r.invoice.id).join(','),invoice_numbers:rows.map(r=>r.invoice.invoice_number).join(', '),receipt_allocations:rows.map(r=>({invoice_id:r.invoice.id,invoice_number:r.invoice.invoice_number,amount:r.amount}))});
-    const collection=await s.CashCollection.create({collection_number:number,customer_id:customer.id,customer_name:customer.business_name,commercial_id:actor.id,commercial_name:actor.name,collector_user_id:user.id,collector_employee_id:actor.employee?.id||'',collector_name:actor.name,collection_origin:'customer_receipt',payment_id:payment.id,invoice_number:payment.invoice_numbers,amount_due:amount,amount_collected:amount,collection_date:date,method:'cash',receipt_reference:reference,status:'held_by_commercial',received_amount:0,outstanding_amount:amount,recorded_by:user.id,recorded_at:now});
-    await s.Payment.update(payment.id,{collection_id:collection.id});
-    await audit(svc,{action:'collect_customer_cash',module:'customers',entityType:'Payment',entityId:payment.id,userId:user.id,description:actor.name+' collected '+amount+' XAF for '+customer.business_name+'. Cash remains due to the cashier; invoice balances await receipt and GM approval.'});
-    return {payment:paymentView(payment),cashDue:amount};
+    if (typeof body.amount !== 'number') throw Error('Enter a positive received amount.');
+    requestKey(body.requestKey);
+    return recordDirectCustomerReceipt(svc,user,body,{customer,employee:actor.employee,staffCollection:true});
   }
   if(body.action==='customerSpoilageWorkspace') {
     const [products,locations,reports]=await Promise.all([
@@ -100,7 +83,7 @@ export async function customerActivityAction(client,user,body) {
   throw Error('Unknown customer activity.');
 }
 
-// Cashier custody confirmation retains the separate GM posting step.
+// Earlier collections stay with their recorded holder until the physical cash is received.
 export async function confirmCustomerCollection(client,user,body) {
   const {employee,role}=await requireStaff(client,user,['cashier','admin'],'receiving staff customer collections');
   if(employee?.status&&employee.status!=='active'||employee?.employee_removed_at)throw Error('An active staff account is required.');
@@ -111,20 +94,17 @@ export async function confirmCustomerCollection(client,user,body) {
   if(typeof body.amount!=='number'||body.amount!==Number(payment.amount))throw Error('Count and receive the full recorded collection. A shortfall stays with the collector for reconciliation.');
   if(date<payment.collection_date)throw Error('Cashier receipt cannot precede collection.');
   const signature=fingerprint([payment.id,date,reference,body.amount,body.treasuryAccountId]);
-  if(payment.collection_receipt_key===key){if(payment.collection_receipt_fingerprint!==signature)throw Error('This receipt reference belongs to different details.');return {payment:paymentView(payment),reused:true};}
+  if(payment.collection_receipt_key===key){if(payment.collection_receipt_fingerprint!==signature)throw Error('This receipt reference belongs to different details.');return {payment:receiptView(payment),reused:true};}
   if(payment.status!=='awaiting_cashier'||payment.cashier_confirmed_by||payment.journal_id)throw Error('This collection has already been received or processed.');
-  const account=await s.TreasuryAccount.get(body.treasuryAccountId);
-  if(!account?.is_active||account.account_type!=='cash'||!account.gl_account_id)throw Error('Choose an active cash account linked to the ledger.');
-  assertTreasuryAccess(role,account);
-  const gl=await s.Account.get(account.gl_account_id);
-  if(!gl?.is_active||gl.is_posting===false||gl.account_type!=='asset')throw Error('The cash ledger account must be active for posting.');
+  const destination=await cashSaleDestination(s,body.treasuryAccountId),account=destination.account;
+  if(account.account_type!=='cash')throw Error('Choose an active cash account linked to the ledger.');
   const collection=await s.CashCollection.get(payment.collection_id);
   if(!collection||collection.payment_id!==payment.id||collection.collector_user_id!==payment.collector_user_id||collection.status!=='held_by_commercial'||Number(collection.amount_collected)!==Number(payment.amount)||Number(collection.outstanding_amount)!==Number(payment.amount)||Number(collection.received_amount)!==0)throw Error('The collection needs reconciliation before receipt.');
-  await validateAllocations(svc,payment.receipt_allocations,payment.party_id,payment.id);
+  const rows=await validateAllocations(svc,payment.receipt_allocations,payment.party_id,payment.id);
   const now=new Date().toISOString(),name=employee?.full_name||user.full_name||user.email;
-  const saved=await s.Payment.update(payment.id,{status:'pending_approval',payment_date:date,account_id:account.gl_account_id,treasury_account_id:account.id,treasury_account_name:account.name,cashier_confirmed_by:user.id,cashier_confirmed_name:name,cashier_confirmed_at:now,cashier_receipt_reference:reference,collection_receipt_key:key,collection_receipt_fingerprint:signature});
+  const saved=await s.Payment.update(payment.id,{payment_date:date,account_id:account.gl_account_id,treasury_account_id:account.id,treasury_account_name:account.name,cashier_confirmed_by:user.id,cashier_confirmed_name:name,cashier_confirmed_at:now,cashier_receipt_reference:reference,collection_receipt_key:key,collection_receipt_fingerprint:signature});
   await s.CashCollection.update(collection.id,{status:'received',received_amount:payment.amount,outstanding_amount:0,received_by:name,received_by_user_id:user.id,received_at:now,treasury_account_id:account.id,treasury_account_name:account.name,acknowledgement_reference:reference});
-  await audit(svc,{action:'receive_customer_collection',module:'cashier',entityType:'Payment',entityId:payment.id,userId:user.id,description:name+' received '+payment.amount+' XAF from '+payment.collector_name+'. GM approval is still required.'});
-  return {payment:paymentView(saved),receiptPending:true};
+  const posted=await postConfirmedReceipt(svc,saved,user,{destination,rows});
+  return {payment:receiptView(posted)};
 }
 

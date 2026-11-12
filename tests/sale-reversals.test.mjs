@@ -113,9 +113,11 @@ test('partly paid credit sale creates customer credit without refunding cash or 
  assert.equal((await f.s.TreasuryAccount.get('till')).balance,100400);assert.deepEqual(await f.s.Payment.get(payment.id),before);assert.equal((await f.s.PaymentAllocation.list()).length,1);
 });
 
-test('cash invoice must be deposited first, then cash remains in company funds and cash-in-transit stays cleared',async()=>{
- const f=await setup(undefined,{cash:true});await assert.rejects(f.preview(),/Deposit and approve/);await receipt(f,1000);
+test('direct cash sale reversal creates customer credit while preserving the posted treasury receipt',async()=>{
+ const f=await setup(undefined,{cash:true}),movements=await f.s.TreasuryTransaction.list();
+ assert.equal((await f.preview()).customer_credit,1000);
  assert.equal((await f.s.Account.get('clearing')).balance,0);await f.reverse();assert.equal((await f.s.Account.get('clearing')).balance,0);assert.equal((await f.s.Account.get('receivable')).balance,-1000);assert.equal((await f.s.Customer.get('customer-a')).balance,-1000);assert.equal((await f.s.TreasuryAccount.get('till')).balance,101000);
+ assert.equal((await f.s.Account.get('till-gl')).balance,101000);assert.deepEqual(await f.s.TreasuryTransaction.list(),movements);
 });
 
 test('pending receipts, stale review, closed periods, missing stock evidence and another user block unsafe reversals',async()=>{

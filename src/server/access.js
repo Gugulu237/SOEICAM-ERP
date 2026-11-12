@@ -47,6 +47,7 @@ export function requireActiveContext(context) {
 export function assertEntityAccess(context, entity, operation) {
   const role = requireActiveContext(context), reading = ['get','list','filter','aggregate','count'].includes(operation);
   if (!Object.hasOwn(readRoles,entity)) throw forbidden('Unknown table permission.');
+  if((['PurchaseOrder','PurchaseOrderLine','PurchaseItem','GoodsReceiptLine'].includes(entity)||!reading&&['GoodsReceipt','Supplier'].includes(entity))&&principalRole(context.user,context.employee)!=='admin')throw forbidden('Purchases are reserved for administrators.');
   if (['DriverActivity','OutletVisit'].includes(entity)) throw forbidden('Use the assigned staff reporting workflow.');
   if (!reading && ['FieldSale','FieldSaleLine','CashCollection','CashHandover','CashHandoverAllocation'].includes(entity)) throw forbidden('Use the checked Commercial transaction workflow.');
   if(reading&&['Dispatch','DispatchLine','DispatchRequest','Route','Vehicle'].includes(entity)){

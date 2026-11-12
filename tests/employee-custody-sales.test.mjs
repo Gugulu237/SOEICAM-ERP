@@ -48,7 +48,7 @@ test('a manager-entered sale belongs to the selected commercial monthly history 
  assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,gm.id);assert.equal(invoice.salesperson_id,'cashier');assert.equal(invoice.recorded_by,gm.id);assert.equal(event.user_id,gm.id);
  const before=structuredClone(f.rows),workspace=await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'});
  assert.deepEqual(workspace.sales.map(s=>s.id),[result.order.id]);assert.deepEqual(f.rows,before,'monthly visibility is read-only');
- assert.equal((await f.s.Payment.list()).length,0);assert.equal((await f.s.TreasuryTransaction.list()).length,0);assert.ok(!(await f.s.CashCollection.list()).some(c=>c.recorded_by===gm.id||c.collector_user_id===gm.id));assert.equal(invoice.cash_deposited,false);
+ assert.equal((await f.s.Payment.list()).length,0);const [movement]=await f.s.TreasuryTransaction.list();assert.equal(movement.source,'cash_sale');assert.equal(movement.source_document_id,invoice.id);assert.ok(!(await f.s.CashCollection.list()).some(c=>c.recorded_by===gm.id||c.collector_user_id===gm.id));assert.equal(invoice.cash_deposited,true);
  await f.s.AuditLog.update(event.id,{entity_id:'unrelated-order'});assert.deepEqual((await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'})).sales,[]);
  await f.s.AuditLog.update(event.id,{entity_id:result.order.id,audit_source:'client_reported'});assert.deepEqual((await employeeStockAction(f.client,f.actor,{action:'employeeStockWorkspace'})).sales,[]);
  await f.s.AuditLog.update(event.id,{audit_source:'server_verified'});

@@ -12,8 +12,7 @@ import ReceiveCashDialog from "./ReceiveCashDialog";
 import { HandCoins, Paperclip } from "lucide-react";
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
-// Cash the commercials collected on delivery, received at the till against their
-// physical receipts. The GM must approve before a receipt reaches the ledger.
+// Outstanding cash from older deliveries and their receipt history.
 export default function CashCollections({ treasuryAccounts, canReceive, userId, userName, onDone }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
@@ -62,7 +61,7 @@ export default function CashCollections({ treasuryAccounts, canReceive, userId, 
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
           <div className="text-xs text-slate-500">{ui("Received today")}</div>
           <div className="text-lg font-semibold tabular-nums">{formatXAF(receivedTodayTotal)}</div>
-          <div className="text-xs text-slate-400">{receivedToday.length}{ui(" cashier-confirmed receipt(s); ledger posting requires GM approval")}</div>
+          <div className="text-xs text-slate-400">{receivedToday.length}{ui(" cash receipts")}</div>
         </div>
       </div>
 

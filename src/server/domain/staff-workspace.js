@@ -58,8 +58,7 @@ export async function productionData(svc, date, allowedModules = null) {
 
 export async function supplyChainData(svc, date, allowedModules = null) {
   const can = module => !allowedModules || allowedModules.includes(module);
-  const [orders, balances, dispatches, batches] = await Promise.all([
-    can('purchases') ? readRecords(svc.entities.PurchaseOrder, { status: { $in: ['draft', 'pending_approval', 'approved', 'partially_received'] } }) : [],
+  const [balances, dispatches, batches] = await Promise.all([
     can('inventory') || can('quality') ? readRecords(svc.entities.StockBalance, { quantity: { $gt: 0 }, $or: [
       { qc_status: { $in: ['quarantine', 'quarantined', 'rejected'] } }, { expiry_date: { $lte: plusDays(date, 7) } },
     ] }) : [],
@@ -67,7 +66,7 @@ export async function supplyChainData(svc, date, allowedModules = null) {
     can('manufacturing') ? readRecords(svc.entities.ProductionOrder,{$or:[{status:'approved'},{recipe_kind:'yogurt_phased_v1',status:'in_production'}]}) : [],
   ]);
   return {
-    purchaseOrders:view(orders,['id','po_number','supplier_name','order_date','status','total']),
+    purchaseOrders:[],
     riskLots:view(balances,['id','product_id','product_name','batch_number','expiry_date','quantity','qc_status']),
     dispatches:view(dispatches,['id','dispatch_number','driver_name','vehicle_name','route_name','status']),
     materialIssueOrders:view(batches.filter(productionReadyForIssue),issueFields),
@@ -101,7 +100,7 @@ export async function managerData(svc, date) {
     dispatches: view(dispatches, ['id', 'dispatch_number', 'driver_name', 'vehicle_name', 'route_name', 'status']),
     approvalQueues: [
       queue('field', 'Field sales', fieldSales.length, '/field-review'),
-      queue('purchase', 'Purchase orders', pos.length, '/?section=approvals'),
+      queue('purchase', 'Earlier orders to confirm', pos.length, '/purchases?section=orders'),
       queue('production', 'Production orders', production.orders.filter(o => o.status === 'awaiting_approval').length, '/?section=approvals'),
       queue('cash', 'Cash disbursements', payments.filter(p => p.payment_type === 'supplier_payment' && p.status === 'pending_approval').length, '/?section=approvals'),
       queue('receipts', 'Customer receipts', payments.filter(p => p.payment_type === 'customer_payment').length, '/?section=approvals'),
@@ -118,7 +117,7 @@ export async function operationalStaffData(svc, mode, date, allowedModules, empl
   const can = module => !allowedModules || allowedModules.includes(module);
   const production = mode === 'warehouse_manager' && can('manufacturing');
   const [orders, riskLots, dispatches, batches, expenses] = await Promise.all([
-    can('purchases') ? readRecords(svc.entities.PurchaseOrder, { status: { $in: ['draft','pending_approval','approved','partially_received'] } }) : [],
+    actorRole==='admin'&&can('purchases') ? readRecords(svc.entities.PurchaseOrder, { status: { $in: ['draft','pending_approval','approved','partially_received'] } }) : [],
     can('inventory') || can('quality') ? readRecords(svc.entities.StockBalance, { quantity: { $gt: 0 }, $or: [
       { qc_status: { $in: ['quarantine','quarantined','rejected'] } }, { expiry_date: { $lte: plusDays(date,7) } },
     ] }) : [],

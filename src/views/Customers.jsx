@@ -194,7 +194,7 @@ export function CustomerDirectory({selectedId,back}) {
               </>
             ) : null}
         </div>}
-      {canCollect&&receiptCustomer&&(role==='cashier'?<CustomerReceivePayment key={receiptCustomer.id} customer={receiptCustomer} onClose={()=>setReceiptCustomer(null)} onDone={()=>{setReceiptCustomer(null);paymentStatus.refetch();load();}}/>:<CustomerCollectionDialog key={receiptCustomer.id} customer={receiptCustomer} onClose={()=>setReceiptCustomer(null)} onDone={()=>{setReceiptCustomer(null);setNotice(ui('Cash collection recorded. Hand this cash to the cashier.'));paymentStatus.refetch();load();}}/>)}
+      {canCollect&&receiptCustomer&&(role==='cashier'?<CustomerReceivePayment key={receiptCustomer.id} customer={receiptCustomer} onClose={()=>setReceiptCustomer(null)} onDone={()=>{setReceiptCustomer(null);paymentStatus.refetch();load();}}/>:<CustomerCollectionDialog key={receiptCustomer.id} customer={receiptCustomer} onClose={()=>setReceiptCustomer(null)} onDone={()=>{setReceiptCustomer(null);setNotice(ui('Payment posted directly to treasury'));paymentStatus.refetch();load();}}/>)}
     </div>
   );
 }

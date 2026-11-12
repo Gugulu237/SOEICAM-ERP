@@ -62,7 +62,7 @@ test('Supply Chain Manager inherits warehouse checks and operational modules, ne
   const profile = catalogue.roles.supply_chain_manager;
   assert.equal(profile.template_role,'warehouse_manager');
   assert.ok(profile.modules.includes('distribution'));
-  assert.ok(profile.modules.includes('purchases'));
+  assert.ok(!profile.modules.includes('purchases'));
   assert.ok(!profile.modules.includes('admin'));
   const user = { role:'user' }, employee = decorateEmployee(user,{ role:'supply_chain_manager', status:'active' },catalogue);
   assert.equal(effectiveRole(user,employee),'warehouse_manager');
@@ -87,10 +87,9 @@ test('GM changes narrow existing and custom roles immediately; invalid privilege
   assert.deepEqual(custom.modules,['inventory','distribution']);
   assert.ok(TEMPLATE_MODULES.warehouse_manager.includes('accounting'));
   assert.equal(moduleForPath('/purchases/new'),'purchases');
-  assert.equal(purchasePermissions('warehouse_manager','supply_chain_manager').suppliers,true);
-  assert.equal(purchasePermissions('warehouse_manager','supply_chain_manager').pay,false);
+  assert.equal(purchasePermissions('warehouse_manager').pay,false);
   assert.equal(purchasePermissions('warehouse_manager').suppliers,false);
-  assert.ok(purchaseSections('warehouse_manager','supply_chain_manager').some(section => section.key === 'suppliers'));
+  assert.deepEqual(purchaseSections('warehouse_manager'),[]);
 });
 
 test('legacy string-encoded role catalogues retain saved roles and revisions for editing', () => {

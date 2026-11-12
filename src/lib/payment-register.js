@@ -16,7 +16,7 @@ export async function paymentRegisterDocument(filters) {
     {key:'payment_number',label:'Receipt / payment'}, {key:'payment_date',label:'Date'}, {key:'payment_type',label:'Type'},
     {key:'party_name',label:'Party'},{key:'invoice_numbers',label:'Invoices',exportValue:r=>r.invoice_numbers|| (r.receipt_allocations||[]).map(a=>a.invoice_number||a.invoice_id).join(', ')},
     {key:'amount',label:'Amount',exportType:'money'},{key:'treasury_account_name',label:'Treasury account'},{key:'reference',label:'Reference'},
-    {key:'cashier_confirmed_name',label:'Cashier confirmation'},{key:'cashier_confirmed_at',label:'Cashier confirmation date'},
+    {key:'receipt_recorded_by_name',label:'Recorded by',exportValue:r=>r.receipt_recorded_by_name||r.cashier_confirmed_name},{key:'receipt_recorded_at',label:'Recorded at',exportValue:r=>r.receipt_recorded_at||r.cashier_confirmed_at},
     {key:'approved_by',label:'Approved by'},{key:'status',label:'Status'},{key:'journal_id',label:'Journal ID'},
   ],rows,[['Payment type',filters.type],['Status',filters.status],['Search',filters.q||'All records']],['Only posted payments affect the ledger. Pending and rejected records remain labelled with their actual status.']);
 }

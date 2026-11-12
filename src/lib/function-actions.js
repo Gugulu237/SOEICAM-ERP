@@ -15,7 +15,7 @@ const fieldReads = new Set([
   'salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','invoiceSource', 'customerDeliveryWorkspace', 'customerMapWorkspace', 'deliveryZoneOptions',
 ]);
 export function isReadOnlyFunction(name, action) {
-  return name === 'fieldOps' && fieldReads.has(action);
+  return name === 'fieldOps' && fieldReads.has(action) || name === 'customerReceipts' && action === 'depositOptions';
 }
 
 // Share only work that is currently in progress, never settled financial data.

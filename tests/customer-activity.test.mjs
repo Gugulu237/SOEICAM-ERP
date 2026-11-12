@@ -8,6 +8,7 @@ import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {cashDepositors} from '../src/lib/cashier-receipts.js';
 import {dailyCashSettlements} from '../src/lib/cash-settlement.js';
 import {guardMutation} from '../src/server/access.js';
+import {buildCashFlow} from '../src/lib/cash-flow.js';
 
 const gm={id:'gm-user',role:'admin',full_name:'GM'},collector={id:'collector-login',role:'user',full_name:'Collector'};
 async function setup(db) {
@@ -27,47 +28,73 @@ async function setup(db) {
   return {...f,invoice:inv,ar,body:{action:'recordCustomerCollection',customerId:'customer-a',requestKey:crypto.randomUUID(),date,reference:'CUSTOMER-RECEIPT-01',amount:400,allocations:[{invoice_id:inv.id,amount:400}]}};
 }
 
-test('customer cash is assigned to the logged-in collector, reserved once, received separately and posted only after independent GM approval',async()=>{
+async function earlierCollection(f,{collectedBy=collector,employeeId='collector',confirmedBy}={}) {
+  const s=f.entities, amount=f.body.amount, invoice=f.invoice;
+  let payment=await s.Payment.create({
+    payment_number:'COL-LEGACY',payment_type:'customer_payment',party_type:'customer',party_id:'customer-a',party_name:'Customer A',
+    amount,payment_date:date,collection_date:date,payment_method:'cash',reference:'LEGACY-RECEIPT',status:confirmedBy?'pending_approval':'awaiting_cashier',
+    receipt_channel:'staff_collection',collector_user_id:collectedBy.id,collector_employee_id:employeeId,collector_name:collectedBy.full_name,
+    allocated_to_invoices:invoice.id,invoice_numbers:invoice.invoice_number,receipt_allocations:[{invoice_id:invoice.id,invoice_number:invoice.invoice_number,amount}],
+    ...(confirmedBy?{cashier_confirmed_by:confirmedBy.id,cashier_confirmed_name:confirmedBy.full_name,treasury_account_id:'till',treasury_account_name:'till'}:{}),
+  });
+  const collection=await s.CashCollection.create({
+    collection_origin:'customer_receipt',payment_id:payment.id,customer_id:'customer-a',commercial_id:employeeId,
+    collector_user_id:collectedBy.id,collection_date:date,method:'cash',amount_collected:amount,
+    status:confirmedBy?'received':'held_by_commercial',outstanding_amount:confirmedBy?0:amount,received_amount:confirmedBy?amount:0,
+  });
+  payment=await s.Payment.update(payment.id,{collection_id:collection.id});
+  return {payment,collection};
+}
+
+test('customer invoice payments post to the selected account once and preserve logged-in attribution',async()=>{
   const f=await setup(),s=f.entities;
-  const result=await customerActivityAction(f.client,collector,{...f.body,collectorId:'someone-else',commercialId:'another-agent',collector_name:'forged'});
-  let payment=await s.Payment.get(result.payment.id),collection=await s.CashCollection.get(payment.collection_id);
-  assert.equal(payment.status,'awaiting_cashier');assert.equal(payment.collector_user_id,collector.id);assert.equal(payment.collector_name,'Collector');
-  assert.equal(collection.commercial_id,'collector');assert.equal(collection.outstanding_amount,400);assert.equal((await s.Invoice.get(f.invoice.id)).balance,1000);
-  assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.TreasuryAccount.get('till')).balance,100000);
-  const repeat=await customerActivityAction(f.client,collector,f.body);assert.equal(repeat.reused,true);assert.equal((await s.Payment.list()).length,1);
-  const space=await customerActivityAction(f.client,collector,{action:'customerCollectionWorkspace',customerId:'customer-a'});assert.equal(space.invoices[0].available_amount,600);assert.equal(space.cash_to_deposit,400);
-  await assert.rejects(approveReceipt(f.client.asServiceRole,payment,gm),/confirmation/);
-  const own=await s.Employee.get('cashier');f.setActor(cashier,own);
-  const desk=await cashierAction(f.client,cashier,{action:'cashierWorkspace',date});assert.equal(desk.staffCollections.length,1);
-  assert.equal(cashDepositors(desk).filter(r=>r.kind==='staff_receipt').length,1);assert.equal(desk.collections.some(c=>c.id===collection.id),false);
-  const receive={action:'confirmCollection',paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'CASHIER-ACK-01',amount:400,treasuryAccountId:'till'};
-  await confirmCustomerCollection(f.client,cashier,receive);payment=await s.Payment.get(payment.id);collection=await s.CashCollection.get(collection.id);
-  assert.equal(payment.status,'pending_approval');assert.equal(collection.outstanding_amount,0);assert.equal(collection.received_by_user_id,cashier.id);
-  assert.equal((await s.Invoice.get(f.invoice.id)).balance,1000);assert.equal((await s.JournalEntry.list()).length,0);
-  assert.equal((await confirmCustomerCollection(f.client,cashier,receive)).reused,true);
-  await assert.rejects(approveReceipt(f.client.asServiceRole,payment,cashier),/cannot approve/);
-  await assert.rejects(approveReceipt(f.client.asServiceRole,payment,collector),/cannot approve/);
-  f.setActor(gm);
-  const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
-  try {
-    const rejected=await route(request({action:'reject',paymentId:payment.id,reason:'Needs review'}),{params:Promise.resolve({name:'customerReceipts'})});
-    assert.equal(rejected.status,400);assert.match((await rejected.json()).error,/reconciled before cancellation/);
-    assert.equal((await s.Payment.get(payment.id)).status,'pending_approval');
-    await assert.rejects(validateAllocations(f.client.asServiceRole,[{invoice_id:f.invoice.id,amount:601}],'customer-a'),/remains after pending/);
-  } finally {delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
-  await approveReceipt(f.client.asServiceRole,payment,gm);
-  assert.equal((await s.Invoice.get(f.invoice.id)).balance,600);assert.equal((await s.Customer.get('customer-a')).balance,600);
-  assert.equal((await s.TreasuryAccount.get('till')).balance,100400);assert.equal((await s.JournalEntry.list()).length,1);
+  const space=await customerActivityAction(f.client,collector,{action:'customerCollectionWorkspace',customerId:'customer-a'});
+  assert.equal(space.defaultCashAccountId,'till');
+  assert.deepEqual(space.cashAccounts.find(a=>a.id==='bank'),{id:'bank',name:'bank',account_type:'bank'});
+  const body={...f.body,treasuryAccountId:'bank',collectorId:'someone-else',collector_name:'forged'};
+  const result=await customerActivityAction(f.client,collector,body);
+  assert.equal(result.payment.status,'posted');
+  assert.equal(result.payment.treasury_account_name,'bank');
+  assert.equal(result.payment.receipt_posting_snapshot,undefined);
+  const payment=await s.Payment.get(result.payment.id);
+  assert.equal(payment.collector_user_id,collector.id);
+  assert.equal(payment.collector_name,'Collector');
+  assert.equal(payment.receipt_recorded_by,collector.id);
+  assert.equal(payment.receipt_posted_directly,true);
+  assert.equal(payment.cashier_confirmed_by,undefined);
+  assert.equal(payment.approved_at,undefined);
+  assert.equal((await s.Invoice.get(f.invoice.id)).balance,600);
+  assert.equal((await s.Customer.get('customer-a')).balance,600);
   assert.equal((await s.Account.get(f.ar.id)).balance,600);
-  const posted=await s.Payment.get(payment.id);await approveReceipt(f.client.asServiceRole,posted,gm);
-  assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.TreasuryAccount.get('till')).balance,100400);
-  const days=dailyCashSettlements([collection]);assert.equal(days[0].status,'settled');
+  assert.equal((await s.TreasuryAccount.get('bank')).balance,100400);
+  assert.equal((await s.TreasuryAccount.get('till')).balance,100000);
+  assert.equal((await s.CashCollection.filter({collection_origin:'customer_receipt'})).length,0);
+  assert.deepEqual((await s.PaymentAllocation.list()).map(a=>[a.document_id,a.amount]),[[f.invoice.id,400]]);
+  const [movement]=await s.TreasuryTransaction.list(),journals=await s.JournalEntry.list(),lines=await s.JournalLine.list();
+  assert.equal(movement.source,'customer_receipt');
+  assert.equal(movement.journal_id,journals[0].id);
+  assert.equal(journals[0].source_module,'payments');
+  assert.deepEqual(lines.map(l=>[l.account_id,l.debit,l.credit]),[['bank-gl',400,0],[f.ar.id,0,400]]);
+  const flow=buildCashFlow({accounts:await s.Account.list(),treasury:await s.TreasuryAccount.list(),journals,cashLines:lines,periodLines:lines,from:date,to:date});
+  assert.equal(flow.activities.find(a=>a.key==='operating').inflow,400);
+
+  const repeat=await customerActivityAction(f.client,collector,body);
+  assert.equal(repeat.reused,true);
+  assert.equal((await s.Payment.list()).length,1);
+  assert.equal((await s.JournalEntry.list()).length,1);
+  assert.equal((await s.TreasuryTransaction.list()).length,1);
+  const updated=await customerActivityAction(f.client,collector,{action:'customerCollectionWorkspace',customerId:'customer-a'});
+  assert.equal(updated.invoices[0].available_amount,600);
+  assert.equal(updated.cash_to_deposit,0);
+  assert.deepEqual(updated.pending,[]);
 });
 
 test('collection guards reject changed retry payloads, duplicate receipts, over-collections, foreign invoices, inactive staff and unassigned customers',async()=>{
   const f=await setup(),s=f.entities;
   await customerActivityAction(f.client,collector,f.body);
   await assert.rejects(customerActivityAction(f.client,collector,{...f.body,reference:'changed'}),/different payment/);
+  await assert.rejects(customerActivityAction(f.client,collector,{...f.body,treasuryAccountId:'bank'}),/different payment/);
+  await assert.rejects(customerActivityAction(f.client,collector,{...f.body,requestKey:crypto.randomUUID(),treasuryAccountId:'inactive',reference:'SECOND'}),/active treasury deposit account/);
   await assert.rejects(customerActivityAction(f.client,collector,{...f.body,requestKey:crypto.randomUUID()}),/already recorded/);
   await assert.rejects(customerActivityAction(f.client,collector,{...f.body,requestKey:crypto.randomUUID(),reference:'another',amount:700,allocations:[{invoice_id:f.invoice.id,amount:700}]}),/remains after pending/);
   for(const amount of [true,-1,NaN,Infinity,1.001])await assert.rejects(customerActivityAction(f.client,collector,{...f.body,requestKey:crypto.randomUUID(),amount}));
@@ -77,17 +104,34 @@ test('collection guards reject changed retry payloads, duplicate receipts, over-
   f.setActor({id:'driver',role:'user'},{id:'driver',role:'driver',status:'active'});await assert.rejects(customerActivityAction(f.client,{id:'driver',role:'user'},f.body),/restricted/);
 });
 
-test('a collector cannot clear their own debt; a shortfall, wrong account or changed confirmation reference leaves the obligation intact',async()=>{
-  const f=await setup(),s=f.entities;f.setActor(gm);
-  const result=await customerActivityAction(f.client,gm,f.body),payment=await s.Payment.get(result.payment.id);
+test('earlier staff-held cash posts on physical receipt and rejects a self-confirmation, shortfall or changed destination',async()=>{
+  const f=await setup(),s=f.entities;
+  const {payment,collection}=await earlierCollection(f,{collectedBy:gm,employeeId:gm.id});
+  f.setActor(gm);
   const body={paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'ACK',amount:400,treasuryAccountId:'till'};
   await assert.rejects(confirmCustomerCollection(f.client,gm,body),/cash you collected/);
   f.setActor(cashier,await s.Employee.get('cashier'));
+  const before=await cashierAction(f.client,cashier,{action:'cashierWorkspace',date});
+  assert.equal(cashDepositors(before).filter(r=>r.kind==='staff_receipt').length,1);
   await assert.rejects(confirmCustomerCollection(f.client,cashier,{...body,amount:200}),/full recorded/);
   await assert.rejects(confirmCustomerCollection(f.client,cashier,{...body,treasuryAccountId:'bank'}),/cash account/);
-  assert.equal((await s.CashCollection.get(payment.collection_id)).outstanding_amount,400);
-  await confirmCustomerCollection(f.client,cashier,body);
+  assert.equal((await s.CashCollection.get(collection.id)).outstanding_amount,400);
+  const result=await confirmCustomerCollection(f.client,cashier,body);
+  assert.equal(result.payment.status,'posted');
+  assert.equal(result.payment.receipt_recorded_by_name,cashier.full_name);
+  const settled=await s.CashCollection.get(collection.id);
+  assert.equal(settled.outstanding_amount,0);
+  assert.equal(settled.journal_id,result.payment.journal_id);
+  assert.equal(dailyCashSettlements([settled])[0].status,'settled');
+  assert.equal((await confirmCustomerCollection(f.client,cashier,body)).reused,true);
   await assert.rejects(confirmCustomerCollection(f.client,cashier,{...body,reference:'changed'}),/different details/);
+  assert.equal((await s.Invoice.get(f.invoice.id)).balance,600);
+  assert.equal((await s.TreasuryAccount.get('till')).balance,100400);
+  assert.equal((await s.JournalEntry.list()).length,1);
+  const after=await cashierAction(f.client,cashier,{action:'cashierWorkspace',date});
+  assert.deepEqual(after.staffCollections,[]);
+  assert.deepEqual(after.receipts,[]);
+  assert.deepEqual(after.cashCustomers.filter(r=>r.document_number===f.invoice.invoice_number).map(r=>[r.received,r.status]),[[400,'posted']]);
 });
 
 test('invoice collections remain visible in staff liability but cannot enter the sales cash handover twice',()=>{
@@ -127,7 +171,13 @@ test('late failures roll back collection documents and multi-product spoilage th
     globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const r=await fn();await db.exec('COMMIT');return r;}catch(e){await db.exec('ROLLBACK');throw e;}};
     const audit=f.entities.AuditLog.create;f.entities.AuditLog.create=async()=>{throw Error('Audit unavailable');};
     const response=await route(request(f.body),{params:Promise.resolve({name:'fieldOps'})});assert.equal(response.status,400);
-    assert.equal((await f.entities.Payment.list()).length,0);assert.equal((await f.entities.CashCollection.filter({collection_origin:'customer_receipt'})).length,0);
+    assert.equal((await f.entities.Payment.list()).length,0);
+    assert.equal((await f.entities.JournalEntry.list()).length,0);
+    assert.equal((await f.entities.TreasuryTransaction.list()).length,0);
+    assert.equal((await f.entities.PaymentAllocation.list()).length,0);
+    assert.equal((await f.entities.Invoice.get(f.invoice.id)).balance,1000);
+    assert.equal((await f.entities.Customer.get('customer-a')).balance,1000);
+    assert.equal((await f.entities.TreasuryAccount.get('till')).balance,100000);
     f.entities.AuditLog.create=audit;
     const retry=await route(request(f.body),{params:Promise.resolve({name:'fieldOps'})});assert.equal(retry.status,200);
     const products=await Promise.all([1,2].map(i=>f.entities.Product.create({name:'Cup '+i,is_active:true,inventory_type:'finished_product'})));
@@ -139,24 +189,60 @@ test('late failures roll back collection documents and multi-product spoilage th
 
 
 
-test('top admin can collect cash, hand it to a cashier, and approve that receipt with audited self-approval',async()=>{
- const f=await setup(),s=f.entities;f.setActor(gm);
- const result=await customerActivityAction(f.client,gm,f.body),payment=await s.Payment.get(result.payment.id);
- assert.equal(payment.collector_user_id,gm.id);assert.equal(payment.status,'awaiting_cashier');
- await assert.rejects(confirmCustomerCollection(f.client,gm,{paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'SELF',amount:400,treasuryAccountId:'till'}),/cash you collected/);
- f.setActor(cashier,await s.Employee.get('cashier'));
- await confirmCustomerCollection(f.client,cashier,{paymentId:payment.id,requestKey:crypto.randomUUID(),date,reference:'CASHIER-ADMIN',amount:400,treasuryAccountId:'till'});
- f.setActor(gm);const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
- try{const res=await route(request({action:'approve',paymentId:payment.id,topAdmin:false}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(res.status,200,JSON.stringify(await res.json()));
- const posted=await s.Payment.get(payment.id);assert.equal(posted.status,'posted');assert.equal(posted.self_approved,true);assert.equal(posted.approval_by_top_admin,true);assert.equal(posted.approved_by_user_id,gm.id);assert.equal((await s.Customer.get('customer-a')).balance,600);assert.equal((await s.TreasuryAccount.get('till')).balance,100400);
- }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+test('a pre-release confirmed staff receipt can still be approved through the historical workflow exactly once',async()=>{
+  const f=await setup(),s=f.entities,{payment}=await earlierCollection(f,{collectedBy:gm,employeeId:gm.id,confirmedBy:cashier});
+  f.setActor(gm);
+  const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
+  try{
+    const rejected=await route(request({action:'reject',paymentId:payment.id,reason:'Needs review'}),{params:Promise.resolve({name:'customerReceipts'})});
+    assert.equal(rejected.status,400);
+    assert.match((await rejected.json()).error,/reconciled before cancellation/);
+    await assert.rejects(validateAllocations(f.client.asServiceRole,[{invoice_id:f.invoice.id,amount:601}],'customer-a'),/remains after pending/);
+
+    f.setActor(cashier,await s.Employee.get('cashier'));
+    const denied=await route(request({action:'approve',paymentId:payment.id,topAdmin:true}),{params:Promise.resolve({name:'customerReceipts'})});
+    assert.equal(denied.status,403);
+    assert.equal((await s.Payment.get(payment.id)).status,'pending_approval');
+    f.setActor(gm);
+    for(let i=0;i<2;i++){
+      const approved=await route(request({action:'approve',paymentId:payment.id,topAdmin:false}),{params:Promise.resolve({name:'customerReceipts'})});
+      assert.equal(approved.status,200,await approved.clone().text());
+    }
+    const posted=await s.Payment.get(payment.id);
+    assert.equal(posted.status,'posted');
+    assert.equal(posted.self_approved,true);
+    assert.equal(posted.approval_by_top_admin,true);
+    assert.equal(posted.approved_by_user_id,gm.id);
+    assert.equal((await s.JournalEntry.list()).length,1);
+    assert.equal((await s.Customer.get('customer-a')).balance,600);
+    assert.equal((await s.TreasuryAccount.get('till')).balance,100400);
+  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
 });
 
-test('a manager can approve an existing receipt they confirmed; a cashier cannot spoof the top admin exception',async()=>{
- const f=await setup(),s=f.entities;f.setActor(gm);const route=await functionRoute();globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
- try{const res=await route(request({action:'confirm',customerId:'customer-a',requestKey:crypto.randomUUID(),date,reference:'DIRECT-GM',amount:400,treasuryAccountId:'till',allocations:[{invoice_id:f.invoice.id,amount:400}]}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(res.status,200);const {payment}=await res.json();assert.equal(payment.cashier_confirmed_by,gm.id);
- f.setActor(cashier,await s.Employee.get('cashier'));const denied=await route(request({action:'approve',paymentId:payment.id,topAdmin:true}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(denied.status,403);assert.equal((await s.Payment.get(payment.id)).status,'pending_approval');
- f.setActor(gm);for(let i=0;i<2;i++){const approved=await route(request({action:'approve',paymentId:payment.id}),{params:Promise.resolve({name:'customerReceipts'})});assert.equal(approved.status,200,JSON.stringify(await approved.json()));}
- assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.TreasuryAccount.get('till')).balance,100400);assert.equal((await s.Payment.get(payment.id)).self_approved,true);
- }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+test('cash-desk invoice confirmation posts the full payment through the checked API with a deposit-only account list',async()=>{
+  const f=await setup(),s=f.entities,route=await functionRoute();
+  globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=fn=>fn();
+  const invoke=body=>route(request(body),{params:Promise.resolve({name:'customerReceipts'})});
+  try{
+    const denied=await invoke({action:'depositOptions'});
+    assert.equal(denied.status,403);
+    f.setActor(cashier,await s.Employee.get('cashier'));
+    const options=await invoke({action:'depositOptions'});
+    assert.equal(options.status,200);
+    assert.deepEqual((await options.json()).cashAccounts.find(a=>a.id==='bank'),{id:'bank',name:'bank',account_type:'bank'});
+    const body={...f.body,action:'confirm',treasuryAccountId:'till',amount:1000,allocations:[{invoice_id:f.invoice.id,amount:1000}]};
+    const res=await invoke(body);
+    assert.equal(res.status,200,await res.clone().text());
+    const {payment}=await res.json();
+    assert.equal(payment.status,'posted');
+    assert.equal(payment.receipt_recorded_by_name,cashier.full_name);
+    assert.equal(payment.receipt_posting_snapshot,undefined);
+    assert.equal((await s.Invoice.get(f.invoice.id)).status,'paid');
+    assert.equal((await s.Invoice.get(f.invoice.id)).balance,0);
+    assert.equal((await s.Customer.get('customer-a')).balance,0);
+    assert.equal((await s.TreasuryAccount.get('till')).balance,101000);
+    assert.equal((await (await invoke(body)).json()).reused,true);
+    assert.equal((await s.JournalEntry.list()).length,1);
+    assert.throws(()=>guardMutation({role:'admin',user:gm},'Payment','update',{amount:1},{...payment,payment_type:'customer_payment'}),/immutable/);
+  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
 });
