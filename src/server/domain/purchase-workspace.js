@@ -3,41 +3,50 @@ import {verifiedPayableBill} from './opening-payments.js';
 import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, audit } from './field-ops.js';
 import { businessDate } from '../../lib/business-date.js';
-import { purchasePermissions, PURCHASE_ROLES } from '../../lib/purchase-workspace.js';
+import { purchasePermissions } from '../../lib/purchase-workspace.js';
 import { stockUnit } from '../../lib/item-units.js';
 import { forbidden } from '../access.js';
+import { principalRole } from './roles.js';
 
 const pick = (row, fields) => Object.fromEntries(fields.split(' ').map(key => [key, row[key]]));
-export function canReadPurchase(role, employee, po) {
-  if (!po) return false;
-  if (['admin', 'procurement', 'cashier'].includes(role) || employee?.assigned_role === 'supply_chain_manager' && role === 'warehouse_manager') return true;
-  if (role === 'warehouse_manager' && ['approved', 'partially_received', 'received', 'billed'].includes(po.status)) return true;
-  return po.requested_by_id === employee?.id || !!employee?.department_id && po.requested_department_id === employee.department_id;
+export function canReadPurchase(role, _employee, po) {
+  return !!po && role === 'admin';
+}
+
+export async function requirePurchasingAdmin(client,user) {
+  const {employee}=await requireStaff(client,user,null,'Purchases');
+  if(principalRole(user,employee)!=='admin')throw forbidden('Purchases are reserved for administrators.');
+  client.auth.assertModule?.('purchases');
+  return employee;
 }
 
 export async function purchaseWorkspace(client, user, body) {
-  const { role, employee } = await requireStaff(client, user, PURCHASE_ROLES, 'Purchases');
-  if (role !== 'admin' && employee?.status !== 'active') throw Error('An active staff account is required');
-  const s = client.asServiceRole.entities, permissions = purchasePermissions(role,employee?.assigned_role);
-  const all = await readRecords(s.PurchaseOrder);
-  const orders = all.filter(po => canReadPurchase(role, employee, po));
+  await requirePurchasingAdmin(client,user);
+  const s = client.asServiceRole.entities, permissions = purchasePermissions('admin');
+  const orders = await readRecords(s.PurchaseOrder);
   const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required')) };
   if (body.section === 'suppliers' && !permissions.suppliers || ['bills','payments'].includes(body.section) && !permissions.finance || body.section === 'receiving' && !permissions.receive) throw forbidden('This Purchases section is reserved for authorized purchasing, warehouse or finance staff.');
   if (body.orderId || body.compose) {
     const order = body.orderId ? orders.find(po => po.id === body.orderId) : null;
     if (body.orderId && !order) throw forbidden('This purchase order is outside your permitted scope.');
     if (body.compose && !permissions.purchase) throw forbidden('Your role cannot prepare purchase orders.');
-    const [suppliers, products, warehouses, lines] = await Promise.all([
+    const [suppliers, products, warehouses, lines, orderBills, orderPayments, accounts] = await Promise.all([
       readRecords(s.Supplier),
       permissions.purchase || permissions.receive ? readRecords(s.Product) : [],
       permissions.purchase || permissions.receive ? readRecords(s.Warehouse, { is_active: true }) : [],
       order ? readRecords(s.PurchaseOrderLine, { po_id: order.id }) : [],
+      order ? readRecords(s.Bill, { po_id: order.id, supplier_id: order.supplier_id }) : [],
+      order ? readRecords(s.Payment, { po_id: order.id, party_id: order.supplier_id, payment_type: 'supplier_payment' }) : [],
+      order ? readRecords(s.TreasuryAccount, { is_active: true, account_type: { $in: ['cash','petty_cash','bank','mobile_money'] } }) : [],
     ]);
     const supplier = suppliers.find(v => v.id === (order?.supplier_id || body.supplierId));
     return { ...base, order, supplier: supplier && pick(supplier, 'id name email is_active supplier_items payment_terms_days'),
       suppliers: suppliers.filter(v => v.is_active !== false || v.id === order?.supplier_id).map(v => pick(v, 'id name is_active supplier_items')),
       products: products.map(p => ({ ...pick(p, 'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days'), unit: stockUnit(p), cost: itemUnitCost(p) })),
       warehouses: warehouses.filter(w => !['vehicle', 'commercial_custody', 'quarantine'].includes(w.warehouse_type)).map(w => pick(w, 'id name warehouse_type')),
+      orderBills: orderBills.map(b => pick(b, 'id bill_number bill_date due_date total balance status supplier_name po_id')),
+      orderPayments: orderPayments.map(p => pick(p, 'id bill_id status amount')),
+      accounts: accounts.map(a=>pick(a,'id name balance account_type')),
       orderLines: lines, requires_supplier_split: !!order && lines.some(l => l.supplier_id && l.supplier_id !== order.supplier_id),
     };
   }
@@ -50,13 +59,14 @@ export async function purchaseWorkspace(client, user, body) {
 
 // Public record endpoints must not bypass the transactional purchase forms.
 export function guardPurchaseMutation(_context, entity) {
-  if (['PurchaseOrder', 'PurchaseOrderLine'].includes(entity)) throw forbidden('Prepare, submit and approve purchase orders in the checked Purchases workspace. Submitted orders are read-only.');
+  if (['PurchaseOrder', 'PurchaseOrderLine'].includes(entity)) throw forbidden('Use the checked Purchases workspace to record orders and receive goods.');
 }
 
 export async function purchasePaymentDecision(client,user,body) {
-  await requireStaff(client,user,['admin'],'purchase payment authorization');
+  const {employee}=await requireStaff(client,user,['admin'],'purchase payment authorization');
   const s=client.asServiceRole.entities, payment=await s.Payment.get(body.paymentId), approving=body.action==='approvePurchasePayment';
   if(!payment || payment.payment_type!=='supplier_payment' || (!payment.po_id&&!payment.opening_bill_payment&&!payment.recurring_bill_payment))throw Error('Select a supplier purchase payment request');
+  if(payment.po_id&&principalRole(user,employee)!=='admin')throw forbidden('Purchases are reserved for administrators.');
   if(payment.status===(approving?'approved':'rejected') && payment[approving?'approved_by':'rejected_by']===user.id)return {payment,reused:true};
   if(payment.status!=='pending_approval')throw Error('This request is not waiting for approval');
   if(approving&&(payment.opening_bill_payment||payment.recurring_bill_payment)){

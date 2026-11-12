@@ -50,7 +50,7 @@ export async function loadCashReceipts(limit = 50) {
   return page.items;
 }
 
-// Cashier confirmation stores the receipt only. GM approval posts the deposit.
+// Confirm a physical receipt for cash from an older delivery.
 export async function receiveCashFromCommercial({ invoice, treasuryAccount, amount, date, receiptReference, receiptFileUris = [], collectedBy = "", notes = "", requestKey }) {
   const payment = await confirmCustomerReceipt({ customerId: invoice.customer_id, treasuryAccountId: treasuryAccount?.id, amount, date, reference: receiptReference, receiptFileUris, collectedBy, notes, commercialReceipt: true, requestKey: requestKey || crypto.randomUUID(), allocations: [{ invoice_id: invoice.id, amount }] });
   return { ...payment, acknowledgement_reference: payment.payment_number };

@@ -3,6 +3,7 @@
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { getFinancePulse, topBy, PERIODS } from "@/lib/finance-pulse";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import PageHeader from "@/components/shared/PageHeader";
@@ -15,14 +16,17 @@ import { Receipt, ShoppingCart, Wallet, Trash2, TrendingUp, TrendingDown } from 
 export default function FinancePulse() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
+  const {principalRole,role,loading:authLoading}=useCurrentUser();
+  const includePurchases=(principalRole||role)==='admin';
   const [period, setPeriod] = useState("month");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if(authLoading)return;
     setLoading(true);
-    getFinancePulse(period).then(setData).finally(() => setLoading(false));
-  }, [period]);
+    getFinancePulse(period,{includePurchases}).then(setData).finally(() => setLoading(false));
+  }, [period,includePurchases,authLoading]);
 
   const periodLabel = PERIODS.find(p => p.key === period)?.label || "";
   const scale = data ? Math.max(data.sales, data.purchases, data.expenses, data.spoilage, 1) : 1;
@@ -56,11 +60,11 @@ export default function FinancePulse() {
                 icon={Receipt} tone="green" share={(data.sales / scale) * 100}
                 footer={`${formatXAF(data.collected)} collected · ${formatXAF(data.outstanding)} still owed`}
               />
-              <MoneyFlowCard
+              {includePurchases&&<MoneyFlowCard
                 title={ui("Purchases")} amount={data.purchases} count={data.purchasesCount} countLabel="purchase orders"
                 icon={ShoppingCart} tone="orange" share={(data.purchases / scale) * 100}
                 footer="Materials, packaging & supplies ordered"
-              />
+              />}
               <MoneyFlowCard
                 title={ui("Operating Expenses")} amount={data.expenses} count={data.expensesCount} countLabel="payments"
                 icon={Wallet} tone="blue" share={(data.expenses / scale) * 100}
@@ -74,7 +78,7 @@ export default function FinancePulse() {
             </div>
           </div>
 
-          <div className={`rounded-xl p-5 mb-4 border ${data.netPosition >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+          {includePurchases&&<div className={`rounded-xl p-5 mb-4 border ${data.netPosition >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
             <div className="flex items-center gap-3">
               <span className={`w-11 h-11 rounded-lg flex items-center justify-center ${data.netPosition >= 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"}`}>
                 {data.netPosition >= 0 ? <TrendingUp size={22} /> : <TrendingDown size={22} />}
@@ -88,7 +92,7 @@ export default function FinancePulse() {
                 </p>
               </div>
             </div>
-          </div>
+          </div>}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <BreakdownList

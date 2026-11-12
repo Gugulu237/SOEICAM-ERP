@@ -71,23 +71,23 @@ test('an approved expense is paid at its saved amount once, never at the client 
   assert.equal((await entities.JournalEntry.list()).length, 1);
 });
 
-test('supplier requests leave money untouched and require GM approval before release', async () => {
-  const { client, entities } = await fixture(), body = { ...args('cashierRequestPayment'), orderId: 'po', amount: 50000 };
-  const { payment } = await cashierAction(client, user, body);
-  assert.equal((await entities.TreasuryAccount.get('till')).balance, 100000);
-  await assert.rejects(cashierAction(client, user, { ...args('cashierReleasePayment'), paymentId: payment.id }), /approved by the General Manager/);
-  await entities.Payment.update(payment.id, { status: 'approved', approved_by: 'gm', approved_at: new Date().toISOString() });
-  const release = { ...args('cashierReleasePayment'), paymentId: payment.id };
-  await assert.rejects(cashierAction(client,user,release),/Configure Supplier prepayments/);
-  assert.equal((await entities.TreasuryTransaction.list()).length,0);assert.equal((await entities.JournalEntry.list()).length,0);
+test('only admins can directly post purchase advances and a retry moves no extra cash', async () => {
+  const {client,entities}=await fixture(),admin={...user,role:'admin'},body={...args('recordPurchasePayment'),orderId:'po',amount:50000};
+  await assert.rejects(cashierAction(client,user,body),{status:403});
+  await assert.rejects(cashierAction(client,admin,body),/Configure Supplier prepayments/);
+  assert.deepEqual(await entities.Payment.list(),[]);
+  assert.equal((await entities.TreasuryAccount.get('till')).balance,100000);
   const prepayment=await entities.Account.create({account_number:'4090',name:'Supplier prepayments',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true,balance:0});
   await entities.PostingRule.create({rule_key:'supplier_prepayment',account_id:prepayment.id,is_active:true});
-  await cashierAction(client, user, release); await cashierAction(client, user, release);
-  assert.equal((await entities.TreasuryAccount.get('till')).balance, 50000);
-  assert.equal((await entities.PurchaseOrder.get('po')).cash_disbursed, true);
-  assert.equal((await entities.Payment.get(payment.id)).status, 'posted');
-  assert.equal((await entities.JournalEntry.list()).length, 1);
-  assert.equal((await entities.Account.get(prepayment.id)).balance,50000);assert.equal((await entities.Account.get('payable')).balance,0);
+  const {payment}=await cashierAction(client,admin,body);
+  assert.equal(payment.status,'posted');assert.equal(payment.approved_by,undefined);
+  assert.equal((await cashierAction(client,admin,body)).reused,true);
+  await assert.rejects(cashierAction(client,admin,{...body,amount:25000}),/reference was already used/);
+  assert.equal((await entities.TreasuryAccount.get('till')).balance,50000);
+  assert.equal((await entities.PurchaseOrder.get('po')).cash_disbursed,true);
+  assert.equal((await entities.JournalEntry.list()).length,1);
+  assert.equal((await entities.Account.get(prepayment.id)).balance,50000);
+  assert.equal((await entities.Account.get('payable')).balance,0);
 });
 
 test('legacy half-completed cash operations are held for reconciliation rather than charged again', async () => {
@@ -96,7 +96,7 @@ test('legacy half-completed cash operations are held for reconciliation rather t
   await assert.rejects(cashierAction(client, user, { ...args('cashierPayExpense'), expenseId: 'expense-request' }), /earlier cash movement/);
   const payment = await entities.Payment.create({ payment_type: 'supplier_payment', payment_method: 'cash', po_id: 'po', party_id: 'supplier', amount: 10000, status: 'approved', approved_by: 'gm', approved_at: new Date().toISOString(), treasury_account_id: 'till' });
   await entities.JournalEntry.create({ source_document_id: payment.id, status: 'posted' });
-  await assert.rejects(cashierAction(client, user, { ...args('cashierReleasePayment'), paymentId: payment.id }), /earlier ledger entry/);
+  await assert.rejects(cashierAction(client, {...user,role:'admin'}, { ...args('cashierReleasePayment'), paymentId: payment.id }), /earlier ledger entry/);
   assert.equal((await entities.TreasuryAccount.get('till')).balance, 100000);
 });
 

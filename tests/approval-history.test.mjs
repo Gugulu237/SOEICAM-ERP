@@ -22,6 +22,8 @@ test('legacy approval metadata stays visible with missing names explicit and app
 test('ordinary staff see their own approvals while cashiers see payment decisions without payroll or other departments leaking to employees',async()=>{
  const f=await fixture(),s=f.entities,approved=date+'T12:00:00.000Z';
  await s.Payment.create({payment_number:'MINE',prepared_by:user.id,approved_at:approved,amount:10});await s.Payment.create({payment_number:'OTHER',approved_at:approved,amount:20});await s.PayrollRun.create({period_name:'Payroll',approved_at:approved,total_net:900});await s.ExpenseRequest.create({request_number:'OWN-EXPENSE',requester_id:'cashier',approved_at:approved,amount:5});
+ await s.PurchaseOrder.create({po_number:'OLD-PO',requester_id:'cashier',approved_at:approved,total:100});
+ assert.ok((await approvalHistory(f.client,gm,range)).rows.some(row=>row.reference==='OLD-PO'));
  await s.Employee.update('cashier',{role:'employee'});assert.deepEqual((await approvalHistory(f.client,user,range)).rows.map(r=>r.reference).sort(),['MINE','OWN-EXPENSE']);
  await s.Employee.update('cashier',{role:'cashier'});assert.equal((await approvalHistory(f.client,user,range)).rows.length,4);
  await s.Employee.update('cashier',{status:'inactive'});await assert.rejects(approvalHistory(f.client,user,range),/active staff/);

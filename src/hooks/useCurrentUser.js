@@ -12,7 +12,7 @@ export function useCurrentUser() {
   const fullAccessModules=employee?.full_access_modules || [];
   const nativeRole=feature==='commercial'?'commercial':feature==='outlets'?'hotesse':pathname==='/driver'?'driver':'admin';
   const mayUseFeatureRole=(!['driver','commercial'].includes(principalRole)||nativeRole===principalRole||feature==='sales_reports')&&!(principalRole==='hotesse'&&['sales','commercial'].includes(feature));
-  const role=principalRole&&principalRole!=='admin'&&mayUseFeatureRole&&fullAccessModules.includes(feature)?nativeRole:principalRole;
+  const role=principalRole&&principalRole!=='admin'&&feature!=='purchases'&&mayUseFeatureRole&&fullAccessModules.includes(feature)?nativeRole:principalRole;
   const departmentId = employee?.department_id || null;
   const assignedRole = employee?.assigned_role || employee?.role || role;
 
@@ -35,7 +35,7 @@ export function useCurrentUser() {
     isProductionManager: role === 'production_manager',
     canApprovePO: ['admin'].includes(role),
     canDisburse: ['admin', 'cashier'].includes(role),
-    canViewAllPOs: ['admin', 'procurement', 'cashier'].includes(role),
+    canViewAllPOs: principalRole === 'admin',
     canIssueMaterials: role==='admin' || role==='warehouse_manager' && assignedRole!=='production_manager',
     canApproveProduction: ['admin'].includes(role),
     canSignChequeGM: ['admin'].includes(role),

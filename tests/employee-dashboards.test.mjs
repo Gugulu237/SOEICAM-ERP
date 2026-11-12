@@ -48,9 +48,9 @@ test('Supply Chain Manager has a scoped dashboard without GM or finance reads', 
   const client = { auth:{ staff:async () => employee }, asServiceRole:{ entities:new Proxy({}, { get:(_,name) => ({ filter:async () => { reads.push(name); return records[name] || []; } }) }) } };
   const result = await employeeWorkspaceAction(client,{ id:'login',role:'user' },{ action:'employeeDashboard',mode:'admin' });
   assert.equal(result.mode,'supply_chain_manager');
-  assert.equal(result.purchaseOrders[0].po_number,'PO-1');
+  assert.deepEqual(result.purchaseOrders,[]);
   assert.deepEqual(result.dispatches,[]);
-  assert.deepEqual(reads,['PurchaseOrder','StockBalance']);
+  assert.deepEqual(reads,['StockBalance']);
   assert.equal(result.payments,undefined);
   employee.allowed_modules = ['inventory']; reads.length = 0;
   const narrowed = await employeeWorkspaceAction(client,{ id:'login',role:'user' },{ action:'employeeDashboard' });

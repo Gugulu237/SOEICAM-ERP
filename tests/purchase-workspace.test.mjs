@@ -11,58 +11,56 @@ import {purchaseSections,purchasePath,legacySupplierPath} from '../src/lib/purch
 
 async function setup(db){
   const f=await fixture(db),s=f.entities;
-  await s.Employee.update('cashier',{role:'procurement',department_id:'materials'});
+  await s.Employee.update('cashier',{role:'admin',department_id:'materials'});
   await s.Supplier.update('supplier',{is_active:true});
   const product=await s.Product.create({name:'Milk powder',inventory_type:'raw_material',unit_of_measure:'kg',is_active:true});
-  const body={action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'pending_approval',order:{supplier_id:'supplier',order_date:date,lines:[{product_id:product.id,quantity:10,unit_price:100,tax_rate:10}]}};
+  const body={action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'confirmed',order:{supplier_id:'supplier',order_date:date,lines:[{product_id:product.id,quantity:10,unit_price:100,tax_rate:10}]}};
   return {...f,body,product,run:body=>supplierAction(f.client,user,body)};
 }
 
-test('Purchases combines suppliers with role-specific receiving and finance tabs, retaining deep links',()=>{
+test('Purchases combines all administrator destinations and retains deep links',()=>{
   assert.deepEqual(purchaseSections('admin').map(s=>s.key),['orders','suppliers','receiving','bills','payments']);
-  assert.deepEqual(purchaseSections('cashier').map(s=>s.key),['orders','suppliers','bills','payments']);
-  for(const role of ['production_manager','employee'])assert.deepEqual(purchaseSections(role).map(s=>s.key),['orders']);
-  assert.deepEqual(purchaseSections('warehouse_manager').map(s=>s.key),['orders','receiving']);
+  for(const role of ['cashier','procurement','production_manager','employee','warehouse_manager','driver'])assert.deepEqual(purchaseSections(role),[]);
   const link=legacySupplierPath({supplier:'vendor / A',tab:'bills',role:'admin'});
   assert.equal(link,purchasePath({section:'suppliers',supplier:'vendor / A',supplierTab:'bills'}));
   assert.equal(new URL(link,'http://localhost').searchParams.get('supplier'),'vendor / A');
   assert.ok(!link.includes('role='));
 });
 
-test('purchase workspace scopes requesters and warehouses and never exposes financial registers to Operations',async()=>{
+test('only administrators can read, save or receive purchases',async()=>{
   const f=await setup(),s=f.entities,{order}=await f.run(f.body);
-  await s.PurchaseOrder.create({supplier_id:'supplier',po_number:'OTHER-DRAFT',status:'draft',requested_department_id:'other',requested_by_id:'other'});
-  await s.Employee.update('cashier',{role:'production_manager'});
-  const view=await purchaseWorkspace(f.client,user,{});assert.deepEqual(view.orders.map(o=>o.id),[order.id]);assert.equal(view.bills,undefined);assert.equal(view.payments,undefined);assert.equal(view.permissions.approve,false);
-  for(const section of ['suppliers','bills','receiving'])await assert.rejects(purchaseWorkspace(f.client,user,{section}),/reserved/);
-  await assert.rejects(purchaseWorkspace(f.client,user,{orderId:'po'}),/outside your permitted scope/);
-  const options=await purchaseWorkspace(f.client,user,{compose:true});assert.equal(options.suppliers[0].name,'Supplier');assert.equal(options.suppliers[0].balance,undefined);assert.equal(options.suppliers[0].bank_account,undefined);
-  await s.Employee.update('cashier',{role:'warehouse_manager'});
-  const warehouse=await purchaseWorkspace(f.client,user,{section:'receiving'});assert.ok(warehouse.orders.some(o=>o.id==='po'));assert.equal(warehouse.bills,undefined);assert.equal(warehouse.permissions.approve,false);
-  await s.Employee.update('cashier',{role:'driver'});await assert.rejects(purchaseWorkspace(f.client,user,{}),/restricted/);
+  for(const role of ['cashier','procurement','production_manager','employee','warehouse_manager','driver']){
+    await s.Employee.update('cashier',{role});
+    await assert.rejects(purchaseWorkspace(f.client,user,{section:'orders'}),{status:403});
+    await assert.rejects(f.run({action:'supplierWorkspace',supplierId:'supplier'}),{status:403});
+    await assert.rejects(f.run(f.body),{status:403});
+    await assert.rejects(f.run({action:'receiveSupplierOrder',orderId:order.id}),{status:403});
+  }
+  await s.Employee.update('cashier',{role:'admin'});
+  const options=await purchaseWorkspace(f.client,user,{compose:true});
+  assert.equal(options.suppliers[0].name,'Supplier');
+  assert.equal(options.suppliers[0].bank_account,undefined);
 });
 
-test('department purchase requests use authenticated attribution and edited draft submissions retry once',async()=>{
-  const f=await setup(),s=f.entities;await s.Employee.update('cashier',{role:'production_manager'});
+test('admin draft confirmation uses authenticated attribution, becomes receivable immediately and retries once',async()=>{
+  const f=await setup(),s=f.entities;
   const draft={...f.body,status:'draft',order:{...f.body.order,requested_by_id:'forged-admin'}},{order}=await f.run(draft);
   assert.equal(order.requested_by_id,'cashier');assert.equal(order.requested_department_id,'materials');
   const submit={...f.body,orderId:order.id,requestKey:crypto.randomUUID(),order:{...f.body.order,notes:'10 kg for tomorrow'}};
   const first=await f.run(submit),retry=await f.run(submit);assert.equal(first.order.id,retry.order.id);assert.equal(retry.reused,true);assert.equal((await s.PurchaseOrderLine.list()).length,1);
+  assert.equal(first.order.status,'approved');assert.equal(first.order.purchase_confirmed_by,user.id);assert.equal(first.order.approved_by,undefined);
   await assert.rejects(f.run({...submit,order:{...submit.order,notes:'Changed after submission'}}),/already saved/);
   await assert.rejects(f.run({...submit,requestKey:crypto.randomUUID()}),/Only a draft/);
-  await s.Employee.update('cashier',{department_id:'other'});
-  const other=await s.PurchaseOrder.create({status:'draft',supplier_id:'supplier',requested_department_id:'finance',requested_by_id:'someone-else'});
-  await assert.rejects(f.run({...submit,orderId:other.id,requestKey:crypto.randomUUID()}),/outside/);
 });
 
-test('General Manager order authorization rechecks supplier, lines and totals, is retry-safe and moves no cash or stock',async()=>{
-  const f=await setup(),s=f.entities,{order}=await f.run(f.body),approve={action:'approveSupplierOrder',orderId:order.id};
-  await assert.rejects(f.run(approve),/restricted/);await s.Employee.update('cashier',{role:'admin'});
+test('Confirming an older order rechecks supplier, lines and totals, is retry-safe and moves no cash or stock',async()=>{
+  const f=await setup(),s=f.entities,{order}=await f.run({...f.body,status:'draft'}),approve={action:'confirmSupplierOrder',orderId:order.id};
+  await s.PurchaseOrder.update(order.id,{status:'pending_approval'});
   await s.PurchaseOrder.update(order.id,{total:10});await assert.rejects(f.run(approve),/total/);
   await s.PurchaseOrder.update(order.id,{total:1100});await s.Supplier.update('supplier',{is_active:false});await assert.rejects(f.run(approve),/supplier/);
-  await s.Supplier.update('supplier',{is_active:true});const first=await f.run(approve),retry=await f.run(approve);assert.equal(first.order.approved_by,user.id);assert.equal(retry.reused,true);
+  await s.Supplier.update('supplier',{is_active:true});const first=await f.run(approve),retry=await f.run(approve);assert.equal(first.order.purchase_confirmed_by,user.id);assert.equal(retry.reused,true);
   assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.GoodsReceipt.list()).length,0);assert.equal((await s.TreasuryTransaction.list()).length,0);
-  assert.equal((await s.AuditLog.list()).filter(a=>a.action==='approve').length,1);
+  assert.equal((await s.AuditLog.list()).filter(a=>a.action==='confirm_supplier_order').length,1);
   await assert.rejects(f.run({action:'rejectSupplierOrder',orderId:order.id}),/awaiting approval/);
 });
 
@@ -72,25 +70,33 @@ test('payment authorization uses fresh balances and server identity, and keeps m
   const {journal}=await postJournal(f.client.asServiceRole,{entryDate:date,description:'Goods received',sourceModule:'procurement',sourceDocumentType:'GoodsReceipt',sourceDocumentId:receipt.id,userId:user.id,lines:[{account_id:'inventory',debit:1000,credit:0},{account_id:'payable',debit:0,credit:1000,party_type:'supplier',party_id:'supplier'}]});
   await s.GoodsReceipt.update(receipt.id,{journal_id:journal.id});await s.Supplier.update('supplier',{balance:1000});
   const bill=await s.Bill.create({supplier_id:'supplier',po_id:'po',receipt_id:receipt.id,journal_id:journal.id,payable_account_id:'payable',status:'open',total:1000,amount_paid:0,balance:1000});
-  const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',billId:bill.id,amount:500,accountId:'till',date,reference:'Invoice 001',requestKey:crypto.randomUUID()});
+  const payment=await s.Payment.create({payment_number:'LEGACY-001',payment_type:'supplier_payment',party_type:'supplier',party_id:'supplier',po_id:'po',bill_id:bill.id,amount:500,treasury_account_id:'till',payment_method:'cash',status:'pending_approval'});
   const body={action:'approvePurchasePayment',paymentId:payment.id,approved_by:'forged'};
   await assert.rejects(purchasePaymentDecision(f.client,user,body),/restricted/);
   await s.Employee.update('cashier',{role:'admin'});await s.Bill.update(bill.id,{amount_paid:800,balance:200});await assert.rejects(purchasePaymentDecision(f.client,user,body),/current supplier bill/);
   await s.Bill.update(bill.id,{amount_paid:0,balance:1000});const approved=await purchasePaymentDecision(f.client,user,body);assert.equal(approved.payment.approved_by,user.id);
   assert.equal((await purchasePaymentDecision(f.client,user,body)).reused,true);assert.equal((await s.TreasuryAccount.get('till')).balance,100000);assert.equal((await s.JournalEntry.list()).length,1);assert.equal((await s.Bill.get(bill.id)).balance,1000);
-  await s.Employee.update('cashier',{role:'cashier'});const release={action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()};await cashierAction(f.client,user,release);await cashierAction(f.client,user,release);
+  const release={action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()};await cashierAction(f.client,user,release);await cashierAction(f.client,user,release);
   assert.equal((await s.TreasuryAccount.get('till')).balance,99500);assert.equal((await s.Bill.get(bill.id)).balance,500);assert.equal((await s.JournalEntry.list()).length,2);
 });
 
-test('a late approval audit failure rolls back payment authorization at the actual API transaction boundary',async()=>{
+test('late direct purchase payment failure rolls back cash, ledger and payment at the API boundary',async()=>{
   const db=new PGlite();try{
-    const f=await setup(db),s=f.entities;await s.Employee.update('cashier',{role:'cashier'});
-    const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',orderId:'po',amount:500,accountId:'till',date,reference:'Advance',requestKey:crypto.randomUUID()});
-    await s.Employee.update('cashier',{role:'admin'});const route=await functionRoute(),original=s.AuditLog.create;
+    const f=await setup(db),s=f.entities,route=await functionRoute(),original=s.AuditLog.create;
+    const prepayment=await s.Account.create({account_number:'4090',name:'Supplier prepayments',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true,balance:0});
+    await s.PostingRule.create({rule_key:'supplier_prepayment',account_id:prepayment.id,is_active:true});
     globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
-    s.AuditLog.create=async()=>{throw Error('Approval audit unavailable');};
-    const body={action:'approvePurchasePayment',paymentId:payment.id};const failed=await route(request(body),{params:Promise.resolve({name:'fieldOps'})});assert.equal(failed.status,400);assert.equal((await s.Payment.get(payment.id)).status,'pending_approval');assert.equal((await s.Payment.get(payment.id)).approved_by,undefined);
-    s.AuditLog.create=original;const response=await route(request(body),{params:Promise.resolve({name:'fieldOps'})});assert.equal(response.status,200);assert.equal((await s.Payment.get(payment.id)).status,'approved');assert.equal((await s.TreasuryTransaction.list()).length,0);
+    s.AuditLog.create=async value=>{if(value.action==='cashier_disbursement')throw Error('Payment audit unavailable');return original(value);};
+    const body={action:'recordPurchasePayment',orderId:'po',amount:500,accountId:'till',date,reference:'Advance',requestKey:crypto.randomUUID()};
+    const send=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});
+    assert.equal((await send()).status,400);
+    for(const entity of ['Payment','TreasuryTransaction','JournalEntry'])assert.deepEqual(await s[entity].list(),[]);
+    assert.equal((await s.TreasuryAccount.get('till')).balance,100000);
+    s.AuditLog.create=original;
+    const response=await send();assert.equal(response.status,200);assert.equal((await response.json()).payment.status,'posted');
+    const retry=await send();assert.equal((await retry.json()).reused,true);
+    assert.equal((await s.TreasuryTransaction.list()).length,1);
+    assert.equal((await s.TreasuryAccount.get('till')).balance,99500);
   }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 
@@ -108,16 +114,17 @@ test('the real public entity endpoints cannot bypass purchase forms or rewrite a
     await assert.rejects(entityOperation(admin,'PurchaseOrder','update',[order.id,{status:'approved',approved_by:'gm'}]),/checked Purchases/);
     const line=(await f.entities.PurchaseOrderLine.list())[0];await assert.rejects(entityOperation(admin,'PurchaseOrderLine','update',[line.id,{unit_price:1}]),/checked Purchases/);
     await assert.rejects(entityOperation(admin,'PurchaseOrder','create',[{status:'approved'}]),/checked Purchases/);
-    assert.equal((await f.entities.PurchaseOrder.get(order.id)).status,'pending_approval');assert.equal((await f.entities.PurchaseOrderLine.get(line.id)).unit_price,100);
+    assert.equal((await f.entities.PurchaseOrder.get(order.id)).status,'approved');assert.equal((await f.entities.PurchaseOrderLine.get(line.id)).unit_price,100);
   }finally{delete globalThis.__purchaseStores;}
 });
-
+
+
 
 test('separate payments destination uses the same finance permissions as bills',async()=>{
   const f=await setup(),s=f.entities;
   await s.Employee.update('cashier',{role:'warehouse_manager'});
   await assert.rejects(purchaseWorkspace(f.client,user,{section:'payments'}),/reserved/);
-  await s.Employee.update('cashier',{role:'cashier'});
+  await s.Employee.update('cashier',{role:'admin'});
   const result=await purchaseWorkspace(f.client,user,{section:'payments'});
-  assert.ok(Array.isArray(result.payments));assert.ok(Array.isArray(result.bills));assert.equal(result.permissions.approve,false);
+  assert.ok(Array.isArray(result.payments));assert.ok(Array.isArray(result.bills));assert.equal(result.permissions.approve,true);
 });

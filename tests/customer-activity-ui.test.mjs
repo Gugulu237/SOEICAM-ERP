@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
 const out=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Collection from './src/components/customers/CustomerCollectionDialog.jsx';import Spoilage from './src/components/customers/SpoilageDialog.jsx';export const render=(mode,props)=>renderToStaticMarkup(React.createElement(mode==='collection'?Collection:Spoilage,props));",loader:'jsx',resolveDir:process.cwd()},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'customer-activity-ui',setup(b){
-  b.onResolve({filter:/^react$/},a=>/(CustomerCollectionDialog|SpoilageDialog)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
+  b.onResolve({filter:/^react$/},a=>/(CustomerCollectionDialog|CashSaleDepositSelect|SpoilageDialog)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
   b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({resolveDir:process.cwd(),contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__activityUI.capture(tag,props,children);if(tag==='textarea')globalThis.__activityUI.controls.push(props);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__activityUI.state("+JSON.stringify(key)+",v),useRef=v=>globalThis.__activityUI.ref("+JSON.stringify(key)+",v),useEffect=(fn,deps)=>globalThis.__activityUI.effect("+JSON.stringify(key)+",fn,deps);"}));
   const mocks={
     '@/lib/localization':"export const useLocaleRender=()=>{};",
@@ -20,18 +20,19 @@ const out=await build({stdin:{contents:"import React from 'react';import {render
 }}]});
 const mod={exports:{}};new Function('require','module','exports',out.outputFiles[0].text)(require,mod,mod.exports);
 const customer={id:'branch',business_name:'Branch A'};
-test('collecting cash displays the authenticated collector, submits only invoice allocations and prevents double clicks',async()=>{
+test('recording payment shows the authenticated collector and submits the chosen account once per attempt',async()=>{
   const s=hookRuntime();globalThis.__activityUI=s;const calls=[],done=[];let fail=true;
-  s.request=async body=>{calls.push(body);if(body.action==='customerCollectionWorkspace')return {collector:{name:'Signed-in staff'},date:'2026-11-01',cash_to_deposit:250,pending:[],invoices:[{id:'inv',invoice_number:'INV-1',available_amount:1000}]};if(fail)throw Error('Connection interrupted');return {payment:{id:'saved'}};};
+  s.request=async body=>{calls.push(body);if(body.action==='customerCollectionWorkspace')return {collector:{name:'Signed-in staff'},date:'2026-11-01',cashAccounts:[{id:'till',name:'Main Cash'},{id:'bank',name:'Operating Bank'}],defaultCashAccountId:'till',cash_to_deposit:250,pending:[],invoices:[{id:'inv',invoice_number:'INV-1',available_amount:1000}]};if(fail)throw Error('Connection interrupted');return {payment:{id:'saved',status:'posted',treasury_account_name:'Operating Bank'}};};
   const draw=()=>{s.beforeRender();return mod.exports.render('collection',{customer,onClose:()=>{},onDone:r=>done.push(r)});};
   try{
-    draw();await s.flush();assert.match(draw(),/Signed-in staff/);assert.equal(s.controls.some(c=>c.tag==='select'),false);
-    s.controls.find(c=>c.type==='checkbox').onChange();draw();s.controls.find(c=>c['aria-label']==='Cash received (XAF)').onChange({target:{value:'400'}});s.controls.find(c=>c['aria-label']==='Customer receipt reference').onChange({target:{value:'REC-01'}});draw();
-    await s.buttons.find(b=>b.label==='Record cash collected').onClick();assert.match(draw(),/Connection interrupted/);
-    assert.equal(s.controls.find(c=>c['aria-label']==='Cash received (XAF)').value,'400');
-    fail=false;const save=s.buttons.find(b=>b.label==='Record cash collected');await Promise.all([save.onClick(),save.onClick()]);
+    draw();await s.flush();assert.match(draw(),/Signed-in staff/);assert.equal(s.controls.find(c=>c.tag==='select').value,'till');
+    s.controls.find(c=>c.tag==='select').onChange({target:{value:'bank'}});
+    s.controls.find(c=>c.type==='checkbox').onChange();draw();s.controls.find(c=>c['aria-label']==='Amount received (XAF)').onChange({target:{value:'400'}});s.controls.find(c=>c['aria-label']==='Customer receipt reference').onChange({target:{value:'REC-01'}});draw();
+    await s.buttons.find(b=>b.label==='Record payment').onClick();assert.match(draw(),/Connection interrupted/);
+    assert.equal(s.controls.find(c=>c['aria-label']==='Amount received (XAF)').value,'400');
+    fail=false;const save=s.buttons.find(b=>b.label==='Record payment');await Promise.all([save.onClick(),save.onClick()]);
     const writes=calls.filter(c=>c.action==='recordCustomerCollection');assert.equal(writes.length,2);assert.equal(writes[0].requestKey,writes[1].requestKey);
-    assert.equal(writes[1].customerId,'branch');assert.deepEqual(writes[1].allocations,[{invoice_id:'inv',amount:400}]);assert.equal(writes[1].collectorId,undefined);assert.equal(done.length,1);
+    assert.equal(writes[1].customerId,'branch');assert.ok(writes.every(body=>body.treasuryAccountId==='bank'));assert.deepEqual(writes[1].allocations,[{invoice_id:'inv',amount:400}]);assert.equal(writes[1].collectorId,undefined);assert.equal(done.length,1);
   }finally{s.cleanup();delete globalThis.__activityUI;}
 });
 test('spoilage entry works without legacy delivery points and keeps product quantities and reporting notes after errors',async()=>{
@@ -50,7 +51,7 @@ test('spoilage entry works without legacy delivery points and keeps product quan
 
 
 test('collection opened from an invoice preselects that invoice and its available balance',async()=>{
- const s=hookRuntime();globalThis.__activityUI=s;s.request=async()=>({collector:{name:'General Manager'},date:'2026-11-05',cash_to_deposit:0,pending:[],invoices:[{id:'other',invoice_number:'INV-OTHER',available_amount:100},{id:'selected',invoice_number:'INV-SELECTED',available_amount:400}]});
+ const s=hookRuntime();globalThis.__activityUI=s;s.request=async()=>({collector:{name:'General Manager'},date:'2026-11-05',cashAccounts:[{id:'till',name:'Main Cash'}],defaultCashAccountId:'till',cash_to_deposit:0,pending:[],invoices:[{id:'other',invoice_number:'INV-OTHER',available_amount:100},{id:'selected',invoice_number:'INV-SELECTED',available_amount:400}]});
  const draw=()=>{s.beforeRender();return mod.exports.render('collection',{customer,invoiceId:'selected',onClose:()=>{},onDone:()=>{}});};
- try{draw();await s.flush();draw();assert.equal(s.controls.find(c=>c['aria-label']==='Cash received (XAF)').value,'400');assert.deepEqual(s.controls.filter(c=>c.type==='checkbox').map(c=>c.checked),[false,true]);}finally{s.cleanup();delete globalThis.__activityUI;}
+ try{draw();await s.flush();draw();assert.equal(s.controls.find(c=>c['aria-label']==='Amount received (XAF)').value,'400');assert.deepEqual(s.controls.filter(c=>c.type==='checkbox').map(c=>c.checked),[false,true]);}finally{s.cleanup();delete globalThis.__activityUI;}
 });

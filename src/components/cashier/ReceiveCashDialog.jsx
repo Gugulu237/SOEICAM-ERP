@@ -14,8 +14,7 @@ import { useToast } from "@/components/ui/use-toast";
 import ReceiptField from "./ReceiptField";
 import { HandCoins } from "lucide-react";
 
-// Receiving the cash a commercial collected on delivery, against the physical
-// receipt they carry. Confirming queues the receipt for GM approval.
+// Reconcile cash from older deliveries using the commercial's physical receipt.
 export default function ReceiveCashDialog({ row, commercials = [], treasuryAccounts, userId, userName, onClose, onDone }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
@@ -51,7 +50,7 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
       });
       toast({
         title: ui("Cash received — {0}", collection.acknowledgement_reference),
-        description: ui("{0} confirmed by cashier; awaiting GM approval before ledger posting.", formatXAF(Number(form.amount))), 
+        description: [ui(collection.status==='posted'?'Payment posted directly to treasury':'Earlier receipt awaiting approval'), collection.treasury_account_name].filter(Boolean).join(' · '),
       });
       onDone();
     } catch (e) {
@@ -143,7 +142,7 @@ export default function ReceiveCashDialog({ row, commercials = [], treasuryAccou
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{ui("Cancel")}</Button>
           <Button disabled={saving} onClick={handleReceive}>
-            <HandCoins size={16} className="mr-1" /> {saving ? ui("Confirming…") : ui("Confirm Receipt for GM Approval")}
+            <HandCoins size={16} className="mr-1" /> {saving ? ui("Confirming…") : ui("Record payment")}
           </Button>
         </DialogFooter>
       </DialogContent>

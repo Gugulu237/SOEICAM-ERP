@@ -63,8 +63,21 @@ async function plan(ctx){
   if(invoice&&pending.some(p=>(p.receipt_allocations||[]).some(a=>a.invoice_id===invoice.id)))throw Error('Complete or reject the pending receipt for this invoice before reversing the sale. Cash already handed over must be approved first.');
   const total=round2(record.total),due=round2(field?field.amount_due:invoice.payment_type==='cash'?0:invoice.balance),paid=round2(total-due);
   if(!Number.isFinite(total)||total<=0||!Number.isFinite(due)||due<0||due>total||!lines.length)throw Error('Reconcile the sale amounts and product lines first.');
-  const clearing=await getAccountByNumber(svc,'1050'),receivable=await getRuleAccount(svc,'customer_receivable');
-  const cash=sum(original.lines.filter(l=>l.account_id===clearing.id),'debit');
+  const settlement=!field&&invoice.cash_sale_settlement;
+  const receivable=await getRuleAccount(svc,'customer_receivable');
+  const cashAccount=settlement?postingAccounts.get(settlement.ledger_account_id):await getAccountByNumber(svc,'1050');
+  const cashLines=original.lines.filter(l=>l.account_id===(settlement?settlement.ledger_account_id:cashAccount?.id));
+  const cash=sum(cashLines,'debit');
+  let receipt;
+  if(settlement){
+    const receipts=await readRecords(s.TreasuryTransaction,{source:'cash_sale',source_document_id:invoice.id});
+    receipt=receipts[0];
+    if(invoice.payment_type!=='cash'||!invoice.cash_deposited||cash!==total||cashLines.length!==1||cashLines[0].party_id!==source.customer_id||
+       !cashAccount||settlement.amount!==total||settlement.journal_id!==journal.id||invoice.deposit_journal_id!==journal.id||
+       receipts.length!==1||receipt.id!==settlement.transaction_id||receipt.journal_id!==journal.id||receipt.treasury_account_id!==settlement.treasury_account_id||
+       invoice.deposit_treasury_account_id!==settlement.treasury_account_id||receipt.transaction_type!=='receipt'||round2(receipt.amount)!==cash||receipt.transaction_date!==journal.entry_date)
+      throw Error('Reconcile the original treasury receipt before reversing this sale.');
+  }
   const originalDebt=sum(original.lines.filter(l=>l.account_id===receivable.id),'debit');
   if(round2(cash+originalDebt)!==total)throw Error('The original cash and receivable accounts need reconciliation before reversal.');
   if(cash){
@@ -90,8 +103,8 @@ async function plan(ctx){
   const period=(await readRecords(s.AccountingPeriod)).find(p=>p.start_date<=today()&&today()<=p.end_date&&['closed','locked'].includes(p.status));
   if(period)throw Error('The current accounting period is closed or locked. Reopen an authorized period before recording the correction.');
   const affectedIds=new Set([...postingAccounts.keys(),...[...postingAccounts.values()].map(account=>account.id)]);
-  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(openingBasis?{openingCostBasis:openingBasis.proof}:{})};
-  return {journal,original,postingAccounts,lines,customer,total,due,paid,cash,clearing,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
+  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(settlement?{settlement,receipt}:{}),...(openingBasis?{openingCostBasis:openingBasis.proof}:{})};
+  return {journal,original,postingAccounts,lines,customer,total,due,paid,cash,cashAccount,settlement,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
 }
 
 export async function saleReversalAction(client,user,body){
@@ -126,9 +139,8 @@ export async function saleReversalAction(client,user,body){
     financial.push({account_id:expense.id,debit:p.cost,credit:0,description:'Operating expense for goods not returned after sale cancellation'},...[...credits].map(([account_id,credit])=>({account_id,debit:0,credit,description:'Reclassify cancelled-sale cost out of cost of goods sold'})));
     retainedCostExpense={policy:retainedCostPolicy,amount:p.cost,expense_account_id:expense.id,expense_account_number:expense.account_number,expense_account_name:expense.name,cogs_accounts:[...credits].map(([account_id,credit])=>({account_id,credit}))};
   }
-  // Preserve deposited money. Reclassify the original cash component to customer
-  // credit instead of reducing treasury or losing its cash-in-transit clearing.
-  if(p.cash)financial.push({account_id:p.clearing.id,debit:p.cash,credit:0,description:'Cash retained for customer credit'},{account_id:p.receivable.id,party_type:'customer',party_id:source.customer_id,debit:0,credit:p.cash,description:'Customer credit from reversed cash sale'});
+  // Reversal retains the original money and gives the customer a credit.
+  if(p.cash)financial.push({account_id:p.cashAccount.id,debit:p.cash,credit:0,description:'Cash retained for customer credit',...(p.settlement?{party_type:'customer',party_id:source.customer_id}:{})},{account_id:p.receivable.id,party_type:'customer',party_id:source.customer_id,debit:0,credit:p.cash,description:'Customer credit from reversed cash sale'});
   const {journal}=await postJournal(svc,{entryDate:p.snapshot.date,description:'Reversal of '+(invoice?.invoice_number||field.sale_number)+': '+request.reason,sourceModule:'sales',sourceDocumentType:'SaleReversal',sourceDocumentId:p.journal.id,userId:user.id,lines:financial});
   if(restoring)for(const issue of p.issues){
     // Returned dairy stock is quarantined. No reversal silently makes customer

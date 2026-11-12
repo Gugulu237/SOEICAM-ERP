@@ -95,6 +95,7 @@ async function vendor(f,id,name,products) {
   return f.entities.Supplier.create({id,name,is_active:true,supplier_items:products.map(p=>({product_id:p.id,unit:p.unit_of_measure,unit_price:p.current_cost}))});
 }
 async function shortage(f) {
+  await f.entities.Employee.update('cashier',{role:'admin'});
   await f.entities.StockBalance.update(f.milkLot.id,{quantity:0,total_value:0});
   await f.entities.StockBalance.update(f.cupLot.id,{quantity:0,total_value:0});
   const dairy=await vendor(f,'dairy','Dairy supplier',[f.milk]);
@@ -171,13 +172,13 @@ test('roles, direct record edits and inconsistent earlier issues cannot bypass w
   await assert.rejects(action(f,{action:'issueProductionMaterials'}),/Reconcile the earlier/);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,1);
 });
 
-test('shortages create vendor-specific approval requests for their receiving stores and retries or reopening cannot duplicate outstanding quantities',async()=>{
+test('shortages create vendor-specific confirmed orders for their receiving stores and retries or reopening cannot duplicate outstanding quantities',async()=>{
   const f=await setup(),s=f.entities,{body}=await shortage(f);
   const options=await productionPurchaseAction(f.client,user,{action:'productionPurchaseOptions',orderId:f.order.id});assert.equal(options.shortages.length,2);
   const result=await productionPurchaseAction(f.client,user,body);assert.equal(result.orders.length,2);
   assert.equal((await productionPurchaseAction(f.client,user,body)).reused,true);
   const orders=(await s.PurchaseOrder.list()).filter(po=>po.production_source_order_id===f.order.id);
-  assert.deepEqual(orders.map(po=>po.warehouse_id).sort(),[f.raw.id,f.packaging.id].sort());assert.ok(orders.every(po=>po.status==='pending_approval'&&po.requested_by_id==='cashier'));
+  assert.deepEqual(orders.map(po=>po.warehouse_id).sort(),[f.raw.id,f.packaging.id].sort());assert.ok(orders.every(po=>po.status==='approved'&&po.requested_by_id==='cashier'));
   assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.GoodsReceipt.list()).length,0);
   const refreshed=await productionPurchaseAction(f.client,user,{action:'productionPurchaseOptions',orderId:f.order.id});assert.ok(refreshed.shortages.every(r=>r.purchase_quantity===0));
   await assert.rejects(productionPurchaseAction(f.client,user,{...body,requestKey:crypto.randomUUID()}),/already covered/);
@@ -190,15 +191,13 @@ test('one supplier for ingredients and packaging still creates distinct orders f
   const result=await productionPurchaseAction(f.client,user,{...body,lines:body.lines.map(l=>({...l,supplier_id:dairy.id}))});assert.equal(result.orders.length,2);
 });
 
-test('vendor selection and quantity shortages are rechecked on the server, and receiving approved requests makes the original production issuable',async()=>{
+test('vendor selection and quantity shortages are rechecked on the server, and receiving confirmed orders makes the original production issuable',async()=>{
   const f=await setup(),s=f.entities,{body,dairy}=await shortage(f);
   await assert.rejects(productionPurchaseAction(f.client,user,{...body,lines:body.lines.map(l=>({...l,supplier_id:'unknown-supplier'}))}),/active registered supplier/);
   await assert.rejects(productionPurchaseAction(f.client,user,{...body,lines:body.lines.map(l=>({...l,quantity:0.1}))}),/shortage changed/);
   const {orders}=await productionPurchaseAction(f.client,user,body);
-  await s.Employee.update('cashier',{role:'admin'});
-  for(const po of orders)await supplierAction(f.client,user,{action:'approveSupplierOrder',orderId:po.id});
-  await s.Employee.update('cashier',{role:'warehouse_manager'});
   for(const po of orders){const order=await s.PurchaseOrder.get(po.id),lines=(await s.PurchaseOrderLine.list()).filter(l=>l.po_id===po.id);await supplierAction(f.client,user,{action:'receiveSupplierOrder',orderId:po.id,requestKey:crypto.randomUUID(),date,warehouseId:order.warehouse_id,lines:lines.map(l=>({po_line_id:l.id,quantity:l.quantity,lot_number:'RECEIVED-'+l.id}))});}
+  await s.Employee.update('cashier',{role:'warehouse_manager'});
   assert.equal((await action(f,{action:'checkProductionMaterials'})).shortages.length,0);assert.equal((await action(f,{action:'issueProductionMaterials'})).order.status,'materials_issued');
 });
 
@@ -206,6 +205,7 @@ test('the goods catalogue never falls back to unrelated inventory and checked pu
   const f=await setup(),s=f.entities,supplier=await vendor(f,'dairy','Dairy',[f.milk]);
   const products=[{...f.milk,unit:'kg',cost:99},{...f.cups,unit:'ea',cost:2}];
   assert.deepEqual(supplierCatalogue(supplier,products).map(p=>[p.id,p.supplier_price]),[[f.milk.id,10]]);assert.deepEqual(supplierCatalogue({id:'empty'},products),[]);
+  await s.Employee.update('cashier',{role:'admin'});
   await assert.rejects(supplierAction(f.client,user,{action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'draft',order:{supplier_id:supplier.id,order_date:date,catalogue_only:true,lines:[{product_id:f.cups.id,quantity:1,unit_price:2}]}}),/goods linked/);
 });
 
@@ -267,24 +267,30 @@ test('production output requires an active Cold Room, with explicit selection fo
 test('finished assemblies remain excluded from supplier-material receiving in every warehouse',async()=>{
  const f=await setup(),s=f.entities;
  const line=await s.PurchaseOrderLine.create({po_id:'po',product_id:'product-a',product_name:'YOLA',quantity:5,unit:'ea',unit_price:10,total:50,received_quantity:0});
- await s.Employee.update('cashier',{role:'warehouse_manager'});
+ await s.Employee.update('cashier',{role:'admin'});
  const body={action:'receiveSupplierOrder',orderId:'po',requestKey:crypto.randomUUID(),date,warehouseId:f.raw.id,lines:[{po_line_id:line.id,quantity:5,lot_number:'PUR-FG-1',expiry_date:'2027-01-01'}]};
  await assert.rejects(supplierAction(f.client,user,body),/Only active inventory items/);assert.equal((await s.GoodsReceipt.list()).length,0);
  await assert.rejects(supplierAction(f.client,user,{...body,warehouseId:f.cold.id}),/Only active inventory items/);assert.equal((await s.GoodsReceipt.list()).length,0);assert.equal((await s.StockBalance.filter({warehouse_id:f.cold.id,product_id:'product-a'})).length,0);
 });
 
-test('an active unlinked supplier can receive a shortage proposal, but approval waits for Procurement confirmation and does not edit its catalogue',async()=>{
- const f=await setup(),s=f.entities,{body,dairy}=await shortage(f);await s.Supplier.update(dairy.id,{supplier_items:[]});await s.Employee.update('cashier',{role:'production_manager'});
- const proposal={...body,lines:body.lines.map(l=>({...l,supplier_id:dairy.id}))};const before=await s.Supplier.get(dairy.id),result=await productionPurchaseAction(f.client,user,proposal);assert.equal(result.orders.length,2);assert.ok(result.orders.every(po=>po.supplier_catalogue_review_required));assert.deepEqual(await s.Supplier.get(dairy.id),before);
- await s.Employee.update('cashier',{role:'admin'});await assert.rejects(supplierAction(f.client,user,{action:'approveSupplierOrder',orderId:result.orders[0].id}),/Procurement must confirm/);assert.equal((await s.PurchaseOrder.get(result.orders[0].id)).status,'pending_approval');
+test('production shortages require an administrator and linked supplier items before orders can be confirmed',async()=>{
+ const f=await setup(),s=f.entities,{body,dairy}=await shortage(f);await s.Supplier.update(dairy.id,{supplier_items:[]});
+ const proposal={...body,lines:body.lines.map(l=>({...l,supplier_id:dairy.id}))};const before=await s.Supplier.get(dairy.id);
+ await s.Employee.update('cashier',{role:'production_manager'});
+ await assert.rejects(productionPurchaseAction(f.client,user,proposal),{status:403});
+ await s.Employee.update('cashier',{role:'admin'});
+ await assert.rejects(productionPurchaseAction(f.client,user,proposal),/goods linked/);
+ assert.deepEqual(await s.Supplier.get(dairy.id),before);
  await s.Supplier.update(dairy.id,{supplier_items:JSON.stringify([f.milk,f.cups].map(p=>({product_id:p.id,unit:p.unit_of_measure,unit_price:p.current_cost})))});
- for(const po of result.orders){const approved=await supplierAction(f.client,user,{action:'approveSupplierOrder',orderId:po.id});assert.equal(approved.order.status,'approved');assert.equal(approved.order.supplier_catalogue_review_required,false);}
+ const result=await productionPurchaseAction(f.client,user,proposal);
+ assert.equal(result.orders.length,2);assert.ok(result.orders.every(po=>po.status==='approved'&&!po.supplier_catalogue_review_required));
  assert.equal((await productionPurchaseAction(f.client,user,proposal)).reused,true);
 });
 test('legacy JSON supplier catalogues are readable, inactive suppliers are excluded, and public order saves cannot forge the production exception',async()=>{
  const f=await setup(),s=f.entities,supplier=await vendor(f,'dairy','Dairy',[f.milk]);const entries=JSON.stringify(supplier.supplier_items),products=[{...f.milk,unit:'kg',cost:99},{...f.cups,unit:'ea',cost:2}];
  assert.equal(supplierCatalogue({...supplier,supplier_items:entries},products)[0].supplier_price,10);
  assert.deepEqual(supplierCatalogue({...supplier,supplier_items:'invalid'},products),[]);
+ await s.Employee.update('cashier',{role:'admin'});
  await assert.rejects(supplierAction(f.client,user,{action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'pending_approval',allowUnlistedProductionRequest:true,order:{supplier_id:supplier.id,order_date:date,catalogue_only:true,lines:[{product_id:f.cups.id,quantity:1,unit_price:2}]}}),/goods linked/);
  const {body}=await shortage(f);await s.Supplier.update(body.lines[0].supplier_id,{is_active:false});await assert.rejects(productionPurchaseAction(f.client,user,body),/active registered supplier/);
 });

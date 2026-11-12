@@ -79,7 +79,7 @@ test('actual request client lets general staff use checked Inventory and Sales f
 
 
 test('feature lookups work across job titles, but never authorize writes to a dependency feature',()=>{
- for(const [module,entity] of [['inventory','Account'],['purchases','Product'],['accounting','Customer'],['cashier','Employee'],['payroll','Employee'],['manufacturing','Warehouse']]){
+ for(const [module,entity] of [['inventory','Account'],['sales','Product'],['accounting','Customer'],['cashier','Employee'],['payroll','Employee'],['manufacturing','Warehouse']]){
   const ctx=featureContext(context([module]),module);assert.equal(assertEntityAccess(ctx,entity,'filter'),'admin');
   if(entity==='Employee')assert.throws(()=>assertEntityAccess(ctx,entity,'update'),/another feature/);
  }
@@ -120,7 +120,7 @@ test('owning-feature access takes precedence over a dependency lookup so HR reta
 });
 
 test('approval grants authorize only the specific checked decision target',()=>{
- const ctx=featureContext(context(['approvals']),'approvals','admin','approveSupplierOrder');assert.doesNotThrow(()=>assertModule(ctx,'purchases'));assert.throws(()=>assertModule(ctx,'cashier'));
+ const ctx=featureContext(context(['approvals']),'approvals','admin','approveSupplierOrder');assert.throws(()=>assertModule(ctx,'purchases'),/reserved for administrators/);assert.throws(()=>assertModule(ctx,'cashier'));
  const unbound=featureContext(context(['approvals']),'approvals');assert.throws(()=>assertModule(unbound,'purchases'));
  assert.throws(()=>guardMutation(unbound,'ExpenseRequest','update',{amount:1},{status:'pending_approval'}),/review decisions/);
 });

@@ -10,5 +10,6 @@ export function employeeReportPath(role,employee=''){const params=new URLSearchP
 // Saved module selections control visibility; the server authorizes operations.
 export function hasWorkspaceGrant(role,path,modules){
  const module=moduleForPath(path);
+ if(module==='purchases'&&role!=='admin')return false;
  return !!role && Array.isArray(modules) && !!module && modules.includes(module);
 }

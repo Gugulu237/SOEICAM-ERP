@@ -47,24 +47,24 @@ test('custom roles get a live workspace derived from the saved template and modu
   assert.equal(reads.length,0);
 });
 
-test('warehouse purchases preserve approval and own-department scope; expenses stay personal', async () => {
+test('warehouse staff keep personal expenses and cannot read orders with a stale module grant', async () => {
   const employee = {id:'warehouse',role:'warehouse_manager',status:'active',department_id:'store',allowed_modules:['purchases','expenses']};
   const {client,reads} = fixture(employee,{PurchaseOrder:[
     {id:'approved',status:'approved'}, {id:'own',status:'draft',requested_by_id:'warehouse'},
     {id:'department',status:'draft',requested_department_id:'store'}, {id:'private',status:'draft',requested_by_id:'another'},
   ]});
   const result = await employeeWorkspaceAction(client,{id:'login',role:'user'},{action:'employeeDashboard'});
-  assert.deepEqual(result.purchaseOrders.map(r => r.id),['approved','own','department']);
+  assert.deepEqual(result.purchaseOrders,[]);assert.equal(reads.some(read=>read.name==='PurchaseOrder'),false);
   assert.equal(reads.find(r => r.name === 'ExpenseRequest').filter.requester_id,employee.id);
 });
 
-test('Procurement and general staff have distinct scopes; disabled field roles fail before reads', async () => {
+test('staff cannot see purchases and disabled field roles fail before reads', async () => {
   for (const role of ['procurement','employee']) {
     const employee = {id:'staff',role,status:'active',allowed_modules:['purchases']};
     const {client} = fixture(employee,{PurchaseOrder:[{id:'other',status:'draft',requested_by_id:'other'},{id:'own',status:'draft',requested_by_id:'staff'}]});
     const result = await employeeWorkspaceAction(client,{id:'login',role:'user'},{action:'employeeDashboard'});
     assert.equal(result.template,role);
-    assert.equal(result.purchaseOrders.length,role === 'procurement' ? 2 : 1);
+    assert.deepEqual(result.purchaseOrders,[]);
   }
   const {client,reads} = fixture({id:'driver',role:'driver',status:'active',allowed_modules:[]});
   await assert.rejects(employeeWorkspaceAction(client,{id:'login',role:'user'},{action:'employeeDashboard'}),/disabled/);

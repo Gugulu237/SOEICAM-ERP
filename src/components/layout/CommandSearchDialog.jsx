@@ -30,8 +30,8 @@ export default function CommandSearchDialog({open,onOpenChange:setOpen}) {
 
   const [data, setData] = useState(null);
   const navigate = useNavigate();
-  const { role, allowedModules } = useCurrentUser();
-  const permits = path => role === 'admin' || !allowedModules || allowedModules.includes(moduleForPath(path));
+  const { role, principalRole, allowedModules } = useCurrentUser();
+  const permits = path => moduleForPath(path)==='purchases' ? (principalRole||role)==='admin' : role==='admin'||!allowedModules||allowedModules.includes(moduleForPath(path));
 
   useEffect(() => {
     if (!open) { setData(null); return; }

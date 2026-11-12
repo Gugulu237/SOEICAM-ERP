@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {fixture,functionRoute,request,user,date} from './helpers/cashier.mjs';
 import {supplierAction} from '../src/server/domain/supplier-workspace.js';
+import {purchaseWorkspace} from '../src/server/domain/purchase-workspace.js';
 import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {postJournal} from '../src/server/domain/field-ops.js';
 import {supplierPayableMismatches} from '../src/server/domain/supplier-payables.js';
@@ -11,7 +12,7 @@ import {purchaseOrderHtml,purchaseOrderEmail} from '../src/lib/supplier-document
 
 async function setup(db){
   const f=await fixture(db),s=f.entities;
-  await s.Employee.update('cashier',{role:'procurement'});
+  await s.Employee.update('cashier',{role:'admin'});
   const inv=await s.Account.create({name:'Materials',account_number:'1310',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true,balance:0});
   await s.PostingRule.create({rule_key:'supplier_payable',is_active:true,account_id:'payable',account_number:'4010',account_name:'Payable'});
   const prepayment=await s.Account.create({name:'Supplier prepayments',account_number:'4090',account_type:'asset',normal_balance:'debit',is_active:true,is_posting:true,balance:0});
@@ -20,17 +21,11 @@ async function setup(db){
   const product=await s.Product.create({name:'Milk powder',sku:'MILK',inventory_type:'raw_material',unit_of_measure:'kg',purchase_price:100,inventory_account_id:inv.id,is_active:true,batch_tracking:true,expiry_tracking:true,current_cost:100});
   const warehouse=await s.Warehouse.create({name:'Raw materials',warehouse_type:'raw_material',is_active:true});
   await s.Supplier.update('supplier',{is_active:true,payment_terms_days:30});
-  const body={action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'pending_approval',order:{supplier_id:'supplier',order_date:date,warehouse_id:warehouse.id,payment_terms:'credit',lines:[{product_id:product.id,quantity:10,unit_price:100,tax_rate:10}]}};
+  const body={action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'confirmed',order:{supplier_id:'supplier',order_date:date,warehouse_id:warehouse.id,payment_terms:'credit',lines:[{product_id:product.id,quantity:10,unit_price:100,tax_rate:10}]}};
   const run=body=>supplierAction(f.client,user,body);
   return {...f,run,product,warehouse,body,inv,prepayment};
 }
-async function approved(f){
-  const {order}=await f.run(f.body);
-  await f.entities.Employee.update('cashier',{role:'admin'});
-  await f.run({action:'approveSupplierOrder',orderId:order.id});
-  await f.entities.Employee.update('cashier',{role:'procurement'});
-  return order;
-}
+async function approved(f){return (await f.run(f.body)).order;}
 const receipt=(f,order,quantity=4)=>({action:'receiveSupplierOrder',orderId:order.id,date,warehouseId:f.warehouse.id,requestKey:crypto.randomUUID(),lines:[{po_line_id:f.rows.PurchaseOrderLine[0]?.id,quantity,lot_number:'MILK-100',expiry_date:'2029-12-31'}]});
 
 test('supplier catalogue supports multiple suppliers without changing item costs; archive preserves history',async()=>{
@@ -43,27 +38,35 @@ test('supplier catalogue supports multiple suppliers without changing item costs
   assert.equal((await s.Product.get(f.product.id)).current_cost,100);
   await f.run({...body,supplierId:supplier.id,supplier:{...body.supplier,is_active:false}});
   const view=await f.run({action:'supplierWorkspace',supplierId:supplier.id});
-  assert.equal(view.supplier.is_active,false);assert.equal(view.supplier.supplier_items[0].unit,'kg');assert.equal(view.accounts.length,0);assert.equal(view.permissions.pay,false);
+  assert.equal(view.supplier.is_active,false);assert.equal(view.supplier.supplier_items[0].unit,'kg');assert.equal(view.accounts.length,3);assert.equal(view.permissions.pay,true);
   await s.Employee.update('cashier',{role:'driver'});
-  await assert.rejects(f.run({action:'supplierWorkspace'}),/Not permitted/);
-  await assert.rejects(f.run(body),/Not permitted/);
+  await assert.rejects(f.run({action:'supplierWorkspace'}),/reserved for administrators/);
+  await assert.rejects(f.run(body),/reserved for administrators/);
 });
 
-test('orders are single-supplier, server totalled, retry safe and require the General Manager approval',async()=>{
+test('orders are single-supplier, server totalled and immediately ready to receive',async()=>{
   const f=await setup(),s=f.entities;
   const first=await f.run(f.body),retry=await f.run(f.body);
   assert.equal(first.order.id,retry.order.id);assert.equal(first.order.total,1100);assert.equal(first.order.tax_total,100);assert.equal((await s.PurchaseOrderLine.list()).length,1);
   await assert.rejects(f.run({...f.body,order:{...f.body.order,notes:'Changed'}}),/already saved/);
-  await assert.rejects(f.run({action:'approveSupplierOrder',orderId:first.order.id}),/Not permitted/);
-  await assert.rejects(f.run(receipt(f,first.order)),/approved purchase/);
+  assert.equal(first.order.status,'approved');assert.equal(first.order.purchase_confirmed_by,user.id);
+  assert.equal(first.order.approved_by,undefined);
   await assert.rejects(f.run({...f.body,orderId:first.order.id}),/Only a draft/);
   assert.equal((await s.GoodsReceipt.list()).length,0);
 });
 
 test('partial receipts create exactly one inventory/AP journal and bill, reject overreceipt, and finish cumulatively',async()=>{
   const f=await setup(),s=f.entities,order=await approved(f),body=receipt(f,order);
+  assert.equal((await s.Account.get('payable')).balance,0);
+  assert.equal((await s.TreasuryTransaction.list()).length,0);
   const first=await f.run(body),retry=await f.run(body);
   assert.equal(first.receipt.id,retry.receipt.id);assert.equal(first.bill.total,440);assert.equal(first.bill.balance,440);
+  const due=new Date(date+'T12:00:00Z');due.setUTCDate(due.getUTCDate()+30);
+  assert.equal(first.bill.due_date,due.toISOString().slice(0,10));
+  const detail=await purchaseWorkspace(f.client,user,{orderId:order.id});
+  assert.deepEqual(detail.orderBills.map(bill=>[bill.id,bill.balance]),[[first.bill.id,440]]);
+  assert.deepEqual(detail.orderPayments,[]);
+  assert.equal((await s.TreasuryTransaction.list()).length,0);
   assert.equal((await s.GoodsReceipt.list()).length,1);assert.equal((await s.Bill.list()).length,1);assert.equal((await s.JournalEntry.list()).length,1);
   const journalLines=await s.JournalLine.list();assert.equal(journalLines.find(l=>l.account_id===f.inv.id).debit,440);assert.equal(journalLines.find(l=>l.account_id==='payable').credit,440);
   const lot=(await s.StockBalance.list()).find(b=>b.product_id===f.product.id);
@@ -78,35 +81,39 @@ test('partial receipts create exactly one inventory/AP journal and bill, reject 
   const view=await f.run({action:'supplierWorkspace',supplierId:'supplier'});assert.equal(view.supplier.unpaid_bills,1100);assert.equal(view.receipts.length,2);
 });
 
-test('bill payment requests reserve the order, require approval and settle the bill once on release',async()=>{
+test('admins can pay a received purchase bill once and staff cannot post it',async()=>{
   const f=await setup(),s=f.entities,order=await approved(f),{bill}=await f.run(receipt(f,order));
+  const body={action:'recordPurchasePayment',billId:bill.id,accountId:'till',amount:200,date,reference:'Vendor transfer',requestKey:crypto.randomUUID()};
   await s.Employee.update('cashier',{role:'cashier'});
-  const body={action:'cashierRequestPayment',billId:bill.id,accountId:'till',amount:200,date,reference:'Vendor transfer',requestKey:crypto.randomUUID()};
-  const {payment}=await cashierAction(f.client,user,body);
-  assert.equal((await s.Bill.get(bill.id)).balance,440);assert.equal((await s.TreasuryAccount.get('till')).balance,100000);
-  await assert.rejects(cashierAction(f.client,user,{...body,requestKey:crypto.randomUUID()}),/awaiting processing/);
-  const release={action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',requestKey:crypto.randomUUID(),date};
-  await assert.rejects(cashierAction(f.client,user,release),/approved by the General Manager/);
-  await s.Payment.update(payment.id,{status:'approved',approved_by:'GM',approved_at:new Date().toISOString()});
+  await assert.rejects(cashierAction(f.client,user,body),{status:403});
+  assert.equal((await s.Bill.get(bill.id)).balance,440);
+  await s.Employee.update('cashier',{role:'admin'});
   await s.Bill.update(bill.id,{amount_paid:1});
-  await assert.rejects(cashierAction(f.client,user,release),/current bill balance/);
+  await assert.rejects(cashierAction(f.client,user,body),/Reconcile the bill total/);
   await s.Bill.update(bill.id,{amount_paid:0});
-  await cashierAction(f.client,user,release);await cashierAction(f.client,user,release);
+  const {payment}=await cashierAction(f.client,user,body);
+  assert.equal(payment.status,'posted');assert.equal(payment.approved_by,undefined);
+  assert.equal((await cashierAction(f.client,user,body)).reused,true);
   assert.equal((await s.Bill.get(bill.id)).balance,240);assert.equal((await s.Bill.get(bill.id)).amount_paid,200);assert.equal((await s.Supplier.get('supplier')).balance,240);
   assert.equal((await s.PaymentAllocation.list()).length,1);assert.equal((await s.TreasuryAccount.get('till')).balance,99800);
   assert.equal((await s.JournalEntry.list()).length,2);
 });
 
-test('posted advances use a prepayment asset and clear against receipt payables without moving cash twice',async()=>{
-  const f=await setup(),s=f.entities,order=await approved(f);
-  await s.Employee.update('cashier',{role:'cashier'});
-  const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',orderId:order.id,accountId:'till',amount:300,date,reference:'Advance',requestKey:crypto.randomUUID()});
-  await s.Payment.update(payment.id,{status:'approved',approved_by:'GM',approved_at:new Date().toISOString()});
-  await cashierAction(f.client,user,{action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()});
+test('cash purchase payments apply to received bills without moving cash twice',async()=>{
+  const f=await setup(),s=f.entities;
+  const {order}=await f.run({...f.body,order:{...f.body.order,payment_terms:'cash'}});
+  const before=await purchaseWorkspace(f.client,user,{orderId:order.id});
+  assert.equal(before.order.payment_terms,'cash');
+  assert.ok(before.accounts.some(account=>account.id==='till'));
+  assert.deepEqual(before.orderBills,[]);
+  const {payment}=await cashierAction(f.client,user,{action:'recordPurchasePayment',orderId:order.id,accountId:'till',amount:300,date,reference:'Advance',requestKey:crypto.randomUUID()});
   assert.equal((await s.Account.get(f.prepayment.id)).balance,300);assert.equal((await s.Account.get('payable')).balance,0);
-  await s.Employee.update('cashier',{role:'procurement'});
   const {bill}=await f.run(receipt(f,order));
+  assert.equal(bill.due_date,date);
   assert.equal(bill.balance,140);assert.equal(bill.amount_paid,300);assert.equal((await s.Supplier.get('supplier')).balance,140);
+  const after=await purchaseWorkspace(f.client,user,{orderId:order.id});
+  assert.deepEqual(after.orderPayments.map(p=>[p.id,p.status,p.amount]),[[payment.id,'posted',300]]);
+  assert.equal(after.orderBills[0].balance,140);
   assert.equal((await s.JournalEntry.list()).length,3);assert.equal((await s.TreasuryAccount.get('till')).balance,99700);
   assert.equal((await s.Account.get(f.prepayment.id)).balance,0);assert.equal((await s.Account.get('payable')).balance,140);
   await f.run({action:'registerSupplierBill',orderId:order.id});assert.equal((await s.JournalEntry.list()).length,3);assert.equal((await s.PaymentAllocation.list()).length,1);
@@ -120,12 +127,9 @@ test('partial supplier payments clear each bill original AP account even when th
   const first=await f.run(receipt(f,order));assert.equal(first.bill.payable_account_id,other.id);
   await s.PostingRule.update(rule.id,{account_id:'payable'});
   const second=await f.run(receipt(f,order,6));assert.equal(second.bill.payable_account_id,'payable');
-  await s.Employee.update('cashier',{role:'cashier'});
   for(const [bill,amount]of [[first.bill,200],[second.bill,660],[first.bill,240]]){
-    const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',billId:bill.id,accountId:'till',amount,date,reference:'Pay original liability',requestKey:crypto.randomUUID()});
-    await s.Payment.update(payment.id,{status:'approved',approved_by:'GM',approved_at:new Date().toISOString()});
-    const body={action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()};
-    await cashierAction(f.client,user,body);await cashierAction(f.client,user,body);
+    const body={action:'recordPurchasePayment',billId:bill.id,accountId:'till',amount,date,reference:'Pay original liability',requestKey:crypto.randomUUID()};
+    const {payment}=await cashierAction(f.client,user,body);await cashierAction(f.client,user,body);
     const saved=await s.Payment.get(payment.id),lines=await s.JournalLine.filter({journal_id:saved.journal_id});
     assert.equal(lines.find(l=>l.debit>0).account_id,bill.payable_account_id);
   }
@@ -137,14 +141,12 @@ test('partial supplier payments clear each bill original AP account even when th
 test('receipt AP evidence is checked before cash moves and changed or reversed originals cannot be paid',async()=>{
   for(const change of ['header','party','account','reversed']){
     const f=await setup(),s=f.entities,order=await approved(f),{bill}=await f.run(receipt(f,order));
-    await s.Employee.update('cashier',{role:'cashier'});
-    const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',billId:bill.id,accountId:'till',amount:200,date,reference:'Vendor payment',requestKey:crypto.randomUUID()});
-    await s.Payment.update(payment.id,{status:'approved',approved_by:'GM',approved_at:new Date().toISOString()});
+    const payment={action:'recordPurchasePayment',billId:bill.id,accountId:'till',amount:200,date,reference:'Vendor payment',requestKey:crypto.randomUUID()};
     if(change==='header')await s.JournalEntry.update(bill.journal_id,{total_credit:441});
     if(change==='reversed')await s.JournalEntry.update(bill.journal_id,{status:'reversed'});
     if(change==='account')await s.Bill.update(bill.id,{payable_account_id:f.prepayment.id});
     if(change==='party'){const line=(await s.JournalLine.filter({journal_id:bill.journal_id,account_id:'payable'}))[0];await s.JournalLine.update(line.id,{party_id:'different-supplier'});}
-    await assert.rejects(cashierAction(f.client,user,{action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()}),/Reconcile the original supplier/);
+    await assert.rejects(cashierAction(f.client,user,payment),/Reconcile the original supplier/);
     assert.equal((await s.TreasuryAccount.get('till')).balance,100000);assert.equal((await s.TreasuryTransaction.list()).length,0);
     assert.equal((await s.Bill.get(bill.id)).balance,440);assert.equal((await s.PaymentAllocation.list()).length,0);
   }
@@ -152,13 +154,9 @@ test('receipt AP evidence is checked before cash moves and changed or reversed o
 
 test('one supplier advance clears the original asset across partial receipts and changed AP mappings exactly once',async()=>{
   const f=await setup(),s=f.entities,order=await approved(f);
-  await s.Employee.update('cashier',{role:'cashier'});
-  const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',orderId:order.id,accountId:'till',amount:800,date,reference:'Prepayment',requestKey:crypto.randomUUID()});
-  await s.Payment.update(payment.id,{status:'approved',approved_by:'GM',approved_at:new Date().toISOString()});
-  await cashierAction(f.client,user,{action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()});
+  await cashierAction(f.client,user,{action:'recordPurchasePayment',orderId:order.id,accountId:'till',amount:800,date,reference:'Prepayment',requestKey:crypto.randomUUID()});
   const replacement=await s.Account.create({name:'New prepayments',account_number:'4091',account_type:'asset',normal_balance:'debit',is_active:true,balance:0});
   await s.PostingRule.update((await s.PostingRule.filter({rule_key:'supplier_prepayment'}))[0].id,{account_id:replacement.id});
-  await s.Employee.update('cashier',{role:'procurement'});
   const body=receipt(f,order),first=await f.run(body);await f.run(body);
   assert.equal(first.bill.balance,0);assert.equal((await s.Account.get(f.prepayment.id)).balance,360);
   const ap=await s.Account.create({name:'Other supplier AP',account_number:'4000',account_type:'liability',normal_balance:'credit',is_active:true,balance:0});
@@ -173,12 +171,8 @@ test('one supplier advance clears the original asset across partial receipts and
 test('a damaged advance source rolls back new receipt stock and accounting at the API transaction boundary',async()=>{
   const db=new PGlite();try{
     const f=await setup(db),s=f.entities,order=await approved(f);
-    await s.Employee.update('cashier',{role:'cashier'});
-    const {payment}=await cashierAction(f.client,user,{action:'cashierRequestPayment',orderId:order.id,accountId:'till',amount:300,date,reference:'Advance',requestKey:crypto.randomUUID()});
-    await s.Payment.update(payment.id,{status:'approved',approved_by:'GM',approved_at:new Date().toISOString()});
-    await cashierAction(f.client,user,{action:'cashierReleasePayment',paymentId:payment.id,accountId:'till',date,requestKey:crypto.randomUUID()});
+    const {payment}=await cashierAction(f.client,user,{action:'recordPurchasePayment',orderId:order.id,accountId:'till',amount:300,date,reference:'Advance',requestKey:crypto.randomUUID()});
     await s.JournalEntry.update((await s.Payment.get(payment.id)).journal_id,{total_debit:301});
-    await s.Employee.update('cashier',{role:'procurement'});
     const before=await s.StockBalance.list(),route=await functionRoute();globalThis.__cashierClient=f.client;
     globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const r=await fn();await db.exec('COMMIT');return r;}catch(e){await db.exec('ROLLBACK');throw e;}};
     const body=receipt(f,order);body.lines[0].po_line_id=(await s.PurchaseOrderLine.list())[0].id;

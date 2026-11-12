@@ -1,5 +1,6 @@
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import MobileSaleFlow,{MobileSaleDetail} from '@/components/sales/MobileSaleFlow';
+import CashSaleDepositSelect from '@/components/sales/CashSaleDepositSelect';
 import ExchangePackagingNotice,{exchangePackagingWarningText} from '@/components/field/ExchangePackagingNotice';
 import {watchSalesStock} from '@/lib/sales-stock-refresh';
 import SaleReplacements from '@/components/field/SaleReplacements';
@@ -99,6 +100,10 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     return {...line,pricing_error:null,price_includes_vat:true,discount_amount:amounts.discount,tax_amount:amounts.tax,total:amounts.total};
   }),[lines,locked]);
   const exchangeOnly=!lines.length&&replacements.length>0;
+  const cashAccountId=form.cash_account_id||catalogue?.defaultCashAccountId||'';
+  const isCash=!exchangeOnly&&form.payment_type==='cash';
+  const missingCashAccount=isCash&&catalogue?.cashAccounts&&!catalogue.cashAccounts.some(account=>account.id===cashAccountId);
+  const cashDeposit=isCash&&!locked&&<CashSaleDepositSelect accounts={catalogue?.cashAccounts} value={cashAccountId} disabled={saving} onChange={id=>{setSaveError('');setForm(previous=>({...previous,cash_account_id:id}));}}/>;
   const totals=calculated.reduce((r,l)=>({net:roundMoney(r.net+l.total-l.tax_amount),tax:roundMoney(r.tax+l.tax_amount),total:roundMoney(r.total+l.total)}),{net:0,tax:0,total:0});
   function changeLine(index,key,value){
     setLines(previous=>previous.map((line,i)=>{
@@ -133,6 +138,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     if(exchangeError)return exchangeError;
     if(!exchangeOnly&&totals.total<=0)return 'Enter a positive sale total.';
     if(index>=2&&!form.receipt_reference.trim())return 'Enter the reference number of the receipt issued before recording this sale.';
+    if(index>=2&&missingCashAccount)return 'Choose a deposit account';
     return '';
   }
   function changeSeller(sellerId){
@@ -153,7 +159,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     for(const line of calculated){const p=products.find(p=>p.id===line.product_id),q=Number(line.quantity);if(!p||!Number.isFinite(q)||q<=0||q>p.available||ids.has(line.product_id)){setSaveError(ui('Choose distinct finished products and quantities available at this source.'));return;}ids.add(line.product_id);}
     busy.current=true;setSaving(true);setSaveError('');
     try{
-      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{}),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
+      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{}),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,...(isCash&&cashAccountId?{treasuryAccountId:cashAccountId}:{}),replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
       toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted'),description:exchangePackagingWarningText(result.order)});
       navigate(ownIssuedStock?'/my-stock':result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
     }catch(e){setSaveError(e.message);const reason=e.data?.error||e.response?.data?.error||e.message;if(['Choose the customer branch that received this supply.','Choose a delivery point belonging to this customer.'].includes(reason)){setStep(0);setPointsRetry(n=>n+1);}}finally{busy.current=false;setSaving(false);}
@@ -171,7 +177,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   ];
   const sourceLabel=sourceOptions.find(option=>option.id===source)?.label||order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location');
   if(phone&&locked)return <MobileSaleDetail order={order} lines={calculated} products={products} replacements={replacements} sellerName={sellerName} sourceLabel={sourceLabel} back={back} navigate={navigate}/>;
-  if(phone&&wizard)return <MobileSaleFlow record={order} initialPurpose={typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('purpose')==='exchange'?'replacement':'sale'} step={step} goTo={goTo} advance={advance} back={back} form={form} setForm={setForm} customer={customer} catalogue={catalogue} points={points} pointsLoading={pointsLoading} pointsError={pointsError} pointsCustomerId={pointsCustomerId} retryPoints={()=>setPointsRetry(n=>n+1)} canChooseSeller={canChooseSeller} changeSeller={changeSeller} sellerName={sellerName} today={today} sourceLabel={sourceLabel} products={products} lines={lines} calculated={calculated} changeLine={changeLine} setProductQuantity={setProductQuantity} replacements={replacements} setReplacements={setReplacements} exchangeOnly={exchangeOnly} totals={totals} saving={saving} saveError={saveError} save={save} canSave={!calculated.some(line=>line.pricing_error)&&!!sourceData&&!sourceLoading&&!sourceError&&pointsCustomerId===form.customer_id&&!pointsLoading&&!pointsError&&(lines.length>0||replacements.length>0)&&!!form.customer_id&&!!form.seller_id&&!!form.date} onRefreshStock={()=>setStockRetry(n=>n+1)} sourceLoading={sourceLoading} sourceError={sourceError} sourceControls={<>
+  if(phone&&wizard)return <MobileSaleFlow record={order} cashDeposit={cashDeposit} initialPurpose={typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('purpose')==='exchange'?'replacement':'sale'} step={step} goTo={goTo} advance={advance} back={back} form={form} setForm={setForm} customer={customer} catalogue={catalogue} points={points} pointsLoading={pointsLoading} pointsError={pointsError} pointsCustomerId={pointsCustomerId} retryPoints={()=>setPointsRetry(n=>n+1)} canChooseSeller={canChooseSeller} changeSeller={changeSeller} sellerName={sellerName} today={today} sourceLabel={sourceLabel} products={products} lines={lines} calculated={calculated} changeLine={changeLine} setProductQuantity={setProductQuantity} replacements={replacements} setReplacements={setReplacements} exchangeOnly={exchangeOnly} totals={totals} saving={saving} saveError={saveError} save={save} canSave={!missingCashAccount&&!calculated.some(line=>line.pricing_error)&&!!sourceData&&!sourceLoading&&!sourceError&&pointsCustomerId===form.customer_id&&!pointsLoading&&!pointsError&&(lines.length>0||replacements.length>0)&&!!form.customer_id&&!!form.seller_id&&!!form.date} onRefreshStock={()=>setStockRetry(n=>n+1)} sourceLoading={sourceLoading} sourceError={sourceError} sourceControls={<>
     {central?<p className="rounded-lg border bg-secondary px-3 py-2 text-xs font-semibold text-primary">{ui('Company stock')}</p>:<SaleStockPicker open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} value={source} options={sourceOptions} onChange={setSource} disabled={saving} fallbackLabel={source?sourceLabel:''}/>}
     <div className="flex items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui('Your sale deducts from company stock when recorded. No goods issue or unsold-stock return is required.')}</p></LearnMore><button type="button" onClick={()=>setStockRetry(n=>n+1)} disabled={sourceLoading} className="min-h-11 text-xs text-primary underline">{ui('Refresh stock')}</button></div>
     {sourceLoading&&<p role="status" className="text-xs text-muted-foreground">{ui('Checking available finished stock...')}</p>}{sourceError&&<p role="alert" className="text-xs text-red-700">{uiMessage(sourceError)}</p>}
@@ -223,6 +229,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
           <p className="text-sm">{exchangeOnly?ui('Exchange only — no customer charge'):<>{ui('Payment Type')}: <strong>{ui(form.payment_type==='cash'?'Cash':'Credit')}</strong></>}</p><p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">{ui('Check the customer, products and amount. Stock is deducted only when you confirm this sale.')}</p>
         </section>}
         {(!wizard||step===2)&&<>
+        {cashDeposit}
         {!locked&&!exchangeOnly&&<SaleBillingPreview customerName={customer?.business_name} amountDue={form.payment_type==='credit'?totals.total:0}/>}
         <label className="block min-w-0 space-y-1 text-sm">{ui('Receipt reference number *')}<Input required aria-label={ui('Receipt reference number')} autoComplete="off" maxLength={200} value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/></label>
         <label className="block space-y-1 text-sm">{ui('Notes')}<Input value={form.notes} maxLength={2000} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label>
@@ -232,7 +239,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
       {saveError&&<p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
       {wizard&&step<2&&<div className="sticky bottom-0 mt-5 flex gap-3 border-t bg-white py-4">{step>0&&<Button type="button" variant="outline" disabled={saving} onClick={()=>goTo(step-1)}><ArrowLeft size={17}/>{ui('Back')}</Button>}<Button type="button" className="min-h-12 flex-1" disabled={saving} onClick={advance}>{ui(step===0?'Continue to products':'Review sale')}<ArrowRight size={17} className="ml-2"/></Button></div>}
       {wizard&&step===2&&<Button type="button" variant="outline" className="mt-4 w-full" disabled={saving} onClick={()=>goTo(1)}>{ui('Edit products')}</Button>}
-      {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsCustomerId!==form.customer_id||pointsLoading||!!pointsError||(!lines.length&&!replacements.length)||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui(exchangeOnly?'Record exchange & deduct stock':'Record sale & deduct stock')}</Button>}
+      {!locked&&(!wizard||step===2)&&<Button className="mt-5 w-full sm:w-auto" disabled={saving||missingCashAccount||calculated.some(line=>line.pricing_error)||!sourceData||sourceLoading||!!sourceError||pointsCustomerId!==form.customer_id||pointsLoading||!!pointsError||(!lines.length&&!replacements.length)||!form.customer_id||!form.seller_id||!form.date} onClick={save}><Save size={16} className="mr-2"/>{saving?ui('Recording...'):ui(exchangeOnly?'Record exchange & deduct stock':'Record sale & deduct stock')}</Button>}
     </div>
     <SaleProductPicker open={pickerOpen&&!locked} onOpenChange={setPickerOpen} products={products.map(p=>({...p,available:quantityAfterReplacements(p,replacements)}))} lines={lines} onQuantityChange={setProductQuantity} disabled={saving||sourceLoading||!!sourceError}/>
   </div>;

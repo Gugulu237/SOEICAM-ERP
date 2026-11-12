@@ -30,7 +30,7 @@ async function supplierUI(){
       '@/hooks/usePhoneLayout':`export const usePhoneLayout=()=>true;`,
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>({user:{id:'viewer'}});`,
       '@/hooks/useMenuBack':`export const useMenuBack=()=>()=>{};`,
-      '@/lib/router':`import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const useSearchParams=()=>[new URLSearchParams(globalThis.__supplierTimeline.query),value=>{const r=globalThis.__supplierTimeline;r.query=(typeof value==='function'?value(new URLSearchParams(r.query)):value).toString();}];`,
+      '@/lib/router':`import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const useNavigate=()=>path=>globalThis.__supplierTimeline.navigation.push(path);export const useSearchParams=()=>[new URLSearchParams(globalThis.__supplierTimeline.query),value=>{const r=globalThis.__supplierTimeline;r.query=(typeof value==='function'?value(new URLSearchParams(r.query)):value).toString();}];`,
       '@/api/erpClient':`export const invalidateERPReads=()=>{};export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__supplierTimeline.request(body)})}};`,
       '@/components/ui/use-toast':`export const useToast=()=>({toast:v=>globalThis.__supplierTimeline.notifications.push(v)});`,
       '@/components/ui/button':`import React from 'react';export function Button({children,onClick,...props}){globalThis.__supplierTimeline.capture('button',{...props,onClick},children);return React.createElement('button',props,children);}`,

@@ -90,7 +90,7 @@ export default function CustomerTasks({ embedded = false, directory = false, bac
     {phone&&zoneOptions.isError&&<p role="alert" className="mb-3 text-xs text-muted-foreground">{ui('Zone names could not load. ')}<button type="button" className="underline" onClick={()=>zoneOptions.refetch()}>{ui('Retry')}</button></p>}
     </>}
 
-    {paymentCustomer&&<CustomerCollectionDialog customer={paymentCustomer} onClose={()=>setPaymentCustomer(null)} onDone={()=>{setPaymentCustomer(null);setGpsNotice(ui('Cash collection recorded. Hand this cash to the cashier.'));}}/>}
+    {paymentCustomer&&<CustomerCollectionDialog customer={paymentCustomer} onClose={()=>setPaymentCustomer(null)} onDone={()=>{setPaymentCustomer(null);setGpsNotice(ui('Payment posted directly to treasury'));setReload(n=>n+1);}}/>}
     {spoilCustomer&&<SpoilageDialog open customer={spoilCustomer} onOpenChange={value=>{if(!value)setSpoilCustomer(null);}} onSaved={()=>setReportVersion(n=>n+1)}/>}
     {gpsCustomer && <CustomerGpsDialog key={gpsCustomer.id} customer={gpsCustomer} onClose={() => setGpsCustomer(null)} onSaved={({record}) => { setCustomers(rows => rows.map(row => row.id === record.id ? {...row,...record} : row)); setGpsCustomer(null); setGpsNotice(ui('GPS location saved.')); }} />}
     {gpsNotice&&<p role="status" className="mb-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{gpsNotice}</p>}

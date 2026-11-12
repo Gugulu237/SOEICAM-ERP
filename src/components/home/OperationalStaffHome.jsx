@@ -13,7 +13,7 @@ import MaterialIssueQueue from '@/components/manufacturing/MaterialIssueQueue';
 
 const layouts = {
   warehouse_manager: { get title(){return ui("Inventory and accounting");}, get description(){return ui("Manage company stock, record journals and reconcile accounts. Follow delivery stock manually.");}, icon:Package, primary:'/inventory', get action(){return ui("Open inventory");} },
-  procurement: { get title(){return ui("Keep the factory supplied");}, get description(){return ui("Prepare supplier orders, follow approvals and expected receipts, and check stock risks.");}, icon:ShoppingCart, primary:'/purchases', get action(){return ui("Open purchases");} },
+  procurement: { get title(){return ui("Keep the factory supplied");}, get description(){return ui("Check stock risks and share replenishment needs with an administrator.");}, icon:ShoppingCart, primary:'/inventory', get action(){return ui("Open inventory");} },
   employee: { get title(){return ui("Your daily work");}, get description(){return ui("Follow your requests and open the activities assigned to your role.");}, icon:ClipboardCheck, primary:'/expenses', get action(){return ui("My requests");} },
 };
 

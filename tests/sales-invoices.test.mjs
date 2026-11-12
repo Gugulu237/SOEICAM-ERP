@@ -65,11 +65,33 @@ test('historical invoice destinations must still belong to the source customer a
   }
 });
 
-test('cash invoice is money in transit, not a pending customer debt',async()=>{
-  const f=await setup(),o=await order(f,{cash:true}),doc=await invoiceAction(f.client,admin,body(o));
-  assert.equal(doc.invoice.customer_balance,0);assert.equal(doc.invoice.customer_paid,1000);assert.equal((await f.entities.Customer.get('customer-a')).balance,0);
-  const lines=await f.entities.JournalLine.list();assert.equal(lines.find(l=>l.account_id==='clearing').debit,1000);
-  const overview=salesOverview({invoices:await f.entities.Invoice.list(),from:date,to:date,today:date});assert.equal(overview.pending_count,0);assert.equal(overview.cash_sales,1000);
+test('cash invoices post straight to cash in hand and are settled once',async()=>{
+  const f=await setup(),s=f.entities,o=await order(f,{cash:true}),doc=await invoiceAction(f.client,admin,body(o));
+  const invoice=await s.Invoice.get(doc.invoice.id);
+  assert.equal(doc.invoice.customer_balance,0);assert.equal(doc.invoice.customer_paid,1000);assert.equal((await s.Customer.get('customer-a')).balance,0);
+  assert.equal(invoice.status,'paid');assert.equal(invoice.balance,0);assert.equal(invoice.amount_paid,1000);assert.equal(invoice.cash_deposited,true);
+  const lines=await s.JournalLine.list();assert.equal(lines.find(l=>l.account_id==='till-gl').debit,1000);
+  assert.ok(!lines.some(l=>l.account_id==='clearing'));assert.equal((await s.TreasuryAccount.get('till')).balance,101000);
+  const [movement]=await s.TreasuryTransaction.list();assert.equal(movement.source,'cash_sale');assert.equal(movement.source_document_id,invoice.id);assert.equal(movement.journal_id,invoice.journal_id);
+  assert.equal((await s.Payment.list()).length,0);assert.equal((await s.CashCollection.list()).length,1);
+  assert.equal((await invoiceAction(f.client,admin,body(o))).reused,true);
+  assert.equal((await s.TreasuryTransaction.list()).length,1);
+  await assert.rejects(invoiceAction(f.client,admin,{...body(o),treasuryAccountId:'bank'}),/already issued/);
+  const overview=salesOverview({invoices:await s.Invoice.list(),from:date,to:date,today:date});assert.equal(overview.pending_count,0);assert.equal(overview.cash_sales,1000);
+});
+
+test('sales staff can deposit a cash sale to a bank without seeing bank balances',async()=>{
+  const f=await setup(),s=f.entities,o=await order(f,{cash:true}),employee={id:'cashier-login',role:'user'};
+  await s.Employee.update('cashier',{role:'employee'});
+  const preview={action:'invoiceSource',sourceType:'order',sourceId:o.id};
+  const bank=(await invoiceAction(f.client,employee,preview)).cashAccounts.find(a=>a.id==='bank');
+  assert.deepEqual(Object.keys(bank).sort(),['account_type','id','name']);
+  await assert.rejects(invoiceAction(f.client,employee,{...body(o),treasuryAccountId:'unknown'}),/active treasury deposit account/);
+  const {invoice}=await invoiceAction(f.client,employee,{...body(o),treasuryAccountId:'bank'});
+  const saved=await s.Invoice.get(invoice.id);
+  assert.equal(saved.deposit_treasury_account_id,'bank');
+  assert.equal((await s.TreasuryAccount.get('bank')).balance,101000);
+  assert.equal((await s.TreasuryAccount.get('till')).balance,100000);
 });
 
 test('supply invoice preserves the saved line discount and tax instead of recomputing a different sale',async()=>{

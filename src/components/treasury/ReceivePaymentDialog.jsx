@@ -16,20 +16,20 @@ import { useToast } from "@/components/ui/use-toast";
 import { Search, Landmark, Receipt } from "lucide-react";
 
 // Treasury receipt: pick an open invoice, pick the account the money lands in.
-export default function ReceivePaymentDialog({ accounts, onClose, onDone, customer, hasMoreAccounts, onMoreAccounts, loadingMoreAccounts }) {
+export default function ReceivePaymentDialog({ accounts, defaultAccountId, onClose, onDone, customer, initialInvoice }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  const { user, role } = useCurrentUser();
+  const { role } = useCurrentUser();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
-  const invoiceQuery = useReceiptInvoices(customer?.id, search);
+  const invoiceQuery = useReceiptInvoices(customer?.id, search, !initialInvoice);
   const { invoices } = invoiceQuery;
-  const [invoice, setInvoice] = useState(null);
+  const [invoice, setInvoice] = useState(initialInvoice || null);
   const [saving, setSaving] = useState(false);
   const [requestKey] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState({
-    treasury_account_id: accounts[0]?.id || "",
-    amount: 0,
+    treasury_account_id: defaultAccountId || '',
+    amount: initialInvoice?.balance || 0,
     date: new Date().toISOString().split("T")[0],
     reference: "",
   });
@@ -43,12 +43,12 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
     setSaving(true);
     try {
       const account = accounts.find(a => a.id === form.treasury_account_id);
-      await receiveInvoicePayment({
+      const payment = await receiveInvoicePayment({
         invoice, treasuryAccount: account, amount: Number(form.amount),
-        date: form.date, reference: form.reference, userId: user?.id || "", requestKey,
+        date: form.date, reference: form.reference, requestKey,
       });
-      toast({ title: ui("Payment receipt recorded"), description: ui("{0} for {1}; {2}", formatXAF(form.amount), invoice.invoice_number, 'awaiting GM approval before posting.') });
-      onDone();
+      toast({ title: ui(payment.status==='posted'?'Payment posted directly to treasury':'Earlier receipt awaiting approval'), description: [payment.payment_number, payment.treasury_account_name].filter(Boolean).join(' · ') });
+      onDone({payment});
     } catch (e) {
       toast({ title: ui("Error"), description: e.message, variant: "destructive" });
     }
@@ -59,10 +59,10 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
     <Dialog open onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader><DialogTitle>{customer ? ui("Receive Payment · {0}", customer.business_name) : ui("Receive Payment for an Invoice")}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">{ui("Record a full or partial invoice payment. ")}{ui("GM approval is required before balances and the ledger are updated.")}</p>
+        <p className="text-sm text-muted-foreground">{ui("Saving posts the payment directly to this account.")}</p>
 
         <div className="space-y-4">
-          <div>
+          {!initialInvoice&&<div>
             <Label>{ui("Open Invoices")}</Label>
             <div className="relative mt-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -88,7 +88,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
               ))}
               {invoiceQuery.hasNextPage && <Button variant="outline" size="sm" className="m-2" disabled={invoiceQuery.isFetchingNextPage} onClick={() => invoiceQuery.fetchNextPage()}>{invoiceQuery.isFetchingNextPage ? ui("Loading…") : ui("Load more invoices")}</Button>}
             </div>
-          </div>
+          </div>}
 
           {invoice && (
             <>
@@ -103,10 +103,9 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
                 <Select value={form.treasury_account_id} onValueChange={v => setForm(f => ({ ...f, treasury_account_id: v }))}>
                   <SelectTrigger><SelectValue placeholder={ui("Select cash / bank / mobile money account")} /></SelectTrigger>
                   <SelectContent>
-                    {accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({formatXAF(a.balance)})</SelectItem>)}
+                    {accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                {hasMoreAccounts && <Button variant="outline" size="sm" className="mt-2" disabled={loadingMoreAccounts} onClick={onMoreAccounts}>{loadingMoreAccounts ? ui("Loading…") : ui("Load more deposit accounts")}</Button>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -131,7 +130,7 @@ export default function ReceivePaymentDialog({ accounts, onClose, onDone, custom
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{ui("Cancel")}</Button>
           <Button onClick={handleReceive} disabled={!['cashier', 'admin'].includes(role) || saving || !invoice || !form.treasury_account_id || Number(form.amount) <= 0 || !Number.isFinite(Number(form.amount)) || Number(form.amount) > Number(invoice?.balance) || !form.date || !form.reference.trim()}>
-            <Landmark size={16} className="mr-1" /> {saving ? ui("Confirming...") : ui("Confirm Receipt for GM")}
+            <Landmark size={16} className="mr-1" /> {saving ? ui("Saving...") : ui("Record payment")}
           </Button>
         </DialogFooter>
       </DialogContent>

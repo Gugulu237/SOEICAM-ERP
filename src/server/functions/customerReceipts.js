@@ -1,10 +1,10 @@
 import {principalRole} from '../domain/roles.js';
 import {confirmCustomerCollection} from '../domain/customer-activity.js';
-import {assertTreasuryAccess} from '../../lib/treasury-access.js';
+import {cashSaleOptions} from '../domain/sale-treasury.js';
 import { createClientFromRequest } from '../request-client.js';
 import { isTransactionConflict } from '../transaction-errors.js';
-import { requireStaff, round2, audit, claimField } from '../domain/field-ops.js';
-import { validateAllocations, approveReceipt } from '../domain/customer-receipts.js';
+import { requireStaff, audit, claimField } from '../domain/field-ops.js';
+import { recordDirectCustomerReceipt, approveReceipt } from '../domain/customer-receipts.js';
 
 export default async function(req) {
   try {
@@ -14,34 +14,13 @@ export default async function(req) {
     const body = await req.json();
     base44.auth.assertModule?.('cashier');
     if(body.action==='confirmCollection')return Response.json(await confirmCustomerCollection(base44,user,body));
-    if (!['confirm', 'approve', 'reject'].includes(body.action)) return Response.json({ error: 'Unknown receipt action' }, { status: 400 });
+    if (!['confirm', 'depositOptions', 'approve', 'reject'].includes(body.action)) return Response.json({ error: 'Unknown receipt action' }, { status: 400 });
     const svc = base44.asServiceRole;
-    if (body.action === 'confirm') {
-      const { role } = await requireStaff(base44, user, ['cashier', 'admin'], 'confirming customer money received');
-      const amount = round2(body.amount);
-      if (!Number.isFinite(Number(body.amount)) || amount <= 0) throw new Error('Enter a positive received amount');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date || '') || !Number.isFinite(Date.parse(body.date))) throw new Error('Enter a valid receipt date');
-      if (!String(body.reference || '').trim()) throw new Error('Enter a receipt or transaction reference');
-      if (!body.requestKey) throw new Error('A receipt request key is required');
-      const existing = await svc.entities.Payment.filter({ receipt_request_key: `${user.id}:${body.requestKey}` }, { limit: 1 });
-      if (existing.items.length) {assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(existing.items[0].treasury_account_id));return Response.json({ payment: existing.items[0] });}
-      const rows = await validateAllocations(svc, body.allocations, body.customerId);
-      if(rows.some(r=>r.invoice.opening_date&&body.date<r.invoice.opening_date))throw Error('An opening receivable cannot be collected before its opening date.');
-      if (round2(rows.reduce((s, r) => s + r.amount, 0)) !== amount) throw new Error('Allocate the entire received amount to invoices');
-      const treasury = await svc.entities.TreasuryAccount.get(body.treasuryAccountId);
-      if (!treasury?.is_active || !treasury.gl_account_id) throw new Error('Select an active treasury account linked to the ledger');
-      assertTreasuryAccess(role,treasury);
-      const customer = await svc.entities.Customer.get(body.customerId);
-      const now = new Date().toISOString();
-      const payment = await svc.entities.Payment.create({ payment_number: `RCP-${crypto.randomUUID().slice(0, 12).toUpperCase()}`, payment_type: 'customer_payment', party_type: 'customer', party_id: customer.id, party_name: customer.business_name, amount, payment_date: body.date, payment_method: body.method || (treasury.account_type === 'bank' ? 'bank_transfer' : treasury.account_type === 'mobile_money' ? 'mobile_money' : 'cash'), reference: String(body.reference).trim(), notes: body.notes || '', status: 'pending_approval', account_id: treasury.gl_account_id, treasury_account_id: treasury.id, treasury_account_name: treasury.name, prepared_by: user.id, prepared_at: now, cashier_confirmed_by: user.id, cashier_confirmed_name: user.full_name || user.email, cashier_confirmed_at: now, receipt_request_key: `${user.id}:${body.requestKey}`, receipt_posting_token: '', allocated_to_invoices: rows.map(r => r.invoice.id).join(','), invoice_numbers: rows.map(r => r.invoice.invoice_number).join(', '), receipt_allocations: rows.map(r => ({ invoice_id: r.invoice.id, invoice_number: r.invoice.invoice_number, amount: r.amount })) });
-      if (body.commercialReceipt && rows.length === 1) {
-        const invoice = rows[0].invoice;
-        const order = invoice.sales_order_id ? await svc.entities.SalesOrder.get(invoice.sales_order_id) : null;
-        const collection = await svc.entities.CashCollection.create({ collection_number: payment.payment_number, invoice_id: invoice.id, invoice_number: invoice.invoice_number, sale_number: order?.order_number || invoice.invoice_number, customer_id: customer.id, customer_name: customer.business_name, commercial_id: order?.salesperson_id || '', commercial_name: order?.salesperson_name || '', driver_name: order?.driver_name || '', vehicle_name: order?.vehicle_name || '', amount_due: invoice.balance, amount_collected: amount, collection_date: body.date, method: treasury.account_type === 'mobile_money' ? 'mobile_money' : 'cash', receipt_reference: payment.reference, receipt_file_uris: Array.isArray(body.receiptFileUris) ? body.receiptFileUris : [], status: 'received', handed_over_amount: amount, received_amount: amount, outstanding_amount: 0, treasury_account_id: treasury.id, treasury_account_name: treasury.name, received_by: payment.cashier_confirmed_name, received_by_user_id: user.id, received_at: now, acknowledgement_reference: payment.payment_number, notes: 'Cashier confirmed. Awaiting GM approval before ledger posting.' });
-        await svc.entities.Payment.update(payment.id, { collection_id: collection.id });
-      }
-      await audit(svc, { action: role === 'admin' ? 'admin_confirm_customer_receipt' : 'cashier_confirm_customer_receipt', module: role === 'admin' ? 'customers' : 'cashier', entityType: 'Payment', entityId: payment.id, userId: user.id, description: `${role === 'admin' ? 'Admin' : 'Cashier'} confirmed ${amount} XAF for ${payment.invoice_numbers}; awaiting GM approval, no ledger posting` });
-      return Response.json({ payment });
+    if (['confirm','depositOptions'].includes(body.action)) {
+      const { employee } = await requireStaff(base44, user, ['cashier', 'admin'], 'recording customer receipts');
+      if (employee?.employee_removed_at || employee?.status && employee.status !== 'active') throw Error('An active staff account is required.');
+      if (body.action === 'depositOptions') return Response.json(await cashSaleOptions(svc.entities));
+      return Response.json(await recordDirectCustomerReceipt(svc,user,body,{employee}));
     }
     const approver = await requireStaff(base44, user, ['admin'], 'approving or rejecting customer receipts');
     const payment = await svc.entities.Payment.get(body.paymentId);

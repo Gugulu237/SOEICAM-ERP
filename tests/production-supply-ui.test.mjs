@@ -60,7 +60,7 @@ test('the production form retains a blocked approval, updates missing quantities
   const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;r.params={id:'pending'};r.session={role:'admin',canApproveProduction:true};r.client=approvalClient(calls);
   const draw=()=>{r.beforeRender();return render('production');};
   try{draw();await r.flush();draw();await r.flush();await new Promise(resolve=>setTimeout(resolve,380));draw();
-    await r.buttons.find(b=>b.label.trim()==='Approve').onClick();const html=draw();assert.match(html,/awaiting_approval|Awaiting Approval|Awaiting approval/);assert.match(html,/Milk powder/);assert.match(html,/Prepare purchase request/);
+    await r.buttons.find(b=>b.label.trim()==='Approve').onClick();const html=draw();assert.match(html,/awaiting_approval|Awaiting Approval|Awaiting approval/);assert.match(html,/Milk powder/);assert.match(html,/Prepare purchase order/);
     assert.equal(r.notifications.some(n=>n.title==='Approved'),false);assert.equal(r.notifications.at(-1).title,'Production approval blocked');assert.equal(calls.find(c=>c.action==='approveProductionOrder').sourceWarehouses.milk,'raw');assert.equal(r.buttons.some(b=>b.label.trim()==='Issue Materials'),false);
   }finally{r.cleanup();delete globalThis.__productionUI;}
 });
@@ -81,26 +81,26 @@ test('the supplier order shows only that vendor’s goods, prefills its price, a
   const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;let fail=true,saved=0;
   r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(fail)throw Error('Connection interrupted');return {data:{order:{id:'po'}}};}}};
   const props={data:{supplier,products:[milk,cups],warehouses:[],orderLines:[]},onClose:()=>{},onSaved:()=>saved++},draw=()=>{r.beforeRender();return render('order',props);};
-  try{let html=draw();assert.match(html,/Milk powder/);assert.doesNotMatch(html,/>Cups</);assert.equal(r.buttons.find(b=>b.label==='Submit for approval').disabled,true);
+  try{let html=draw();assert.match(html,/Milk powder/);assert.doesNotMatch(html,/>Cups</);assert.equal(r.buttons.find(b=>b.label==='Save purchase order').disabled,true);
     r.buttons.find(b=>b['aria-label']==='Add Milk powder').onClick();html=draw();assert.equal(r.inputs.find(p=>p['aria-label']==='Unit price 1').value,15);
-    r.inputs.find(p=>p['aria-label']==='Quantity 1').onChange({target:{value:'7.5'}});draw();await r.buttons.find(b=>b.label==='Submit for approval').onClick();assert.equal(saved,0);html=draw();assert.equal(r.inputs.find(p=>p['aria-label']==='Quantity 1').value,'7.5');
-    fail=false;await r.buttons.find(b=>b.label==='Submit for approval').onClick();assert.equal(saved,1);assert.equal(calls[0].requestKey,calls[1].requestKey);assert.equal(calls[1].order.lines[0].unit_price,15);assert.equal(calls[1].order.catalogue_only,true);
+    r.inputs.find(p=>p['aria-label']==='Quantity 1').onChange({target:{value:'7.5'}});draw();await r.buttons.find(b=>b.label==='Save purchase order').onClick();assert.equal(saved,0);html=draw();assert.equal(r.inputs.find(p=>p['aria-label']==='Quantity 1').value,'7.5');
+    fail=false;await r.buttons.find(b=>b.label==='Save purchase order').onClick();assert.equal(saved,1);assert.equal(calls[0].requestKey,calls[1].requestKey);assert.equal(calls[1].order.lines[0].unit_price,15);assert.equal(calls[1].order.catalogue_only,true);assert.equal(calls[1].status,'confirmed');
   }finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
 test('an empty supplier catalogue disables ordering and explains who must set up the goods',async()=>{
   const render=await renderer(),r=runtime();globalThis.__productionUI=r;
-  try{r.beforeRender();const html=render('order',{data:{supplier:{id:'empty',name:'No catalogue'},products:[milk,cups],warehouses:[]},onClose:()=>{},onSaved:()=>{}});assert.match(html,/Procurement must set up Items supplied/);assert.doesNotMatch(html,/Milk powder/);assert.equal(r.buttons.find(b=>b.label==='Submit for approval').disabled,true);}finally{r.cleanup();delete globalThis.__productionUI;}
+  try{r.beforeRender();const html=render('order',{data:{supplier:{id:'empty',name:'No catalogue'},products:[milk,cups],warehouses:[]},onClose:()=>{},onSaved:()=>{}});assert.match(html,/Add goods in Items supplied/);assert.doesNotMatch(html,/Milk powder/);assert.equal(r.buttons.find(b=>b.label==='Save purchase order').disabled,true);}finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
 test('the shortage request sends the recorded production and selected suppliers once, retaining values on a failed connection',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;let fail=true;
   r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(fail)throw Error('Request connection interrupted');return {data:{orders:[{id:'po',po_number:'PO-NEW'}]}};}}};
   const props={data:{products:[milk],suppliers:[supplier],open_orders:[],shortages:[{material_id:'milk',material_name:'Milk powder',unit:'kg',missing:3,on_order:1,purchase_quantity:2,warehouse_name:'Ingredients'}]},context:{orderId:'production-01',sourceWarehouses:{milk:'ingredients'}},onClose:()=>{},onRefresh:()=>{},onNavigate:()=>{}},draw=()=>{r.beforeRender();return render('request',props);};
-  try{draw();assert.equal(r.inputs.find(p=>p['aria-label']==='Purchase quantity for Milk powder').value,2);await r.buttons.find(b=>b.label==='Send purchase request').onClick();assert.match(draw(),/Request connection interrupted/);fail=false;await r.buttons.find(b=>b.label==='Send purchase request').onClick();assert.match(draw(),/PO-NEW/);assert.equal(calls[0].requestKey,calls[1].requestKey);assert.equal(calls[1].orderId,'production-01');assert.equal(calls[1].lines[0].supplier_id,'dairy');assert.equal(calls[1].lines[0].unit_price,15);}finally{r.cleanup();delete globalThis.__productionUI;}
+  try{draw();assert.equal(r.inputs.find(p=>p['aria-label']==='Purchase quantity for Milk powder').value,2);await r.buttons.find(b=>b.label==='Save purchase orders').onClick();assert.match(draw(),/Request connection interrupted/);fail=false;await r.buttons.find(b=>b.label==='Save purchase orders').onClick();assert.match(draw(),/PO-NEW/);assert.equal(calls[0].requestKey,calls[1].requestKey);assert.equal(calls[1].orderId,'production-01');assert.equal(calls[1].lines[0].supplier_id,'dairy');assert.equal(calls[1].lines[0].unit_price,15);}finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
-test('approved production exposes warehouse stock checks and purchase recovery; issue never calls individual stock writes',async()=>{
+test('warehouse staff can check and issue production materials with purchases reserved for admins',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;
   r.params={id:'production'};r.session={role:'warehouse_manager',canIssueMaterials:true,canApproveProduction:false};
   const order={id:'production',order_number:'PRD-01',recipe_id:'recipe',planned_output:20,production_date:'2026-10-20',status:'approved',material_warehouses:{milk:'raw'}};
@@ -108,8 +108,8 @@ test('approved production exposes warehouse stock checks and purchase recovery; 
   const read=values=>({filter:async()=>values});
   r.client={entities:{Recipe:read([{id:'recipe',recipe_name:'YOLA',status:'approved'}]),Warehouse:read([{id:'raw',name:'Ingredients',warehouse_type:'raw_material'}]),ProductionOrder:{get:async()=>order},ProductionMaterial:read([{id:'material',production_order_id:'production',material_id:'milk',material_name:'Milk powder',standard_quantity:3,unit:'kg'}])},functions:{invoke:async(name,body)=>{calls.push(body);if(body.action==='issueProductionMaterials')return {data:{...availability,blocked:true}};return {data:availability};}}};
   const draw=()=>{r.beforeRender();return render('production');};
-  try{draw();await r.flush();draw();await r.flush();await new Promise(resolve=>setTimeout(resolve,380));let html=draw();assert.match(html,/PRD-01/);assert.match(html,/Source warehouse for Milk powder/);assert.match(html,/Prepare purchase request/);
-    await r.buttons.find(b=>b.label.trim()==='Issue Materials').onClick();html=draw();assert.match(html,/Prepare purchase request/);assert.equal(calls.filter(c=>c.action==='issueProductionMaterials').length,1);assert.equal(calls.find(c=>c.action==='issueProductionMaterials').sourceWarehouses.milk,'raw');assert.equal(r.buttons.some(b=>b.label.trim()==='Complete Production'),false);
+  try{draw();await r.flush();draw();await r.flush();await new Promise(resolve=>setTimeout(resolve,380));let html=draw();assert.match(html,/PRD-01/);assert.match(html,/Source warehouse for Milk powder/);assert.doesNotMatch(html,/Prepare purchase order/);
+    await r.buttons.find(b=>b.label.trim()==='Issue Materials').onClick();html=draw();assert.doesNotMatch(html,/Prepare purchase order/);assert.equal(calls.filter(c=>c.action==='issueProductionMaterials').length,1);assert.equal(calls.find(c=>c.action==='issueProductionMaterials').sourceWarehouses.milk,'raw');assert.equal(r.buttons.some(b=>b.label.trim()==='Complete Production'),false);
   }finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
@@ -161,10 +161,13 @@ test('a legacy finished-variant link preserves its selected product in checked a
  const draw=()=>{r.beforeRender();return render('production');};try{draw();await r.flush();draw();assert.deepEqual(r.navigation,['/manufacturing?section=build&product=assembly-2']);}finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
-test('shortage supplier selection includes unlinked active vendors and sends a reviewed proposal without changing the catalogue',async()=>{
- const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;const elements=[],capture=r.capture.bind(r);r.capture=(tag,props,children)=>{capture(tag,props,children);elements.push({tag,props:props || {}});};r.client={functions:{invoke:async(_,body)=>{calls.push(body);return {data:{orders:[{id:'po',po_number:'PO-REVIEW',supplier_catalogue_review_required:true}]}};}}};
- const data={products:[milk],suppliers:[{id:'proposed',name:'Proposed vendor',is_active:true,supplier_items:[]},{id:'off',name:'Inactive vendor',is_active:false,supplier_items:[]}],open_orders:[],shortages:[{material_id:'milk',material_name:'Milk powder',purchase_quantity:2,missing:2,on_order:0,warehouse_name:'Ingredients',unit:'kg'}]};
- const draw=()=>{r.beforeRender();elements.length=0;return render('request',{data,context:{orderId:'pending'},onClose(){},onRefresh(){},onNavigate(){}});};
- try{let html=draw();assert.match(html,/Proposed vendor/);assert.doesNotMatch(html,/Inactive vendor/);const select=elements.find(e=>e.tag==='select' && e.props['aria-label']==='Supplier for Milk powder');assert.equal(select.props.value,'');select.props.onChange({target:{value:'proposed'}});assert.match(draw(),/supplier is proposed for review/);assert.equal(r.buttons.find(b=>b.label==='Send purchase request').disabled,false);await r.buttons.find(b=>b.label==='Send purchase request').onClick();assert.equal(calls[0].lines[0].supplier_id,'proposed');assert.match(draw(),/Procurement must confirm the proposed supplier materials/);}
- finally{r.cleanup();delete globalThis.__productionUI;}
+test('shortage orders cannot use unlinked or inactive suppliers',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;
+ r.client={functions:{invoke:async(_,body)=>{calls.push(body);return {data:{orders:[]}};}}};
+ const data={products:[milk],suppliers:[{id:'unlinked',name:'Unlinked vendor',is_active:true,supplier_items:[]},{id:'off',name:'Inactive vendor',is_active:false,supplier_items:[]}],open_orders:[],shortages:[{material_id:'milk',material_name:'Milk powder',purchase_quantity:2,missing:2,on_order:0,warehouse_name:'Ingredients',unit:'kg'}]};
+ try{
+   r.beforeRender();const html=render('request',{data,context:{orderId:'pending'},onClose(){},onRefresh(){},onNavigate(){}});
+   assert.doesNotMatch(html,/Unlinked vendor|Inactive vendor/);assert.match(html,/Link this material to an active supplier/);
+   assert.equal(r.buttons.find(b=>b.label==='Save purchase orders').disabled,true);assert.deepEqual(calls,[]);
+ }finally{r.cleanup();delete globalThis.__productionUI;}
 });

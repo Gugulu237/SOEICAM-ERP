@@ -14,7 +14,7 @@ import {recipeBucketPlan,yogurtRequirements} from '../src/lib/yogurt-production.
 import {idelleCashierAssignment} from '../src/server/domain/local-staff-reassignment.js';
 
 test('supplier catalogues accept every stock component and exclude own finished products and services',async()=>{
-  const f=await fixture(),s=f.entities;await s.Employee.update('cashier',{role:'procurement'});
+  const f=await fixture(),s=f.entities;await s.Employee.update('cashier',{role:'admin'});
   const materials=await Promise.all(['raw_material','inventory_part','inventory_item','consumable','additive','packaging'].map((type,i)=>s.Product.create({name:type+' component',inventory_type:type,unit_of_measure:i%2?'ea':'kg',is_active:true})));
   const forbidden=await Promise.all(['assembly','finished_product','service'].map(type=>s.Product.create({name:type,inventory_type:type,is_active:true,unit_of_measure:'ea'})));
   const call=body=>supplierAction(f.client,user,body),list=await call({action:'supplierWorkspace'});

@@ -1,18 +1,18 @@
 import {itemUnitCost} from '../../lib/item-units.js';
 import {canUseTreasury,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
-import { requireStaff, round2, round3, nextSequence, postJournal, getRuleAccount, stockReceive, audit } from './field-ops.js';
+import { round2, round3, nextSequence, postJournal, getRuleAccount, stockReceive, audit } from './field-ops.js';
 import { readRecords } from './commercial-workspace.js';
 import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { businessDate } from '../../lib/business-date.js';
 import { purchaseItemPostings } from '../../lib/item-posting.js';
-import { canReadPurchase } from './purchase-workspace.js';
+import { requirePurchasingAdmin } from './purchase-workspace.js';
 import {openingPartyLines} from '../../lib/opening-records.js';
 import { supplierCatalogue, supplierItems, supplierMaterial } from '../../lib/supplier-catalogue.js';
 import {receiptSupplierPayable,billSupplierPayable,supplierAdvanceSource} from './supplier-payables.js';
 import {journalCents} from './journal-validation.js';
 
-export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill'];
+export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','confirmSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill'];
 const pick = (row, keys) => Object.fromEntries(keys.split(' ').map(key=>[key,row[key]]));
 const inventory = supplierMaterial;
 const active = p => p && p.is_active !== false && p.configuration_status !== 'draft';
@@ -73,29 +73,25 @@ async function billForReceipt(svc, user, supplier, po, receipt) {
   const poBills=await readRecords(s.Bill,{po_id:po.id});
   if(poBills.some(b=>!b.receipt_id && b.status!=='cancelled'))throw Error('This order already has a legacy bill. Reconcile it before adding another receipt bill.');
   const {account:payable,journal,value}=await receiptSupplierPayable(s,receipt,supplier.id);
-  const due=new Date(receipt.receipt_date+'T12:00:00Z');due.setUTCDate(due.getUTCDate()+Number(supplier.payment_terms_days ?? 30));
+  const due=new Date(receipt.receipt_date+'T12:00:00Z');due.setUTCDate(due.getUTCDate()+(po.payment_terms==='cash'?0:Number(supplier.payment_terms_days ?? 30)));
   const bill=await s.Bill.create({bill_number:await nextSequence(svc,'next_bill_number','BILL',6),supplier_id:supplier.id,supplier_name:supplier.name,po_id:po.id,po_number:po.po_number,receipt_id:receipt.id,receipt_number:receipt.receipt_number,bill_date:receipt.receipt_date,due_date:due.toISOString().slice(0,10),total:value,amount_paid:0,balance:value,status:'open',journal_id:journal.id,payable_account_id:payable.id,accounting_source:'goods_receipt'});
   await s.GoodsReceipt.update(receipt.id,{bill_id:bill.id});
   await audit(svc,{action:'register_supplier_bill',module:'suppliers',entityType:'Bill',entityId:bill.id,userId:user.id,description:`Registered ${bill.bill_number} against the existing ${receipt.receipt_number} payable; no second journal`});
   return allocateAdvances(svc,bill,user);
 }
 
-export async function supplierAction(client,user,body,{allowUnlistedProductionRequest=false}={}) {
+export async function supplierAction(client,user,body) {
   const action=body.action;
-  const allowed=action==='supplierWorkspace'?['admin','procurement','cashier','warehouse_manager']:action==='registerSupplierBill'?['admin','procurement','cashier']:action==='receiveSupplierOrder'?['admin','procurement','warehouse_manager']:['approveSupplierOrder','rejectSupplierOrder'].includes(action)?['admin']:action==='saveSupplierOrder'?['admin','procurement','production_manager','warehouse_manager','employee']:['admin','procurement','warehouse_manager'];
-  const {role,employee}=await requireStaff(client,user,allowed,'supplier management');
-  const supplyChain=role==='warehouse_manager' && employee?.assigned_role==='supply_chain_manager';
-  if(role==='warehouse_manager' && ['supplierWorkspace','saveSupplier'].includes(action) && !supplyChain)throw Error('Supplier management is reserved for Procurement and the Supply Chain Manager');
-  if(role!=='admin' && employee?.status!=='active')throw Error('An active supplier or accounting staff account is required');
+  const employee=await requirePurchasingAdmin(client,user);
+  const role='admin';
   const svc=client.asServiceRole,s=svc.entities;
   if(action==='supplierWorkspace') {
     const [suppliers,bills,ledger]=await Promise.all([readRecords(s.Supplier),readRecords(s.Bill),postedSupplierBalances(svc)]);
-    const canManageSuppliers=supplyChain||['admin','procurement'].includes(role);
-    const summaries=suppliers.filter(supplier=>body.includeRemoved&&canManageSuppliers?!!supplier.supplier_removed_at:!supplier.supplier_removed_at).map(supplier=>{
+    const summaries=suppliers.filter(supplier=>body.includeRemoved?!!supplier.supplier_removed_at:!supplier.supplier_removed_at).map(supplier=>{
       const open=bills.filter(b=>b.supplier_id===supplier.id && !['cancelled','draft'].includes(b.status) && Number(b.balance)>0);
       return {...pick(supplier,supplierFields),ledger_balance:round2(ledger[supplier.id] || 0),recorded_balance:Number(supplier.balance || 0),balance_difference:round2(Number(supplier.balance || 0)-Number(ledger[supplier.id] || 0)),unpaid_bills:round2(open.reduce((sum,b)=>sum+Number(b.balance),0)),overdue:round2(open.filter(b=>b.due_date && b.due_date<businessDate()).reduce((sum,b)=>sum+Number(b.balance),0)),open_bill_count:open.length};
     });
-    const permissions={manage:supplyChain || ['admin','procurement'].includes(role),purchase:supplyChain || ['admin','procurement'].includes(role),receive:supplyChain || ['admin','procurement'].includes(role),pay:['admin','cashier'].includes(role),approve:role==='admin'};
+    const permissions={manage:true,purchase:true,receive:true,pay:true,approve:true};
     const products=await readRecords(s.Product),catalogueProducts=products.filter(supplierMaterial).map(p=>({...pick(p,'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days material_group category attributes flavor size product_family'),unit:stockUnit(p),cost:itemUnitCost(p)}));
     const materialIds=new Set(catalogueProducts.map(item=>item.id)),visibleSuppliers=summaries.map(supplier=>({...supplier,supplier_items:supplierItems(supplier).filter(row=>materialIds.has(row.product_id))}));
     if(!body.supplierId)return {suppliers:visibleSuppliers,products:catalogueProducts,permissions,date:businessDate()};
@@ -136,8 +132,8 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
     const order=await s.PurchaseOrder.update(po.id,{status:'cancelled',rejected_by:user.id,rejected_at:new Date().toISOString(),rejection_reason:reason});
     await audit(svc,{action:'reject',module:'procurement',entityType:'PurchaseOrder',entityId:po.id,userId:user.id,description:`General Manager refused ${po.po_number}${reason?': '+reason:''}`});return {order};
   }
-  if(action==='approveSupplierOrder') {
-    if(po?.status==='approved' && po.approved_by===user.id)return {order:po,reused:true};
+  if(action==='confirmSupplierOrder'||action==='approveSupplierOrder') {
+    if(['approved','partially_received','received','billed'].includes(po?.status)&&(po.purchase_confirmed_by===user.id||po.approved_by===user.id))return {order:po,reused:true};
     if(!po || po.status!=='pending_approval')throw Error('Select a purchase order awaiting approval');
     const supplier=await s.Supplier.get(po.supplier_id),lines=await readRecords(s.PurchaseOrderLine,{po_id:po.id});
     if(!active(supplier) || !lines.length || lines.some(l=>l.supplier_id && l.supplier_id!==supplier.id))throw Error('Review the supplier and items. Mixed supplier orders must be split before approval.');
@@ -156,19 +152,19 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
       total=round2(total+gross);
     }
     if(!Number.isFinite(Number(po.total)) || round2(po.total)!==total)throw Error('Reconcile the purchase order total before approval');
-    const order=await s.PurchaseOrder.update(po.id,{status:'approved',supplier_catalogue_review_required:false,approved_by:user.id,approved_at:new Date().toISOString()});
-    await audit(svc,{action:'approve',module:'procurement',entityType:'PurchaseOrder',entityId:po.id,userId:user.id,description:`General Manager approved ${po.po_number}`});return {order};
+    const order=await s.PurchaseOrder.update(po.id,{status:'approved',supplier_catalogue_review_required:false,purchase_confirmed_by:user.id,purchase_confirmed_at:new Date().toISOString()});
+    await audit(svc,{action:'confirm_supplier_order',module:'procurement',entityType:'PurchaseOrder',entityId:po.id,userId:user.id,description:`Confirmed existing order ${po.po_number}`});return {order};
   }
   if(action==='saveSupplierOrder') {
     const key=requestKey(user,body)+':'+(body.orderId || 'new'),form=body.order || {};
     const snapshot=JSON.stringify([form,body.status]);
     const previous=(await readRecords(s.PurchaseOrder,{supplier_request_key:key}))[0];if(previous){if(previous.supplier_request_payload!==snapshot || body.orderId && previous.id!==body.orderId)throw Error('This purchase order was already saved. Open it to make changes.');return {order:previous,reused:true};}
     if(body.orderId && (!po || po.status!=='draft'))throw Error('Only a draft purchase order can be edited');
-    if(po && !canReadPurchase(role,employee,po))throw Error('This draft is outside your permitted purchasing scope');
     if(po?.updated_date && form.updated_date && String(po.updated_date)!==String(form.updated_date))throw Error('This draft changed while you were editing. Reopen it before saving.');
     const supplier=await s.Supplier.get(form.supplier_id);if(!active(supplier))throw Error('Select an active supplier');
     if(po && po.supplier_id!==supplier.id)throw Error('Keep this purchase order with its original supplier');
-    if(!['draft','pending_approval'].includes(body.status))throw Error('Save a draft or submit for General Manager approval');
+    if(!['draft','confirmed','pending_approval'].includes(body.status))throw Error('Save a draft or confirm the purchase order');
+    const status=body.status==='draft'?'draft':'approved';
     dateOf(form.order_date);if(form.expected_date){dateOf(form.expected_date,true);if(form.expected_date<form.order_date)throw Error('Expected delivery must be on or after the order date');}
     const warehouse=form.warehouse_id?await s.Warehouse.get(form.warehouse_id):null;
     if(form.warehouse_id && (!active(warehouse) || ['vehicle','commercial_custody','quarantine'].includes(warehouse.warehouse_type)))throw Error('Choose an active receiving warehouse');
@@ -176,15 +172,14 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
     const lines=[],products=new Map((await readRecords(s.Product,{id:{$in:form.lines.map(r=>r?.product_id).filter(Boolean)}})).map(p=>[p.id,p]));
     const linked = new Set(supplierCatalogue(supplier,[...products.values()].map(p=>({...p,unit:stockUnit(p)}))).map(p=>p.id));
     const unconfirmed=form.lines.filter(row=>!linked.has(row?.product_id)).map(row=>row.product_id);
-    const proposed=allowUnlistedProductionRequest && body.status==='pending_approval' && !body.orderId;
-    if(!proposed && (form.catalogue_only || supplier.supplier_items!=null) && unconfirmed.length)throw Error('Choose goods linked to this supplier. Procurement must update Items supplied before ordering other goods.');
+    if((form.catalogue_only || supplier.supplier_items!=null) && unconfirmed.length)throw Error('Choose goods linked to this supplier. Update Items supplied before ordering other goods.');
     for(const row of form.lines){const p=products.get(row?.product_id);if(!active(p) || !inventory(p))throw Error('Choose active inventory items; use expense requests for services');const quantity=round3(numberOf(row.quantity,'purchase quantity',true)),cost=round2(numberOf(row.unit_price,'unit price')),tax=numberOf(row.tax_rate || 0,'tax rate');if(tax>100)throw Error('Tax rate cannot exceed 100%');const net=round2(quantity*cost),taxAmount=round2(net*tax/100);lines.push({supplier_id:supplier.id,supplier_name:supplier.name,product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity,unit_price:cost,tax_rate:tax,tax_amount:taxAmount,total:round2(net+taxAmount),received_quantity:0});}
-    const data={supplier_id:supplier.id,supplier_name:supplier.name,warehouse_id:warehouse?.id || '',order_date:form.order_date,expected_date:form.expected_date || '',payment_terms:form.payment_terms==='cash'?'cash':'credit',notes:String(form.notes || '').slice(0,4000),requested_by_id:po?.requested_by_id || employee?.id || user.id,requested_by_name:po?.requested_by_name || employee?.full_name || user.full_name || user.email,requested_department_id:po?.requested_department_id || employee?.department_id || '',status:body.status,subtotal:round2(lines.reduce((sum,l)=>sum+round2(l.quantity*l.unit_price),0)),tax_total:round2(lines.reduce((sum,l)=>sum+l.tax_amount,0)),total:round2(lines.reduce((sum,l)=>sum+l.total,0))};
-    const savedData={...data,...(proposed?{supplier_catalogue_review_required:unconfirmed.length>0,unconfirmed_supplier_product_ids:unconfirmed}:{}),supplier_request_key:key,supplier_request_payload:snapshot};
+    const data={supplier_id:supplier.id,supplier_name:supplier.name,warehouse_id:warehouse?.id || '',order_date:form.order_date,expected_date:form.expected_date || '',payment_terms:form.payment_terms==='cash'?'cash':'credit',notes:String(form.notes || '').slice(0,4000),requested_by_id:po?.requested_by_id || employee?.id || user.id,requested_by_name:po?.requested_by_name || employee?.full_name || user.full_name || user.email,requested_department_id:po?.requested_department_id || employee?.department_id || '',subtotal:round2(lines.reduce((sum,l)=>sum+round2(l.quantity*l.unit_price),0)),tax_total:round2(lines.reduce((sum,l)=>sum+l.tax_amount,0)),total:round2(lines.reduce((sum,l)=>sum+l.total,0))};
+    const savedData={...data,status,...(status==='approved'?{purchase_confirmed_by:user.id,purchase_confirmed_at:new Date().toISOString()}:{}),supplier_request_key:key,supplier_request_payload:snapshot};
     const order=po?await s.PurchaseOrder.update(po.id,savedData):await s.PurchaseOrder.create({...savedData,po_number:await nextSequence(svc,'next_po_number','PO',5)});
     if(po)await s.PurchaseOrderLine.deleteMany({po_id:po.id});
     await s.PurchaseOrderLine.bulkCreate(lines.map(l=>({...l,po_id:order.id})));
-    await audit(svc,{action:'save_supplier_order',module:'procurement',entityType:'PurchaseOrder',entityId:order.id,userId:user.id,description:`${order.po_number}: ${body.status}`});return {order};
+    await audit(svc,{action:status==='draft'?'save_supplier_order':'confirm_supplier_order',module:'procurement',entityType:'PurchaseOrder',entityId:order.id,userId:user.id,description:`${order.po_number}: ${status==='draft'?'draft':'ready to receive'}`});return {order};
   }
   if(!po)throw Error('Purchase order not found');
   const supplier=await s.Supplier.get(po.supplier_id);if(!supplier)throw Error('Supplier not found');
@@ -196,8 +191,8 @@ export async function supplierAction(client,user,body,{allowUnlistedProductionRe
   if(action!=='receiveSupplierOrder')throw Error('Unknown supplier action');
   const key=requestKey(user,body),snapshot=JSON.stringify([po.id,body.date,body.warehouseId || '',body.lines]);
   const previous=(await readRecords(s.GoodsReceipt,{supplier_request_key:key}))[0];if(previous){if(previous.supplier_request_payload!==snapshot)throw Error('This receipt was already recorded. Refresh the order before receiving more goods.');return {receipt:previous,reused:true};}
-  if(po.supplier_catalogue_review_required)throw Error('Procurement must confirm the supplier materials before goods can be received.');
-  if(!['approved','partially_received'].includes(po.status))throw Error('Receive only an approved purchase order with quantities outstanding');
+  if(po.supplier_catalogue_review_required)throw Error('Confirm the supplier materials before receiving goods.');
+  if(!['approved','partially_received'].includes(po.status))throw Error('Receive only a confirmed purchase order with quantities outstanding');
   const date=dateOf(body.date);if(date<po.order_date)throw Error('Receipt date must be on or after the order date');
   const warehouse=await s.Warehouse.get(body.warehouseId || po.warehouse_id);if(!active(warehouse) || ['vehicle','commercial_custody','quarantine'].includes(warehouse.warehouse_type))throw Error('Select an active receiving warehouse');
   const poLines=await readRecords(s.PurchaseOrderLine,{po_id:po.id}),rows=body.lines;

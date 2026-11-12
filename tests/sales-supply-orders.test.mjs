@@ -258,19 +258,21 @@ test('approved finished stock in legacy general storage is available without cre
 });
 
 
-test('pooled sale fully rolls back both locations and the ledger if the final audit fails',async()=>{
+test('pooled cash sale rolls back stock, invoice, treasury and ledger if the final audit fails',async()=>{
  const db=new PGlite();try{
   const f=await setup(db),route=await functionRoute(),create=f.s.AuditLog.create;
   await f.s.StockBalance.update(f.factory.id,{quantity:1,total_value:300});
   const room=await f.s.Warehouse.create({name:'Second storage',warehouse_type:'general',is_active:true});await f.s.StockBalance.create({warehouse_id:room.id,product_id:'product-a',quantity:2,total_value:800,unit_cost:400,qc_status:'approved'});
   globalThis.__cashierClient=f.client;globalThis.__cashierTransaction=async fn=>{await db.exec('BEGIN');try{const result=await fn();await db.exec('COMMIT');return result;}catch(e){await db.exec('ROLLBACK');throw e;}};
   f.s.AuditLog.create=async value=>{if(value.action==='record_supplied_order')throw Error('Late audit failure');return create(value);};
-  const body={...f.body,sourceType:'company',dispatchId:'',paymentType:'credit',expectedTotal:1500,lines:[{...f.body.lines[0],quantity:3}]};
+  const body={...f.body,sourceType:'company',dispatchId:'',paymentType:'cash',treasuryAccountId:'bank',expectedTotal:1500,lines:[{...f.body.lines[0],quantity:3}]};
   const before=(await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows;
   const call=()=>route(request(body),{params:Promise.resolve({name:'fieldOps'})});
   assert.equal((await call()).status,400);assert.deepEqual((await db.query('SELECT * FROM fixture_entity ORDER BY entity,id')).rows,before);
   f.s.AuditLog.create=create;assert.equal((await call()).status,200);assert.equal((await (await call()).json()).reused,true);
   assert.equal((await f.s.StockMovement.list()).length,2);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,1100);
+  assert.equal((await f.s.TreasuryAccount.get('bank')).balance,101500);
+  assert.equal((await f.s.TreasuryTransaction.list()).length,1);
  }finally{delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;await db.close();}
 });
 
@@ -413,7 +415,7 @@ test('legacy administrators can choose every active employee, including staff wi
 });
 
 test('an admin recording an offline Commercial sale preserves seller, stock holder and recorder separately',async()=>{
- const f=await setup(),before=Object.fromEntries(await Promise.all(['Payment','CashCollection','TreasuryTransaction'].map(async entity=>[entity,await f.s[entity].list()]))),body={...f.body,sellerId:f.agent.id,sales_supply_seller_role:'admin'};
+ const f=await setup(),before=Object.fromEntries(await Promise.all(['Payment','CashCollection'].map(async entity=>[entity,await f.s[entity].list()]))),body={...f.body,sellerId:f.agent.id,sales_supply_seller_role:'admin'};
  const stock=await f.call({action:'salesOrderStock',sourceType:'issued',dispatchId:'run-a',sellerId:f.agent.id});assert.equal(stock.source.salesperson_id,f.agent.id);
  const result=await f.call(body),invoice=await f.s.Invoice.get(result.invoiceId),audit=(await f.s.AuditLog.list()).find(row=>row.action==='record_supplied_order');
  assert.equal(result.order.salesperson_id,f.agent.id);assert.equal(result.order.salesperson_name,'Agent A');assert.equal(result.order.sales_supply_seller_id,f.agent.id);assert.equal(result.order.sales_supply_stockholder_id,f.agent.id);
@@ -421,6 +423,7 @@ test('an admin recording an offline Commercial sale preserves seller, stock hold
  assert.equal(audit.user_id,admin.id);assert.equal(audit.sales_supply_recorded_by,admin.id);assert.equal(audit.sales_supply_seller_id,f.agent.id);assert.equal(audit.sales_supply_seller_name,'Agent A');assert.equal(audit.sales_supply_on_behalf,true);
  assert.equal(result.order.sales_supply_seller_role,'commercial');assert.equal(audit.sales_supply_seller_role,'commercial');
  assert.equal((await f.s.StockBalance.get('stock')).quantity,8);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.Invoice.list()).length,1);
+ const [movement]=await f.s.TreasuryTransaction.list();assert.equal(movement.amount,1000);assert.equal(movement.source_document_id,invoice.id);assert.equal(movement.created_by,admin.id);
  for(const [entity,records] of Object.entries(before))assert.deepEqual(await f.s[entity].list(),records);
  await f.s.Employee.update(f.agent.id,{role:'procurement',status:'inactive',full_name:'Renamed after posting'});
  const committed=structuredClone(f.rows),retry=await f.call({...body,sales_supply_seller_role:'driver'});assert.equal(retry.reused,true);assert.equal(retry.order.sales_supply_seller_role,'commercial');assert.deepEqual(f.rows,committed);

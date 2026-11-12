@@ -4,7 +4,8 @@ import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, today, postJournal, getAccountByNumber, audit } from './field-ops.js';
 import { smallOperatingExpenseIssue } from '../../lib/small-operating-expenses.js';
 import { reconcileDailyCash, dailyCashSettlements } from '../../lib/cash-settlement.js';
-import { effectiveRole } from './roles.js';
+import { effectiveRole, principalRole } from './roles.js';
+import { forbidden } from '../access.js';
 import { requestDailyCash } from './daily-cash-handover.js';
 import {billSupplierPayable,supplierPrepaymentAccount} from './supplier-payables.js';
 import {cashDepositors} from '../../lib/cashier-receipts.js';
@@ -12,7 +13,7 @@ import {cashDepositors} from '../../lib/cashier-receipts.js';
 // All mutations run in the API route's serializable transaction. Request keys
 // survive lost responses; balances, journals and source documents commit once.
 export const PETTY_CASH_LIMIT = 50000;
-export const CASHIER_ACTIONS = ['cashierWorkspace', 'cashierReceiveDailyCash', 'cashierRequestHandover', 'cashierHandoverHistory', 'cashierTransfer', 'cashierPettyExpense', 'cashierPayExpense', 'cashierRequestPayment', 'cashierReleasePayment', 'cashierAttachReceipt', 'cashierResolveHandover', 'confirmHandover'];
+export const CASHIER_ACTIONS = ['cashierWorkspace', 'cashierReceiveDailyCash', 'cashierRequestHandover', 'cashierHandoverHistory', 'cashierTransfer', 'cashierPettyExpense', 'cashierPayExpense', 'recordPurchasePayment', 'cashierRequestPayment', 'cashierReleasePayment', 'cashierAttachReceipt', 'cashierResolveHandover', 'confirmHandover'];
 const pick = (row, fields) => Object.fromEntries(fields.map(field => [field, row[field]]));
 const rows = (records, fields) => records.map(row => pick(row, fields.split(' ')));
 const amountOf = value => {
@@ -58,7 +59,7 @@ async function budgetUse(svc, departmentId, date, amount) {
   return budget.id;
 }
 
-async function workspace(svc, date, role) {
+async function workspace(svc, date, role, purchasingAdmin) {
   const [accounts, movements, handovers, collections, invoices, receipts, payments, expenses, gl, departments, customers, orders, sales, employees] = await Promise.all([
     readRecords(svc.entities.TreasuryAccount),
     readRecords(svc.entities.TreasuryTransaction, { transaction_date: date }),
@@ -66,12 +67,12 @@ async function workspace(svc, date, role) {
     readRecords(svc.entities.CashCollection, { $or: [{ collection_date: date }, { status: { $in: ['held_by_commercial', 'handover_submitted', 'partially_received', 'disputed'] } }] }),
     readRecords(svc.entities.Invoice, { status: { $in: ['posted', 'partially_paid', 'overdue'] } }),
     readRecords(svc.entities.Payment, { payment_type: 'customer_payment', $or: [{ status: { $in: ['awaiting_cashier', 'pending_approval', 'approved'] } }, { payment_date: date, status: 'posted' }] }),
-    readRecords(svc.entities.Payment, { payment_type: 'supplier_payment', status: { $in: ['draft', 'pending_approval', 'approved', 'confirmed'] } }),
+    readRecords(svc.entities.Payment, { payment_type: 'supplier_payment', status: { $in: ['draft', 'pending_approval', 'approved', 'confirmed'] }, ...(purchasingAdmin?{}:{po_id:{$in:['',null]}}) }),
     readRecords(svc.entities.ExpenseRequest, { $or: [{ status: 'approved' }, { status: 'paid', $or: [{ paid_date: date }, { request_date: date }] }] }),
     readRecords(svc.entities.Account, { account_type: 'expense', is_active: true }),
     readRecords(svc.entities.Department, { is_active: true }),
     readRecords(svc.entities.Customer, { balance: { $gt: 0 } }),
-    readRecords(svc.entities.PurchaseOrder, { status: 'approved', cash_disbursed: { $ne: true } }),
+    purchasingAdmin?readRecords(svc.entities.PurchaseOrder, { status: 'approved', cash_disbursed: { $ne: true } }):[],
     readRecords(svc.entities.FieldSale, { transaction_date: date, payment_type: 'cash', status: 'approved_posted' }),
     readRecords(svc.entities.Employee),
   ]);
@@ -80,7 +81,9 @@ async function workspace(svc, date, role) {
   const paidOrders = orders.length ? await readRecords(svc.entities.Payment, { po_id: { $in: orders.map(po => po.id) }, status: 'posted', payment_type: 'supplier_payment' }) : [];
   const cashCustomers = [
     ...collections.filter(c => c.collection_date === date && c.method === 'cash' && c.status !== 'cancelled' && !linkedCollections.has(c.id)).map(c => ({ id: 'collection-' + c.id, customer_name: c.customer_name, document_number: c.sale_number || c.invoice_number || c.collection_number, amount: c.amount_collected, received: c.received_amount || 0, collector: c.commercial_name, status: c.status, date: c.collection_date })),
-    ...receipts.filter(p => p.payment_date === date && p.payment_method === 'cash').map(p => ({ id: 'payment-' + p.id, customer_name: p.party_name, document_number: p.invoice_numbers || p.payment_number, amount: p.amount, received: p.status === 'posted' ? p.amount : 0, collector: p.collector_name || p.cashier_confirmed_name || 'Cash desk', status: p.status, date: p.payment_date })),
+    ...receipts.filter(p => p.payment_date === date && p.payment_method === 'cash' &&
+      (!p.treasury_account_id || accounts.some(a=>a.id===p.treasury_account_id&&['cash','petty_cash'].includes(a.account_type)))).map(p => ({ id: 'payment-' + p.id, customer_name: p.party_name, document_number: p.invoice_numbers || p.payment_number, amount: p.amount, received: p.status === 'posted' ? p.amount : 0, collector: p.collector_name || p.receipt_recorded_by_name || p.cashier_confirmed_name || 'Cash desk', status: p.status, date: p.payment_date })),
+    ...movements.filter(tx=>tx.source==='cash_sale'&&accounts.some(a=>a.id===tx.treasury_account_id&&a.account_type==='cash')).map(tx=>({id:'sale-'+tx.id,customer_name:tx.customer_name,document_number:tx.source_document_number,amount:tx.amount,received:tx.amount,collector:tx.treasury_account_name,status:'posted',date:tx.transaction_date})),
   ];
   return { role, date, pettyCashLimit: PETTY_CASH_LIMIT,
     accounts: rows(accounts.filter(a=>a.is_active===true&&canUseTreasury(role,a)), 'id name account_type balance gl_account_id float_limit custodian'),
@@ -121,7 +124,10 @@ export async function cashierAction(base44, user, body) {
   const { employee, role } = await requireStaff(base44, user, ['admin', 'cashier'], 'cash desk operations');
   if (role !== 'admin' && (!employee || employee.status !== 'active')) throw Error('An active Cashier staff account is required');
   const svc = base44.asServiceRole, action = body.action, date = dateOf(body.date), actor = employee?.full_name || user.full_name || user.email;
-  if (action === 'cashierWorkspace') return body.view==='confirmations'?confirmationQueue(svc,date,role):workspace(svc, date, role);
+  const purchasingAdmin=principalRole(user,employee)==='admin',directPurchase=action==='recordPurchasePayment';
+  if(directPurchase&&!purchasingAdmin)throw forbidden('Purchases are reserved for administrators.');
+  if(directPurchase)base44.auth.assertModule?.('purchases');
+  if (action === 'cashierWorkspace') return body.view==='confirmations'?confirmationQueue(svc,date,role):workspace(svc, date, role, purchasingAdmin);
   for(const id of [body.accountId,body.treasuryAccountId,body.toAccountId].filter(Boolean))assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(id));
   if(action==='cashierReceiveDailyCash'){
     const collectionDate=dateOf(body.collectionDate);
@@ -162,28 +168,41 @@ export async function cashierAction(base44, user, body) {
   }
   if (typeof body.requestKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(body.requestKey)) throw Error('A valid cash request key is required; reopen the cash form');
   const key = `${user.id}:${action}:${body.requestKey}`;
-  const entity = action === 'cashierRequestPayment' ? svc.entities.Payment : svc.entities.TreasuryTransaction;
+  const entity = action === 'cashierRequestPayment'||directPurchase ? svc.entities.Payment : svc.entities.TreasuryTransaction;
   const previous = (await readRecords(entity, { cashier_request_key: key }))[0];
+  const purchaseIntent=directPurchase?JSON.stringify([body.billId||'',body.orderId||'',body.accountId,date,amountOf(body.amount),textOf(body.reference,'a reference'),body.description||'']):null;
+  if(previous&&directPurchase){
+    if(previous.direct_purchase_intent!==purchaseIntent||previous.status!=='posted'||!previous.journal_id)throw Error('This payment reference was already used. Review the recorded payment.');
+    return {payment:previous,reused:true};
+  }
+  if(previous?.po_id&&!purchasingAdmin)throw forbidden('Purchases are reserved for administrators.');
   if (previous) assertTreasuryAccess(role,await svc.entities.TreasuryAccount.get(previous.treasury_account_id));
   if (previous) return { transaction: previous, reused: true, ...(action === 'confirmHandover' ? { acknowledgementReference: previous.transaction_number, received: previous.amount } : {}) };
   const now = new Date().toISOString();
 
-  if (action === 'cashierRequestPayment') {
+  let purchasePayment;
+  if (action === 'cashierRequestPayment'||directPurchase) {
     const bill = body.billId ? await svc.entities.Bill.get(body.billId) : null;
     if (body.billId && (!bill || !['open','partially_paid','overdue'].includes(bill.status) || !(Number(bill.balance)>0))) throw Error('Select an unpaid supplier bill');
     if (bill && round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance)) throw Error('Reconcile the bill total, amount paid and balance before requesting another payment');
-    if(bill?.opening_batch_id||bill?.accounting_source==='recurring_expense')return requestOpeningBillPayment(svc,user,bill,body,await treasury(svc,body.accountId,role),date,key,actor);
+    if(!directPurchase){
+      if(bill?.opening_batch_id||bill?.accounting_source==='recurring_expense')return requestOpeningBillPayment(svc,user,bill,body,await treasury(svc,body.accountId,role),date,key,actor);
+      throw forbidden('Record purchase payments directly in Purchases.');
+    }
+    if(bill?.opening_batch_id||bill?.accounting_source==='recurring_expense')throw Error('Use the recorded bill payment workflow for this bill.');
+    if(bill&&body.orderId&&bill.po_id!==body.orderId)throw Error('The bill does not belong to this purchase order.');
     const po = await svc.entities.PurchaseOrder.get(bill?.po_id || body.orderId), account = await treasury(svc, body.accountId, role), amount = amountOf(body.amount);
     if(po?.historical_settlement_id)throw Error('This purchase was paid before ERP start. No further payment can be requested.');
     if (!po || (bill ? !['approved','partially_received','received','billed'].includes(po.status) || bill.supplier_id!==po.supplier_id : po.status !== 'approved' || po.cash_disbursed)) throw Error('Select an approved, unpaid purchase order');
+    const supplier=await svc.entities.Supplier.get(po.supplier_id);
+    if(!supplier||supplier.supplier_removed_at||supplier.is_active===false)throw Error('Choose a purchase from an active supplier.');
+    if(date<po.order_date||bill&&date<bill.bill_date)throw Error('The payment date cannot precede its purchase order or bill.');
     if (bill && amount>round2(bill.balance)) throw Error('The amount exceeds the unpaid bill balance');
     const pending = await readRecords(svc.entities.Payment, { po_id: po.id, status: { $in: ['draft', 'pending_approval', 'approved', 'confirmed', 'posted'] } });
     if (pending.some(p => p.status !== 'posted')) throw Error('This purchase order already has a payment awaiting processing');
     const paid = pending.reduce((sum, p) => sum + Number(p.amount || 0), 0);
     if (amount > round2(Number(po.total) - paid)) throw Error('The amount exceeds the unpaid purchase order balance');
-    const payment = await svc.entities.Payment.create({ payment_number: number('PAY'), payment_type: 'supplier_payment', party_type: 'supplier', party_id: po.supplier_id, party_name: po.supplier_name, po_id: po.id, ...(bill ? {bill_id:bill.id,bill_number:bill.bill_number} : {}), payment_date: date, amount, status: 'pending_approval', payment_method: account.account_type === 'bank' ? 'bank_transfer' : account.account_type === 'mobile_money' ? 'mobile_money' : 'cash', account_id: account.gl_account_id, treasury_account_id: account.id, treasury_account_name: account.name, reference: textOf(body.reference, 'a reference'), notes: body.description || '', prepared_by: user.id, prepared_at: now, cashier_request_key: key });
-    await audit(svc, { action: 'request_cash_disbursement', module: 'cashier', entityType: 'Payment', entityId: payment.id, userId: user.id, description: `${actor} requested ${amount} XAF for ${po.po_number}; awaiting General Manager approval` });
-    return { payment };
+    purchasePayment = { payment_number: number('PAY'), payment_type: 'supplier_payment', party_type: 'supplier', party_id: po.supplier_id, party_name: po.supplier_name, po_id: po.id, ...(bill ? {bill_id:bill.id,bill_number:bill.bill_number} : {}), payment_date: date, amount, status: 'confirmed', payment_method: account.account_type === 'bank' ? 'bank_transfer' : account.account_type === 'mobile_money' ? 'mobile_money' : 'cash', account_id: account.gl_account_id, treasury_account_id: account.id, treasury_account_name: account.name, reference: textOf(body.reference, 'a reference'), notes: body.description || '', prepared_by: user.id, prepared_at: now, cashier_request_key: key, direct_purchase_intent:purchaseIntent };
   }
 
   if (action === 'confirmHandover') {
@@ -260,16 +279,17 @@ export async function cashierAction(base44, user, body) {
     expenseAccount = await ledger(svc, body.expenseAccountId, true);
     const issue = smallOperatingExpenseIssue({ category: body.category, expenseAccount, description, payee: body.payee });
     if (issue) throw Error(issue);
-  } else if (action === 'cashierReleasePayment') {
-    document = await svc.entities.Payment.get(body.paymentId);
+  } else if (action === 'cashierReleasePayment'||directPurchase) {
+    document = purchasePayment||await svc.entities.Payment.get(body.paymentId);
+    if(document?.po_id&&!purchasingAdmin)throw forbidden('Purchases are reserved for administrators.');
     if (document?.status === 'posted' && document.journal_id) return { payment: document, reused: true };
     if(document?.opening_bill_payment||document?.recurring_bill_payment)return releaseOpeningBillPayment(svc,user,document,body,account,date,key);
-    if (!document || document.payment_type !== 'supplier_payment' || !document.po_id || document.payment_method === 'cheque' || document.status !== 'approved' || !document.approved_by || !document.approved_at) throw Error('A non-cheque purchase payment approved by the General Manager is required');
+    if (!document || document.payment_type !== 'supplier_payment' || !document.po_id || document.payment_method === 'cheque' || (!directPurchase&&(document.status !== 'approved' || !document.approved_by || !document.approved_at))) throw Error('Select an authorized legacy purchase payment or record a new payment in Purchases.');
     if (document.treasury_account_id !== account.id) throw Error('Release cash from the account approved for this payment');
     po = await svc.entities.PurchaseOrder.get(document.po_id);
     if(po?.historical_settlement_id)throw Error('This purchase was paid before ERP start. No further payment can be released.');
     if (!po || !['approved', 'partially_received', 'received', 'billed'].includes(po.status) || po.cash_disbursed || po.supplier_id !== document.party_id) throw Error('This purchase order is already paid, not approved or does not match the supplier');
-    if (document.journal_id || (await readRecords(svc.entities.JournalEntry, { source_document_id: document.id, status: 'posted' })).length) throw Error('This payment has an earlier ledger entry; reconcile it before releasing cash again');
+    if (!directPurchase&&(document.journal_id || (await readRecords(svc.entities.JournalEntry, { source_document_id: document.id, status: 'posted' })).length)) throw Error('This payment has an earlier ledger entry; reconcile it before releasing cash again');
     amount = amountOf(document.amount); description = `${document.payment_number}: ${document.party_name}`;
     if(document.bill_id){const bill=await svc.entities.Bill.get(document.bill_id);if(!bill || bill.po_id!==po.id || bill.supplier_id!==document.party_id || !['open','partially_paid','overdue'].includes(bill.status) || amount>round2(bill.balance) || round2(Number(bill.total)-Number(bill.amount_paid || 0))!==round2(bill.balance))throw Error('The approved payment does not match the current bill balance; reconcile it before releasing cash');debit=await billSupplierPayable(svc.entities,bill,date);}
     const paid = await readRecords(svc.entities.Payment, { po_id: po.id, status: 'posted' });
@@ -283,6 +303,7 @@ export async function cashierAction(base44, user, body) {
   } else throw Error('Unknown cash desk action');
   funds(account, amount);
   const receipt = body.receiptFileUri ? await base44.validateExpenseReceipt(body.receiptFileUri) : '';
+  if(directPurchase)document=await svc.entities.Payment.create(purchasePayment);
   debit ||= expenseAccount;
   const voucher = document?.request_number || document?.payment_number || number('PV');
   const tx = await svc.entities.TreasuryTransaction.create({ transaction_number: number('TRX'), treasury_account_id: account.id, treasury_account_name: account.name, transaction_type: 'expense', amount, transaction_date: date, description, reference: String(body.reference || voucher).trim(), source: action === 'cashierPettyExpense' ? 'petty_cash' : action === 'cashierPayExpense' ? 'request' : 'supplier_payment', source_document_id: document?.id || '', source_document_number: voucher, category: document?.category || body.category || '', payee: document?.payee || String(body.payee || ''), department_id: department?.id || '', department_name: department?.name || '', expense_account_id: expenseAccount?.id || '', expense_account_number: expenseAccount?.account_number || '', expense_account_name: expenseAccount?.name || '', cashier_request_key: key, created_by: user.id });
@@ -306,5 +327,6 @@ export async function cashierAction(base44, user, body) {
     else await svc.entities.ExpenseRequest.create({ ...patch, request_number: voucher, title: description, amount, request_date: date, requester_id: employee?.id || user.id, requester_name: actor, department_id: department.id, department_name: department.name, petty_cash: true, payee: String(body.payee || ''), category: body.category });
   }
   await audit(svc, { action: 'cashier_disbursement', module: 'cashier', entityType: 'TreasuryTransaction', entityId: tx.id, userId: user.id, description: `${actor} paid ${amount} XAF from ${account.name}: ${description}` });
+  if(directPurchase)return {payment:await svc.entities.Payment.get(document.id),transaction:{...tx,journal_id:journal.id}};
   return { transaction: { ...tx, journal_id: journal.id } };
 }
