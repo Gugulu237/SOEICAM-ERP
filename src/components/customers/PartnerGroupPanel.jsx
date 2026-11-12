@@ -6,13 +6,13 @@ import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
 import { formatAccountingXAF } from "@/lib/formatters";
-import { customerAccountBalance, customerOpenInvoiceQuery } from '@/lib/customer-billing-summary';
+import { branchTotalDue, customerAccountBalance, customerOpenInvoiceQuery, headquartersDueForBranch } from '@/lib/customer-billing-summary';
 import { customerInvoiceQuery } from '@/lib/customer-mobile-summary';
 import { Button } from "@/components/ui/button";
 import { Store, Pencil, ChevronRight, MapPin } from "lucide-react";
 
 // Roll-up of a main partner and all its sub-partners (branches).
-export default function PartnerGroupPanel({ partner, subPartners = [], locationsByCustomer = {}, onSelect }) {
+export default function PartnerGroupPanel({ partner, subPartners = [], deliveryBalances, locationsByCustomer = {}, onSelect }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
@@ -71,6 +71,7 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
         {subPartners.map(sub => {
           const spoilage = metric('spoilage', sub.id);
           const locs = (locationsByCustomer[sub.id] || []).length;
+          const headquartersDue = headquartersDueForBranch(deliveryBalances.data, sub.id);
           return (
             <div key={sub.id} className="bg-white border border-slate-200 rounded-xl p-3">
               <div className="flex items-start justify-between gap-2">
@@ -90,8 +91,9 @@ export default function PartnerGroupPanel({ partner, subPartners = [], locations
                 </div>
               </div>
               <div className="grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 text-xs">
-                <span className="text-slate-500">{ui('Account balance due')}<span className="block font-semibold text-slate-900">{display(customerAccountBalance(sub))}</span></span>
-                <span className="text-slate-500">{ui('Open invoice balance')}<span className="block font-semibold text-slate-900">{display(metric('outstanding', sub.id))}</span></span>
+                <span className="text-slate-500">{ui('Total due for this branch')}<span className="block font-semibold text-slate-900">{display(branchTotalDue(sub, headquartersDue))}</span></span>
+                <span className="text-slate-500">{ui('Branch account balance')}<span className="block font-semibold text-slate-900">{display(customerAccountBalance(sub))}</span></span>
+                <span className="text-slate-500">{ui('Headquarters invoices due for this branch')}<span className="block font-semibold text-slate-900">{display(headquartersDue)}</span></span>
                 <span className="text-slate-500">{ui("Spoilage ")}<span className={`block font-semibold ${spoilage > 0 ? "text-red-600" : "text-slate-900"}`}>{display(spoilage)}</span></span>
               </div>
             </div>

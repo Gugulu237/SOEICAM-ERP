@@ -171,7 +171,7 @@ export function CustomerDirectory({selectedId,back}) {
         <div className="relative"><Search size={17} className="pointer-events-none absolute left-3 top-3.5 text-slate-400"/><Input aria-label={ui('Find a customer')} placeholder={ui('Name, phone, agent or zone')} value={search} onChange={event=>setSearch(event.target.value)} className="h-11 bg-white pl-10"/></div>
         {phone&&<nav aria-label={ui('Filter customers by zone')} className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{[{id:'',name:ui('All zones')},{id:'unassigned',name:ui('Unassigned')},...zones].map(item=><button type="button" key={item.id} aria-pressed={zone===item.id} onClick={()=>setZone(item.id)} className={'min-h-11 shrink-0 rounded-xl border px-3 text-xs font-semibold '+(zone===item.id?'border-primary bg-primary text-white':'bg-white text-slate-600')}>{item.name}</button>)}</nav>}
         {phone&&zoneOptions.isError&&<p role="alert" className="text-xs text-muted-foreground">{ui('Zone names could not load. ')}<button type="button" className="underline" onClick={()=>zoneOptions.refetch()}>{ui('Retry')}</button></p>}
-        <CustomerGroupedList key={search} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} onOpen={selectCustomer} mapPointFor={customer=>(locationsByCustomer[customer.id]||[]).find(hasCustomerLocation)||customer}/>
+        <CustomerGroupedList key={search} customers={customers} matchingIds={filtered.map(c=>c.id)} search={search} showBilling={canCollect} onOpen={selectCustomer} mapPointFor={customer=>(locationsByCustomer[customer.id]||[]).find(hasCustomerLocation)||customer}/>
       </div>:<div className="min-w-0">
             {selected ? (
               <>
