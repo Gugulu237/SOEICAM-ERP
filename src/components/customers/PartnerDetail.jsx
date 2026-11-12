@@ -5,6 +5,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import { usePhoneLayout } from '@/hooks/usePhoneLayout';
 import MobileCustomerOverview from './MobileCustomerOverview';
 import CustomerBillingSummary from './CustomerBillingSummary';
+import useHeadquartersDeliveryBalances from './useHeadquartersDeliveryBalances';
 import React, { useState, useEffect, useCallback } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
@@ -20,8 +21,8 @@ import PartnerStockPanel from "./PartnerStockPanel";
 import PartnerSalesPanel from "./PartnerSalesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAccountingXAF, formatXAF } from "@/lib/formatters";
-import { customerAccountBalance } from '@/lib/customer-billing-summary';
-import {customerInvoiceQuery,customerMonthInvoiceQuery} from '@/lib/customer-mobile-summary';
+import { branchTotalDue, customerAccountBalance, customerGroupBalance, headquartersDueForBranch } from '@/lib/customer-billing-summary';
+import {customerActivityScope,customerInvoiceQuery,customerMonthInvoiceQuery} from '@/lib/customer-mobile-summary';
 import { Plus } from "lucide-react";
 
 // 360° view of one business partner: its group (sub-partners), locations,
@@ -37,20 +38,22 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const [orders, setOrders] = useState([]);
   const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState('');
   const [spoilOpen, setSpoilOpen] = useState(false),[reportVersion,setReportVersion]=useState(0);
+  const headquarters = parentPartner?.id === partner.parent_id && !parentPartner?.parent_id ? parentPartner : null;
+  const headquartersId = headquarters?.id;
 
   const load = useCallback(async () => {
     setLoadError('');
     try {
     const [locs, ords, spls] = await Promise.all([
       erp.entities.CustomerLocation.filter({ customer_id: partner.id, is_active: true }),
-      erp.entities.SalesOrder.filter({ customer_id: partner.id }, "-order_date", 200),
+      erp.entities.SalesOrder.filter(customerActivityScope(partner.id,headquartersId), "-order_date", 200),
       erp.entities.SpoilageRecord.filter({ customer_id: partner.id }, "-reported_date", 200),
     ]);
     setLocations(locs);
     setOrders(ords);
     setSpoilage(spls);
     } catch(error) { setLoadError(error.message); }
-  }, [partner.id]);
+  }, [partner.id,headquartersId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -59,18 +62,22 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
     let active=true;
     setMobileSales({loading:true,invoices:[],total:null,error:''});
     Promise.all([
-      erp.entities.Invoice.aggregate({query:customerMonthInvoiceQuery(partner.id),groupBy:'status',sum:['total']}),
-      erp.entities.Invoice.filter(customerInvoiceQuery(partner.id),{sort:'-invoice_date',limit:6,include_total:false}),
+      erp.entities.Invoice.aggregate({query:customerMonthInvoiceQuery(partner.id,new Date(),headquartersId),groupBy:'status',sum:['total']}),
+      erp.entities.Invoice.filter(customerInvoiceQuery(partner.id,headquartersId),{sort:'-invoice_date',limit:6,include_total:false}),
     ]).then(([summary,recent])=>{if(active)setMobileSales({loading:false,invoices:recent.items,total:summary.rows.reduce((sum,row)=>sum+Number(row.sum_total||0),0),error:''});})
       .catch(error=>{if(active)setMobileSales({loading:false,invoices:[],total:null,error:error.message});});
     return()=>{active=false;};
-  },[phone,partner.id,salesReload]);
+  },[phone,partner.id,headquartersId,salesReload]);
   const Tools=phone?'details':'div';
   const deliveredOrders = orders.filter(o => ["invoiced", "delivered", "partially_delivered"].includes(o.status));
   const deliveredValue = deliveredOrders.reduce((s, o) => s + (o.total || 0), 0);
   const spoilageValue = spoilage.reduce((s, r) => s + (r.total_value || 0), 0);
-  const accountBalance = customerAccountBalance(partner);
-  const billingSummary = <CustomerBillingSummary partner={partner} parentPartner={parentPartner} subPartners={subPartners} onSelect={onSelect}/>;
+  const deliveryBalances = useHeadquartersDeliveryBalances(headquarters || partner, headquarters ? [partner] : subPartners);
+  const isGroup = !partner.parent_id && subPartners.length > 0;
+  const balanceLabel = headquarters ? 'Total due for this branch' : isGroup ? 'Group Balance' : 'Account balance due';
+  const balance = headquarters ? branchTotalDue(partner, headquartersDueForBranch(deliveryBalances.data, partner.id))
+    : isGroup ? customerGroupBalance(partner, subPartners) : customerAccountBalance(partner);
+  const billingSummary = <CustomerBillingSummary partner={partner} parentPartner={headquarters} subPartners={subPartners} deliveryBalances={deliveryBalances} onSelect={onSelect}/>;
 
 
   return (
@@ -89,11 +96,11 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </div>
       </div>
 
-      {phone ? <MobileCustomerOverview partner={partner} billingSummary={billingSummary} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/> : <div className="grid gap-3 lg:grid-cols-2">
+      {phone ? <MobileCustomerOverview partner={partner} balanceLabel={balanceLabel} balance={balance} deliveryBalances={deliveryBalances} billingSummary={billingSummary} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/> : <div className="grid gap-3 lg:grid-cols-2">
         <section className="rounded-xl border bg-white p-4">
-          <h3 className="text-sm font-semibold">{ui('Account balance due')}</h3>
-          <p className="mt-1 text-lg font-bold tabular-nums">{accountBalance === null ? '—' : formatAccountingXAF(accountBalance)}</p>
-          <p className="text-xs text-muted-foreground">{ui('Limit ')}{formatXAF(partner.credit_limit)}</p>
+          <h3 className="text-sm font-semibold">{ui(balanceLabel)}</h3>
+          <p className="mt-1 text-lg font-bold tabular-nums">{balance === null ? '—' : formatAccountingXAF(balance)}</p>
+          {!headquarters&&!isGroup&&<p className="text-xs text-muted-foreground">{ui('Limit ')}{formatXAF(partner.credit_limit)}</p>}
         </section>
         {billingSummary}
       </div>}
@@ -121,7 +128,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
 
         <TabsContent value="overview" className="mt-4 space-y-5">
       {!partner.parent_id && subPartners.length>0 && (
-        <PartnerGroupPanel partner={partner} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} />
+        <PartnerGroupPanel partner={partner} subPartners={subPartners} deliveryBalances={deliveryBalances} locationsByCustomer={locationsByCustomer} onSelect={onSelect} />
       )}
 
       {/* KPIs */}
@@ -152,7 +159,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </TabsContent>
 
         <TabsContent value="sales" className="mt-4">
-          <PartnerSalesPanel partner={partner} subPartners={subPartners} />
+          <PartnerSalesPanel partner={partner} subPartners={subPartners} headquartersId={headquartersId} />
         </TabsContent>
       </Tabs>
 

@@ -5,7 +5,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { formatXAF, formatDate } from "@/lib/formatters";
-import { CUSTOMER_SALE_STATUSES } from '@/lib/customer-mobile-summary';
+import { CUSTOMER_SALE_STATUSES, customerActivityScope } from '@/lib/customer-mobile-summary';
 import StatusBadge from "@/components/shared/StatusBadge";
 import { ShoppingCart, Receipt } from "lucide-react";
 
@@ -40,7 +40,7 @@ function Table({ head, children, empty }) {
 }
 
 // Sales performance of a partner and its branches: orders taken, invoiced, still owed.
-export default function PartnerSalesPanel({ partner, subPartners = [] }) {
+export default function PartnerSalesPanel({ partner, subPartners = [], headquartersId }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const [data, setData] = useState(null);
@@ -49,18 +49,19 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
   useEffect(() => {
     let cancelled = false;
     const ids = idsKey.split(",");
+    const scope = headquartersId ? customerActivityScope(partner.id, headquartersId) : customerActivityScope({ $in: ids });
     Promise.all([
-      erp.entities.SalesOrder.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total"] }),
-      erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, payment_type: { $ne: 'cash' }, status: { $in: CUSTOMER_SALE_STATUSES } }, groupBy: "status", sum: ["balance"] }),
-      erp.entities.SalesOrder.filter({ customer_id: { $in: ids } }, { sort: "-order_date", limit: 15, include_total: false }),
-      erp.entities.Invoice.filter({ customer_id: { $in: ids } }, { sort: "-invoice_date", limit: 15, include_total: false }),
-      erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, accounting_source: { $ne: "opening_balances" } }, groupBy: "status", sum: ["total"] }),
+      erp.entities.SalesOrder.aggregate({ query: scope, groupBy: "status", sum: ["total"] }),
+      erp.entities.Invoice.aggregate({ query: { ...scope, payment_type: { $ne: 'cash' }, status: { $in: CUSTOMER_SALE_STATUSES } }, groupBy: "status", sum: ["balance"] }),
+      erp.entities.SalesOrder.filter(scope, { sort: "-order_date", limit: 15, include_total: false }),
+      erp.entities.Invoice.filter(scope, { sort: "-invoice_date", limit: 15, include_total: false }),
+      erp.entities.Invoice.aggregate({ query: { ...scope, accounting_source: { $ne: "opening_balances" } }, groupBy: "status", sum: ["total"] }),
     ]).then(([orders, invoices, orderList, invoiceList, invoiceSales]) => {
       if (cancelled) return;
       setData({ orders: orders.rows, invoices: invoices.rows, invoiceSales: invoiceSales.rows, orderList: orderList.items, invoiceList: invoiceList.items });
     });
     return () => { cancelled = true; };
-  }, [idsKey]);
+  }, [idsKey, partner.id, headquartersId]);
 
   if (!data) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>;
 
@@ -102,7 +103,7 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
             <tr key={i.id}>
               <td className="px-3 py-2">
                 <p className="text-slate-900">{i.invoice_number}</p>
-                <p className="text-xs text-slate-500">{i.bill_to_location_name || i.location_name || i.customer_name}</p>
+                <p className="text-xs text-slate-500">{i.customer_id===headquartersId ? ui('Billed to {0}', i.customer_name) : i.bill_to_location_name || i.location_name || i.customer_name}</p>
               </td>
               <td className="px-3 py-2 text-right text-slate-600">{formatDate(i.invoice_date)}</td>
               <td className="px-3 py-2 text-right"><StatusBadge status={i.status} /></td>

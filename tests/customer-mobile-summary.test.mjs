@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {customerInvoiceQuery,customerMonthInvoiceQuery} from '../src/lib/customer-mobile-summary.js';
-import {customerAccountBalance,customerGroupBalance,customerOpenInvoiceQuery,headquartersDeliveryBalanceQuery} from '../src/lib/customer-billing-summary.js';
+import {branchTotalDue,customerAccountBalance,customerGroupBalance,customerOpenInvoiceQuery,headquartersDeliveryBalancesQuery,headquartersDueForBranch} from '../src/lib/customer-billing-summary.js';
 import {whereClause} from '../src/server/query.js';
 
 test('mobile invoice summary includes only posted commercial invoices and excludes opening balances',()=>{
@@ -27,25 +27,40 @@ test('group balance counts headquarters and visible direct branch accounts once'
   assert.equal(customerAccountBalance({balance:''}),null);
 });
 
-test('headquarters delivery debt uses the saved billing account and exact branch location',()=>{
+test('headquarters delivery debt uses the saved billing account and exact direct branch locations',()=>{
   const hq={id:'hq',financial_centralization_mode:'decentralized'};
   const branch={id:'east',parent_id:'hq'};
-  const branchInvoiceQuery=headquartersDeliveryBalanceQuery(branch,hq);
+  const branchInvoiceQuery=headquartersDeliveryBalancesQuery(hq,[branch,branch,{id:'other',parent_id:'unrelated'}]);
   assert.deepEqual(branchInvoiceQuery,{
-    customer_id:'hq',location_id:'east',accounting_source:{$ne:'opening_balances'},opening_batch_id:{$in:['',null]},
+    customer_id:'hq',location_id:{$in:['east']},accounting_source:{$ne:'opening_balances'},opening_batch_id:{$in:['',null]},
     status:{$in:['posted','partially_paid','overdue']},balance:{$gt:0},payment_type:{$ne:'cash'},
   });
-  assert.equal(headquartersDeliveryBalanceQuery(branch,{id:'unrelated'}),null);
-  assert.equal(headquartersDeliveryBalanceQuery(branch,{...hq,parent_id:'another-parent'}),null);
-  assert.equal(headquartersDeliveryBalanceQuery(branch,null),null);
+  assert.equal(headquartersDeliveryBalancesQuery({id:'unrelated'},[branch]),null);
+  assert.equal(headquartersDeliveryBalancesQuery({...hq,parent_id:'another-parent'},[branch]),null);
+  assert.equal(headquartersDeliveryBalancesQuery(null,[branch]),null);
   const params=[];
   const sql=whereClause(branchInvoiceQuery,{fields:{customer_id:{},location_id:{},payment_type:{}}},params);
   assert.match(sql,/"customer_id" = \$1/);
-  const locationParameter=sql.match(/"location_id" = \$(\d+)/);
+  const locationParameter=sql.match(/"location_id" IN \(\$(\d+)\)/);
   assert.ok(locationParameter);
   assert.match(sql,/"payment_type" IS DISTINCT FROM/);
   assert.match(sql,/IS NULL/);
   assert.equal(params[0],'hq');
   assert.equal(params[Number(locationParameter[1])-1],'east');
   assert.equal(customerOpenInvoiceQuery('east').opening_batch_id,undefined);
+});
+
+test('branch displays combine distinct payable accounts without repeating headquarters debt across branches',()=>{
+  const invoicesByBranch=new Map([['east',950.55],['west',725.25]]);
+  assert.equal(branchTotalDue({balance:440.23},headquartersDueForBranch(invoicesByBranch,'east')),1390.78);
+  assert.equal(branchTotalDue({balance:-200},headquartersDueForBranch(invoicesByBranch,'west')),725.25);
+  assert.equal(branchTotalDue({balance:400},headquartersDueForBranch(invoicesByBranch,'north')),400);
+  assert.equal(branchTotalDue({balance:400},headquartersDueForBranch(undefined,'east')),null);
+});
+
+test('branch sales history includes own sales and headquarters sales delivered to that branch',()=>{
+  const query=customerInvoiceQuery('east','hq');
+  assert.deepEqual(query.$or,[{customer_id:'east'},{customer_id:'hq',location_id:'east'}]);
+  assert.equal(query.customer_id,undefined);
+  assert.deepEqual(query.accounting_source,{$ne:'opening_balances'});
 });

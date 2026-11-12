@@ -10,7 +10,7 @@ const output=await build({stdin:{contents:"import React from 'react';import {ren
   const mocks={
     '@/hooks/usePhoneLayout':"export const usePhoneLayout=()=>Boolean(globalThis.__clients.phone);",
     '@/lib/customer-delivery-client':"export const customerDeliveryRequest=body=>globalThis.__clients.deliveryRequest(body);",
-    '@tanstack/react-query':"export const useQuery=()=>({data:{zones:[]}});",
+    '@tanstack/react-query':"export const useQuery=options=>options.queryKey?.[0]==='customer-headquarters-delivery-balances'?{data:globalThis.__clients.headquartersBalances}:{data:{zones:[]}};",
     '@/lib/field-ops':"export const invokeFieldOps=async ()=>({data:{customers:globalThis.__clients.customers}}),errorMessage=e=>e.message;",
     '@/components/field/FieldCustomerRegistration':"export default ()=>null;",
     '@/components/customers/CustomerDeliveryPlanner':"export default ()=>null;",
@@ -58,6 +58,24 @@ test('an explicitly centralized branch profile opens a sale billed to its headqu
     state.profile.onSale();
     assert.equal(state.navigation.at(-1),'/sales/new?customer=shop&location=branch-a');
   } finally {state.cleanup();delete globalThis.__clients;}
+});
+
+test('customer cards show the group total and separate delivery totals in a filtered branch list',async()=>{
+  const state=hookRuntime();globalThis.__clients=state;state.phone=true;
+  state.customers=[{...customer,balance:700},{id:'branch-a',parent_id:'shop',business_name:'East branch',balance:200},{id:'branch-b',parent_id:'shop',business_name:'West branch',balance:100}];
+  state.headquartersBalances=new Map([['branch-a',450],['branch-b',250]]);
+  const draw=()=>{state.beforeRender();return render('directory',{});};
+  try{
+    draw();await state.flush();draw();
+    state.controls.find(c=>c['aria-label']==='Find a customer').onChange({target:{value:'East branch'}});
+    draw();
+    const toggle=state.buttons.find(button=>button['aria-label']==='Branches for Shop A');
+    if(!toggle['aria-expanded'])toggle.onClick();
+    const html=draw();
+    assert.match(html,/Group Balance <strong[^>]*>1[\s\u00a0\u202f,.]?000/);
+    assert.match(html,/Total due for this branch <strong[^>]*>650/);
+    assert.doesNotMatch(html,/West branch/);
+  }finally{state.cleanup();delete globalThis.__clients;}
 });
 
 test('one tap opens the profile where GPS edits still save the correct outlet and update its pin',async()=>{
