@@ -1,4 +1,4 @@
-import {inventoryAdjustmentTreatment,validStockCorrectionAccount} from '../../lib/inventory-adjustment-treatment.js';
+import {inventoryAdjustmentTreatment,stockCountOffsetAccount,STOCK_COUNT_OFFSET_CHANGED,STOCK_COUNT_OFFSET_SETUP,STOCK_COUNT_SURPLUS_POLICY,validStockCorrectionAccount} from '../../lib/inventory-adjustment-treatment.js';
 import { warehouseCountState } from '../../lib/warehouse-count.js';
 import { adjustmentAccess } from './inventory-adjustment-access.js';
 import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
@@ -21,7 +21,8 @@ const label = (value, name, required = true) => {
 const view = (row, keys) => Object.fromEntries(keys.split(' ').map(key => [key, row[key]]));
 async function catalogue(s) {
   const [products, warehouses, accounts, rules, treasury] = await Promise.all([readRecords(s.Product), readRecords(s.Warehouse), readRecords(s.Account), readRecords(s.PostingRule, { is_active: true }), readRecords(s.TreasuryAccount)]);
-  return { products: new Map(products.map(p => [p.id, p])), warehouses: new Map(warehouses.map(w => [w.id, w])), accounts: new Map(accounts.map(a => [a.id, a])), rules, cashIds: new Set(treasury.map(t => t.gl_account_id)) };
+  const cashIds = new Set(treasury.map(t => t.gl_account_id));
+  return { products: new Map(products.map(p => [p.id, p])), warehouses: new Map(warehouses.map(w => [w.id, w])), accounts: new Map(accounts.map(a => [a.id, a])), rules, cashIds, offsetAccount:stockCountOffsetAccount(accounts,rules,cashIds) };
 }
 function inventoryAccount(product, c) {
   const key = ['assembly', 'finished_product'].includes(product.inventory_type) ? 'finished_goods_inventory' : 'raw_material_inventory';
@@ -85,6 +86,13 @@ function validateCounts(state, requireCost = true) {
 function stateTreatment(state) {
   return inventoryAdjustmentTreatment({purpose:state.purpose,correctionAccountId:state.correction_account_id,correctionConfirmed:state.correction_confirmed});
 }
+function approvalTreatment(state) {
+  const treatment = stateTreatment(state);
+  if (treatment.purpose === 'operating' && state.rows.some(row => row.difference && row.value_difference > 0)) {
+    return {...treatment, surplus_offset_policy:STOCK_COUNT_SURPLUS_POLICY, surplus_offset_account_id:state.gain_account_id};
+  }
+  return treatment;
+}
 function journalPlan(state, c) {
   const treatment=stateTreatment(state),correction=treatment.purpose==='opening_correction'?c.accounts.get(treatment.correction_account_id):null;
   if(treatment.purpose==='opening_correction'){
@@ -105,8 +113,14 @@ function journalPlan(state, c) {
     if(row.difference>0)requireFinishedStorage(product,c.warehouses.get(row.warehouse_id),{isolation:true});
     const inventory = validAccount(c, row.inventory_account_id, ['asset'], 'debit', 'inventory asset'), value = Math.abs(row.value_difference);
     if (!value) continue;
-    if (row.value_difference < 0) { add(correction||validAccount(c, state.loss_account_id, ['expense', 'other_expense'], 'debit', 'inventory loss'), value, 0); add(inventory, 0, value); }
-    else { add(inventory, value, 0); add(correction||validAccount(c, state.gain_account_id, ['other_income'], 'credit', 'inventory surplus'), 0, value); }
+    const shortage=row.value_difference<0;
+    if(!correction){
+      if(!c.offsetAccount)throw Error(STOCK_COUNT_OFFSET_SETUP);
+      if((shortage?state.loss_account_id:state.gain_account_id)!==c.offsetAccount.id)throw Error(STOCK_COUNT_OFFSET_CHANGED);
+    }
+    const counterpart=correction||c.offsetAccount;
+    if(shortage){add(counterpart,value,0);add(inventory,0,value);}
+    else{add(inventory,value,0);add(counterpart,0,value);}
   }
   return [...groups.values()];
 }
@@ -130,7 +144,9 @@ export async function inventoryAuditAction(client, user, body) {
     if (historyOnly) return { audits, page, total: starts.total, has_more: starts.has_more };
     const rows = balances.map(b => { try { const row=snapshot(b,c),state=warehouseCountState(row);return {...row,unit_cost:state.carrying_cost ?? row.unit_cost,...(state.count_issue || state.requires_reconciliation?{issue:state.count_issue || 'Use Adjust quantity to verify and correct this lot valuation before starting an audited count.'}: {})}; } catch (error) { return { balance_id: b.id, product_name: b.product_name || b.product_id, warehouse_id: b.warehouse_id, book_quantity: b.quantity, book_value: b.total_value, issue: error.message }; } });
     return { role, can_post_adjustments:permissions.can_adjust, user_id: user.id, rows, warehouses: [...c.warehouses.values()].map(w => view(w, 'id name warehouse_type is_active')),
-      accounts: [...c.accounts.values()].filter(a => a.is_active !== false && a.is_posting !== false && (['expense', 'other_expense', 'other_income'].includes(a.account_type)||validStockCorrectionAccount(a,c.cashIds))).map(a => view(a, 'id account_number name account_type normal_balance currency is_active is_posting is_treasury')),
+      accounts: [...c.accounts.values()].filter(a => a.id===c.offsetAccount?.id||validStockCorrectionAccount(a,c.cashIds)).map(a => view(a, 'id account_number name account_type normal_balance currency is_active is_posting is_treasury')),
+      offset_account:c.offsetAccount?view(c.offsetAccount,'id account_number name account_type normal_balance'):null,
+      gain_accounts:c.offsetAccount?[view(c.offsetAccount,'id account_number name account_type normal_balance')]:[],
       audits, page, total: starts.total, has_more: starts.has_more };
   }
   if (body.action === 'inventoryAuditMovements') {
@@ -172,7 +188,7 @@ export async function inventoryAuditAction(client, user, body) {
     if (state.makers.includes(user.id)) throw Error('You cannot approve or independently review a count you prepared or edited');
     note = label(body.note, 'a review note');
     if (body.action === 'inventoryAuditReturn') { state.status = 'draft'; state.review_note = note; }
-    else { await requireFresh(s, state, c); validateCounts(state); state.approved_plan = journalPlan(state, c); state.approved_treatment=stateTreatment(state);state.approved_plan_token=hash({plan:state.approved_plan,treatment:state.approved_treatment}); state.status = 'approved'; state.approved_by = user.id; state.approved_by_name = employee?.full_name || user.full_name || user.email || user.id; state.approved_at = new Date().toISOString(); state.review_note = note; }
+    else { await requireFresh(s, state, c); validateCounts(state); state.approved_plan = journalPlan(state, c); state.approved_treatment=approvalTreatment(state);state.approved_plan_token=hash({plan:state.approved_plan,treatment:state.approved_treatment}); state.status = 'approved'; state.approved_by = user.id; state.approved_by_name = employee?.full_name || user.full_name || user.email || user.id; state.approved_at = new Date().toISOString(); state.review_note = note; }
   } else {
     authorizeEditor(state, role, user);
     if (body.action === 'inventoryAuditSave') {
@@ -218,8 +234,9 @@ export async function inventoryAuditAction(client, user, body) {
       const date = businessDate(), periods = await readRecords(s.AccountingPeriod, { start_date: { $lte: date }, end_date: { $gte: date } });
       if (!periods.length || periods.some(p => p.status !== 'open')) throw Error('An open accounting period is required for today. Closed periods cannot be adjusted');
       const plan = journalPlan(state, c);
-      const treatment=stateTreatment(state),planToken=hash({plan,treatment});
-      if(hash(plan)!==hash(state.approved_plan)||state.approved_plan_token&&state.approved_plan_token!==planToken||state.approved_treatment&&hash(state.approved_treatment)!==hash(treatment)||treatment.purpose==='opening_correction'&&(!state.approved_plan_token||!state.approved_treatment))throw Error('The approved posting accounts or treatment changed. Recount and obtain fresh approval');
+      const treatment=approvalTreatment(state),planToken=hash({plan,treatment});
+      const requiresBoundTreatment=treatment.purpose==='opening_correction'||!!treatment.surplus_offset_policy;
+      if(hash(plan)!==hash(state.approved_plan)||state.approved_plan_token&&state.approved_plan_token!==planToken||state.approved_treatment&&hash(state.approved_treatment)!==hash(treatment)||requiresBoundTreatment&&(!state.approved_plan_token||!state.approved_treatment))throw Error('The approved posting accounts or treatment changed. Recount and obtain fresh approval');
       const existing = await readRecords(s.StockMovement, { document_type: 'InventoryAudit', document_id: state.id });
       if (existing.length) throw Error('This count already has stock movements. Reconcile its posting before retrying');
       let journal;

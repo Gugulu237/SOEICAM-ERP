@@ -29,22 +29,22 @@ export default function DetailedStockAdjustmentDialog({open,onOpenChange,warehou
   const posting=useRef(false);
   const [warehouse,setWarehouse]=useState(warehouseId),[data,setData]=useState(null),[rows,setRows]=useState([]);
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
-  const [date,setDate]=useState(businessDate()),[account,setAccount]=useState(''),[reason,setReason]=useState(''),[reference,setReference]=useState('');
+  const [date,setDate]=useState(businessDate()),[offsetAccountId,setOffsetAccountId]=useState(''),[reason,setReason]=useState(''),[reference,setReference]=useState('');
   const [item,setItem]=useState(productId),[revision,setRevision]=useState(0),[requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
-  const [purpose,setPurpose]=useState(''),[correctionAccountId,setCorrectionAccountId]=useState(''),[correctionConfirmed,setCorrectionConfirmed]=useState(false),[gain,setGain]=useState('');
+  const [purpose,setPurpose]=useState(''),[correctionAccountId,setCorrectionAccountId]=useState(''),[correctionConfirmed,setCorrectionConfirmed]=useState(false);
   const [receipt,setReceipt]=useState(null);
   const [search,setSearch]=useState(''),[page,setPage]=useState(0);
   const [sort,setSort]=useState('name');
   const [expanded,setExpanded]=useState({});
   useEffect(()=>{
     if(!open)return;
-    setReceipt(null);setPurpose('');setCorrectionAccountId('');setCorrectionConfirmed(false);setGain('');
+    setReceipt(null);setPurpose('');setCorrectionAccountId('');setCorrectionConfirmed(false);
     let active=true;setLoading(true);setError('');setData(null);
     invokeFieldOps({action:'warehouseAdjustmentWorkspace',warehouseId:warehouse || undefined,productId:productId||undefined}).then(({data:result})=>{
       if(!active)return;
       if(result.error)throw Error(result.error);
       setData(result);setDate(result.date || businessDate());
-      setAccount(previous=>result.accounts.some(a=>a.id===previous)?previous:result.accounts.length===1?result.accounts[0].id:'');
+      setOffsetAccountId(result.offset_account?.id||'');
       setPage(0);setSearch('');setExpanded({});
       const existing=result.rows.filter(row=>!productId || row.product_id===productId).map(row=>({...row,id:row.balance_id,counted_quantity:'',use_current_cost:false}));
       const product=result.items.find(p=>p.id===productId);
@@ -77,10 +77,11 @@ export default function DetailedStockAdjustmentDialog({open,onOpenChange,warehou
   const change=(id,key,value)=>setRows(previous=>previous.map(row=>row.id===id?{...row,[key]:value}:row));
   const changes=rows.map(row=>({row,variance:preview(row)})).filter(({row,variance})=>variance && (variance.difference || variance.value_difference || releaseRequested(row) && (row.qc_status!=='approved')));
   const invalid=rows.some(row=>releaseRequested(row)&&finishedRow(row)&&!row.expiry_date&&row.confirm_missing_expiry!==true || row.counted_quantity!=='' && (!preview(row) || row.is_new && row.count_group!=='packaging' && Number(row.counted_quantity)>0 && (!row.lot_number.trim())));
-  const neutral=purpose==='opening_correction',correctionAccount=data?.correction_accounts?.find(a=>a.id===correctionAccountId),lossAccount=data?.accounts?.find(a=>a.id===account),gainAccount=data?.gain_accounts?.find(a=>a.id===gain);
+  const neutral=purpose==='opening_correction',correctionAccount=data?.correction_accounts?.find(a=>a.id===correctionAccountId),offsetAccount=data?.offset_account;
   const needsLoss=changes.some(({variance})=>variance.value_difference<0),needsGain=changes.some(({variance})=>variance.value_difference>0);
+  const requiresOffset=needsLoss||needsGain;
   const revalues=changes.some(({row,variance})=>row.use_current_cost||row.confirm_reconciliation||!variance.difference&&variance.value_difference);
-  const treatmentReady=!!purpose&&(neutral?!!correctionAccount&&correctionConfirmed&&!revalues:(!needsLoss||!!lossAccount)&&(!needsGain||!!gainAccount));
+  const treatmentReady=!!purpose&&(neutral?!!correctionAccount&&correctionConfirmed&&!revalues:!requiresOffset||offsetAccount?.id===offsetAccountId);
   const valueDifference=changes.reduce((n,{variance})=>n+variance.value_difference,0);
   const productFor=group=>data?.items.find(item=>item.id===group.product_id)||{id:group.product_id,name:group.product_name};
   const groups=sortProductRows(groupWarehouseCountRows(rows),sort,productFor),query=search.trim().toLowerCase();
@@ -111,11 +112,11 @@ export default function DetailedStockAdjustmentDialog({open,onOpenChange,warehou
     posting.current=true;setSaving(true);setError('');onBusyChange?.(true);
     try {
       const selected=changes.map(change=>change.row);
-      const {data:result}=await invokeFieldOps({action:'postWarehouseAdjustment',requestKey,warehouseId:data.warehouse.id,date,reference,reason,purpose,...(neutral?{correctionAccountId,correctionConfirmed}:{lossAccountId:account,gainAccountId:gain}),
+      const {data:result}=await invokeFieldOps({action:'postWarehouseAdjustment',requestKey,warehouseId:data.warehouse.id,date,reference,reason,purpose,...(neutral?{correctionAccountId,correctionConfirmed}:{lossAccountId:needsLoss?offsetAccountId:'',gainAccountId:needsGain?offsetAccountId:''}),
         rows:selected.map(row=>({...(row.is_new?{product_id:row.product_id,unit:row.unit,lot_number:row.lot_number,expiry_date:row.expiry_date,unit_cost:row.unit_cost}:{balance_id:row.balance_id,fingerprint:row.fingerprint,...(row.counted_quantity!==''&&row.use_current_cost?{use_current_cost:true}:{}),...(row.requires_reconciliation?{verified_unit_cost:row.verified_unit_cost,confirm_reconciliation:row.confirm_reconciliation}: {})}),...(releaseRequested(row)?finishedRow(row)?{ready_for_sale:true,...(!row.expiry_date?{confirm_missing_expiry:row.confirm_missing_expiry===true}:{})}:{ready_for_use:true}:{}),counted_quantity:countedQuantity(row.counted_quantity===''?row.book_quantity:row.counted_quantity)}))});
       if(result.error)throw Error(result.error);
       toast({title:ui(!result.journal_id&&selected.some(row=>row.ready_for_sale)?'Counted stock marked ready for sale':!result.journal_id&&selected.some(row=>row.ready_for_use)?'Counted materials released for production use':'Quantity adjustment saved'),description:result.journal_number || reference});
-      setReceipt(warehouseAdjustmentDocument(result,{warehouse:data.warehouse.name,reason,account:data.accounts.find(a=>a.id===account)?.name}));onSaved?.();
+      setReceipt(warehouseAdjustmentDocument(result,{warehouse:data.warehouse.name,reason,account:offsetAccount?.name}));onSaved?.();
     }catch(e){setError(e.message);}finally{posting.current=false;setSaving(false);onBusyChange?.(false);}
   }
   if(receipt) return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{ui('Quantity adjustment saved')}</DialogTitle><DialogDescription>{ui('The stock adjustment is recorded. Save or print the posted receipt below.')}</DialogDescription></DialogHeader><p>{reference}</p><ReportExport report={receipt}/><DialogFooter><Button onClick={()=>onOpenChange(false)}>{ui('Done')}</Button></DialogFooter></DialogContent></Dialog>;
@@ -127,10 +128,8 @@ export default function DetailedStockAdjustmentDialog({open,onOpenChange,warehou
       <label className="space-y-1 text-sm">{ui('Warehouse')}<select aria-label={ui('Adjustment warehouse')} className="h-10 w-full rounded-md border bg-white px-2" disabled={saving || loading} value={data.warehouse.id} onChange={e=>{setWarehouse(e.target.value);setRequestKey(crypto.randomUUID());}}>{data.warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
       <label className="space-y-1 text-sm">{ui('Adjustment date')}<Input aria-label={ui('Adjustment date')} type="date" value={date} readOnly/></label>
       <label className="space-y-1 text-sm">{ui('Count sheet / reference')}<Input aria-label={ui('Count sheet / reference')} maxLength={200} value={reference} disabled={saving} onChange={e=>setReference(e.target.value)}/></label>
-      {purpose==='operating'&&needsLoss&&<label className="space-y-1 text-sm">{ui('Inventory loss account')}<select aria-label={ui('Adjustment account')} className="h-10 w-full rounded-md border bg-white px-2" value={account} disabled={saving} onChange={e=>setAccount(e.target.value)}><option value="">{ui('Select adjustment expense account')}</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.account_number} — {a.name}</option>)}</select></label>}
     </div>}
-    {data&&<InventoryAdjustmentTreatment purpose={purpose} onPurpose={value=>{setPurpose(value);setCorrectionAccountId('');setCorrectionConfirmed(false);}} accountId={correctionAccountId} onAccount={value=>{setCorrectionAccountId(value);setCorrectionConfirmed(false);}} confirmed={correctionConfirmed} onConfirmed={setCorrectionConfirmed} accounts={data.correction_accounts||[]} disabled={saving}/>}
-    {data&&purpose==='operating'&&needsGain&&<label className="block text-xs">{ui('Inventory surplus account')}<select aria-label={ui('Inventory surplus account')} value={gain} disabled={saving} onChange={e=>setGain(e.target.value)} className="mt-1 h-11 w-full rounded-lg border bg-white px-2 text-sm"><option value="">{ui('Select account')}</option>{(data.gain_accounts||[]).map(a=><option key={a.id} value={a.id}>{a.account_number} · {a.name}</option>)}</select></label>}
+    {data&&<InventoryAdjustmentTreatment purpose={purpose} onPurpose={value=>{setPurpose(value);setCorrectionAccountId('');setCorrectionConfirmed(false);}} accountId={correctionAccountId} onAccount={value=>{setCorrectionAccountId(value);setCorrectionConfirmed(false);}} confirmed={correctionConfirmed} onConfirmed={setCorrectionConfirmed} accounts={data.correction_accounts||[]} disabled={saving} requiresOffset={requiresOffset} offsetAccount={offsetAccount} offsetAccountId={offsetAccountId} onOffsetAccount={setOffsetAccountId}/>}
     {neutral&&revalues&&<p role="alert" className="text-xs text-red-700">{ui('Opening stock count corrections cannot revalue existing stock. Use the reviewed valuation correction workflow separately.')}</p>}
     {loading?<p role="status">{ui('Loading warehouse quantities...')}</p>:data && <>
       <div className="flex flex-wrap items-center gap-2"><select aria-label={ui('Add counted item')} className="h-10 min-w-48 flex-1 rounded-md border bg-white px-2 text-sm" value={item} disabled={saving} onChange={e=>setItem(e.target.value)}><option value="">{ui('Choose an item to count')}</option>{sortProductRows(data.items,sort).map(p=><option key={p.id} value={p.id}>{p.name} {p.sku}</option>)}</select><Button variant="outline" disabled={!item || saving} onClick={selectItem}>{ui('Count item')}</Button><Button variant="outline" disabled={saving} onClick={()=>{setRevision(v=>v+1);setRequestKey(crypto.randomUUID());}}>{ui('Reload quantities')}</Button></div>
@@ -160,7 +159,6 @@ export default function DetailedStockAdjustmentDialog({open,onOpenChange,warehou
       <label className="space-y-1 text-sm">{ui('Adjustment reason')}<Input aria-label={ui('Adjustment reason')} value={reason} maxLength={1000} disabled={saving} onChange={e=>setReason(e.target.value)} placeholder={ui('Explain the physical count difference')}/></label>
       {invalid && <p role="alert" className="text-sm text-slate-800">{ui('Complete selected counts, lot details and any required valuation confirmation.')}</p>}
       <div className="rounded-lg bg-slate-50 p-3 text-sm"><strong>{ui('Net inventory value change')}: {formatXAF(valueDifference)}</strong><p className="mt-1 text-xs text-slate-600">{ui('Quantity changes post to inventory and the selected adjustment account. No cash payment is recorded.')} {ui('When current item cost is selected, the counted value is quantity multiplied by that cost. Any revaluation is included in the posted adjustment.')}</p><p className="mt-1 text-xs text-slate-600">{ui('Quantity adjustments record stock and carrying value. They do not create sales.')}</p>{rows.some(finishedRow)&&<p className="mt-1 text-xs text-slate-600">{ui('Quality holds require explicit verification before release. Recorded expiry dates must remain current. If no expiry is available for counted finished goods, confirm this separately and verify that the stock is fit for sale.')}</p>}{rows.some(row=>!finishedRow(row))&&<p className="mt-1 text-xs text-slate-600">{ui('Ingredients and packaging are for production use. Counting stock does not remove expiry dates or automatically release quality holds.')}</p>}</div>
-      {purpose==='operating'&&needsLoss&&!data.accounts.length && <p role="alert" className="text-sm text-slate-800">{ui('Accounting must configure an active inventory adjustment expense account before saving.')}</p>}
     </>}
     <DialogFooter><Button variant="outline" disabled={saving} onClick={()=>onOpenChange(false)}>{ui('Cancel')}</Button><Button disabled={loading || saving || invalid || !changes.length || changes.length>100 || !treatmentReady || reference.trim().length<3 || reason.trim().length<5} onClick={save}>{saving?ui('Saving...'):ui('Save quantity adjustment')}</Button></DialogFooter>
   </DialogContent></Dialog>;

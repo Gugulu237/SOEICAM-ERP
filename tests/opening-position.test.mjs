@@ -38,6 +38,7 @@ async function setup(db){
  const accum=await s.Account.create({name:'Accumulated depreciation',account_number:'2815',account_type:'asset',normal_balance:'credit',is_active:true,is_posting:true});
  await s.PostingRule.create({rule_key:'supplier_payable',account_id:'payable',is_active:true});
  await s.PostingRule.create({rule_key:'raw_material_inventory',account_id:'inventory',is_active:true});
+ await s.PostingRule.create({rule_key:'stock_count_offset_expense',account_id:'expense',is_active:true});
  const product=await s.Product.create({name:'Milk powder',inventory_type:'ingredient',configuration_status:'ready',is_active:true,storage_unit:'kg'});
  const details=[
  {kind:'cash',treasury_id:'till',amount:50000},

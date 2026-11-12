@@ -5,6 +5,7 @@ import {postJournal} from './field-ops.js';
 import {checkedJournalLines,journalCents,journalDate,journalPayload,ledgerStatuses} from './journal-validation.js';
 import {businessDate} from '../../lib/business-date.js';
 import {countVariance} from '../../lib/inventory-audit.js';
+import {STOCK_COUNT_SURPLUS_POLICY,validStockCountOffsetAccount} from '../../lib/inventory-adjustment-treatment.js';
 
 const policy='reviewed-setup-stock-equity-v1';
 const profitTypes=new Set(['revenue','other_income','expense','other_expense','cogs']);
@@ -69,8 +70,11 @@ function verifyAuditEvidence(t,j,evidence,sourceLines){
     ||!record.posted_by||audit.user_id!==record.posted_by||j.posted_by!==record.posted_by||!record.approved_by||approval.user_id!==record.approved_by
     ||!Array.isArray(record.makers)||!record.makers.length||record.makers.includes(record.approved_by)
     ||!record.evidence_reference||record.evidence_reference.length<5||!record.approved_at||!record.posted_at)throw fail(invalid);
-  for(const key of ['id','warehouse_id','warehouse_name','managed_location','rows','makers','approved_by','approved_at','approved_plan','evidence_reference','loss_account_id','gain_account_id'])if(JSON.stringify(canonical(approved[key]))!==JSON.stringify(canonical(record[key])))throw fail(invalid);
+  for(const key of ['id','warehouse_id','warehouse_name','managed_location','rows','makers','approved_by','approved_at','approved_plan','approved_treatment','approved_plan_token','evidence_reference','loss_account_id','gain_account_id'])if(JSON.stringify(canonical(approved[key]))!==JSON.stringify(canonical(record[key])))throw fail(invalid);
   if(!Array.isArray(record.approved_plan)||!Array.isArray(record.rows)||!record.rows.length)throw fail('An inventory-audit correction requires its original approved posting plan.');
+  const treatment=record.approved_treatment;
+  const reviewedOffset=treatment?.surplus_offset_policy===STOCK_COUNT_SURPLUS_POLICY;
+  if(treatment?.surplus_offset_policy!==undefined&&(!reviewedOffset||treatment.purpose!=='operating'||treatment.surplus_offset_account_id!==record.gain_account_id||record.approved_plan_token!==hash({plan:record.approved_plan,treatment})))throw fail(invalid);
   const expected=[],ids=new Set();
   for(const row of record.rows){
     if(!row.balance_id||ids.has(row.balance_id)||!row.product_id||row.warehouse_id!==record.warehouse_id||!row.inventory_account_id||!t.inventoryIds.has(row.inventory_account_id))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
@@ -80,7 +84,11 @@ function verifyAuditEvidence(t,j,evidence,sourceLines){
     if(!variance.difference)continue;
     const value=Math.abs(variance.value_difference);if(!value)continue;
     const inventory=t.byAccount.get(row.inventory_account_id),profit=t.byAccount.get(variance.value_difference<0?record.loss_account_id:record.gain_account_id);
-    if(!inventory||inventory.account_type!=='asset'||inventory.normal_balance!=='debit'||!active(profit)||isCash(t,profit)||profit.normal_balance!==(variance.value_difference<0?'debit':'credit')||!(variance.value_difference<0?['expense','other_expense','cogs']:['other_income']).includes(profit.account_type))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
+    const shortage=variance.value_difference<0;
+    const validProfit=reviewedOffset
+      ? profit?.id===treatment.surplus_offset_account_id&&validStockCountOffsetAccount(profit,t.treasuryIds)
+      : active(profit)&&!isCash(t,profit)&&profit.normal_balance===(shortage?'debit':'credit')&&(shortage?['expense','other_expense','cogs']:['other_income']).includes(profit.account_type);
+    if(!inventory||inventory.account_type!=='asset'||inventory.normal_balance!=='debit'||!validProfit)throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');
     expected.push({account_id:inventory.id,debit:variance.value_difference>0?value:0,credit:variance.value_difference<0?value:0},{account_id:profit.id,debit:variance.value_difference<0?value:0,credit:variance.value_difference>0?value:0});
   }
   if(hash(financialShape(expected))!==hash(financialShape(record.approved_plan))||hash(financialShape(record.approved_plan))!==hash(financialShape(sourceLines)))throw fail('The inventory-audit rows, movements and journal accounts do not reconcile.');

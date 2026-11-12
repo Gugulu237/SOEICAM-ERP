@@ -1,3 +1,5 @@
+import {STOCK_COUNT_OFFSET_RULE,validStockCountOffsetAccount} from './inventory-adjustment-treatment.js';
+
 export function postingRuleType(key){
  if(key==='supplier_prepayment')return {types:['asset'],normal:'debit'};
  if(/accum.*depreciation/.test(key))return {types:['asset'],normal:'credit'};
@@ -9,6 +11,7 @@ export function postingRuleType(key){
  return null;
 }
 export function validPostingRuleAccount(account,key){
+ if(key===STOCK_COUNT_OFFSET_RULE)return validStockCountOffsetAccount(account);
  const expected=postingRuleType(key);
  return !!account&&account.is_active!==false&&account.is_posting!==false&&(!account.currency||account.currency==='XAF')&&(key!=='supplier_prepayment'||!account.is_treasury&&account.account_number!=='1050')&&(!expected||expected.types.includes(account.account_type)&&account.normal_balance===expected.normal);
 }

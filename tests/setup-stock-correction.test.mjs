@@ -33,6 +33,7 @@ async function setup(db){
     await s.AuditLog.create({id:sourceId,action:'warehouse_quantity_adjusted',module:'inventory_adjustment',warehouse_adjustment_result:{journal_id:journal.id,journal_number:journal.journal_number,date:entryDate,reference:'COUNT-SOURCE',value_difference:amount,rows:[{balance_id:'count-'+sourceId,warehouse_id:'factory',product_id:product.id,difference:amount/10,value_difference:amount}]}});
     return journal;
   };
+  await s.PostingRule.create({rule_key:'stock_count_offset_expense',account_id:'expense',is_active:true});
   const first=await source();
   const body={journalIds:[first.id],offsetAccountId:equity.id,accountingStartDate:date,reference:'Verified opening inventory',confirmSetup:true};
   return {...f,s,inventory,gain,equity,product,source,first,body};
@@ -61,7 +62,7 @@ async function auditedCount(f){
   const owner={id:'count-owner',role:'admin'},reviewer={id:'independent-reviewer',role:'admin'};
   const call=async(actor,action,audit,extra={})=>(await inventoryAuditAction(client,actor,{action:'inventoryAudit'+action,requestKey:crypto.randomUUID(),...(audit?{auditId:audit.id,revision:audit.revision}:{}),...extra})).audit;
   let audit=await call(owner,'Start',null,{title:'Reviewed opening material count',balanceIds:[lot.id]});
-  audit=await call(owner,'Save',audit,{rows:[{balance_id:lot.id,counted_quantity:2,reason:'Physically verified starting materials'}],evidenceReference:'SIGNED-OPENING-SHEET',lossAccountId:'expense',gainAccountId:f.gain.id});
+  audit=await call(owner,'Save',audit,{rows:[{balance_id:lot.id,counted_quantity:2,reason:'Physically verified starting materials'}],evidenceReference:'SIGNED-OPENING-SHEET',lossAccountId:'expense',gainAccountId:'expense'});
   audit=await call(owner,'Submit',audit);audit=await call(reviewer,'Approve',audit,{note:'Independent signed opening review'});audit=await call(owner,'Post',audit);
   return {audit,lot,journal:await f.s.JournalEntry.get(audit.journal_id)};
 }

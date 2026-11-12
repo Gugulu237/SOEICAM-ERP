@@ -13,8 +13,7 @@ test('packaging physical counts post without entered lots or expiry and retry wi
  const p=await s.Product.create({...f.product,id:undefined,name:'Packaging cups',inventory_type:'raw_material',material_group:'Packaging',unit_of_measure:'ea'});
  const ws=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'packaging'}),item=ws.items.find(i=>i.id===p.id);
  assert.equal(item.count_group,'packaging');
- const gain=await s.Account.create({name:'Stock surplus',account_number:'7580',account_type:'other_income',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
- const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:'packaging',gainAccountId:gain.id,reference:'PACK-COUNT',reason:'Physical packaging count verified',item_counts:[{product_id:p.id,counted_quantity:100,item_fingerprint:item.count_fingerprint,snapshots:[]}],rows:[{product_id:p.id,unit:'ea',unit_cost:10,counted_quantity:100}]};
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:'packaging',gainAccountId:'expense',reference:'PACK-COUNT',reason:'Physical packaging count verified',item_counts:[{product_id:p.id,counted_quantity:100,item_fingerprint:item.count_fingerprint,snapshots:[]}],rows:[{product_id:p.id,unit:'ea',unit_cost:10,counted_quantity:100}]};
  const result=await f.call(body),[stock]=await s.StockBalance.filter({product_id:p.id});
  assert.equal(stock.quantity,100);assert.equal(stock.total_value,1000);assert.ok(!stock.expiry_date);assert.match(stock.lot_number,/^COUNT-[A-F0-9]{16}$/);assert.equal(stock.qc_status,'quarantine');
  assert.equal(result.value_difference,1000);assert.ok(result.journal_id);const count=(await s.JournalEntry.list()).length;
@@ -94,6 +93,7 @@ test('generic movement creation cannot forge counts, returns or orphan approved 
 
 async function setup(db) {
   const f=await fixture(db),s=f.entities;
+  const offsetRule=await s.PostingRule.create({rule_key:'stock_count_offset_expense',account_id:'expense',is_active:true});
   const filterAudit=s.AuditLog.filter;
   s.AuditLog.filter=async(query,sort,...args)=>{
     if(!sort||typeof sort!=='object')return filterAudit(query,sort,...args);
@@ -117,7 +117,7 @@ async function setup(db) {
   const call=body=>warehouseAdjustmentAction(f.client,user,{warehouseId:warehouse.id,...body});
   const workspace=()=>call({action:'warehouseAdjustmentWorkspace'});
   const body=async(counts=[8,6])=>({action:'postWarehouseAdjustment',warehouseId:warehouse.id,requestKey:crypto.randomUUID(),date,accountId:'expense',reference:'COUNT-001',reason:'Signed physical count confirmed',rows:(await workspace()).rows.map((r,i)=>({balance_id:r.balance_id,fingerprint:r.fingerprint,counted_quantity:counts[i]}))});
-  return {...f,warehouse,other,inventory,product,lots,call,workspace,body};
+  return {...f,warehouse,other,inventory,product,lots,call,workspace,body,offsetRule};
 }
 
 test('new count entries cannot duplicate an existing physical lot through whitespace, case or production batch aliases',async()=>{
@@ -164,7 +164,7 @@ test('an existing empty lot can be increased from zero using the established ite
 test('concurrent stock, QC and valuation changes invalidate the count snapshot; missing accounts and closed periods block posting',async()=>{
   const f=await setup(),s=f.entities,body=await f.body();
   await s.StockBalance.update(f.lots[0].id,{qc_status:'approved'});await assert.rejects(f.call(body),/changed since/);
-  const fresh=await f.body();await assert.rejects(f.call({...fresh,accountId:'till-gl'}),/expense account/);
+  const fresh=await f.body();await assert.rejects(f.call({...fresh,accountId:'till-gl'}),/mapped Inventory Adjustment/);
   await s.Account.update(f.inventory.id,{is_posting:false});await assert.rejects(f.call(fresh),/inventory asset account/);
   await s.Account.update(f.inventory.id,{is_posting:true});await s.AccountingPeriod.update('period',{status:'closed'});await assert.rejects(f.call(fresh),/open accounting period/);
   assert.equal((await s.StockMovement.list()).length,0);
@@ -423,9 +423,8 @@ test('an empty existing lot takes its configured purchase cost instead of a stal
 
 async function simpleBody(f,counts=[8,6]){
  const original=await f.body(counts),workspace=await f.workspace();
- const surplus=await f.entities.Account.create({name:'Stock surplus',account_number:'7580',account_type:'other_income',normal_balance:'credit',currency:'XAF',is_active:true,is_posting:true,balance:0});
  const {accountId,...body}=original;void accountId;
- return {...body,lossAccountId:'expense',gainAccountId:surplus.id,item_counts:[{product_id:f.product.id,item_fingerprint:workspace.items.find(p=>p.id===f.product.id).count_fingerprint,counted_quantity:counts.reduce((sum,n)=>sum+n,0),snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}]};
+ return {...body,lossAccountId:'expense',gainAccountId:'expense',item_counts:[{product_id:f.product.id,item_fingerprint:workspace.items.find(p=>p.id===f.product.id).count_fingerprint,counted_quantity:counts.reduce((sum,n)=>sum+n,0),snapshots:workspace.rows.map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))}]};
 }
 
 test('shortages and same-quantity write-downs reject COGS before any write in both count workflows',async()=>{
@@ -438,7 +437,7 @@ test('shortages and same-quantity write-downs reject COGS before any write in bo
   if(mode==='value-write-down')body.rows=[{...body.rows[0],use_current_cost:true}];
   assert.ok(!(await f.workspace()).accounts.some(account=>account.id==='cogs'));
   const before=structuredClone(f.rows);
-  await assert.rejects(f.call(body),/inventory (loss|adjustment) expense account/);
+  await assert.rejects(f.call(body),/mapped Inventory Adjustment/);
   assert.deepEqual(f.rows,before,mode);
   const result=await f.call({...body,...(mode==='item-shortage'?{lossAccountId:'expense'}:{accountId:'expense'})});
   const journalLines=await s.JournalLine.filter({journal_id:result.journal_id});
@@ -457,6 +456,7 @@ async function automaticShortageFixture(){
  await s.Account.update(f.inventory.id,{balance:320});
  await s.Account.update('payable',{account_type:'liability'});
  const loss=await s.Account.create({name:'Verified stock shortage',account_number:'6590',account_type:'expense',normal_balance:'debit',currency:'XAF',is_active:true,is_posting:true,balance:0});
+ await s.PostingRule.update(f.offsetRule.id,{account_id:loss.id});
  const workspace=await f.call({action:'warehouseAdjustmentWorkspace',itemGroup:'ingredients'}),item=workspace.items.find(row=>row.id===f.product.id);
  const plan=physicalItemCount(item,workspace.rows,7);
  const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,itemGroup:'ingredients',lossAccountId:loss.id,reference:'SHORTAGE-COUNT',reason:'Physical shortage confirmed from item totals',
@@ -465,10 +465,10 @@ async function automaticShortageFixture(){
  return {...f,untouched,empty,loss,workspace,plan,shortageBody:body};
 }
 
-test('an automatic multi-lot shortage posts the selected loss expense at individual carrying costs without a surplus account or payable',async()=>{
+test('an automatic multi-lot shortage posts the mapped adjustment expense at individual carrying costs without a payable',async()=>{
  const f=await automaticShortageFixture(),s=f.entities,body=f.shortageBody;
  assert.equal(f.plan.needs_batches,undefined);assert.equal(f.plan.allocation_method,'fefo');assert.equal(f.plan.value_difference,-140);
- assert.ok(f.workspace.accounts.some(row=>row.id==='expense'));assert.ok(f.workspace.accounts.some(row=>row.id===f.loss.id));
+ assert.deepEqual(f.workspace.accounts.map(row=>row.id),[f.loss.id]);assert.equal(f.workspace.offset_account.id,f.loss.id);
  assert.equal(body.gainAccountId,undefined);assert.equal(body.item_counts[0].snapshots.length,4);assert.equal(body.rows.length,2);
  const beforeStock=await s.StockBalance.list(),beforeAccounts=await s.Account.list();
  const financialEntities=['Bill','Payment','PaymentAllocation','Supplier','TreasuryAccount','TreasuryTransaction'];
@@ -506,7 +506,7 @@ test('automatic shortages still require unchanged and empty layer snapshots and 
 
 test('an automatic shortage cannot post its loss to a liability account',async()=>{
  const f=await automaticShortageFixture(),s=f.entities,before=await s.StockBalance.list();
- await assert.rejects(f.call({...f.shortageBody,lossAccountId:'payable'}),/inventory loss expense account/);
+ await assert.rejects(f.call({...f.shortageBody,lossAccountId:'payable'}),/mapped Inventory Adjustment/);
  assert.deepEqual(await s.StockBalance.list(),before);assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.StockMovement.list()).length,0);assert.equal((await s.Account.get('payable')).balance,0);
 });
 
@@ -539,12 +539,13 @@ test('packaging and raw-material shortages use their configured stock rule and c
  }
 });
 
-test('item counts post losses and surpluses to dedicated accounts and retain a balanced immutable item receipt',async()=>{
+test('item counts post both directions to one dedicated expense offset and retain a balanced immutable item receipt',async()=>{
  const f=await setup(),body=await simpleBody(f),beforeCash=await f.entities.TreasuryAccount.list();
  const result=await f.call(body);
  assert.deepEqual(result.item_counts.map(row=>[row.book_quantity,row.counted_quantity,row.difference]),[[15,14,-1]]);
- assert.equal((await f.entities.Account.get('expense')).balance,20);
- assert.equal((await f.entities.Account.get(body.gainAccountId)).balance,10);
+ assert.equal((await f.entities.Account.get('expense')).balance,10);
+ assert.deepEqual(result.posting_lines.filter(line=>line.account_id==='expense').map(line=>[line.debit,line.credit]),[[20,0],[0,10]]);
+ assert.equal(result.offset_account.id,'expense');
  assert.equal((await f.entities.Account.get(f.inventory.id)).balance,140);
  assert.equal(result.posting_lines.reduce((sum,line)=>sum+line.debit-line.credit,0),0);
  assert.equal(result.loss_account.id,'expense');assert.equal(result.gain_account.id,body.gainAccountId);
@@ -575,19 +576,41 @@ test('changes to an unchanged batch or a newly received batch invalidate the who
   assert.equal((await f.entities.JournalEntry.list()).length,0);
  }
 });
-test('simple surplus counts cannot credit an expense, treasury or foreign-currency account',async()=>{
- for(const patch of [{account_type:'expense',normal_balance:'debit'},{is_treasury:true},{currency:'USD'},{is_posting:false},{account_number:'1050'}]){
+test('simple surplus counts reject income, revenue, COGS and invalid expense mappings',async()=>{
+ for(const patch of [{account_type:'other_income',normal_balance:'credit'},{account_type:'revenue',normal_balance:'credit'},{account_type:'cogs'},{is_treasury:true},{is_control_account:true},{currency:'USD'},{is_posting:false},{account_number:'1050'}]){
   const f=await setup(),body=await simpleBody(f,[11,5]);await f.entities.Account.update(body.gainAccountId,patch);
-  const before=JSON.stringify(await f.entities.StockBalance.list());await assert.rejects(f.call(body),/surplus income account/);
+  const before=JSON.stringify(await f.entities.StockBalance.list());await assert.rejects(f.call(body),/Configure the Inventory Adjustment/);
   assert.equal(JSON.stringify(await f.entities.StockBalance.list()),before);assert.equal((await f.entities.JournalEntry.list()).length,0);
  }
 });
+test('the exact existing inventory-loss account is a fallback and invalid overrides cannot post',async()=>{
+ const f=await setup(),s=f.entities;
+ await s.Account.update('expense',{account_number:'INVENTORY-LOSSES'});
+ await s.PostingRule.update(f.offsetRule.id,{is_active:false});
+ assert.equal((await f.workspace()).offset_account.id,'expense');
+ const other=await s.Account.create({account_number:'6590',name:'Other expense',account_type:'expense',normal_balance:'debit',is_active:true,is_posting:true});
+ const body=await simpleBody(f,[11,5]);body.rows=body.rows.slice(0,1);
+ await assert.rejects(f.call({...body,gainAccountId:other.id}),/mapped Inventory Adjustment/);
+ await s.PostingRule.update(f.offsetRule.id,{account_id:other.id,is_active:true});
+ assert.equal((await f.workspace()).offset_account.id,other.id);
+ await assert.rejects(f.call(body),/mapped Inventory Adjustment/);
+ await s.TreasuryAccount.create({account_type:'cash',gl_account_id:other.id});
+ assert.equal((await f.workspace()).offset_account,null);
+ await assert.rejects(f.call({...body,gainAccountId:other.id}),/Configure the Inventory Adjustment/);
+ await s.PostingRule.create({rule_key:'stock_count_offset_expense',account_id:'expense',is_active:true});
+ assert.equal((await f.workspace()).offset_account,null);
+ assert.equal((await s.JournalEntry.list()).length,0);
+ await s.PostingRule.update(f.offsetRule.id,{is_active:false});
+ const posted=await f.call(body);
+ assert.deepEqual(posted.posting_lines.map(l=>[l.account_id,l.debit,l.credit]),[[f.inventory.id,10,0],['expense',0,10]]);
+ assert.equal((await s.Account.get('expense')).balance,-10);
+});
+
 test('new counted items validate their account fingerprint and remain on quality hold',async()=>{
  const f=await setup(),s=f.entities;
  for(const lot of f.lots)f.rows.StockBalance.splice(f.rows.StockBalance.findIndex(row=>row.id===lot.id),1);
  const data=await f.workspace(),item=data.items.find(p=>p.id===f.product.id);
- const income=await s.Account.create({name:'Surplus',account_number:'7580',account_type:'other_income',normal_balance:'credit',is_active:true,is_posting:true,balance:0});
- const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'FOUND-COUNT',reason:'Counted unrecorded sealed stock',gainAccountId:income.id,item_counts:[{product_id:item.id,item_fingerprint:item.count_fingerprint,counted_quantity:3,snapshots:[]}],rows:[{product_id:item.id,unit:item.unit,lot_number:'FOUND-LOT',unit_cost:item.unit_cost,counted_quantity:3}]};
+ const body={action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'FOUND-COUNT',reason:'Counted unrecorded sealed stock',gainAccountId:'expense',item_counts:[{product_id:item.id,item_fingerprint:item.count_fingerprint,counted_quantity:3,snapshots:[]}],rows:[{product_id:item.id,unit:item.unit,lot_number:'FOUND-LOT',unit_cost:item.unit_cost,counted_quantity:3}]};
  await s.Product.update(item.id,{inventory_account_id:'changed'});
  await assert.rejects(f.call(body),/accounts changed/);
  await s.Product.update(item.id,{inventory_account_id:f.inventory.id});

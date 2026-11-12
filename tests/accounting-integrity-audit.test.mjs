@@ -72,6 +72,22 @@ test('treasury setup derives cash from posted GL, blocks duplicate mappings and 
  await s.Account.update('receivable',{account_type:'asset',is_posting:true,is_active:true,normal_balance:'debit'});
  await assert.rejects(preparePostingRule(s,context,{account_id:'receivable'},await s.PostingRule.get('sales_revenue')),/correct type/);
 });
+test('physical count posting rules accept only an eligible expense offset',async()=>{
+ const {entities:s}=await fixture(),rule_key='stock_count_offset_expense';
+ const body={rule_key,account_id:'expense'};
+ assert.equal((await preparePostingRule(s,context,body)).account_id,'expense');
+ for(const [id,patch] of [
+  ['income',{account_type:'other_income',normal_balance:'credit'}],['cogs',{account_type:'cogs'}],
+  ['foreign',{currency:'EUR'}],['control',{is_control_account:true}],['treasury',{is_treasury:true}],
+ ]){
+  const account=await s.Account.create({account_number:id,account_type:'expense',normal_balance:'debit',is_active:true,is_posting:true,...patch});
+  await assert.rejects(preparePostingRule(s,context,{...body,account_id:account.id}),/correct type/);
+ }
+ await s.TreasuryAccount.create({account_type:'cash',gl_account_id:'expense'});
+ await assert.rejects(preparePostingRule(s,context,body),/non-treasury expense/);
+ assert.ok(!(await s.PostingRule.list()).some(rule=>rule.rule_key===rule_key));
+});
+
 test('read-only integrity scan finds ledger/header/cash/mapping and allocation discrepancies without repairing data',async()=>{
  const f=await fixture(),s=f.entities;
  const saved=await postJournal({entities:s},body());await s.JournalEntry.update(saved.journal.id,{total_debit:999});
