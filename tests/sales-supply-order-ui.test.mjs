@@ -371,6 +371,34 @@ test('central activation converts only an unposted draft stock choice while reta
 });
 
 
+test('a headquarters sale deep link keeps the intended branch, credit defaults and exact account preview through confirmation',async()=>{
+ const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',customers:[
+   {id:'customer',business_name:'Headquarters',payment_terms_days:14},
+   {id:'east-branch',business_name:'East branch',parent_id:'customer'},
+ ]});
+ const priorWindow=globalThis.window;
+ globalThis.window={location:{search:'?customer=customer&location=east-branch'}};
+ const invoke=f.r.invoke;
+ f.r.invoke=async body=>{
+   if(body.action!=='salesOrderDeliveryPoints')return invoke(body);
+   f.calls.push(body);
+   return {data:{points:[{id:'hq-outlet',label:'East branch'},{id:'east-branch',label:'East branch'}]}};
+ };
+ try{
+   await f.ready();await settle(f);
+   assert.equal(f.control('Customer').value,'customer');
+   assert.equal(f.control('Delivered To (Branch)').value,'east-branch');
+   assert.equal(f.control('Payment Type').value,'credit');
+   f.button('Continue to products').onClick();f.paint();quantity(f,2);reviewStep(f);
+   const html=f.paint();
+   assert.match(html,/Customer account<\/dt><dd[^>]*>Headquarters<\/dd>/);
+   assert.match(html,/Amount added to customer balance/);
+   f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
+   const supply=f.calls.find(body=>body.action==='recordSuppliedOrder');
+   assert.equal(supply.customerId,'customer');assert.equal(supply.locationId,'east-branch');assert.equal(supply.paymentType,'credit');
+ }finally{f.close();globalThis.window=priorWindow;}
+});
+
 test('exported phone sale flow keeps customer, inline quantity, replacement declaration and receipt validation before atomic submission',async()=>{
  const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',centralized_inventory:{enabled:true},currentSeller:{id:'seller',name:'Salesperson A'}});f.r.phone=true;
  const confirm=()=>f.r.buttons.find(button=>button.label.startsWith('Confirm sale'));

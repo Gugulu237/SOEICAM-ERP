@@ -29,12 +29,13 @@ async function renderer(){
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.elements=[];r.capture=(tag,props,children)=>r.elements.push({tag,props:props || {},children});r.beforeRender=()=>{before();r.elements=[];};return r;}
 const warehouse={id:'raw',name:'Ingredients',warehouse_type:'raw_material',is_active:true};
 const product={id:'milk',name:'Milk powder',sku:'MILK',inventory_type:'raw_material',unit_of_measure:'kg',current_cost:10,is_active:true};
-const workspace={warehouse,warehouses:[warehouse],accounts:[{id:'variance',account_number:'6590',name:'Inventory adjustments'}],gain_accounts:[{id:'surplus',account_number:'7580',name:'Stock surplus'}],correction_accounts:[{id:'opening-equity',account_number:'3990',name:'Opening stock equity',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true}],items:[{id:'milk',name:'Milk powder',unit:'kg',unit_cost:10}],rows:[{balance_id:'lot',warehouse_id:'raw',product_id:'milk',product_name:'Milk powder',unit:'kg',lot_number:'MILK-01',book_quantity:10,book_value:100,unit_cost:10,qc_status:'quarantine',fingerprint:'server-snapshot'}]};
+const offsetAccount={id:'variance',account_number:'6590',name:'Inventory adjustments',account_type:'expense',normal_balance:'debit'};
+const workspace={warehouse,warehouses:[warehouse],accounts:[offsetAccount],offset_account:offsetAccount,correction_accounts:[{id:'opening-equity',account_number:'3990',name:'Opening stock equity',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true}],items:[{id:'milk',name:'Milk powder',unit:'kg',unit_cost:10}],rows:[{balance_id:'lot',warehouse_id:'raw',product_id:'milk',product_name:'Milk powder',unit:'kg',lot_number:'MILK-01',book_quantity:10,book_value:100,unit_cost:10,qc_status:'quarantine',fingerprint:'server-snapshot'}]};
 const postedReceipt=(body,journal_number)=>({id:'WA-1',reference:body.reference,date:body.date,journal_number,value_difference:-20,rows:body.rows.map(row=>({...workspace.rows[0],...row,difference:Number(row.counted_quantity)-10,value_after:Number(row.counted_quantity)*10,value_difference:(Number(row.counted_quantity)-10)*10}))});
 const element=(r,tag,label)=>r.elements.find(e=>e.tag===tag && e.props['aria-label']===label)?.props;
 const button=(r,text)=>r.elements.find(e=>e.tag==='button' && JSON.stringify(e.children).includes(text))?.props;
 function chooseOperating(r,draw){const purpose=element(r,'select','Accounting purpose');assert.ok(purpose,'the user must explicitly choose the accounting purpose');purpose.onChange({target:{value:'operating'}});return draw();}
-function operatingLossAccount(r,draw){chooseOperating(r,draw);return element(r,'select','Adjustment account');}
+function operatingLossAccount(r,draw){chooseOperating(r,draw);return element(r,'select','Inventory Adjustment / Over-Short');}
 function reviewOperating(r,draw){button(r,'Review adjustment').onClick();draw();return chooseOperating(r,draw);}
 test('adjustment history opens an immutable receipt, pages results and offers a new physical count',async()=>{
  const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;let counts=0;
@@ -73,8 +74,8 @@ test('large warehouse counts paginate and retain counted quantities across pages
   try{draw();await r.flush();draw();assert.equal(r.elements.filter(e=>e.tag==='input' && e.props.type==='number').length,25);
     element(r,'input','Physical quantity for Milk powder 0').onChange({target:{value:'8'}});button(r,'Next').onClick();draw();element(r,'input','Physical quantity for Milk powder 25').onChange({target:{value:'9'}});
     element(r,'input','Search count items or lots').onChange({target:{value:'LOT-45'}});draw();assert.ok(element(r,'input','Physical quantity for Milk powder 45'));element(r,'input','Physical quantity for Milk powder 45').onChange({target:{value:'11'}});
-    element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-ALL'}});element(r,'input','Adjustment reason').onChange({target:{value:'Signed warehouse count verified'}});operatingLossAccount(r,draw).onChange({target:{value:'variance'}});draw();element(r,'select','Inventory surplus account').onChange({target:{value:'surplus'}});draw();await button(r,'Save quantity adjustment').onClick();
-    const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.deepEqual(saved.rows.map(row=>row.balance_id),['lot-0','lot-25','lot-45']);
+    element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-ALL'}});element(r,'input','Adjustment reason').onChange({target:{value:'Signed warehouse count verified'}});operatingLossAccount(r,draw).onChange({target:{value:'variance'}});draw();await button(r,'Save quantity adjustment').onClick();
+    const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.deepEqual(saved.rows.map(row=>row.balance_id),['lot-0','lot-25','lot-45']);assert.equal(saved.lossAccountId,'variance');assert.equal(saved.gainAccountId,'variance');
   }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
@@ -93,7 +94,7 @@ test('authorized accounting correction accepts an explicit zero count, previews 
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?{...workspace,can_reconcile_value:true,rows:[{...workspace.rows[0],book_quantity:0,book_value:25,requires_reconciliation:true}]}:postedReceipt(body,'JV-CORRECTION')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{draw();await r.flush();assert.match(draw(),/accounting correction/);element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'0'}});element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-VAL'}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified empty lot and residual carrying value'}});chooseOperating(r,draw);assert.equal(button(r,'Save quantity adjustment').disabled,true);
- element(r,'input','Confirm valuation correction for Milk powder').onChange({target:{checked:true}});assert.match(draw(),/-25/);element(r,'select','Adjustment account').onChange({target:{value:'variance'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(saved.rows[0].counted_quantity,0);assert.equal(saved.rows[0].confirm_reconciliation,true);
+ element(r,'input','Confirm valuation correction for Milk powder').onChange({target:{checked:true}});assert.match(draw(),/-25/);element(r,'select','Inventory Adjustment / Over-Short').onChange({target:{value:'variance'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(saved.rows[0].counted_quantity,0);assert.equal(saved.rows[0].confirm_reconciliation,true);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 test('a blocked valuation lot remains visible with a specific reason while other warehouse quantities are editable',async()=>{
@@ -209,7 +210,7 @@ test('new lots require an explicit action and repeated clicks keep a single draf
 });
 
 
-const simpleWorkspace=()=>({...structuredClone(workspace),date:'2026-11-03',gain_accounts:[{id:'surplus',account_number:'7580',name:'Stock surplus'}],items:workspace.items.map(item=>({...item,inventory_account:{id:'inventory',account_number:'1310',name:'Inventory'}}))});
+const simpleWorkspace=()=>({...structuredClone(workspace),date:'2026-11-03',items:workspace.items.map(item=>({...item,inventory_account:{id:'inventory',account_number:'1310',name:'Inventory'}}))});
 for(const [group,name,unit] of [['packaging','Cups','ea'],['ingredients','Milk powder','kg']])test(`${group} shortages with binary-noise stock quantities reach review and posting without batch or expiry entry`,async()=>{
  const render=await renderer();
  for(const quantity of ['48','0']){
@@ -226,7 +227,7 @@ for(const [group,name,unit] of [['packaging','Cups','ea'],['ingredients','Milk p
    let html=reviewOperating(r,draw);assert.match(html,/Review stock adjustment/);assert.match(html,/Accounting entry/);assert.match(html,/Debit/);assert.match(html,/Credit/);
    assert.equal(element(r,'input','Lot number for '+name),undefined);assert.equal(element(r,'input','Printed expiry for '+name),undefined);
    assert.equal(r.elements.some(e=>e.tag==='input'&&String(e.props['aria-label']).startsWith('Batch quantity for ')),false);
-   assert.equal(element(r,'select','Inventory loss account').value,'variance');assert.equal(element(r,'select','Inventory surplus account'),undefined);
+   assert.equal(element(r,'select','Inventory Adjustment / Over-Short').value,'variance');
    assert.equal(button(r,'Post adjustment').disabled,true,'a valid shortage still requires its count reference and reason');
    element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-'+group+'-'+quantity}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified physical shortage'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
    await button(r,'Post adjustment').onClick();assert.match(draw(),/Stock count posted/);
@@ -283,7 +284,7 @@ test('simple item count shows one input per product and posts the reviewed physi
   draw();await r.flush();let html=draw();assert.ok(element(r,'input','Physical quantity for Milk powder'));assert.equal(element(r,'input','Count sheet / reference'),undefined);
   assert.equal(element(r,'input','Use current item cost for Milk powder'),undefined);assert.doesNotMatch(html,/Ready for sale|Add counted lot|Verified unit cost/);
   element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'8'}});html=draw();assert.match(html,/-2/);html=reviewOperating(r,draw);assert.match(html,/Review stock adjustment/);assert.match(html,/Debit/);assert.match(html,/Credit/);
-  assert.ok(element(r,'select','Inventory loss account'));assert.equal(element(r,'select','Inventory surplus account'),undefined);
+  assert.ok(element(r,'select','Inventory Adjustment / Over-Short'));
   element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-SIMPLE'}});element(r,'input','Adjustment reason').onChange({target:{value:'Physical stock verified'}});draw();assert.equal(button(r,'Post adjustment').disabled,false);
   await button(r,'Post adjustment').onClick();const body=calls.find(call=>call.action==='postWarehouseAdjustment');
   assert.equal(body.lossAccountId,'variance');assert.equal(body.item_counts[0].counted_quantity,8);assert.deepEqual(body.item_counts[0].snapshots,[{balance_id:'lot',fingerprint:'server-snapshot'}]);assert.equal(body.rows[0].counted_quantity,8);
@@ -316,14 +317,14 @@ test('a multi-batch shortage posts from the item total with a loss account and n
  const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{
   draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'3'}});draw();assert.equal(button(r,'Review adjustment').disabled,false);let html=reviewOperating(r,draw);
-  assert.match(html,/Select the inventory loss account to record this shortage as an expense/);assert.equal(element(r,'select','Inventory surplus account'),undefined);
-  element(r,'select','Inventory loss account').onChange({target:{value:'variance'}});element(r,'input','Count sheet / reference').onChange({target:{value:'AUTO-SHORTAGE'}});element(r,'input','Adjustment reason').onChange({target:{value:'Warehouse physical shortage verified'}});html=draw();
+  assert.match(html,/Shortages debit the adjustment expense account/);assert.doesNotMatch(html,/Other expenses/);
+  element(r,'select','Inventory Adjustment / Over-Short').onChange({target:{value:'variance'}});element(r,'input','Count sheet / reference').onChange({target:{value:'AUTO-SHORTAGE'}});element(r,'input','Adjustment reason').onChange({target:{value:'Warehouse physical shortage verified'}});html=draw();
   assert.match(html,/Accounting entry/);assert.match(html,/Debit/);assert.match(html,/Credit/);assert.equal(button(r,'Post adjustment').disabled,false);
   await button(r,'Post adjustment').onClick();const body=calls.find(call=>call.action==='postWarehouseAdjustment');assert.equal(body.lossAccountId,'variance');assert.equal(body.item_counts[0].allocation_method,'fefo');assert.equal(body.item_counts[0].counted_quantity,3);assert.equal(body.item_counts[0].snapshots.length,2);assert.deepEqual(body.rows.map(row=>[row.balance_id,row.counted_quantity]),[['lot',0],['second',3]]);
   assert.match(draw(),/Stock count posted/);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
-test('blank and matching counts do not post; zero counts all batches empty and surplus uses its own account',async()=>{
+test('blank and matching counts do not post; zero counts all batches empty and both directions use one mapped offset',async()=>{
  const render=await renderer();
  for(const quantity of ['','10','0','12']){
   const r=runtime(),data=simpleWorkspace();globalThis.__adjustmentUI=r;r.invoke=async()=>({data});
@@ -331,8 +332,8 @@ test('blank and matching counts do not post; zero counts all batches empty and s
   try{draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:quantity}});draw();
    if(quantity===''||quantity==='10'){assert.equal(button(r,'Review adjustment').disabled,true);continue;}
    reviewOperating(r,draw);
-   assert.ok(element(r,'select',quantity==='12'?'Inventory surplus account':'Inventory loss account'));
-   assert.equal(element(r,'select',quantity==='12'?'Inventory loss account':'Inventory surplus account'),undefined);
+   assert.equal(element(r,'select','Inventory Adjustment / Over-Short').value,'variance');
+   assert.match(draw(),new RegExp('6590 · Inventory adjustments</span><span[^>]*>'+(quantity==='12'?'Credit':'Debit')));
   }finally{r.cleanup();delete globalThis.__adjustmentUI;}
  }
 });
@@ -435,7 +436,7 @@ test('new finished count exposes ready-for-sale choice and sends explicit undate
  data.item_group='finished';data.items[0]={...data.items[0],name:'YOLA',inventory_type:'assembly',count_group:'finished',count_fingerprint:'item-proof'};data.rows=[];
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?data:postedReceipt(body,'JV-COUNT')};};
  const draw=()=>{r.beforeRender();return render('simple',{open:true,warehouseId:'raw',onOpenChange(){}});};
- try{draw();await r.flush();draw();element(r,'input','Physical quantity for YOLA').onChange({target:{value:'14'}});draw();reviewOperating(r,draw);element(r,'input','Lot number for YOLA').onChange({target:{value:'010'}});element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-010'}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified finished stock'}});draw();element(r,'select','Inventory surplus account').onChange({target:{value:'surplus'}});draw();
+ try{draw();await r.flush();draw();element(r,'input','Physical quantity for YOLA').onChange({target:{value:'14'}});draw();reviewOperating(r,draw);element(r,'input','Lot number for YOLA').onChange({target:{value:'010'}});element(r,'input','Count sheet / reference').onChange({target:{value:'COUNT-010'}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified finished stock'}});draw();element(r,'select','Inventory Adjustment / Over-Short').onChange({target:{value:'variance'}});draw();
  assert.equal(element(r,'input','Ready for sale: YOLA').checked,false);element(r,'input','Ready for sale: YOLA').onChange({target:{checked:true}});draw();assert.equal(button(r,'Post adjustment').disabled,true);element(r,'input','Confirm missing expiry for YOLA').onChange({target:{checked:true}});draw();assert.equal(button(r,'Post adjustment').disabled,false);await button(r,'Post adjustment').onClick();
  const saved=calls.find(c=>c.action==='postWarehouseAdjustment');assert.equal(saved.rows[0].ready_for_sale,true);assert.equal(saved.rows[0].confirm_missing_expiry,true);assert.equal(saved.rows[0].counted_quantity,14);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
@@ -451,7 +452,7 @@ for(const counted of [8,12])test(`opening item correction for ${counted<10?'shor
   assert.equal(element(r,'select','Accounting purpose').value,'');element(r,'input','Count sheet / reference').onChange({target:{value:'OPENING-'+counted}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified opening stock quantity error'}});draw();
   assert.equal(button(r,'Post adjustment').disabled,true);await button(r,'Post adjustment').onClick();assert.equal(calls.filter(row=>row.action==='postWarehouseAdjustment').length,0);
   element(r,'select','Accounting purpose').onChange({target:{value:'opening_correction'}});draw();assert.equal(element(r,'select','Opening stock equity counterpart').value,'');assert.equal(element(r,'input','Confirm opening stock correction').checked,false);
-  assert.equal(element(r,'select','Inventory loss account'),undefined);assert.equal(element(r,'select','Inventory surplus account'),undefined);assert.equal(button(r,'Post adjustment').disabled,true);
+  assert.equal(element(r,'select','Inventory Adjustment / Over-Short'),undefined);assert.equal(button(r,'Post adjustment').disabled,true);
   element(r,'input','Confirm opening stock correction').onChange({target:{checked:true}});draw();assert.equal(button(r,'Post adjustment').disabled,true,'confirmation without an equity account is insufficient');
   element(r,'select','Opening stock equity counterpart').onChange({target:{value:'opening-equity'}});draw();assert.equal(element(r,'input','Confirm opening stock correction').checked,false,'changing the equity account invalidates earlier confirmation');assert.equal(button(r,'Post adjustment').disabled,true);element(r,'input','Confirm opening stock correction').onChange({target:{checked:true}});let html=draw();assert.equal(button(r,'Post adjustment').disabled,false);
   const ledger=html.slice(html.indexOf('Accounting entry')).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ');
@@ -470,7 +471,7 @@ for(const counted of [8,12])test(`detailed opening correction for ${counted<10?'
  try{
   draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:String(counted)}});element(r,'input','Count sheet / reference').onChange({target:{value:'DETAILED-OPENING-'+counted}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified opening stock count correction'}});draw();assert.equal(element(r,'select','Accounting purpose').value,'');assert.equal(button(r,'Save quantity adjustment').disabled,true);
   element(r,'select','Accounting purpose').onChange({target:{value:'opening_correction'}});draw();element(r,'select','Opening stock equity counterpart').onChange({target:{value:'opening-equity'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,true);assert.equal(element(r,'input','Confirm opening stock correction').checked,false);
-  assert.equal(element(r,'select','Adjustment account'),undefined);assert.equal(element(r,'select','Inventory surplus account'),undefined);
+  assert.equal(element(r,'select','Inventory Adjustment / Over-Short'),undefined);
   element(r,'input','Confirm opening stock correction').onChange({target:{checked:true}});const html=draw();assert.match(html,/no income or expense is recorded/);assert.match(html,/Opening stock equity/);assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();
   const body=calls.find(row=>row.action==='postWarehouseAdjustment');assert.equal(body.purpose,'opening_correction');assert.equal(body.correctionAccountId,'opening-equity');assert.equal(body.correctionConfirmed,true);assert.equal(body.rows[0].counted_quantity,counted);assert.equal(body.rows[0].fingerprint,'server-snapshot');
   for(const key of ['accountId','lossAccountId','gainAccountId'])assert.equal(Object.hasOwn(body,key),false);assert.equal(Object.hasOwn(body.rows[0],'use_current_cost'),false);assert.equal(Object.hasOwn(body.rows[0],'confirm_reconciliation'),false);
@@ -489,13 +490,13 @@ test('detailed opening treatment disables revaluation and refuses a current-cost
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });
 
-test('a positive detailed operating count requires an explicitly selected surplus account',async()=>{
+test('a positive detailed operating count requires the mapped adjustment expense account',async()=>{
  const render=await renderer(),r=runtime(),calls=[];globalThis.__adjustmentUI=r;
  r.invoke=async body=>{calls.push(body);return {data:body.action==='warehouseAdjustmentWorkspace'?workspace:postedReceipt(body,'JV-OPERATING-SURPLUS')};};
  const draw=()=>{r.beforeRender();return render('dialog',{open:true,warehouseId:'raw',onOpenChange(){}});};
  try{
   draw();await r.flush();draw();element(r,'input','Physical quantity for Milk powder').onChange({target:{value:'12'}});element(r,'input','Count sheet / reference').onChange({target:{value:'OPERATING-SURPLUS'}});element(r,'input','Adjustment reason').onChange({target:{value:'Verified operating stock surplus'}});chooseOperating(r,draw);
-  assert.equal(element(r,'select','Inventory surplus account').value,'');assert.equal(button(r,'Save quantity adjustment').disabled,true);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.some(row=>row.action==='postWarehouseAdjustment'),false);
-  element(r,'select','Inventory surplus account').onChange({target:{value:'surplus'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const body=calls.find(row=>row.action==='postWarehouseAdjustment');assert.equal(body.purpose,'operating');assert.equal(body.gainAccountId,'surplus');assert.equal(body.correctionAccountId,undefined);assert.equal(body.correctionConfirmed,undefined);
+  assert.equal(element(r,'select','Inventory Adjustment / Over-Short').value,'variance');element(r,'select','Inventory Adjustment / Over-Short').onChange({target:{value:''}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,true);await button(r,'Save quantity adjustment').onClick();assert.equal(calls.some(row=>row.action==='postWarehouseAdjustment'),false);
+  element(r,'select','Inventory Adjustment / Over-Short').onChange({target:{value:'variance'}});draw();assert.equal(button(r,'Save quantity adjustment').disabled,false);await button(r,'Save quantity adjustment').onClick();const body=calls.find(row=>row.action==='postWarehouseAdjustment');assert.equal(body.purpose,'operating');assert.equal(body.gainAccountId,'variance');assert.equal(body.correctionAccountId,undefined);assert.equal(body.correctionConfirmed,undefined);
  }finally{r.cleanup();delete globalThis.__adjustmentUI;}
 });

@@ -4,12 +4,12 @@ import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import { usePhoneLayout } from '@/hooks/usePhoneLayout';
 import MobileCustomerOverview from './MobileCustomerOverview';
+import CustomerBillingSummary from './CustomerBillingSummary';
 import React, { useState, useEffect, useCallback } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/shared/StatusBadge";
-import CustomerInfo from "./CustomerInfo";
 import CustomerMapLinks from "./CustomerMapLinks";
 import CustomerGpsButton from "./CustomerGpsButton";
 import SpoilageDialog from "./SpoilageDialog";
@@ -19,7 +19,8 @@ import PartnerGroupPanel from "./PartnerGroupPanel";
 import PartnerStockPanel from "./PartnerStockPanel";
 import PartnerSalesPanel from "./PartnerSalesPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatXAF } from "@/lib/formatters";
+import { formatAccountingXAF, formatXAF } from "@/lib/formatters";
+import { customerAccountBalance } from '@/lib/customer-billing-summary';
 import {customerInvoiceQuery,customerMonthInvoiceQuery} from '@/lib/customer-mobile-summary';
 import { Plus } from "lucide-react";
 
@@ -34,11 +35,11 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const [salesReload,setSalesReload]=useState(0);
   const [locations, setLocations] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState(''),[loading,setLoading]=useState(true);
+  const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState('');
   const [spoilOpen, setSpoilOpen] = useState(false),[reportVersion,setReportVersion]=useState(0);
 
   const load = useCallback(async () => {
-    setLoadError('');setLoading(true);
+    setLoadError('');
     try {
     const [locs, ords, spls] = await Promise.all([
       erp.entities.CustomerLocation.filter({ customer_id: partner.id, is_active: true }),
@@ -48,7 +49,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
     setLocations(locs);
     setOrders(ords);
     setSpoilage(spls);
-    } catch(error) { setLoadError(error.message); }finally{setLoading(false);}
+    } catch(error) { setLoadError(error.message); }
   }, [partner.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -68,6 +69,8 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const deliveredOrders = orders.filter(o => ["invoiced", "delivered", "partially_delivered"].includes(o.status));
   const deliveredValue = deliveredOrders.reduce((s, o) => s + (o.total || 0), 0);
   const spoilageValue = spoilage.reduce((s, r) => s + (r.total_value || 0), 0);
+  const accountBalance = customerAccountBalance(partner);
+  const billingSummary = <CustomerBillingSummary partner={partner} parentPartner={parentPartner} subPartners={subPartners} onSelect={onSelect}/>;
 
 
   return (
@@ -75,16 +78,9 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
       {/* Header */}
       <div className="hidden flex-wrap items-start justify-between gap-3 sm:flex">
         <div>
-          {parentPartner && (
-            <button onClick={() => onSelect?.(parentPartner)} className="text-xs text-blue-600 hover:underline mb-0.5">{ui("← Branch of ")}{parentPartner.business_name}
-            </button>
-          )}
           <h2 className="text-lg font-bold text-slate-900">{partner.business_name}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <StatusBadge status={partner.credit_status || "good"} />
-            <CustomerInfo title={ui("Payment responsibility")}>
-              {partner.financial_centralization_mode === "decentralized" ? ui("Each branch pays its own invoices") : ui("Centralized — HQ handles payments")}
-            </CustomerInfo>
           </div>
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap gap-2">
@@ -93,11 +89,18 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </div>
       </div>
 
-      {phone&&<MobileCustomerOverview partner={partner} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/>}
+      {phone ? <MobileCustomerOverview partner={partner} billingSummary={billingSummary} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/> : <div className="grid gap-3 lg:grid-cols-2">
+        <section className="rounded-xl border bg-white p-4">
+          <h3 className="text-sm font-semibold">{ui('Account balance due')}</h3>
+          <p className="mt-1 text-lg font-bold tabular-nums">{accountBalance === null ? '—' : formatAccountingXAF(accountBalance)}</p>
+          <p className="text-xs text-muted-foreground">{ui('Limit ')}{formatXAF(partner.credit_limit)}</p>
+        </section>
+        {billingSummary}
+      </div>}
       <Tools className={phone?'rounded-xl border bg-white':'space-y-5'}>
       {phone&&<summary className="min-h-12 cursor-pointer p-3 text-sm font-semibold">{ui('Customer tools and details')}</summary>}
       <div className={phone?'space-y-5 border-t p-3':'space-y-5'}>
-      {phone&&<div className="flex flex-wrap gap-2">{parentPartner&&<Button variant="outline" onClick={()=>onSelect?.(parentPartner)}>{ui('Main customer')}: {parentPartner.business_name}</Button>}{canReportSpoilage&&<Button variant="outline" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={15}/>{ui('Add branch')}</Button>}</div>}
+      {phone&&canReportSpoilage&&<Button variant="outline" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={15}/>{ui('Add branch')}</Button>}
       <CustomerActionGrid onSale={phone?undefined:onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
       {paymentSummary}
       {loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>}
@@ -122,12 +125,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
       )}
 
       {/* KPIs */}
-      <div className="hidden grid-cols-2 lg:grid-cols-4 gap-3 sm:grid">
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Balance Owed")}</p>
-          <p className="text-lg font-bold text-slate-900">{formatXAF(partner.balance)}</p>
-          <p className="text-xs text-slate-400">{ui("Limit ")}{formatXAF(partner.credit_limit)}</p>
-        </div>
+      <div className="hidden grid-cols-2 lg:grid-cols-3 gap-3 sm:grid">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <p className="text-xs uppercase tracking-wide text-slate-500">{ui("Delivered Value")}</p>
           <p className="text-lg font-bold text-green-700">{formatXAF(deliveredValue)}</p>

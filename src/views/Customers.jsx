@@ -131,6 +131,14 @@ export function CustomerDirectory({selectedId,back}) {
     return acc;
   }, {});
   const customerById=new Map(customers.map(customer=>[customer.id,customer]));
+  const selectedParent=customerById.get(selected?.parent_id) || null;
+  const startCustomerSale=()=>{
+    const useHeadquarters=isAdmin && selectedParent?.is_active!==false && selectedParent?.financial_centralization_mode==='centralized';
+    const query=new URLSearchParams(isCommercial?{section:'pos',new:'1'}:{});
+    query.set('customer',useHeadquarters?selectedParent.id:selected.id);
+    if(useHeadquarters)query.set('location',selected.id);
+    navigate((isCommercial?'/commercial':'/sales/new')+'?'+query);
+  };
   const query=search.trim().toLocaleLowerCase();
   const zones=zoneOptions.data?.zones||[];
   const zoneName=customer=>zones.find(zone=>zone.id===customer.delivery_zone_id)?.name||'';
@@ -172,14 +180,14 @@ export function CustomerDirectory({selectedId,back}) {
               <PartnerDetail
                 key={selected.id}
                 partner={selected}
-                onSale={(isAdmin||isCommercial)?()=>navigate((isCommercial?'/commercial?section=pos&new=1&customer=':'/sales/new?customer=')+encodeURIComponent(selected.id)):undefined}
+                onSale={(isAdmin||isCommercial)?startCustomerSale:undefined}
                 onReceive={canCollect?()=>setReceiptCustomer(selected):undefined}
                 canReportSpoilage={canReport}
                 paymentSummary={isAdmin?<><CustomerOpeningBalance key={selected.id} customer={selected} onSaved={()=>{load();paymentStatus.refetch();}}/><CustomerPaymentSummary customer={selected} summary={paymentStatus.data?.[selected.id]} error={paymentStatus.isError} onRetry={()=>paymentStatus.refetch()}/></>:null}
                 onEditGps={canEditGps?editGps:undefined}
                 onChanged={load}
                 subPartners={childrenByParent[selected.id] || []}
-                parentPartner={customers.find(c => c.id === selected.parent_id) || null}
+                parentPartner={selectedParent}
                 locationsByCustomer={locationsByCustomer}
                 onSelect={selectCustomer}
               />

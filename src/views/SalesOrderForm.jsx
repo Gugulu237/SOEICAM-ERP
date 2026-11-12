@@ -17,6 +17,7 @@ import {formatXAF,formatNumber} from '@/lib/formatters';
 import SaleStockPicker,{vehicleSaleLabel} from '@/components/sales/SaleStockPicker';
 import CustomerPicker from '@/components/field/CustomerPicker';
 import SaleProductPicker from '@/components/sales/SaleProductPicker';
+import SaleBillingPreview from '@/components/sales/SaleBillingPreview';
 import {quantityAfterReplacements} from '@/lib/product-quantity';
 import PageHeader from '@/components/shared/PageHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -53,7 +54,19 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     let active=true;setLoading(true);setLoadError('');
     Promise.all([call({action:'salesOrderWorkspace'}),id?Promise.all([erp.entities.SalesOrder.get(id),readAll(erp.entities.SalesOrderLine,{order_id:id})]):null])
       .then(([data,record])=>{if(!active)return;setCatalogue(data);if(record){const [saved,rows]=record;setOrder(saved);setSource(data.centralized_inventory?.enabled&&['draft','confirmed','ready'].includes(saved.status)?'company':saved.dispatch_id?'issued:'+saved.dispatch_id:saved.sales_supply_source==='company'?'company':'warehouse:'+saved.warehouse_id);setForm({customer_id:saved.customer_id,location_id:saved.location_id||'',payment_type:saved.payment_type||'cash',notes:saved.notes||'',receipt_reference:saved.receipt_reference||'',date:saved.order_date||today,seller_id:['draft','confirmed','ready'].includes(saved.status)?data.canChooseSeller&&(!ownIssuedStock||data.centralized_inventory?.enabled)?(saved.sales_supply_seller_id||saved.salesperson_id||data.currentSellerId||''):data.currentSellerId||'':saved.sales_supply_seller_id||saved.salesperson_id||''});setLines(rows);setReplacements(saved.stock_replacements||[]);setForm(f=>({...f,replacements_declared:saved.stock_replacements_declared??Boolean(saved.stock_replacements?.length)}));}
-        else{setOrder(null);setForm(f=>({...f,customer_id:f.customer_id||data.customers.find(c=>c.id===new URLSearchParams(typeof window==='undefined'?'':window.location.search).get('customer'))?.id||'',seller_id:data.currentSeller?.id||data.currentSellerId||''}));setSource(data.defaultSource==='company'?'company':data.runs.length===1?'issued:'+data.runs[0].id:data.warehouses.length===1?'warehouse:'+data.warehouses[0].id:'');}})
+        else{
+          setOrder(null);
+          const link=new URLSearchParams(typeof window==='undefined'?'':window.location.search);
+          const linkedCustomer=data.customers.find(customer=>customer.id===link.get('customer'));
+          setForm(previous=>({
+            ...previous,
+            customer_id:previous.customer_id||linkedCustomer?.id||'',
+            location_id:previous.customer_id?previous.location_id:linkedCustomer?link.get('location')||'':'',
+            payment_type:linkedCustomer&&!previous.customer_id?(Number(linkedCustomer.payment_terms_days)>0?'credit':'cash'):previous.payment_type,
+            seller_id:data.currentSeller?.id||data.currentSellerId||'',
+          }));
+          setSource(data.defaultSource==='company'?'company':data.runs.length===1?'issued:'+data.runs[0].id:data.warehouses.length===1?'warehouse:'+data.warehouses[0].id:'');
+        }})
       .catch(e=>{if(active)setLoadError(e.message);}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
   },[id,retry]);
@@ -210,6 +223,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
           <p className="text-sm">{exchangeOnly?ui('Exchange only — no customer charge'):<>{ui('Payment Type')}: <strong>{ui(form.payment_type==='cash'?'Cash':'Credit')}</strong></>}</p><p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">{ui('Check the customer, products and amount. Stock is deducted only when you confirm this sale.')}</p>
         </section>}
         {(!wizard||step===2)&&<>
+        {!locked&&!exchangeOnly&&<SaleBillingPreview customerName={customer?.business_name} amountDue={form.payment_type==='credit'?totals.total:0}/>}
         <label className="block min-w-0 space-y-1 text-sm">{ui('Receipt reference number *')}<Input required aria-label={ui('Receipt reference number')} autoComplete="off" maxLength={200} value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/></label>
         <label className="block space-y-1 text-sm">{ui('Notes')}<Input value={form.notes} maxLength={2000} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label>
         <div className="space-y-1 text-right text-sm"><p>{ui('Net sales')}: {formatXAF(totals.net)}</p><p>{ui(!locked||order?.price_includes_vat?'VAT included':'Tax')}: {formatXAF(totals.tax)}</p><p className="text-lg font-bold">{ui('Total')}: {formatXAF(totals.total)}</p></div>

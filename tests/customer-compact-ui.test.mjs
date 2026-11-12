@@ -48,6 +48,18 @@ test('only the branch arrow expands a group and one tap opens the chosen branch 
   }finally{state.cleanup();delete globalThis.__clients;}
 });
 
+test('an explicitly centralized branch profile opens a sale billed to its headquarters and delivered to that branch',async()=>{
+  const state=hookRuntime();globalThis.__clients=state;
+  state.customers=[{...customer,financial_centralization_mode:'centralized'},{id:'branch-a',parent_id:'shop',business_name:'East branch'}];
+  const draw=()=>{state.beforeRender();return render('directory',{selectedId:'branch-a'});};
+  try {
+    draw();await state.flush();draw();await state.flush();draw();
+    assert.equal(state.profile.partner.id,'branch-a');
+    state.profile.onSale();
+    assert.equal(state.navigation.at(-1),'/sales/new?customer=shop&location=branch-a');
+  } finally {state.cleanup();delete globalThis.__clients;}
+});
+
 test('one tap opens the profile where GPS edits still save the correct outlet and update its pin',async()=>{
   const state=hookRuntime();globalThis.__clients=state;state.customers=[customer];state.locations=[{id:'east',customer_id:'shop',name:'East gate',delivery_revision:3}];
   const draw=()=>{state.beforeRender();return render('directory',{selectedId:new URLSearchParams(state.query).get('customer')});};

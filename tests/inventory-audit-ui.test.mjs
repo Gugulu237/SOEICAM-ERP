@@ -31,11 +31,12 @@ async function renderer() {
   const module = { exports: {} }; new Function('require', 'module', 'exports', output.outputFiles[0].text)(require, module, module.exports); compiled = module.exports.render; return compiled;
 }
 const row = { balance_id: 'lot', product_name: 'Flour', lot_number: 'L1', warehouse_name: 'Main', unit: 'kg', book_quantity: 10, book_value: 100, unit_cost: 10, counted_quantity: 8, difference: -2, value_difference: -20, reason: 'Damaged bags', qc_status: 'approved' };
+const offsetAccount={id:'loss',name:'Inventory adjustments',account_number:'6590',account_type:'expense',normal_balance:'debit'};
 const audit = { id: 'IA-test', revision: 2, title: 'Weekly count', status: 'draft', purpose:'operating', warehouse_name: 'Main', created_by: 'accountant', makers: ['accountant'], counter_name: 'Accountant', rows: [row], evidence_reference: 'SHEET-1', loss_account_id: 'loss' };
 async function screen(overrides = {}, workspace = {}) {
   const r = hookRuntime(); r.elements = []; r.capture = (tag, props, children) => r.elements.push({ tag, props: props || {}, children }); globalThis.__inventoryUI = r;
   const render = await renderer(), calls = [];
-  const props = { detail: { audit: structuredClone({ ...audit, ...overrides }), stale: [], history: [] }, workspace: { role: 'cashier', user_id: 'accountant', accounts: [], ...workspace }, busy: false, perform: (...args) => calls.push(args), back: () => {}, reload: () => {} };
+  const props = { detail: { audit: structuredClone({ ...audit, ...overrides }), stale: [], history: [] }, workspace: { role: 'cashier', user_id: 'accountant', accounts: [], offset_account:offsetAccount, ...workspace }, busy: false, perform: (...args) => calls.push(args), back: () => {}, reload: () => {} };
   const paint = () => { r.beforeRender(); r.elements = []; return render(props); };
   const input = name => r.elements.find(e => e.props.id === name || e.props['aria-label'] === name)?.props;
   const button = text => r.elements.find(e => e.props.onClick && e.children.flat().includes(text))?.props;
@@ -53,13 +54,17 @@ test('physical count edits distinguish cleared values from zero and require save
   } finally { s.close(); }
 });
 
-test('count account choices keep non-sale shortages out of COGS and preserve surplus income',async()=>{
+test('count account choices use only the mapped expense for both directions',async()=>{
  const account=(id,account_type,normal_balance)=>({id,name:id,account_number:id,account_type,normal_balance});
  const s=await screen({}, {accounts:[account('expense','expense','debit'),account('other-loss','other_expense','debit'),account('cogs','cogs','debit'),account('surplus','other_income','credit')]});
  try{
   const html=s.paint();
-  assert.match(html,/<option value="expense">/);assert.match(html,/<option value="other-loss">/);assert.match(html,/<option value="surplus">/);
-  assert.doesNotMatch(html,/<option value="cogs">/);
+  assert.match(html,/<option value="loss"/);
+  assert.doesNotMatch(html,/<option value="(?:expense|other-loss|surplus|cogs)"/);
+  s.input('Physical count Flour L1').onChange({target:{value:'12'}});s.paint();
+  assert.equal(s.input('Inventory Adjustment / Over-Short').value,'');
+  s.input('Inventory Adjustment / Over-Short').onChange({target:{value:'loss'}});s.paint();
+  s.button('Save counts').onClick();assert.equal(s.calls[0][1].lossAccountId,'loss');assert.equal(s.calls[0][1].gainAccountId,'loss');
  }finally{s.close();}
 });
 

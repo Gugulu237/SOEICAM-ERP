@@ -1,4 +1,4 @@
-import {inventoryAdjustmentTreatment,validStockCorrectionAccount} from '../../lib/inventory-adjustment-treatment.js';
+import {inventoryAdjustmentTreatment,stockCountOffsetAccount,STOCK_COUNT_OFFSET_CHANGED,STOCK_COUNT_OFFSET_SETUP,validStockCorrectionAccount} from '../../lib/inventory-adjustment-treatment.js';
 import {itemUnitCost} from '../../lib/item-units.js';
 import {pricedAssemblyProducts} from '../../lib/assembly-pricing.js';
 import {stockOrigin,isExistingStockOrigin} from '../../lib/stock-origin.js';
@@ -78,9 +78,9 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const itemGroup=body.itemGroup==='auto'?(selectedProduct?stockCountGroup(selectedProduct):warehouseCountGroup(warehouse)):requestedGroup;
   const inGroup=p=>configured(p)&&countGroupMatches(p,itemGroup);
   const cashIds=new Set(treasury.map(t=>t.gl_account_id));
-  const validAccount=(a,inventory=false)=>a && a.is_active!==false && a.is_posting!==false && (!a.currency||a.currency==='XAF') && !a.is_treasury && a.account_number!=='1050' && !cashIds.has(a.id) &&
-    (inventory?a.account_type==='asset' && a.normal_balance==='debit':['expense','other_expense'].includes(a.account_type) && a.normal_balance==='debit');
-  const validGain=a=>a&&a.is_active!==false&&a.is_posting!==false&&(!a.currency||a.currency==='XAF')&&!a.is_treasury&&a.account_number!=='1050'&&!cashIds.has(a.id)&&a.account_type==='other_income'&&a.normal_balance==='credit';
+  const validInventory=a=>a && a.is_active!==false && a.is_posting!==false && (!a.currency||a.currency==='XAF') && !a.is_treasury && a.account_number!=='1050' && !cashIds.has(a.id) &&
+    a.account_type==='asset' && a.normal_balance==='debit';
+  const offsetAccount=stockCountOffsetAccount(accounts,rules,cashIds);
   const inventoryFor=p=>accounts.find(a=>a.id===(p.inventory_account_id||rules.find(r=>r.rule_key===(isAssemblyInventoryType(p.inventory_type)?'finished_goods_inventory':'raw_material_inventory'))?.account_id));
   const itemFingerprint=p=>hash([p.id,stockUnit(p),itemUnitCost(p),inventoryFor(p)?.id||'',p.inventory_type,stockCountGroup(p),p.configuration_status,p.is_active,p.item_removed_at,warehouse.id,warehouse.is_active,warehouse.warehouse_type]);
   const liveProducts=pricedAssemblyProducts(products),byProduct=new Map(liveProducts.map(p=>[p.id,p]));
@@ -90,9 +90,10 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const counted=b=>isExistingStockOrigin(stockOrigin(b,adjustmentMovements)) && ['approved','quarantine','quarantined'].includes(b.qc_status || 'approved') && companySalesWarehouse(warehouse);
   if(body.action==='warehouseAdjustmentWorkspace') return {...access,warehouse:{id:warehouse.id,name:warehouse.name,warehouse_type:warehouse.warehouse_type},date:businessDate(),as_of:new Date().toISOString(),item_group:itemGroup,warehouses:warehouses.filter(factory).map(w=>({id:w.id,name:w.name,warehouse_type:w.warehouse_type})),
     rows:balances.filter(b=>inGroup(byProduct.get(b.product_id))).map(b=>({...stockSnapshot(b,byProduct.get(b.product_id),warehouse,rules),...(simpleCount?{}:{adjusted_stock:counted(b)})})),
-    items:liveProducts.filter(inGroup).map(p=>({id:p.id,name:p.name,count_group:stockCountGroup(p),sku:p.sku || '',size:p.size||'',flavor:p.flavor||'',product_family:p.product_family||'',unit:stockUnit(p),unit_cost:itemUnitCost(p),inventory_type:p.inventory_type,requires_expiry:false,count_fingerprint:itemFingerprint(p),inventory_account:validAccount(inventoryFor(p),true)?accountView(inventoryFor(p)):null})),
-    accounts:accounts.filter(a=>validAccount(a)).map(accountView),
-    gain_accounts:accounts.filter(validGain).map(accountView),
+    items:liveProducts.filter(inGroup).map(p=>({id:p.id,name:p.name,count_group:stockCountGroup(p),sku:p.sku || '',size:p.size||'',flavor:p.flavor||'',product_family:p.product_family||'',unit:stockUnit(p),unit_cost:itemUnitCost(p),inventory_type:p.inventory_type,requires_expiry:false,count_fingerprint:itemFingerprint(p),inventory_account:validInventory(inventoryFor(p))?accountView(inventoryFor(p)):null})),
+    offset_account:offsetAccount?accountView(offsetAccount):null,
+    accounts:offsetAccount?[accountView(offsetAccount)]:[],
+    gain_accounts:offsetAccount?[accountView(offsetAccount)]:[],
     correction_accounts:accounts.filter(a=>validStockCorrectionAccount(a,cashIds)).map(accountView)};
   if(body.action!=='postWarehouseAdjustment')throw Error('Unknown warehouse adjustment action.');
   const date=body.date,reason=typeof body.reason==='string'?body.reason.trim():'',reference=typeof body.reference==='string'?body.reference.trim():'';
@@ -105,14 +106,11 @@ export async function warehouseAdjustmentAction(client,user,body) {
   const treatment=inventoryAdjustmentTreatment(body),neutral=treatment.purpose==='opening_correction';
   const correctionAccount=accounts.find(a=>a.id===treatment.correction_account_id);
   if(neutral&&!validStockCorrectionAccount(correctionAccount,cashIds))throw Error('Choose an active posting equity account for the opening stock correction.');
-  const offset=accounts.find(a=>a.id===body.accountId);
   const itemMode=Object.hasOwn(body,'item_counts'),splitAccounts=itemMode||body.purpose!==undefined;
   const itemCounts=itemMode?verifyItemCountTotals(body.item_counts,body.rows,balances,balance=>stockSnapshot(balance,byProduct.get(balance.product_id),warehouse,rules)):null;
   if(itemMode&&itemCounts.some(item=>!configured(byProduct.get(item.product_id))))throw Error('Choose active, configured items for this count.');
   if(itemMode&&itemCounts.some(item=>!inGroup(byProduct.get(item.product_id))))throw Error('Count only items in the selected group. Reload quantities.');
   if(itemMode&&body.item_counts.some(item=>item.item_fingerprint!==itemFingerprint(byProduct.get(item.product_id))))throw Error('Item costs, units or accounts changed during this count. Reload quantities.');
-  const lossOffset=neutral?correctionAccount:splitAccounts?accounts.find(a=>a.id===body.lossAccountId):offset;
-  const gainOffset=neutral?correctionAccount:splitAccounts?accounts.find(a=>a.id===body.gainAccountId):offset;
 
   const rows=[],seen=new Set();
   for(const input of body.rows) {
@@ -163,19 +161,23 @@ export async function warehouseAdjustmentAction(client,user,body) {
 
     const rule=['assembly','finished_product'].includes(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory';
     const inventory=accounts.find(a=>a.id===(product.inventory_account_id || rules.find(r=>r.rule_key===rule)?.account_id));
-    if(!validAccount(inventory,true))throw Error('Configure an active inventory asset account for every adjusted item.');
+    if(!validInventory(inventory))throw Error('Configure an active inventory asset account for every adjusted item.');
     rows.push({...row,...variance,adjusted_stock:adjustedStock,previous_expiry_date:row.expiry_date || '',previous_qc_status:row.qc_status,...(release?{qc_status:'approved'}:{}),release_for_sale:saleRelease,release_for_use:useRelease,missing_expiry_confirmed:saleRelease&&!row.expiry_date&&input.confirm_missing_expiry===true,use_current_cost:input.use_current_cost===true,reconciliation_confirmed:state.requires_reconciliation && input.confirm_reconciliation===true,inventory});
   }
   if(!rows.length)throw Error('The physical quantities match the system. There is nothing to adjust.');
-  if(!neutral&&splitAccounts){
-    if(rows.some(row=>row.value_difference<0)&&!validAccount(lossOffset))throw Error('Choose an active inventory loss expense account.');
-    if(rows.some(row=>row.value_difference>0)&&!validGain(gainOffset))throw Error('Choose an active inventory surplus income account.');
-  }else if(!neutral&&rows.some(row=>row.value_difference!==0)&&!validAccount(offset))throw Error('Choose an active inventory adjustment expense account.');
+  const hasShortageValue=rows.some(row=>row.value_difference<0),hasSurplusValue=rows.some(row=>row.value_difference>0);
+  const operatingValue=!neutral&&(hasShortageValue||hasSurplusValue);
+  if(operatingValue){
+    if(!offsetAccount)throw Error(STOCK_COUNT_OFFSET_SETUP);
+    const shortageId=splitAccounts?body.lossAccountId:body.accountId,surplusId=splitAccounts?body.gainAccountId:body.accountId;
+    if(hasShortageValue&&shortageId!==offsetAccount.id||hasSurplusValue&&surplusId!==offsetAccount.id)throw Error(STOCK_COUNT_OFFSET_CHANGED);
+  }
+  const counterpart=neutral?correctionAccount:offsetAccount;
   const lines=new Map(),add=(account,amount)=>{
     if(!amount)return;const key=account.id+':'+(amount>0?'debit':'credit'),line=lines.get(key) || {account_id:account.id,account_number:account.account_number,account_name:account.name,debit:0,credit:0};
     line[amount>0?'debit':'credit']=roundMoney(line[amount>0?'debit':'credit']+Math.abs(amount));lines.set(key,line);
   };
-  for(const row of rows){add(row.inventory,row.value_difference);add(row.value_difference<0?lossOffset:gainOffset,-row.value_difference);}
+  for(const row of rows){add(row.inventory,row.value_difference);add(counterpart,-row.value_difference);}
   let journal;
   if(lines.size){const posted=await postJournal({entities:s},{entryDate:date,description:`Warehouse quantity adjustment: ${warehouse.name} / ${reference}`,sourceModule:'inventory_adjustment',sourceDocumentType:'WarehouseAdjustment',sourceDocumentId:eventId,userId:user.id,lines:[...lines.values()]});if(posted.reused)throw Error('Reconcile the existing adjustment journal before retrying.');journal=posted.journal;}
   for(const row of rows) {
@@ -191,8 +193,8 @@ export async function warehouseAdjustmentAction(client,user,body) {
     const quantity=roundQuantity(all.reduce((n,b)=>n+Number(b.quantity),0)),value=roundMoney(all.reduce((n,b)=>n+Number(b.total_value),0));
     if(quantity>0)await s.Product.update(id,{current_cost:value/quantity});
   }
-  const result={id:eventId,...treatment,...(neutral?{correction_account:accountView(correctionAccount)}:{}),...(!itemMode&&splitAccounts&&!neutral?{loss_account:lossOffset?accountView(lossOffset):null,gain_account:gainOffset?accountView(gainOffset):null}:{}),warehouse_id:warehouse.id,warehouse_name:warehouse.name,reference,date,journal_id:journal?.id || '',journal_number:journal?.journal_number || '',value_difference:roundMoney(rows.reduce((n,r)=>n+r.value_difference,0)),rows:rows.map(({inventory:omitted,...row})=>row),
-    ...(itemMode?{item_group:itemGroup,item_counts:itemCounts.map(item=>({...item,product_name:byProduct.get(item.product_id).name,unit:stockUnit(byProduct.get(item.product_id))})),loss_account:lossOffset?accountView(lossOffset):null,gain_account:gainOffset?accountView(gainOffset):null,posting_lines:[...lines.values()]}:neutral||splitAccounts?{posting_lines:[...lines.values()]}:{})};
+  const result={id:eventId,...treatment,...(neutral?{correction_account:accountView(correctionAccount)}:{}),...(operatingValue?{offset_account:accountView(offsetAccount)}:{}),...(!neutral&&(itemMode||splitAccounts||operatingValue)?{loss_account:hasShortageValue?accountView(offsetAccount):null,gain_account:hasSurplusValue?accountView(offsetAccount):null}:{}),warehouse_id:warehouse.id,warehouse_name:warehouse.name,reference,date,journal_id:journal?.id || '',journal_number:journal?.journal_number || '',value_difference:roundMoney(rows.reduce((n,r)=>n+r.value_difference,0)),rows:rows.map(({inventory:omitted,...row})=>row),
+    ...(itemMode?{item_group:itemGroup,item_counts:itemCounts.map(item=>({...item,product_name:byProduct.get(item.product_id).name,unit:stockUnit(byProduct.get(item.product_id))})),}:{}),...(itemMode||neutral||splitAccounts||operatingValue?{posting_lines:[...lines.values()]}:{})};
   await s.AuditLog.create({id:eventId,action:'warehouse_quantity_adjusted',module:'inventory_adjustment',entity_type:'WarehouseAdjustment',entity_id:eventId,user_id:user.id,user_name:employee?.full_name || user.full_name || user.email,description:`${warehouse.name}: ${reference}`,reason,warehouse_adjustment_payload:payload,warehouse_adjustment_result:result});
   return result;
 }

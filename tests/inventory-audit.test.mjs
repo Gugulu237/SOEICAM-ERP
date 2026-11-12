@@ -29,6 +29,7 @@ async function environment() {
   const entities = Object.fromEntries(['Product', 'Warehouse', 'StockBalance', 'StockMovement', 'PostingRule', 'Account', 'JournalEntry', 'JournalLine', 'TreasuryAccount', 'TreasuryTransaction', 'CompanySettings', 'AccountingPeriod', 'AuditLog'].map(n => [n, storeModule.entityStore(n)]));
   await entities.CompanySettings.create({ company_name: 'Fixture', next_journal_number: 1 });
   for (const [id, type, normal, balance] of [['inventory', 'asset', 'debit', 150], ['loss', 'expense', 'debit', 0], ['gain', 'other_income', 'credit', 0], ['cash', 'asset', 'debit', 1000]]) await entities.Account.create({ id, account_number: id, name: id, account_type: type, normal_balance: normal, balance, is_active: true, is_posting: true });
+  await entities.PostingRule.create({id:'stock-offset',rule_key:'stock_count_offset_expense',account_id:'loss',is_active:true});
   await entities.TreasuryAccount.create({ id: 'till', name: 'Cash', account_type: 'cash', gl_account_id: 'cash', balance: 1000 });
   await entities.Product.create({ id: 'item', name: 'Flour', sku: 'FLR', inventory_type: 'raw_material', unit_of_measure: 'kg', inventory_account_id: 'inventory', configuration_status: 'configured', current_cost: 10 });
   await entities.Warehouse.create({ id: 'main', code: 'MAIN', name: 'Main warehouse', warehouse_type: 'raw_material', is_active: true });
@@ -42,7 +43,7 @@ async function environment() {
   const write = (action, a, extra = {}) => ({ action: 'inventoryAudit' + action, ...(a ? { auditId: a.id, revision: a.revision } : {}), requestKey: crypto.randomUUID(), ...extra });
   const change = async (action, a, extra) => (await ok(write(action, a, extra))).audit;
   const start = (balanceIds = ['lot1', 'lot2']) => change('Start', null, { title: 'Weekly physical count', balanceIds });
-  const save = (a, counts = [8, 6], extra = {}) => change('Save', a, { rows: a.rows.map((r, i) => ({ balance_id: r.balance_id, counted_quantity: counts[i], reason: 'Verified with signed count sheet' })), evidenceReference: 'SHEET-001 witnessed count', lossAccountId: 'loss', gainAccountId: 'gain', ...extra });
+  const save = (a, counts = [8, 6], extra = {}) => change('Save', a, { rows: a.rows.map((r, i) => ({ balance_id: r.balance_id, counted_quantity: counts[i], reason: 'Verified with signed count sheet' })), evidenceReference: 'SHEET-001 witnessed count', lossAccountId: 'loss', gainAccountId: 'loss', ...extra });
   const actAs = (id, role = 'cashier', status = true, allowed = true) => { actor = id; staffRole = role; active = status; moduleAllowed = allowed; };
   const approve = async a => { actAs('gm', 'admin'); const result = await change('Approve', a, { note: 'Checked count sheet and confirmed variance' }); return result; };
   return { db, entities, call, ok, write, change, start, save, actAs, approve, close: async () => { delete globalThis.__inventoryDB; delete globalThis.__inventoryTransaction; delete globalThis.__cashierClient; delete globalThis.__cashierTransaction; await db.close(); } };
@@ -69,7 +70,7 @@ test('real route posts independent-approved counts once with balanced GL, preser
     const b = await e.StockBalance.get('lot1');
     assert.equal(b.quantity, 8); assert.equal(b.total_value, 80); assert.equal(b.qc_status, 'quarantine'); assert.equal(b.batch_number, 'batch-lot1'); assert.equal(b.expiry_date, '2027-01-01'); assert.equal(b.production_order_id, 'production-1');
     assert.equal((await e.StockBalance.get('lot2')).quantity, 6);
-    assert.equal((await e.Account.get('inventory')).balance, 140); assert.equal((await e.Account.get('loss')).balance, 20); assert.equal((await e.Account.get('gain')).balance, 10);
+    assert.equal((await e.Account.get('inventory')).balance, 140); assert.equal((await e.Account.get('loss')).balance, 10); assert.equal((await e.Account.get('gain')).balance, 0);
     assert.equal((await e.JournalEntry.list()).length, 1); const lines = await e.JournalLine.list();
     assert.equal(lines.reduce((n, l) => n + l.debit - l.credit, 0), 0);
     assert.equal((await e.StockMovement.list()).length, 2); assert.equal((await e.Product.get('item')).current_cost, 10);
@@ -109,7 +110,7 @@ test('counts require all quantities, reasons, evidence, correct accounts, revisi
     let a = await env.start();
     assert.match((await env.call(env.write('Submit', a))).error, /Count every/);
     a = await env.save(a, [8, 6], { evidenceReference: '' }); assert.match((await env.call(env.write('Submit', a))).error, /evidence/);
-    a = await env.save(a, [8, 6], { lossAccountId: 'cash' }); assert.match((await env.call(env.write('Submit', a))).error, /loss.*account/);
+    a = await env.save(a, [8, 6], { lossAccountId: 'cash' }); assert.match((await env.call(env.write('Submit', a))).error, /mapped Inventory Adjustment/);
     a = await env.save(a, [8, 6], { rows: a.rows.map(r => ({ balance_id: r.balance_id, counted_quantity: 1, reason: '' })) }); assert.match((await env.call(env.write('Submit', a))).error, /Explain the variance/);
     a = await env.save(a); const previous = a; a = await env.change('Submit', a);
     assert.match((await env.call(env.write('Save', previous, { rows: [] }))).error, /another session/);
@@ -140,11 +141,11 @@ test('non-sale count losses exclude COGS and legacy reviews must be recounted an
     const e=env.entities;
     await e.Account.create({id:'cogs',account_number:'5100',name:'Cost of goods sold',account_type:'cogs',normal_balance:'debit',balance:0,is_active:true,is_posting:true});
     const workspace=await env.ok({action:'inventoryAuditWorkspace'});
-    assert.ok(workspace.accounts.some(a=>a.id==='loss'));assert.ok(workspace.accounts.some(a=>a.id==='gain'));assert.ok(!workspace.accounts.some(a=>a.id==='cogs'));
+    assert.ok(workspace.accounts.some(a=>a.id==='loss'));assert.ok(!workspace.accounts.some(a=>a.id==='gain'));assert.ok(!workspace.accounts.some(a=>a.id==='cogs'));
     const snapshot=async()=>Object.fromEntries(await Promise.all(['Account','Product','StockBalance','StockMovement','JournalEntry','JournalLine','AuditLog','CompanySettings'].map(async name=>[name,(await e[name].list()).sort((a,b)=>a.id.localeCompare(b.id))])));
     let a=await env.save(await env.start(),[8,6],{lossAccountId:'cogs'});
     let before=await snapshot(),blocked=await env.call(env.write('Submit',a));
-    assert.equal(blocked.status,400);assert.match(blocked.error,/inventory loss account/);assert.deepEqual(await snapshot(),before);
+    assert.equal(blocked.status,400);assert.match(blocked.error,/mapped Inventory Adjustment/);assert.deepEqual(await snapshot(),before);
 
     // Reproduce append-only snapshots saved by the earlier policy without
     // rewriting any preceding count or manufacturing a new physical movement.
@@ -155,15 +156,15 @@ test('non-sale count losses exclude COGS and legacy reviews must be recounted an
     };
     const submitted=await seedLegacy(a,'submitted');a=submitted.state;env.actAs('gm','admin');
     before=await snapshot();blocked=await env.call(env.write('Approve',a,{note:'Independently reviewed old count'}));
-    assert.equal(blocked.status,400);assert.match(blocked.error,/inventory loss account/);assert.deepEqual(await snapshot(),before);
+    assert.equal(blocked.status,400);assert.match(blocked.error,/mapped Inventory Adjustment/);assert.deepEqual(await snapshot(),before);
     const approved=await seedLegacy(a,'approved',{approved_by:'legacy-reviewer',approved_at:new Date().toISOString(),approved_plan:[{account_id:'cogs',debit:20,credit:0},{account_id:'inventory',debit:0,credit:20},{account_id:'inventory',debit:10,credit:0},{account_id:'gain',debit:0,credit:10}]});a=approved.state;
     before=await snapshot();blocked=await env.call(env.write('Post',a));
-    assert.equal(blocked.status,400);assert.match(blocked.error,/inventory loss account/);assert.deepEqual(await snapshot(),before);
+    assert.equal(blocked.status,400);assert.match(blocked.error,/mapped Inventory Adjustment/);assert.deepEqual(await snapshot(),before);
 
     env.actAs('accountant');a=await env.change('Recount',a,{note:'Replace legacy loss coding with operating expense'});
     assert.equal(a.status,'draft');assert.equal(a.approved_by,'');assert.equal(a.approved_plan,null);assert.ok(a.rows.every(r=>r.counted_quantity===null));
     a=await env.change('Submit',await env.save(a));a=await env.approve(a);a=await env.change('Post',a);
-    assert.equal(a.status,'posted');assert.equal((await e.Account.get('cogs')).balance,0);assert.equal((await e.Account.get('loss')).balance,20);assert.equal((await e.Account.get('inventory')).balance,140);
+    assert.equal(a.status,'posted');assert.equal((await e.Account.get('cogs')).balance,0);assert.equal((await e.Account.get('loss')).balance,10);assert.equal((await e.Account.get('inventory')).balance,140);
     assert.ok(!(await e.JournalLine.list()).some(line=>line.account_id==='cogs'));
     assert.deepEqual(await e.AuditLog.get(submitted.event.id),submitted.event);assert.deepEqual(await e.AuditLog.get(approved.event.id),approved.event);
   }finally{await env.close();}
@@ -306,13 +307,25 @@ test('opening audit review revalidates equity and rejects missing approved treat
  }finally{await env.close();}
 });
 
-test('legacy approved operating counts retain their original gain and loss treatment without rewriting earlier proof',async()=>{
- const env=await environment();try{
-  const e=env.entities;let a=await env.approve(await env.change('Submit',await env.save(await env.start())));
-  const legacy={...a,revision:a.revision+1};for(const field of ['purpose','correction_account_id','correction_confirmed','approved_treatment','approved_plan_token'])delete legacy[field];
-  const proof=await e.AuditLog.create({id:'legacy-operating-approval',description:'Legacy operating count approval',action:'inventoryAuditApprove',module:'inventory_audit',entity_type:'InventoryAudit',entity_id:a.id,user_id:'gm',inventory_audit_state:legacy,inventory_audit_payload:'legacy-fixture'});
-  a=(await env.ok(env.write('Post',legacy))).audit;assert.equal(a.status,'posted');assert.equal((await e.Account.get('loss')).balance,20);assert.equal((await e.Account.get('gain')).balance,10);assert.deepEqual(await e.AuditLog.get(proof.id),proof);
- }finally{await env.close();}
+test('legacy approved shortages keep matching expense evidence and legacy surplus income requires a recount',async()=>{
+ for(const counts of [[8,5],[8,6]]){
+  const env=await environment();try{
+   const e=env.entities;let a=await env.approve(await env.change('Submit',await env.save(await env.start(),counts)));
+   const legacy={...a,revision:a.revision+1};for(const field of ['purpose','correction_account_id','correction_confirmed','approved_treatment','approved_plan_token'])delete legacy[field];
+   if(counts[1]>5){
+    legacy.gain_account_id='gain';
+    legacy.approved_plan=legacy.approved_plan.map(line=>line.account_id==='loss'&&line.credit?{...line,account_id:'gain',account_name:'gain',account_number:'gain'}:line);
+   }
+   const proof=await e.AuditLog.create({id:'legacy-operating-approval',description:'Legacy operating count approval',action:'inventoryAuditApprove',module:'inventory_audit',entity_type:'InventoryAudit',entity_id:a.id,user_id:'gm',inventory_audit_state:legacy,inventory_audit_payload:'legacy-fixture'});
+   if(counts[1]>5){
+    const failed=await env.call(env.write('Post',legacy));
+    assert.equal(failed.status,400);assert.match(failed.error,/mapped Inventory Adjustment/);assert.equal((await e.JournalEntry.list()).length,0);
+   }else{
+    a=(await env.ok(env.write('Post',legacy))).audit;assert.equal(a.status,'posted');assert.equal((await e.Account.get('loss')).balance,20);
+   }
+   assert.equal((await e.Account.get('gain')).balance,0);assert.deepEqual(await e.AuditLog.get(proof.id),proof);
+  }finally{await env.close();}
+ }
 });
 
 test('a matched opening correction cannot manufacture value from submitted unit-cost fields and recount clears treatment review',async()=>{

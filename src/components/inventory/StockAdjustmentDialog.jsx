@@ -31,7 +31,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
   const [search,setSearch]=useState(''),[sort,setSort]=useState('name'),[page,setPage]=useState(0);
   const [stage,setStage]=useState('count'),[reference,setReference]=useState(''),[reason,setReason]=useState('');
   const [purpose,setPurpose]=useState(''),[correctionAccountId,setCorrectionAccountId]=useState(''),[correctionConfirmed,setCorrectionConfirmed]=useState(false);
-  const [loss,setLoss]=useState(''),[gain,setGain]=useState(''),[revision,setRevision]=useState(0);
+  const [offsetAccountId,setOffsetAccountId]=useState(''),[revision,setRevision]=useState(0);
   const [saving,setSaving]=useState(false),[receipt,setReceipt]=useState(null),[details,setDetails]=useState(null),[stale,setStale]=useState(false);
   const busy=useRef(false),requestKey=useRef(crypto.randomUUID()),detailSaved=useRef(false),scroller=useRef(null),current=useRef(null),checker=useRef(null),syncFlight=useRef(null),submitted=useRef(false);
   current.current={data,counts,receipt,details};
@@ -42,8 +42,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
     invokeFieldOps({action:'warehouseAdjustmentWorkspace',warehouseId:warehouse||undefined,productId:productId||undefined,itemGroup:group||'auto'}).then(({data:result})=>{
       if(!active)return;if(result.error)throw Error(result.error);
       setData(result);
-      setLoss(previous=>result.accounts.some(a=>a.id===previous)?previous:result.accounts.length===1?result.accounts[0].id:'');
-      setGain(previous=>result.gain_accounts?.some(a=>a.id===previous)?previous:result.gain_accounts?.length===1?result.gain_accounts[0].id:'');
+      setOffsetAccountId(result.offset_account?.id||'');
     }).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
   },[open,warehouse,productId,revision,group]);
@@ -83,12 +82,13 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
   const selectedRows=changes.flatMap(entry=>entry.rows),needsLoss=selectedRows.some(row=>row.value_difference<0),needsGain=selectedRows.some(row=>row.value_difference>0);
   const neutral=purpose==='opening_correction',correctionAccount=data?.correction_accounts?.find(account=>account.id===correctionAccountId);
   const treatmentReady=!!purpose&&(!neutral||!!correctionAccount&&correctionConfirmed);
-  const lossAccount=neutral?correctionAccount:data?.accounts.find(account=>account.id===loss),gainAccount=neutral?correctionAccount:data?.gain_accounts?.find(account=>account.id===gain);
-  const ledger=itemCountJournal(changes,items,lossAccount,gainAccount);
+  const offsetAccount=data?.offset_account,requiresOffset=needsLoss||needsGain;
+  const counterpart=neutral?correctionAccount:offsetAccount?.id===offsetAccountId?offsetAccount:null;
+  const ledger=itemCountJournal(changes,items,counterpart,counterpart);
   const net=roundMoney(selectedRows.reduce((sum,row)=>sum+row.value_difference,0));
   const accountMissing=changes.some(entry=>entry.rows.length>0&&!entry.item.inventory_account);
   const missingExpiryConfirmation=changes.some(entry=>found[entry.product_id]?.ready_for_sale===true&&!found[entry.product_id]?.expiry_date&&found[entry.product_id]?.confirm_missing_expiry!==true);
-  const ready=treatmentReady&&!!changes.length&&!missingExpiryConfirmation&&!incomplete&&!accountMissing&&(!needsLoss||!!lossAccount)&&(!needsGain||!!gainAccount)&&reference.trim().length>=3&&reason.trim().length>=5&&!stale&&!syncError&&!syncing&&selectedRows.length>0&&selectedRows.length<=100&&changes.length<=100;
+  const ready=treatmentReady&&!!changes.length&&!missingExpiryConfirmation&&!incomplete&&!accountMissing&&(!requiresOffset||!!counterpart)&&reference.trim().length>=3&&reason.trim().length>=5&&!stale&&!syncError&&!syncing&&selectedRows.length>0&&selectedRows.length<=100&&changes.length<=100;
   const query=normalizeProductText(search).trim();
   const filtered=sortProductRows(items.filter(item=>normalizeProductText([item.name,item.sku,item.size,item.flavor].join(' ')).includes(query)),sort);
   const pages=Math.max(1,Math.ceil(filtered.length/25)),currentPage=Math.min(page,pages-1),visible=filtered.slice(currentPage*25,currentPage*25+25);
@@ -105,7 +105,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
     if(busy.current||syncFlight.current||!ready||loading)return;
     busy.current=true;submitted.current=true;setSaving(true);onBusyChange?.(true);setError('');
     try{
-      const {data:result}=await invokeFieldOps({action:'postWarehouseAdjustment',requestKey:requestKey.current,warehouseId:data.warehouse.id,itemGroup:activeGroup,date:data.date||businessDate(),reference,reason,purpose,...(neutral?{correctionAccountId,correctionConfirmed}:{lossAccountId:loss,gainAccountId:gain}),
+      const {data:result}=await invokeFieldOps({action:'postWarehouseAdjustment',requestKey:requestKey.current,warehouseId:data.warehouse.id,itemGroup:activeGroup,date:data.date||businessDate(),reference,reason,purpose,...(neutral?{correctionAccountId,correctionConfirmed}:{lossAccountId:needsLoss?offsetAccountId:'',gainAccountId:needsGain?offsetAccountId:''}),
         item_counts:changes.map(entry=>({product_id:entry.product_id,item_fingerprint:entry.item.count_fingerprint,counted_quantity:entry.counted_quantity,...(entry.allocation_method==='fefo'?{allocation_method:'fefo'}:{}),snapshots:(stock.get(entry.product_id)||[]).map(row=>({balance_id:row.balance_id,fingerprint:row.fingerprint}))})),
         rows:selectedRows.map(row=>row.balance_id?{balance_id:row.balance_id,fingerprint:row.fingerprint,counted_quantity:row.counted_quantity}:{product_id:row.product_id,unit:row.unit,lot_number:row.lot_number,expiry_date:row.expiry_date,unit_cost:row.unit_cost,counted_quantity:row.counted_quantity,...(found[row.product_id]?.ready_for_sale?{ready_for_sale:true,...(!row.expiry_date?{confirm_missing_expiry:found[row.product_id]?.confirm_missing_expiry===true}:{})}:{})})});
       if(result.error)throw Error(result.error);
@@ -167,17 +167,13 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
           {!entry.error&&!entry.needs_batches&&!entry.needs_lot&&<p className="text-xs text-slate-600">{ui('Inventory value change')}: <strong>{formatXAF(entry.value_difference)}</strong></p>}
           <button type="button" disabled={saving} className="min-h-11 text-xs text-slate-500 underline" onClick={()=>openDetails(entry.product_id)}>{ui('New lot or accounting correction')}</button>
         </section>)}
-        <InventoryAdjustmentTreatment purpose={purpose} onPurpose={value=>{setPurpose(value);setCorrectionAccountId('');setCorrectionConfirmed(false);}} accountId={correctionAccountId} onAccount={value=>{setCorrectionAccountId(value);setCorrectionConfirmed(false);}} confirmed={correctionConfirmed} onConfirmed={setCorrectionConfirmed} accounts={data.correction_accounts||[]} disabled={saving}/>
+        <InventoryAdjustmentTreatment purpose={purpose} onPurpose={value=>{setPurpose(value);setCorrectionAccountId('');setCorrectionConfirmed(false);}} accountId={correctionAccountId} onAccount={value=>{setCorrectionAccountId(value);setCorrectionConfirmed(false);}} confirmed={correctionConfirmed} onConfirmed={setCorrectionConfirmed} accounts={data.correction_accounts||[]} disabled={saving} requiresOffset={requiresOffset} offsetAccount={offsetAccount} offsetAccountId={offsetAccountId} onOffsetAccount={setOffsetAccountId}/>
         <div className="grid gap-3 sm:grid-cols-2">
-          {purpose==='operating'&&needsLoss&&<label className="text-xs">{ui('Inventory loss account')}<select aria-label={ui('Inventory loss account')} value={loss} disabled={saving} onChange={e=>setLoss(e.target.value)} className="mt-1 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm"><option value="">{ui('Select account')}</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.account_number} · {a.name}</option>)}</select></label>}
-          {purpose==='operating'&&needsGain&&<label className="text-xs">{ui('Inventory surplus account')}<select aria-label={ui('Inventory surplus account')} value={gain} disabled={saving} onChange={e=>setGain(e.target.value)} className="mt-1 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm"><option value="">{ui('Select account')}</option>{(data.gain_accounts||[]).map(a=><option key={a.id} value={a.id}>{a.account_number} · {a.name}</option>)}</select></label>}
           <label className="text-xs">{ui('Count sheet / reference')}<Input aria-label={ui('Count sheet / reference')} value={reference} maxLength={200} disabled={saving} onChange={e=>setReference(e.target.value)} className="mt-1 h-11 text-base"/></label>
           <label className="text-xs">{ui('Adjustment reason')}<Input aria-label={ui('Adjustment reason')} value={reason} maxLength={1000} disabled={saving} onChange={e=>setReason(e.target.value)} className="mt-1 h-11 text-base"/></label>
         </div>
         {accountMissing&&<p role="alert" className="text-sm text-red-700">{ui('Configure the inventory asset account for each affected item before posting.')}</p>}
-        {purpose==='operating'&&(needsLoss&&!data.accounts.length||needsGain&&!data.gain_accounts?.length)&&<p role="alert" className="text-sm text-red-700">{ui('Configure the required loss or surplus account in Accounting before posting.')}</p>}
-        {purpose==='operating'&&needsLoss&&data.accounts.length>0&&!lossAccount&&<p role="status" className="text-xs text-amber-800">{ui('Select the inventory loss account to record this shortage as an expense.')}</p>}
-        {purpose&&!incomplete&&!accountMissing&&(!needsLoss||lossAccount)&&(!needsGain||gainAccount)&&<div className="space-y-2 rounded-xl bg-slate-50 p-3"><h3 className="text-sm font-semibold">{ui('Accounting entry')}</h3>{ledger.map(line=><div key={line.id+':'+(line.debit?'D':'C')} className="flex items-start justify-between gap-2 text-xs"><span className="min-w-0 break-words">{line.account_number} · {line.name}</span><span className="shrink-0">{ui(line.debit?'Debit':'Credit')} {formatXAF(line.debit||line.credit)}</span></div>)}<p className="border-t pt-2 text-sm">{ui('Net inventory value change')}: <strong>{formatXAF(net)}</strong></p></div>}
+        {purpose&&!incomplete&&!accountMissing&&(!requiresOffset||counterpart)&&<div className="space-y-2 rounded-xl bg-slate-50 p-3"><h3 className="text-sm font-semibold">{ui('Accounting entry')}</h3>{ledger.map(line=><div key={line.id+':'+(line.debit?'D':'C')} className="flex items-start justify-between gap-2 text-xs"><span className="min-w-0 break-words">{line.account_number} · {line.name}</span><span className="shrink-0">{ui(line.debit?'Debit':'Credit')} {formatXAF(line.debit||line.credit)}</span></div>)}<p className="border-t pt-2 text-sm">{ui('Net inventory value change')}: <strong>{formatXAF(net)}</strong></p></div>}
       </>}
     </div>}
     {(changes.length>100||selectedRows.length>100)&&<p role="alert" className="text-xs text-red-700">{ui('Post no more than 100 changed stock records at a time. Reduce this count selection.')}</p>}

@@ -1,6 +1,7 @@
 
 /* localized-interface */
 import {validPostingRuleAccount} from '@/lib/posting-rule-types';
+import {STOCK_COUNT_OFFSET_LABEL,STOCK_COUNT_OFFSET_RULE} from '@/lib/inventory-adjustment-treatment';
 import {readAll} from '@/lib/field-pos';
 import {Button} from '@/components/ui/button';
 import { ui,uiMessage } from '@/lib/i18n';
@@ -25,6 +26,7 @@ export default function PostingRulesManager() {
       readAll(erp.entities.PostingRule),
       readAll(erp.entities.Account,{is_active:true},"account_number"),
     ]).then(([r, a]) => {
+      if(!r.some(rule=>rule.rule_key===STOCK_COUNT_OFFSET_RULE))r.push({id:'pending-inventory-count-offset',rule_key:STOCK_COUNT_OFFSET_RULE,label:ui(STOCK_COUNT_OFFSET_LABEL),description:ui('Expense offset debited for physical count shortages and credited for surpluses.'),account_id:'',is_active:true,unsaved:true});
       if(!r.some(rule=>rule.rule_key==='supplier_prepayment'))r.push({id:'pending-supplier-prepayment',rule_key:'supplier_prepayment',label:ui('Supplier prepayments'),description:ui('Amounts paid to suppliers before goods are received'),account_id:'',is_active:true,unsaved:true});
       if(!active)return;if(!r.some(rule=>rule.rule_key==='marketing_degustation_expense'))r.push({id:'pending-degustation',rule_key:'marketing_degustation_expense',label:'Marketing · Dégustation',description:ui('Inventory cost of products given to customers'),account_id:'',is_active:true,unsaved:true});setRules(r.sort((x, y) => (x.rule_key || "").localeCompare(y.rule_key || "")));
       setAccounts(a.sort((x, y) => x.account_number.localeCompare(y.account_number)));

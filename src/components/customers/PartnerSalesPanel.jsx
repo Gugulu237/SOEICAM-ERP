@@ -5,6 +5,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { formatXAF, formatDate } from "@/lib/formatters";
+import { CUSTOMER_SALE_STATUSES } from '@/lib/customer-mobile-summary';
 import StatusBadge from "@/components/shared/StatusBadge";
 import { ShoppingCart, Receipt } from "lucide-react";
 
@@ -50,7 +51,7 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
     const ids = idsKey.split(",");
     Promise.all([
       erp.entities.SalesOrder.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total"] }),
-      erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids } }, groupBy: "status", sum: ["total", "balance"] }),
+      erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, payment_type: { $ne: 'cash' }, status: { $in: CUSTOMER_SALE_STATUSES } }, groupBy: "status", sum: ["balance"] }),
       erp.entities.SalesOrder.filter({ customer_id: { $in: ids } }, { sort: "-order_date", limit: 15, include_total: false }),
       erp.entities.Invoice.filter({ customer_id: { $in: ids } }, { sort: "-invoice_date", limit: 15, include_total: false }),
       erp.entities.Invoice.aggregate({ query: { customer_id: { $in: ids }, accounting_source: { $ne: "opening_balances" } }, groupBy: "status", sum: ["total"] }),
@@ -106,7 +107,7 @@ export default function PartnerSalesPanel({ partner, subPartners = [] }) {
               <td className="px-3 py-2 text-right text-slate-600">{formatDate(i.invoice_date)}</td>
               <td className="px-3 py-2 text-right"><StatusBadge status={i.status} /></td>
               <td className="px-3 py-2 text-right text-slate-600">{formatXAF(i.total)}</td>
-              <td className="px-3 py-2 text-right font-medium text-slate-900">{formatXAF(i.balance)}</td>
+              <td className="px-3 py-2 text-right font-medium text-slate-900">{formatXAF(i.payment_type!=='cash'&&CUSTOMER_SALE_STATUSES.includes(i.status)?i.balance:0)}</td>
             </tr>
           ))}
         </Table>

@@ -2,6 +2,7 @@ import {requireActiveContext,forbidden} from '../access.js';
 import {assertModule} from './role-catalogue.js';
 import {readRecords} from './commercial-workspace.js';
 import {validPostingRuleAccount} from '../../lib/posting-rule-types.js';
+import {STOCK_COUNT_OFFSET_RULE,validStockCountOffsetAccount} from '../../lib/inventory-adjustment-treatment.js';
 export async function preparePostingRule(stores,context,input,existing){
  if(requireActiveContext(context)!=='admin')throw forbidden('Only the General Manager can change posting rules.');assertModule({...context,role:'admin'},'accounting');
  if(Object.keys(input).some(k=>!['rule_key','label','description','account_id','account_name','account_number','is_active'].includes(k)))throw Error('Only posting-rule settings may be supplied.');
@@ -10,6 +11,10 @@ export async function preparePostingRule(stores,context,input,existing){
  if((await readRecords(stores.PostingRule,{rule_key:key})).some(r=>r.id!==existing?.id))throw Error('Each posting-rule key must be unique.');
  const account=await stores.Account.get(form.account_id);
  if(!validPostingRuleAccount(account,key))throw Error('Choose an active account with the correct type and normal balance for this posting rule.');
+ if(key===STOCK_COUNT_OFFSET_RULE){
+  const treasury=await readRecords(stores.TreasuryAccount);
+  if(!validStockCountOffsetAccount(account,new Set(treasury.map(row=>row.gl_account_id))))throw Error('Choose a non-treasury expense account for the inventory adjustment offset.');
+ }
  if(typeof form.is_active!=='boolean'||String(form.label||'').length>160||String(form.description||'').length>1000)throw Error('Enter valid posting-rule settings.');
  return {rule_key:key,label:String(form.label||key),description:String(form.description||''),account_id:account.id,account_number:account.account_number,account_name:account.name,is_active:form.is_active};
 }

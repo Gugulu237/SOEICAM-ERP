@@ -8,6 +8,7 @@ import { erp } from "@/api/erpClient";
 import { useNavigate } from "@/lib/router";
 import { formatXAF, formatDate } from "@/lib/formatters";
 import { agingBucket } from "@/lib/ar-ap";
+import { CUSTOMER_SALE_STATUSES } from '@/lib/customer-mobile-summary';
 import PageHeader from "@/components/shared/PageHeader";
 import KPICard from "@/components/shared/KPICard";
 import StatusBadge from "@/components/shared/StatusBadge";
@@ -27,8 +28,8 @@ export default function Receivables() {
   const [error,setError] = useState('');
 
   useEffect(() => {
-    readAll(erp.entities.Invoice,{},"-invoice_date")
-      .then((inv) => setInvoices(inv.filter((i) => i.status !== "draft" && i.status !== "cancelled")))
+    readAll(erp.entities.Invoice,{payment_type:{$ne:'cash'},status:{$in:CUSTOMER_SALE_STATUSES}},"-invoice_date")
+      .then(setInvoices)
       .catch(e=>setError(e.message)).finally(() => setLoading(false));
   }, []);
 
@@ -66,7 +67,7 @@ export default function Receivables() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <KPICard title={ui("Total Outstanding")} value={formatXAF(outstanding)} subtitle={ui("{0} open invoices", open.length)} />
         <KPICard title={ui("Overdue")} value={formatXAF(overdue)} subtitle={ui("Past due date")} color="text-red-600" />
-        <KPICard title={ui("Invoices")} value={invoices.length} subtitle={ui("All posted invoices")} />
+        <KPICard title={ui("Invoices")} value={invoices.length} subtitle={ui("Customer receivables")} />
       </div>
 
       <Tabs defaultValue="invoices">
