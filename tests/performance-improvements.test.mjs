@@ -85,13 +85,41 @@ test('read-only dashboard calls coalesce without clearing lookups, while success
 test('same-page query changes use native history, retain replace intent and skip unchanged targets',async()=>{
   const output=await build({entryPoints:['src/lib/router.jsx'],bundle:true,format:'esm',platform:'node',write:false,plugins:[{name:'navigation-fixture',setup(b){
     b.onResolve({filter:/^react$|^next\/|navigation-context$|navigation-session$/},a=>({path:a.path,namespace:'fixture'}));
-    b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='react'?'export const useCallback=f=>f;export const useEffect=()=>{};export default {forwardRef:f=>f};':a.path==='next/link'?'export default ()=>null;':a.path==='next/navigation'?"export const useRouter=()=>{throw Error('server navigation used')};export const usePathname=()=>'/cashier';export const useSearchParams=()=>new URLSearchParams('section=customers');export const useParams=()=>({});":a.path.endsWith('navigation-context')?'export const useNavigationHistory=()=>{};export const useNavigationSession=()=>null;':'export const announceNavigation=(...args)=>globalThis.__navAnnouncements.push(args);'}));
+    b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='react'?'export const useCallback=f=>f;export const useEffect=()=>{};export default {forwardRef:f=>f};':a.path==='next/link'?'export default ()=>null;':a.path==='next/navigation'?"export const useRouter=()=>{throw Error('server navigation used')};export const usePathname=()=>'/customers';export const useSearchParams=()=>new URLSearchParams(globalThis.__navFixture.canonical.search);export const useParams=()=>({});":a.path.endsWith('navigation-context')?'export const useNavigationHistory=()=>{};export const useNavigationSession=()=>null;':'export const announceNavigation=(...args)=>globalThis.__navAnnouncements.push(args);'}));
   }}]});
-  const previous=globalThis.window,calls=[];globalThis.__navAnnouncements=[];globalThis.window={history:{pushState:(...args)=>calls.push(['push',...args]),replaceState:(...args)=>calls.push(['replace',...args])}};
+  const previous=globalThis.window,calls=[],url=new URL('https://example.test/customers?view=list');
+  const fixture={canonical:url,address:url};globalThis.__navFixture=fixture;
+  globalThis.__navAnnouncements=[];
+  const tree={tree:['customers']},history={state:{__NA:true,__PRIVATE_NEXTJS_INTERNALS_TREE:tree}};
+  const update=(kind,data,_title,href)=>{
+    calls.push([kind,data,href]);
+    fixture.address=new URL(href,fixture.address);
+    // Next skips updating its hooks for navigation writes marked as internal.
+    if(data?.__NA||data?._N){history.state=data;return;}
+    fixture.canonical=fixture.address;
+    history.state={...data,__NA:true,__PRIVATE_NEXTJS_INTERNALS_TREE:tree};
+  };
+  history.pushState=(...args)=>update('push',...args);
+  history.replaceState=(...args)=>update('replace',...args);
+  globalThis.window={history};
   try{
     const {useSearchParams}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
-    const [,set]=useSearchParams();set({section:'customers'});assert.equal(calls.length,0);
-    set({section:'handovers'});assert.equal(calls[0][0],'push');assert.equal(calls[0][3],'/cashier?section=handovers');
-    set(p=>{p.set('section','sales');return p},{replace:true});assert.equal(calls[1][0],'replace');assert.equal(globalThis.__navAnnouncements[1][1].replace,true);
-  }finally{globalThis.window=previous;delete globalThis.__navAnnouncements}
+    const [,set]=useSearchParams();set({view:'list'});assert.equal(calls.length,0);
+    set({view:'list',customer:'fixture'});assert.equal(calls[0][0],'push');
+    assert.equal(calls[0][2],'/customers?view=list&customer=fixture');
+    const marker={owner:'fixture',id:'entry-1'};
+    history.state={...history.state,soeicamNavigation:marker};
+    for(const tab of ['sales','stock',null]){
+      const [,selectTab]=useSearchParams();
+      selectTab(params=>{if(tab)params.set('tab',tab);else params.delete('tab');return params;},{replace:true});
+      assert.equal(fixture.address.searchParams.get('tab'),tab);
+      const [params]=useSearchParams();
+      assert.equal(params.get('tab'),tab,'Next’s route state must reflect the selected customer tab');
+      assert.equal(params.get('customer'),'fixture');
+      assert.deepEqual(history.state.soeicamNavigation,marker);
+      assert.deepEqual(history.state.__PRIVATE_NEXTJS_INTERNALS_TREE,tree);
+      assert.equal(calls.at(-1)[0],'replace');
+      assert.equal(globalThis.__navAnnouncements.at(-1)[1].replace,true);
+    }
+  }finally{globalThis.window=previous;delete globalThis.__navAnnouncements;delete globalThis.__navFixture}
 });
