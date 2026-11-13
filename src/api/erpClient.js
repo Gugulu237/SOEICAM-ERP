@@ -52,6 +52,12 @@ async function upload(file, privateFile) {
 }
 export const erp = {
   auth,entities,
+  customers:{
+    invoiceDetail:(customerId,invoiceId,{original=false}={})=>request(
+      '/api/customers/'+encodeURIComponent(customerId)+'/invoices/'+encodeURIComponent(invoiceId)+(original?'?version=original':''),
+      undefined,{timeoutMs:30000},
+    ),
+  },
   accounting:{
     previewJournalReversal:journalId=>request('/api/accounting/journals?journalId='+encodeURIComponent(journalId),undefined,{timeoutMs:30000}),
     saveAccount:async input=>{const data=await request('/api/accounting/accounts',input);invalidateERPReads();return data;},

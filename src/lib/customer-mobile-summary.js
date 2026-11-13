@@ -7,9 +7,9 @@ export function isPrintableCustomerInvoice(invoice) {
   return Boolean(invoice?.id && CUSTOMER_SALE_STATUSES.includes(invoice.status) && !isOpeningRecord(invoice) && !invoice.sale_reversal);
 }
 
-export function customerInvoicePrintPath(customerId, invoice) {
+export function customerInvoiceDetailPath(customerId, invoice, {fromSales=false}={}) {
   if (!customerId || !isPrintableCustomerInvoice(invoice)) return null;
-  return `/api/customers/${encodeURIComponent(customerId)}/invoices/${encodeURIComponent(invoice.id)}/print`;
+  return `/customers/${encodeURIComponent(customerId)}/invoices/${encodeURIComponent(invoice.id)}${fromSales?'?from=sales':''}`;
 }
 export function customerActivityScope(customerId, headquartersId) {
   return headquartersId ? { $or: [

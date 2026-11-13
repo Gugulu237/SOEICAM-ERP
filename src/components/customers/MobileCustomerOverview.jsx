@@ -5,7 +5,8 @@ import {ui} from '@/lib/i18n';
 import {formatAccountingXAF,formatXAF,formatDate} from '@/lib/formatters';
 import {branchTotalDue,customerAccountBalance,headquartersDueForBranch} from '@/lib/customer-billing-summary';
 import {hasCustomerLocation} from '@/lib/customer-location';
-import {customerInvoicePrintPath} from '@/lib/customer-mobile-summary';
+import {customerInvoiceDetailPath} from '@/lib/customer-mobile-summary';
+import {Link} from '@/lib/router';
 import CustomerMapLinks from './CustomerMapLinks';
 import CustomerGpsButton from './CustomerGpsButton';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -47,7 +48,7 @@ export default function MobileCustomerOverview({partner,balanceLabel='Account ba
           :salesUnavailable?<p className="p-4 text-sm text-muted-foreground">{ui('Sales history is not available in this customer workspace.')}</p>
           :salesError?<p role="alert" className="p-4 text-sm text-red-700">{ui('Sales history could not load.')} {onRetrySales&&<button type="button" className="underline" onClick={onRetrySales}>{ui('Retry')}</button>}</p>
           :sales.length?sales.slice(0,6).map(invoice=>{
-            const href = customerInvoicePrintPath(partner.id, invoice);
+            const href = customerInvoiceDetailPath(partner.id, invoice);
             const number = invoice.invoice_number || ui('Invoice');
             const row = <>
               <div className="min-w-0 flex-1">
@@ -60,7 +61,7 @@ export default function MobileCustomerOverview({partner,balanceLabel='Account ba
             </>;
             const rowClass = 'flex min-h-14 items-start justify-between gap-3 p-3';
             return href
-              ? <a key={invoice.id} href={href} target="_blank" rel="noopener noreferrer" aria-label={`${ui('Open invoice')} ${number}`} className={`${rowClass} hover:bg-muted focus-visible:outline-primary`}>{row}</a>
+              ? <Link key={invoice.id} to={href} aria-label={`${ui('Open invoice')} ${number}`} className={`${rowClass} hover:bg-muted focus-visible:outline-primary`}>{row}</Link>
               : <div key={invoice.id} className={rowClass}>{row}</div>;
           }):<p className="p-4 text-sm text-muted-foreground">{ui('No posted invoices yet.')}</p>}
       </div>

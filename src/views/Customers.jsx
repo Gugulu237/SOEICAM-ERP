@@ -85,7 +85,7 @@ export function CustomerDirectory({selectedId,back}) {
   const [loading, setLoading] = useState(true);
   const [error,setError]=useState('');
   const [selected, setSelected] = useState(null);
-  const selectCustomer=customer=>{setSelected(customer);const next=new URLSearchParams(params);next.set('view','list');customer?next.set('customer',customer.id):next.delete('customer');setParams(next);};
+  const selectCustomer=customer=>{setSelected(customer);const next=new URLSearchParams(params);next.set('view','list');next.delete('tab');customer?next.set('customer',customer.id):next.delete('customer');setParams(next);};
   const [search, setSearch] = usePageState("customer-directory:search", "");
   const navigate = useNavigate();
   const session = useCurrentUser();
