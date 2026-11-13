@@ -45,7 +45,7 @@ test('an administrator-recorded Commercial order feeds daily, performance and da
   assert.equal(performance.supplies[0].products[0].quantity,3);
   const dashboard=await employeeWorkspaceAction(f.client,user,{action:'employeeDashboard',mode:'commercial'});
   const snapshot=commercialSnapshot(dashboard);
-  assert.equal(snapshot.today,1500);assert.equal(snapshot.month,1500);assert.equal(snapshot.commission.eligibleNet,1500);assert.equal(snapshot.commission.salesEstimate,150);
+  assert.equal(snapshot.today,1500);assert.equal(snapshot.month,1500);assert.equal(snapshot.commission.eligibleNet,1338.57);assert.equal(snapshot.commission.salesEstimate,133.86);
   assert.deepEqual(dashboard.cashDays,reconcileDailyCash([],[],[field]),'order projections never enter FieldSale reconciliation');
   assert.equal(snapshot.cash,0);assert.deepEqual(f.rows,before,'all report reads are side-effect free');
   assert.equal(JSON.stringify({daily,performance,dashboard}).includes('unit_cost'),false);

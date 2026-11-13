@@ -1,5 +1,5 @@
 import {eligibleStockRecipient,STOCK_RECIPIENT_ROLES} from './employee-custody.js';
-import {splitIncludedVat} from '../../lib/sale-vat.js';
+import {splitIncludedVat,STANDARD_VAT_RATE} from '../../lib/sale-vat.js';
 import {FEATURE_AUTHORITY,principalRole} from './roles.js';
 import {isOpeningRecord} from '../../lib/opening-records.js';
 import {salesStockSource} from './sales-stock-source.js';
@@ -23,6 +23,45 @@ const addDays = (date,days) => new Date(Date.parse(date+'T00:00:00Z')+Number(day
 const issued = invoice => !['cancelled','credited'].includes(invoice.status);
 function dateOf(date) { periodDates(date,date); return date; }
 const safeNumber = (value,label,positive=false) => { const n=Number(value); if(value==null || value==='' || !Number.isFinite(n) || n<0 || (positive && n<=0) || n>1e12)throw Error('Review '+label+'.'); return n; };
+
+function fieldInvoiceLines(source, lines) {
+  return lines.map(line=>({
+    product_id:line.product_id,product_name:line.product_name,quantity:Number(line.quantity),unit:line.unit,
+    unit_price:Number(line.unit_price),discount_amount:fieldDiscount(line,source),tax_amount:round2(line.tax_amount),
+    tax_rate:line.tax_rate,price_includes_vat:source.price_includes_vat===true||line.price_includes_vat===true,
+    total:round2(Number(line.line_total)+Number(line.tax_amount || 0)),
+  }));
+}
+
+// Validate the saved quote first, then extract the current VAT from that same
+// gross. Old tax-exclusive unit prices retain their original basis.
+function orderInvoiceQuote(source, sourceLines) {
+  if(!sourceLines.length || sourceLines.length>200)throw Error('Save 1 to 200 order lines before invoicing.');
+  let savedTaxTotal=0;
+  const lines=sourceLines.map(line=>{
+    const quantity=round3(safeNumber(line.quantity,'quantity',true));
+    const unitPrice=safeNumber(line.unit_price,'unit price');
+    const discount=round2(safeNumber(line.discount_amount || 0,'discount'));
+    const savedRate=safeNumber(line.tax_rate || 0,'tax rate');
+    if(quantity!==Number(line.quantity))throw Error('Use quantities with at most three decimal places.');
+    if(savedRate>100 || discount>round2(quantity*unitPrice))throw Error('Review line discounts and tax rates.');
+    const amount=round2(quantity*unitPrice-discount);
+    const included=source.price_includes_vat===true||line.price_includes_vat===true;
+    const savedTax=included?splitIncludedVat(amount,savedRate).tax:round2(amount*savedRate/100);
+    const gross=included?amount:round2(amount+savedTax);
+    if(gross!==round2(line.total) || savedTax!==round2(line.tax_amount))throw Error('Saved order line totals do not match quantities, prices and taxes. Save corrected lines first.');
+    savedTaxTotal=round2(savedTaxTotal+savedTax);
+    return {
+      product_id:line.product_id,product_name:line.product_name,quantity,unit:line.unit,unit_price:unitPrice,
+      price_includes_vat:included||savedTax===0,discount_amount:discount,tax_rate:STANDARD_VAT_RATE,
+      tax_amount:splitIncludedVat(gross,STANDARD_VAT_RATE).tax,total:gross,
+    };
+  });
+  const total=round2(lines.reduce((sum,line)=>sum+line.total,0));
+  const tax=round2(lines.reduce((sum,line)=>sum+line.tax_amount,0));
+  if(total<=0 || total!==round2(source.total) || savedTaxTotal!==round2(source.tax_total))throw Error('Saved order totals do not match its lines. Save the corrected order first.');
+  return {lines,subtotal:round2(total-tax),tax,total,priceIncludesVat:lines.every(line=>line.price_includes_vat)};
+}
 async function recordsByIds(store, ids) {
   const rows=[]; const unique=[...new Set(ids.filter(Boolean))];
   for(let i=0;i<unique.length;i+=100)rows.push(...await readRecords(store,{id:{$in:unique.slice(i,i+100)}}));
@@ -33,8 +72,9 @@ async function sourceJournal(stores, source, type) {
   if(!journal || journal.status!=='posted' || journal.source_document_id!==source.id || journal.source_document_type!==type)throw Error('The source sale has no matching posted journal. Reconcile it before issuing an invoice.');
   return journal;
 }
-async function detail(stores,id) {
-  const invoice=await stores.Invoice.get(id); if(!invoice)throw Error('Invoice not found.');
+export async function loadInvoiceDocument(stores,id,invoice=undefined) {
+  invoice??=await stores.Invoice.get(id);
+  if(!invoice||invoice.id!==id)throw Error('Invoice not found.');
   const [lines,settings,customer,journal]=await Promise.all([readRecords(stores.InvoiceLine,{invoice_id:id}),readRecords(stores.CompanySettings),stores.Customer.get(invoice.customer_id),invoice.journal_id?stores.JournalEntry.get(invoice.journal_id):null]);
   if(isOpeningRecord(invoice))throw Error('This is an opening receivable. View its original reference and balance in Receivables.');
   if(!lines.length)throw Error('This invoice has no saved lines. Reconcile its source order before printing it.');
@@ -58,7 +98,7 @@ async function detail(stores,id) {
   const company=invoice.invoice_document?.company || invoiceCompany(settings[0]);
   const options={...invoiceDefaults(customer,company),...invoice.invoice_document?.options};
   const accountingVerified=journal?.status==='posted' && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
-  return {replacements,invoice:{...receipt,...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>({...pick(l,'id product_id product_name quantity unit unit_price discount_amount tax_amount total'),image_url:saleProductMetadata(l,products.get(l.product_id)).image_url})),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
+  return {replacements,invoice:{...receipt,...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>({...pick(l,'id product_id product_name quantity unit unit_price discount_amount tax_rate tax_amount total price_includes_vat'),image_url:saleProductMetadata(l,products.get(l.product_id)).image_url})),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
 }
 async function workspace(stores,role) {
   const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),role==='cashier'?[]:readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),role==='cashier'?[]:readRecords(stores.Customer),readRecords(stores.CompanySettings)]);
@@ -106,7 +146,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   else client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;
   if(body.action==='invoiceWorkspace')return workspace(s,feature&&feature!=='sales'?'cashier':role);
-  if(body.action==='invoiceDetail')return detail(s,body.invoiceId);
+  if(body.action==='invoiceDetail')return loadInvoiceDocument(s,body.invoiceId);
   if(body.action==='invoiceSource') {
     if(!['order','field'].includes(body.sourceType))throw Error('Choose an invoice source.');
     const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');
@@ -116,7 +156,11 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     const options={...defaults,bill_to_address:billTo.options.bill_to_address || defaults.bill_to_address};
     const invoiceDate=body.sourceType==='field'?source.transaction_date:today(),terms=Number(source.payment_terms_days ?? customer.payment_terms_days ?? 0);
     const cashOptions=body.sourceType==='order'&&source.payment_type==='cash'?await cashSaleOptions(s):{};
-    return {...cashOptions,options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,source:pick(source,'id price_includes_vat customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),lines:lines.map(l=>({product_name:l.product_name,quantity:l.quantity,unit:l.unit,unit_price:l.unit_price,discount_amount:l.line_total!=null?fieldDiscount(l,source):l.discount_amount || 0,tax_amount:l.tax_amount || 0,total:l.line_total!=null?round2(Number(l.line_total)+Number(l.tax_amount || 0)):l.total}))};
+    const quote=body.sourceType==='order'?orderInvoiceQuote(source,lines):null;
+    return {...cashOptions,options,invoiceDate,dueDate:body.sourceType==='field'&&source.due_date?source.due_date:addDays(invoiceDate,terms),company,
+      source:{...pick(source,'id price_includes_vat customer_id customer_name total subtotal tax_total payment_type dispatch_id warehouse_name'),...(quote?{price_includes_vat:quote.priceIncludesVat,subtotal:quote.subtotal,tax_total:quote.tax}:{})},
+      lines:quote?.lines||fieldInvoiceLines(source,lines),
+    };
   }
   if(body.action==='saveInvoiceCompany') {
     const settings=(await readRecords(s.CompanySettings))[0]; if(!settings)throw Error('Company settings are missing.');
@@ -138,7 +182,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     if(invoice.field_sale_id)await s.FieldSale.update(invoice.field_sale_id,{due_date:due});
     if(body.saveCustomerDefaults)await saveClientDefaults(s,invoice.customer_id,options);
     await audit(svc,{action:'customize_invoice',module:'sales',entityType:'Invoice',entityId:invoice.id,userId:user.id,description:'Updated presentation and terms for '+invoice.invoice_number});
-    return detail(s,invoice.id);
+    return loadInvoiceDocument(s,invoice.id);
   }
   if(body.action!=='createSalesInvoice')throw Error('Unknown invoice action.');
   if(!['order','field'].includes(body.sourceType) || !body.sourceId)throw Error('Choose an existing order or posted Commercial supply.');
@@ -149,7 +193,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   const previous=(await readRecords(s.Invoice,{[sourceField]:body.sourceId})).find(i=>issued(i)||i.sale_reversal);
   if(previous){
     if(depositTo&&depositTo!==previous.cash_sale_settlement?.treasury_account_id)throw Error('This invoice was already issued. Review its recorded payment before making any correction.');
-    return {...await detail(s,previous.id),reused:true};
+    return {...await loadInvoiceDocument(s,previous.id),reused:true};
   }
   const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');
   if(depositTo&&(body.sourceType!=='order'||source.payment_type!=='cash'))throw Error('Only cash sales use a deposit account.');
@@ -171,7 +215,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     if(source.status!=='approved_posted')throw Error('Generate a supply invoice only after the sale is posted.');
     await sourceJournal(s,source,'FieldSale');
     const sourceLines=await readRecords(s.FieldSaleLine,{field_sale_id:source.id});
-    lines=sourceLines.map(l=>({product_id:l.product_id,product_name:l.product_name,quantity:Number(l.quantity),unit:l.unit,unit_price:Number(l.unit_price),discount_amount:fieldDiscount(l,source),tax_amount:round2(l.tax_amount),total:round2(Number(l.line_total)+Number(l.tax_amount || 0)),unit_cost:Number(l.unit_cost || 0),cogs_total:round2(l.line_cost)}));
+    lines=fieldInvoiceLines(source,sourceLines).map((line,index)=>({...line,unit_cost:Number(sourceLines[index].unit_cost || 0),cogs_total:round2(sourceLines[index].line_cost)}));
     const balance=round2(safeNumber(source.amount_due,'supply balance'));
     invoice=await s.Invoice.create({...base,field_sale_id:source.id,accounting_source:'field_sale',subtotal:round2(source.subtotal),tax_total:round2(source.tax_total),total:round2(source.total),amount_paid:round2(Number(source.total)-balance),balance,status:balance===0?'paid':balance<round2(source.total)?'partially_paid':'posted',payment_type:balance>0?'credit':'cash',journal_id:source.journal_id});
     await s.FieldSale.update(source.id,{invoice_id:invoice.id,invoice_number:number,due_date:due});
@@ -182,26 +226,18 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
     const past=await readRecords(s.StockMovement,{document_id:source.id,status:'approved'});
     if(past.some(m=>Number(m.quantity)>0 && m.source_warehouse_id && !m.destination_warehouse_id))throw Error('This order already has goods issued. Reconcile its delivery before invoicing to avoid issuing stock twice.');
     const sourceContext=await salesStockSource(svc,{sourceType:source.dispatch_id?'issued':source.sales_supply_source==='company'?'company':'warehouse',dispatchId:source.dispatch_id||'',warehouseId:source.warehouse_id},invoiceDate);
-    const sourceLines=await readRecords(s.SalesOrderLine,{order_id:source.id});if(!sourceLines.length || sourceLines.length>200)throw Error('Save 1 to 200 order lines before invoicing.');
-    const products=new Map((await recordsByIds(s.Product,sourceLines.map(l=>l.product_id))).map(p=>[p.id,p]));
-    lines=[];
-    for(const line of sourceLines){
+    const sourceLines=await readRecords(s.SalesOrderLine,{order_id:source.id});
+    const quote=orderInvoiceQuote(source,sourceLines),{subtotal,tax,total}=quote;
+    const products=new Map((await recordsByIds(s.Product,quote.lines.map(l=>l.product_id))).map(p=>[p.id,p]));
+    lines=quote.lines.map(line=>{
       const p=products.get(line.product_id);if(!p || p.is_active===false || !finishedProduct(p))throw Error('Choose active finished products.');
-      const quantity=round3(safeNumber(line.quantity,'quantity',true)),unitPrice=safeNumber(line.unit_price,'unit price'),discount=round2(safeNumber(line.discount_amount || 0,'discount')),taxRate=safeNumber(line.tax_rate || 0,'tax rate');
-      if(quantity!==Number(line.quantity))throw Error('Use quantities with at most three decimal places.');
-      if(taxRate>100 || discount>round2(quantity*unitPrice))throw Error('Review line discounts and tax rates.');
-      const amount=round2(quantity*unitPrice-discount),included=source.price_includes_vat===true||line.price_includes_vat===true,split=included?splitIncludedVat(amount,taxRate):null;
-      const net=included?split.net:amount,tax=included?split.tax:round2(net*taxRate/100),total=included?split.total:round2(net+tax);
-      if(total!==round2(line.total) || tax!==round2(line.tax_amount))throw Error('Saved order line totals do not match quantities, prices and taxes. Save corrected lines first.');
       if(line.unit && line.unit!==stockUnit(p))throw Error('Review the order unit of measure for '+p.name+' before invoicing.');
-      lines.push({product_id:p.id,product_name:p.name,quantity,unit:stockUnit(p),unit_price:unitPrice,price_includes_vat:included,discount_amount:discount,tax_amount:tax,total});
-    }
-    const subtotal=round2(lines.reduce((sum,l)=>sum+l.total-l.tax_amount,0)),tax=round2(lines.reduce((sum,l)=>sum+l.tax_amount,0)),total=round2(subtotal+tax);
-    if(total<=0 || total!==round2(source.total) || tax!==round2(source.tax_total))throw Error('Saved order totals do not match its lines. Save the corrected order first.');
+      return {...line,product_name:p.name,unit:stockUnit(p)};
+    });
     if(sourceContext.dispatch_id)await assertRunSupplyStock(svc,sourceContext,lines,invoiceDate);
     const cash=source.payment_type==='cash';
     const sellerId=source.sales_supply_recorded_at?source.salesperson_id:sourceContext.salesperson_id||source.salesperson_id||'',sellerName=source.sales_supply_recorded_at?source.salesperson_name:sourceContext.salesperson_name||source.salesperson_name||'';
-    invoice=await s.Invoice.create({...base,sales_order_id:source.id,accounting_source:'sales_order',subtotal,tax_total:tax,total,amount_paid:0,balance:total,status:'posted',payment_type:cash?'cash':'credit',cash_deposited:false,warehouse_id:sourceContext.stock_warehouse_id,dispatch_id:sourceContext.dispatch_id,salesperson_id:sellerId,salesperson_name:sellerName,stock_holder_id:sourceContext.salesperson_id||'',stock_holder_name:sourceContext.salesperson_name||'',recorded_by:user.id});
+    invoice=await s.Invoice.create({...base,price_includes_vat:quote.priceIncludesVat,sales_order_id:source.id,accounting_source:'sales_order',subtotal,tax_total:tax,total,amount_paid:0,balance:total,status:'posted',payment_type:cash?'cash':'credit',cash_deposited:false,warehouse_id:sourceContext.stock_warehouse_id,dispatch_id:sourceContext.dispatch_id,salesperson_id:sellerId,salesperson_name:sellerName,stock_holder_id:sourceContext.salesperson_id||'',stock_holder_name:sourceContext.salesperson_name||'',recorded_by:user.id});
     let cogs=0;
     for(const l of lines){const result=await stockIssue(svc,{productId:l.product_id,productName:l.product_name,warehouseId:sourceContext.stock_warehouse_id,warehouseIds:sourceContext.stock_warehouse_ids,quantity:l.quantity,movementType:'customer_delivery',documentType:'SalesOrder',documentId:source.id,movementDate:invoiceDate,reason:customer.business_name,saleableOnly:true,dispatchId:sourceContext.dispatch_id || undefined});l.cogs_total=result.totalValue;l.unit_cost=result.totalValue/l.quantity;cogs=round2(cogs+result.totalValue);}
     const debit=destination?.gl||await getRuleAccount(svc,'customer_receivable');
@@ -223,7 +259,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   await s.InvoiceLine.bulkCreate(lines.map(l=>({...l,invoice_id:invoice.id})));
   if(body.saveCustomerDefaults)await saveClientDefaults(s,customer.id,options);
   await audit(svc,{action:'create_invoice',module:'sales',entityType:'Invoice',entityId:invoice.id,userId:user.id,description:`Issued ${number} for ${source.order_number || source.sale_number}${body.sourceType==='field'?'; original supply accounting retained':''}`});
-  return detail(s,invoice.id);
+  return loadInvoiceDocument(s,invoice.id);
 }
 
 export { addDays as invoiceDueDate };

@@ -1,7 +1,7 @@
 import React,{useState} from 'react';
 import {ArrowLeft,ArrowRight,Check,Search,Store,Receipt,RotateCcw,Gift,ChevronDown,Plus,Minus} from 'lucide-react';
 import {ui,uiMessage} from '@/lib/i18n';
-import {formatXAF,formatQuantity} from '@/lib/formatters';
+import {formatXAF,formatAccountingXAF,formatQuantity} from '@/lib/formatters';
 import {quantityAfterReplacements} from '@/lib/product-quantity';
 import {normalizeProductText} from '@/lib/product-images';
 import {catalogueProduct,catalogueSections} from '@/lib/product-catalogue';
@@ -57,8 +57,8 @@ export default function MobileSaleFlow({step,initialPurpose='sale',goTo,advance,
     <label className="block space-y-1 text-xs font-semibold">{ui('Receipt reference number *')}<Input required aria-label={ui('Receipt reference number')} maxLength={200} autoComplete="off" className="h-12" value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/><span className="block text-[11px] font-normal text-muted-foreground">{ui('Required · number from the paper receipt book')}</span></label>
     <section className="rounded-xl border p-3"><SectionLabel>{ui('Exchanges')}</SectionLabel>{replacements.length?replacements.map((row,index)=><p key={index} className="mt-2 text-xs">{formatQuantity(row.quantity)} × {products.find(p=>p.id===row.product_id)?.name} · {ui(row.reason==='expired'?'Expired':'Damaged')}</p>):<p className="mt-2 text-xs text-muted-foreground">{ui('No replacements')}</p>}</section>
     <section className="rounded-xl border p-3"><SectionLabel>{ui('Dégustation')}</SectionLabel><p className="mt-2 text-xs leading-5 text-muted-foreground">{ui('Dégustation is a separate transaction and is not included in this sale.')}</p></section>
-    <div className="flex items-center justify-between rounded-xl border bg-secondary p-4"><span className="text-sm font-semibold">{ui('Total of sale')}</span><strong className="text-2xl tabular-nums">{formatXAF(totals.total)}</strong></div>
-    <details className="rounded-xl border p-3"><summary className="cursor-pointer text-sm">{ui('Notes')} · {ui('Tax details')}</summary><label className="mt-3 block text-xs">{ui('Notes')}<Input value={form.notes} className="mt-1" maxLength={2000} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label><dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between"><dt>{ui('Net sales')}</dt><dd>{formatXAF(totals.net)}</dd></div><div className="flex justify-between"><dt>{ui('VAT included')}</dt><dd>{formatXAF(totals.tax)}</dd></div></dl></details>
+    <div className="flex items-center justify-between rounded-xl border bg-secondary p-4"><span className="text-sm font-semibold">{ui('Total of sale')}</span><strong className="text-2xl tabular-nums">{formatAccountingXAF(totals.total)}</strong></div>
+    <details className="rounded-xl border p-3"><summary className="cursor-pointer text-sm">{ui('Notes')} · {ui('Tax details')}</summary><label className="mt-3 block text-xs">{ui('Notes')}<Input value={form.notes} className="mt-1" maxLength={2000} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label><dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between"><dt>{ui('Net sales')}</dt><dd>{formatAccountingXAF(totals.net)}</dd></div><div className="flex justify-between"><dt>{ui('VAT included (19.25%)')}</dt><dd>{formatAccountingXAF(totals.tax)}</dd></div></dl></details>
    </>}
   </fieldset>
   {saveError&&<p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}

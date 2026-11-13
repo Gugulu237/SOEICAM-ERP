@@ -20,6 +20,8 @@ test('warehouse invoice posts once using real FEFO cost, preserves quantities an
   const f=await setup(),o=await order(f),b=body(o);b.options.terms='30 days by agreement';b.saveCustomerDefaults=true;
   const doc=await invoiceAction(f.client,admin,b);
   assert.equal(doc.invoice.total,1000);assert.equal(doc.invoice.customer_balance,1000);assert.equal(doc.lines[0].quantity,2);
+  assert.equal(doc.invoice.subtotal,838.57);assert.equal(doc.invoice.tax_total,161.43);
+  assert.equal(doc.invoice.price_includes_vat,true);assert.equal(doc.lines[0].tax_rate,19.25);
   assert.equal((await f.entities.InvoiceLine.list())[0].cogs_total,400,'actual stock cost, not stale order estimate');
   assert.equal((await f.entities.StockBalance.get('stock')).quantity,8);assert.equal((await f.entities.Customer.get('customer-a')).balance,1000);
   assert.equal((await f.entities.Customer.get('customer-a')).invoice_defaults.terms,'30 days by agreement');
@@ -28,9 +30,32 @@ test('warehouse invoice posts once using real FEFO cost, preserves quantities an
   const again=await invoiceAction(f.client,admin,b);assert.equal(again.reused,true);assert.equal(again.invoice.id,doc.invoice.id);assert.equal((await f.entities.JournalEntry.list()).length,1);assert.equal((await f.entities.InvoiceLine.list()).length,1);
 });
 
+test('a saved tax-exclusive quote keeps the original unit price and gross while preview and invoice extract current VAT',async()=>{
+  const f=await setup(),s=f.entities,orderRecord=await order(f),[line]=await s.SalesOrderLine.list();
+  await s.SalesOrder.update(orderRecord.id,{subtotal:1000,tax_total:50,total:1050,price_includes_vat:false});
+  await s.SalesOrderLine.update(line.id,{tax_rate:5,tax_amount:50,total:1050,price_includes_vat:false});
+  const originalLine=await s.SalesOrderLine.get(line.id);
+  const preview=await invoiceAction(f.client,admin,{action:'invoiceSource',sourceType:'order',sourceId:orderRecord.id});
+  const result=await invoiceAction(f.client,admin,body(orderRecord));
+  assert.equal(preview.source.total,1050);assert.equal(preview.source.tax_total,169.5);assert.equal(preview.source.subtotal,880.5);
+  assert.equal(result.invoice.total,preview.source.total);assert.equal(result.invoice.subtotal,preview.source.subtotal);assert.equal(result.invoice.tax_total,preview.source.tax_total);
+  for(const saved of [preview.lines[0],result.lines[0]]){
+    assert.equal(saved.tax_rate,19.25);assert.equal(saved.tax_amount,169.5);assert.equal(saved.unit_price,500);
+    assert.equal(saved.price_includes_vat,false);assert.equal(saved.total,1050);
+  }
+  assert.equal(result.invoice.price_includes_vat,false);
+  assert.deepEqual(await s.SalesOrderLine.get(line.id),originalLine);
+  assert.equal((await s.SalesOrder.get(orderRecord.id)).tax_total,50);
+  assert.equal((await s.Account.get('tax')).balance,169.5);
+  assert.equal((await s.Account.get('revenue')).balance,880.5);
+  assert.equal((await s.Customer.get('customer-a')).balance,1050);
+  assert.equal((await s.StockMovement.list()).length,1);
+});
+
 test('Commercial invoice reuses the source accounting and counts once in sales, including mixed cash and credit',async()=>{
   const f=await setup(),sale=await field(f),doc=await invoiceAction(f.client,admin,body(sale,'field'));
   assert.equal(doc.invoice.field_sale_id,sale.id);assert.equal(doc.invoice.customer_paid,400);assert.equal(doc.invoice.customer_balance,600);
+  assert.equal(doc.invoice.tax_total,0);assert.equal(doc.lines[0].tax_rate,undefined);
   assert.equal((await f.entities.JournalEntry.list()).length,1);assert.equal((await f.entities.StockMovement.list()).length,0);assert.equal((await f.entities.Customer.get('customer-a')).balance,600);
   const input={invoices:await f.entities.Invoice.list(),fieldSales:await f.entities.FieldSale.list(),from:date,to:date,today:date};
   assert.equal(companySalesRegister(input).totals.sales,1000);assert.equal(companySalesRegister(input).rows.length,1);
@@ -194,7 +219,7 @@ test('VAT-inclusive supplies retain the listed price and never present VAT as an
  await f.entities.FieldSale.update(sale.id,{price_includes_vat:true,subtotal:838.57,tax_total:161.43,total:1000,amount_due:600});
  await f.entities.FieldSaleLine.update(line.id,{price_includes_vat:true,line_total:838.57,tax_amount:161.43,tax_rate:19.25});
  const result=await invoiceAction(f.client,admin,body(sale,'field'));assert.equal(result.invoice.total,1000);assert.equal(result.invoice.subtotal,838.57);assert.equal(result.invoice.tax_total,161.43);assert.equal(result.lines[0].discount_amount,0);assert.equal(result.lines[0].total,1000);assert.equal(result.invoice.price_includes_vat,true);
- assert.match(invoiceHtml(result),/VAT included/);assert.match(invoiceText(result),/VAT included:/);
+ assert.match(invoiceHtml(result),/VAT included \(19\.25%\)/);assert.match(invoiceText(result),/VAT included \(19\.25%\):/);
  assert.equal((await f.entities.StockMovement.list()).length,0);
 });
 

@@ -1,7 +1,7 @@
 import {stockStaff,eligibleStockRecipient,STOCK_RECIPIENT_ROLES} from './employee-custody.js';
 import {normalizeSaleReplacements,combinedSupplyQuantities,validateReplacementDeclaration} from '../../lib/sale-replacements.js';
 import {postSaleReplacements} from './commercial-returns.js';
-import {inclusiveSaleLine} from '../../lib/sale-vat.js';
+import {inclusiveSaleLine,STANDARD_VAT_RATE} from '../../lib/sale-vat.js';
 import {createHash} from 'node:crypto';
 import {requireStaff,round2,round3,today} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
@@ -129,11 +129,11 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   const lines=body.lines.map(row=>{
     const p=products.find(p=>p.id===row?.product_id);
     if(!p||!finishedProduct(p))throw Error('Choose finished products available at the selected stock source.');
-    const quantity=number(row.quantity,'quantity'),price=number(row.unit_price,'unit price'),discountPct=number(row.discount_pct??0,'discount',100),taxRate=number(p.tax_rate??0,'tax rate',100);
+    const quantity=number(row.quantity,'quantity'),price=number(row.unit_price,'unit price'),discountPct=number(row.discount_pct??0,'discount',100);
     if(quantity<=0||round3(quantity)!==quantity||quantity>p.available)throw Error('Review the supplied quantity for '+p.name+'.');
     if(price!==round2(price))throw Error('Use unit prices with at most two decimal places.');
-    const amounts=inclusiveSaleLine(quantity,price,taxRate,discountPct);
-    return {product_id:p.id,product_name:p.name,unit:p.unit||stockUnit(p),quantity,unit_price:price,price_includes_vat:true,discount_pct:discountPct,discount_amount:amounts.discount,tax_rate:taxRate,tax_amount:amounts.tax,total:amounts.total};
+    const amounts=inclusiveSaleLine(quantity,price,STANDARD_VAT_RATE,discountPct);
+    return {product_id:p.id,product_name:p.name,unit:p.unit||stockUnit(p),quantity,unit_price:price,price_includes_vat:true,discount_pct:discountPct,discount_amount:amounts.discount,tax_rate:STANDARD_VAT_RATE,tax_amount:amounts.tax,total:amounts.total};
   });
   const combined=combinedSupplyQuantities(lines,replacements);
   if(combined.length>50||combined.some(line=>line.quantity>Number(products.find(p=>p.id===line.product_id)?.available||0)))throw Error('Sold units and free replacements exceed the available delivery stock.');

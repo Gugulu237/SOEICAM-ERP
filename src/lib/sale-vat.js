@@ -1,3 +1,5 @@
+export const STANDARD_VAT_RATE = 19.25;
+
 const money=value=>Math.round(Number(value)*100)/100;
 // Configured selling prices are the final amounts charged to the customer.
 export function splitIncludedVat(gross,rate=0){

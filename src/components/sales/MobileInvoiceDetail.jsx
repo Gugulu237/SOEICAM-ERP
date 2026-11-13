@@ -1,10 +1,11 @@
 import React from 'react';
 import {Pencil,Download} from 'lucide-react';
-import {ui,uiMessage} from '@/lib/i18n';
-import {formatXAF,formatDate} from '@/lib/formatters';
+import {getLanguage,ui,uiMessage} from '@/lib/i18n';
+import {formatXAF,formatAccountingXAF,formatDate} from '@/lib/formatters';
 import {Button} from '@/components/ui/button';
 import ReportExport from '@/components/shared/ReportExport';
 import {salesInvoiceDocument} from '@/lib/report-models';
+import {invoiceVatLabel} from '@/lib/invoice-documents';
 import MobileSaleReceipt,{MobileReceiptActions} from './MobileSaleReceipt';
 
 // Same mobile receipt hierarchy as orders/exchanges. Invoice issuance, sharing
@@ -17,7 +18,11 @@ export default function MobileInvoiceDetail({data,issued,busy,error,notice,onBac
   {!issued&&<p role="alert" className="rounded-xl border p-3 text-xs text-red-700">{ui('This document cannot be issued or shared. Reconcile its source sale first.')}</p>}
   {data.accounting_verified===false&&<p role="alert" className="rounded-xl border p-3 text-xs text-red-700">{ui('The original invoice journal is missing, reversed or does not match this sale. Accounting review is required before printing or sharing an issued invoice.')}</p>}
   {onCollect&&<Button className="min-h-12 w-full" onClick={onCollect}>{ui('Receive Payment')}</Button>}
-  <details className="rounded-xl border bg-white px-3"><summary className="min-h-12 cursor-pointer py-4 text-sm font-semibold">{ui('Invoice tools & preview')}</summary><div className="space-y-3 pb-3"><dl className="divide-y text-xs">{[[ui('Customer balance'),formatXAF(invoice.customer_balance)],[ui('Due date'),formatDate(invoice.due_date)],[ui('VAT included'),formatXAF(invoice.tax_total)]].filter(([,value])=>value).map(([label,value])=><div key={label} className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">{label}</dt><dd className="font-semibold">{value}</dd></div>)}</dl><Button className="w-full" disabled={!issued||busy} onClick={onCustomize}><Pencil size={16} className="mr-2"/>{ui('Customize')}</Button><Button className="w-full" variant="outline" disabled={!issued||busy} onClick={onEmail}>{ui('Email draft')}</Button><Button variant="outline" className="w-full" disabled={!issued||busy} onClick={onDownload}><Download size={16} className="mr-2"/>{ui('Download invoice')} (.html)</Button><ReportExport formats={['xlsx']} disabled={!issued||busy||!!error} getReport={()=>salesInvoiceDocument(data)}/>{children}
+  <dl className="space-y-2 rounded-xl border bg-white p-3 text-sm">
+    <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{ui('Amount before VAT')}</dt><dd className="tabular-nums">{formatAccountingXAF(invoice.subtotal)}</dd></div>
+    <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{invoiceVatLabel(invoice,data.lines,getLanguage())}</dt><dd className="tabular-nums">{formatAccountingXAF(invoice.tax_total)}</dd></div>
+  </dl>
+  <details className="rounded-xl border bg-white px-3"><summary className="min-h-12 cursor-pointer py-4 text-sm font-semibold">{ui('Invoice tools & preview')}</summary><div className="space-y-3 pb-3"><dl className="divide-y text-xs">{[[ui('Customer balance'),formatXAF(invoice.customer_balance)],[ui('Due date'),formatDate(invoice.due_date)]].filter(([,value])=>value).map(([label,value])=><div key={label} className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">{label}</dt><dd className="font-semibold">{value}</dd></div>)}</dl><Button className="w-full" disabled={!issued||busy} onClick={onCustomize}><Pencil size={16} className="mr-2"/>{ui('Customize')}</Button><Button className="w-full" variant="outline" disabled={!issued||busy} onClick={onEmail}>{ui('Email draft')}</Button><Button variant="outline" className="w-full" disabled={!issued||busy} onClick={onDownload}><Download size={16} className="mr-2"/>{ui('Download invoice')} (.html)</Button><ReportExport formats={['xlsx']} disabled={!issued||busy||!!error} getReport={()=>salesInvoiceDocument(data)}/>{children}
     {canManage&&issued&&<Button className="w-full" variant="outline" onClick={onReverse}>{ui('Correct sale')}</Button>}
   </div></details>
  </MobileSaleReceipt>;

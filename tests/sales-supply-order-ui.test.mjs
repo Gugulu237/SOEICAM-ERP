@@ -101,8 +101,8 @@ test('direct quantity editing merges rows and cannot advance with excessive, bla
 });
 
 test('review retains VAT-inclusive prices and shows invalid price previews without crashing',async()=>{
-  const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'},{...stock,products:stock.products.map(p=>({...p,tax_rate:19.25}))});
-  try{await f.ready();await productsStep(f);quantity(f,2);assert.match(f.paint(),/already include VAT/);reviewStep(f);assert.match(f.paint(),/VAT included/);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').expectedTotal,1000);}finally{f.close();}
+  const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'},stock);
+  try{await f.ready();await productsStep(f);quantity(f,2);assert.match(f.paint(),/already include VAT/);reviewStep(f);assert.match(f.paint(),/VAT included \(19\.25%\)/);assert.match(f.paint(),/161\.43 XAF/);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').expectedTotal,1000);}finally{f.close();}
 });
 
 

@@ -8,7 +8,9 @@ import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {postJournal} from '../src/server/domain/field-ops.js';
 import {supplierPayableMismatches} from '../src/server/domain/supplier-payables.js';
 import {accountingIntegrity} from '../src/server/domain/accounting-integrity.js';
-import {purchaseOrderHtml,purchaseOrderEmail} from '../src/lib/supplier-documents.js';
+import {purchaseOrderHtml,purchaseOrderEmail,supplierBillHtml} from '../src/lib/supplier-documents.js';
+import {purchaseQuoteAmounts,purchaseReceiptAmounts} from '../src/lib/purchase-vat.js';
+import {STANDARD_VAT_RATE} from '../src/lib/sale-vat.js';
 
 async function setup(db){
   const f=await fixture(db),s=f.entities;
@@ -27,6 +29,76 @@ async function setup(db){
 }
 async function approved(f){return (await f.run(f.body)).order;}
 const receipt=(f,order,quantity=4)=>({action:'receiveSupplierOrder',orderId:order.id,date,warehouseId:f.warehouse.id,requestKey:crypto.randomUUID(),lines:[{po_line_id:f.rows.PurchaseOrderLine[0]?.id,quantity,lot_number:'MILK-100',expiry_date:'2029-12-31'}]});
+async function inclusiveOrder(f,{quantity=10,unit_price=119.25,tax_rate=STANDARD_VAT_RATE}={}){
+  return (await f.run({...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,price_includes_vat:true,lines:[{product_id:f.product.id,quantity,unit_price,tax_rate}]}})).order;
+}
+
+test('inclusive purchase quotes preserve TTC through partial receipts and keep pending supplier VAT separate',async()=>{
+  const f=await setup(),s=f.entities,order=await inclusiveOrder(f);
+  assert.deepEqual([order.subtotal,order.tax_total,order.total],[1000,192.5,1192.5]);
+  assert.match(purchaseOrderHtml(order,await s.PurchaseOrderLine.list()),/Unit price incl\. VAT/);
+  const {receipt:gr,bill}=await f.run(receipt(f,order));
+  assert.deepEqual([gr.purchase_vat_treatment,gr.quoted_vat_total,gr.total],['unverified',77,477]);
+  assert.deepEqual([bill.purchase_vat_treatment,bill.tax_total,bill.subtotal,bill.balance],['unverified',undefined,undefined,477]);
+  const view=await purchaseWorkspace(f.client,user,{section:'bills'});
+  assert.equal(view.bills[0].purchase_vat_treatment,'unverified');
+  assert.match(supplierBillHtml(bill,key=>key,'en'),/Invoice VAT pending verification/);
+  assert.doesNotMatch(supplierBillHtml(bill,key=>key,'en'),/Net before VAT/);
+  const next=await f.run({...receipt(f,order,6),supplierInvoiceVat:{treatment:'none'}});
+  assert.deepEqual([next.bill.subtotal,next.bill.tax_total,next.bill.total],[715.5,0,715.5]);
+  assert.equal((await s.Account.get('payable')).balance,1192.5);
+  assert.equal((await s.StockBalance.list()).find(row=>row.product_id===f.product.id).total_value,1192.5);
+  assert.equal((await s.JournalEntry.list()).length,2);
+  assert.equal((await s.JournalLine.list()).length,4);
+});
+
+test('documented supplier VAT validates and records the actual breakdown without changing ledger value',async()=>{
+  const f=await setup(),s=f.entities,order=await inclusiveOrder(f),body=receipt(f,order);
+  const evidence={treatment:'documented',reference:' INV-777 ',taxAmount:76.98,confirmed:true};
+  await assert.rejects(f.run({...body,supplierInvoiceVat:{...evidence,confirmed:false}}),/confirm its VAT evidence/);
+  await assert.rejects(f.run({...body,supplierInvoiceVat:{...evidence,taxAmount:100}}),/within the standard VAT/);
+  assert.equal((await s.GoodsReceipt.list()).length,0);
+  const {bill}=await f.run({...body,supplierInvoiceVat:evidence});
+  assert.deepEqual([bill.subtotal,bill.tax_total,bill.total,bill.supplier_invoice_reference],[400.02,76.98,477,'INV-777']);
+  const html=supplierBillHtml({...bill,supplier_invoice_reference:'<INV-777>'},key=>key,'en');
+  assert.match(html,/&lt;INV-777&gt;/);
+  assert.match(html,/76[.,]98 XAF/);
+  assert.equal((await s.JournalLine.list()).find(line=>line.account_id===f.inv.id).debit,477);
+  assert.equal((await s.JournalLine.list()).find(line=>line.account_id==='payable').credit,477);
+  assert.equal((await s.StockMovement.list())[0].total_value,477);
+  await assert.rejects(f.run({...receipt(f,order,6),supplierInvoiceVat:{...evidence,reference:'inv -777',taxAmount:115.5}}),/already has VAT recorded/);
+  assert.equal((await s.Bill.list()).length,1);
+});
+
+test('pending bill VAT can be completed once after partial payment without reposting',async()=>{
+  const f=await setup(),s=f.entities,order=await inclusiveOrder(f),{bill}=await f.run(receipt(f,order));
+  await cashierAction(f.client,user,{action:'recordPurchasePayment',billId:bill.id,accountId:'till',amount:200,date,reference:'Supplier payment',requestKey:crypto.randomUUID()});
+  const evidence={action:'recordSupplierBillVat',billId:bill.id,requestKey:crypto.randomUUID(),supplierInvoiceVat:{treatment:'documented',reference:'INV-LATER',taxAmount:77,confirmed:true}};
+  const {bill:saved}=await f.run(evidence);
+  assert.deepEqual([saved.subtotal,saved.tax_total,saved.total,saved.balance,saved.amount_paid],[400,77,477,277,200]);
+  assert.equal((await f.run(evidence)).reused,true);
+  await assert.rejects(f.run({...evidence,supplierInvoiceVat:{...evidence.supplierInvoiceVat,taxAmount:76}}),/already been recorded/);
+  await assert.rejects(f.run({...evidence,requestKey:crypto.randomUUID()}),/awaiting invoice VAT/);
+  const original=await s.GoodsReceipt.get(bill.receipt_id);
+  assert.equal(original.supplier_invoice_reference,'INV-LATER');
+  assert.equal((await s.JournalEntry.list()).length,2);
+  assert.equal((await s.PaymentAllocation.list()).length,1);
+  assert.equal((await s.Supplier.get('supplier')).balance,277);
+  await s.Employee.update('cashier',{role:'cashier'});
+  await assert.rejects(f.run(evidence),{status:403});
+});
+
+test('fractional inclusive receipts split cumulative quote cents without changing the approved total',()=>{
+  const line={unit_price:1.23,tax_rate:STANDARD_VAT_RATE,received_quantity:0};
+  const parts=[0.014,0.019,0.018].map(qty=>{
+    const amounts=purchaseReceiptAmounts(line,qty,true);
+    line.received_quantity+=qty;
+    return amounts;
+  });
+  const approved=purchaseQuoteAmounts(line.received_quantity,line.unit_price,line.tax_rate,true);
+  assert.equal(parts.reduce((sum,row)=>sum+Math.round(row.total*100),0),Math.round(approved.total*100));
+  assert.equal(parts.reduce((sum,row)=>sum+Math.round(row.tax*100),0),Math.round(approved.tax*100));
+});
 
 test('supplier catalogue supports multiple suppliers without changing item costs; archive preserves history',async()=>{
   const f=await setup(),s=f.entities;

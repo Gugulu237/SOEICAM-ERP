@@ -101,7 +101,8 @@ test('submitted supplies post immediately, deduct the assigned vehicle once and 
       assert.equal(tables.CashCollection.length, paymentType === 'cash' ? 1 : 0);
       assert.equal(tables.JournalEntry[0].total_debit, tables.JournalEntry[0].total_credit);
       const accountFor = name => paymentType === 'credit' ? { revenue: 'item-income', cogs: 'item-cogs', inventory: 'item-stock' }[name] : name;
-      assert.equal(tables.JournalLine.find(line => line.account_id === accountFor('revenue')).credit, 1000);
+      assert.equal(tables.JournalLine.find(line => line.account_id === accountFor('revenue')).credit, 838.57);
+      assert.equal(tables.JournalLine.find(line => line.account_id === 'tax').credit, 161.43);
       assert.equal(tables.JournalLine.find(line => line.account_id === accountFor('cogs')).debit, 400);
       assert.equal(tables.JournalLine.find(line => line.account_id === accountFor('inventory')).credit, 400);
       if (paymentType === 'credit') assert.equal(tables.JournalLine.some(line => ['revenue', 'cogs', 'inventory'].includes(line.account_id)), false);

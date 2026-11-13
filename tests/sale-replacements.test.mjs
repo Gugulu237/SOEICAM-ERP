@@ -22,7 +22,8 @@ for (const paymentType of ['cash', 'credit']) test(`${paymentType} sale exchange
   assert.equal(tables.StockBalance[0].quantity, 5);
   assert.equal(tables.Customer[0].balance, paymentType === 'cash' ? 0 : 1000);
   assert.equal(tables.CashCollection.length, paymentType === 'cash' ? 1 : 0);
-  assert.equal(tables.Account.find(row => row.id === 'revenue').balance, 1000);
+  assert.equal(tables.Account.find(row => row.id === 'revenue').balance, 838.57);
+  assert.equal(tables.Account.find(row => row.id === 'tax').balance, 161.43);
   assert.equal(tables.Account.find(row => row.id === 'cogs').balance, 400);
   assert.equal(tables.Account.find(row => row.account_number === 'CUSTOMER-REPLACEMENTS').balance, 600);
   assert.equal(tables.SpoilageRecord.length, 1);

@@ -134,12 +134,13 @@ test('drafts do not move goods or money; submitting the same draft completes the
 
 test('VAT-inclusive supplies split item revenue and VAT while balancing collected cash, debt and exact stock cost', async () => {
   const handler = await fieldHandler(), { client, tables } = fixture(); globalThis.__dailySupplyClient = client;
-  tables.Product[0].tax_rate = 19.25;
+  tables.Product[0].tax_rate = 0;
   try {
     const response = await handler(request(validSupply())), result = await response.json();
     assert.equal(response.status, 200, result.error);
     assert.equal(result.sale.status, 'approved_posted'); assert.equal(result.sale.subtotal, 838.57);
     assert.equal(result.sale.tax_total, 161.43); assert.equal(result.sale.total, 1000);
+    assert.equal(tables.FieldSaleLine[0].tax_rate, 19.25);
     assert.equal(tables.JournalLine.find(line => line.account_id === 'revenue').credit, 838.57);
     assert.equal(tables.JournalLine.find(line => line.account_id === 'tax').credit, 161.43);
     assert.equal(tables.JournalLine.find(line => line.account_id === 'clearing').debit, 400);

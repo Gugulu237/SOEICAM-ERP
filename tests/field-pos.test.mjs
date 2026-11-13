@@ -61,9 +61,9 @@ test('run availability respects the remaining loaded quantity cap even when vehi
 });
 
 test('listed prices include VAT; line rounding matches the field-sale endpoint', () => {
-  assert.deepEqual(saleTotals(form().lines, [product]), { subtotal: 1677.15, tax: 322.85, total: 2000 });
+  assert.deepEqual(saleTotals(form().lines), { subtotal: 1677.15, tax: 322.85, total: 2000 });
   const lines = [{ product_id: 'p1', quantity: 1.3334, unit_price: 99.995 }, { product_id: 'p2', quantity: 3, unit_price: 0.335 }];
-  assert.deepEqual(saleTotals(lines, [product, { product_id: 'p2', tax_rate: 5 }]), { subtotal: 112.75, tax: 21.57, total: 134.32 });
+  assert.deepEqual(saleTotals(lines), { subtotal: 112.64, tax: 21.68, total: 134.32 });
 });
 
 test('quantity, zero/negative/invalid prices and duplicate lines cannot be saved', () => {
@@ -116,7 +116,7 @@ test('all cursor pages are loaded and malformed pagination fails visibly', async
 });
 
 
-test('invalid editable quantities and VAT rates do not crash the preview or permit a sale',()=>{
- const invalid={...form(),lines:[{product_id:'p1',quantity:-1,unit_price:1000}]};assert.doesNotThrow(()=>saleTotals(invalid.lines,[product]));assert.notEqual(validateSale(invalid,[product]),'');
- assert.notEqual(validateSale(form(),[{...product,tax_rate:-1}]),'');
+test('invalid editable quantities fail while catalogue tax rates do not override sale VAT',()=>{
+ const invalid={...form(),lines:[{product_id:'p1',quantity:-1,unit_price:1000}]};assert.doesNotThrow(()=>saleTotals(invalid.lines));assert.notEqual(validateSale(invalid,[product]),'');
+ assert.equal(validateSale(form(),[{...product,tax_rate:-1}]),'');
 });

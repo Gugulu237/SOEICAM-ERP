@@ -70,7 +70,7 @@ test('recording a supplied order deducts issued goods and posts one invoice imme
   const invoice=await f.s.Invoice.get(r.invoiceId);assert.equal(invoice.dispatch_id,'run-a');assert.equal(invoice.salesperson_name,'Cashier');assert.equal(invoice.stock_holder_id,f.agent.id);
   const issue=(await f.s.StockMovement.list())[0];assert.equal(issue.source_warehouse_id,'van-stock');assert.equal(issue.dispatch_id,'run-a');assert.equal(issue.document_type,'SalesOrder');assert.equal(issue.lot_number,'LOT');
   assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,400);assert.equal((await f.s.Customer.get('customer-a')).balance,0);
-  assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.JournalLine.list()).reduce((n,l)=>n+l.debit-l.credit,0),0);
+  assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.JournalLine.list()).reduce((cents,line)=>cents+Math.round(line.debit*100)-Math.round(line.credit*100),0),0);
   const recon=await dispatchReconciliationData(f.client.asServiceRole,await f.s.Dispatch.get('run-a'));
   const dashboard=await distributionControlAction(f.client,admin,{action:'distributionControl',date});assert.equal(dashboard.agents.find(a=>a.id===f.agent.id).sales,0,'stock custody does not impersonate the actual seller');
   const register=companySalesRegister({invoices:await f.s.Invoice.list(),fieldSales:await f.s.FieldSale.list(),from:date,to:date});assert.equal(register.totals.count,1);assert.equal(register.rows[0].commercial_name,'Cashier');
@@ -142,11 +142,12 @@ test('a late supply audit failure rolls back order, invoice, stock, customer bal
 });
 
 test('tax and discounts post the reviewed total without a rounding drift',async()=>{
-  const f=await setup();await f.s.Product.update('product-a',{tax_rate:19.25});
+  const f=await setup();await f.s.Product.update('product-a',{tax_rate:5});
   const result=await f.call({...f.body,expectedTotal:899.99,lines:[{product_id:'product-a',quantity:3,unit_price:333.33,discount_pct:10}]});
   const invoice=await f.s.Invoice.get(result.invoiceId),line=(await f.s.InvoiceLine.list())[0];
   assert.equal(line.discount_amount,100);assert.equal(line.tax_amount,145.28);assert.equal(line.total,899.99);
   assert.equal(invoice.subtotal,754.71);assert.equal(invoice.total,899.99);
+  assert.equal((await f.s.InvoiceLine.list())[0].tax_rate,19.25);
   assert.equal((await f.s.JournalLine.list()).reduce((n,l)=>Math.round((n+l.debit-l.credit)*100)/100,0),0);
 });
 
@@ -233,7 +234,7 @@ test('pooled sale issues earliest-expiring lots across company locations once an
  assert.equal((await f.s.StockBalance.get(extra.id)).quantity,0);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,0);assert.equal((await f.s.StockBalance.get('stock')).quantity,10);
  assert.deepEqual(movements.map(m=>m.source_warehouse_id),[room.id,'factory']);assert.deepEqual(movements.map(m=>m.quantity),[2,1]);
  assert.equal((await f.s.InvoiceLine.list())[0].cogs_total,1100);assert.equal((await f.s.Invoice.get(result.invoiceId)).balance,1500);
- const ledger=await f.s.JournalLine.list();assert.equal(ledger.reduce((n,l)=>n+l.debit-l.credit,0),0);assert.equal((await f.s.JournalEntry.list()).length,1);
+ const ledger=await f.s.JournalLine.list();assert.equal(ledger.reduce((cents,line)=>cents+Math.round(line.debit*100)-Math.round(line.credit*100),0),0);assert.equal((await f.s.JournalEntry.list()).length,1);
  assert.equal((await f.call(body)).reused,true);assert.equal((await f.s.StockMovement.list()).length,2);
  const printed=await invoiceAction(f.client,admin,{action:'createSalesInvoice',sourceType:'order',sourceId:result.order.id,invoiceDate:date,dueDate:date,options:invoiceDefaults({business_name:'Customer A'})});assert.equal(printed.reused,true);assert.equal((await f.s.StockMovement.list()).length,2);
 });
@@ -316,7 +317,7 @@ for(const source of ['issued','warehouse','company'])for(const paymentType of ['
   assert.equal((await f.s.StockBalance.get(source==='issued'?'stock':f.factory.id)).quantity,source==='issued'?5:15);
   const quarantine=(await f.s.StockBalance.list()).find(b=>b.warehouse_id===record.collection_warehouse_id);assert.equal(quarantine.quantity,3);assert.equal(quarantine.qc_status,'quarantine');assert.equal(quarantine.total_value,0);
   assert.equal((await f.s.Customer.get('customer-a')).balance,paymentType==='cash'?0:1000);assert.equal((await f.s.JournalEntry.list()).length,2);
-  assert.equal((await f.s.JournalLine.list()).reduce((n,l)=>n+l.debit-l.credit,0),0);
+  assert.equal((await f.s.JournalLine.list()).reduce((cents,line)=>cents+Math.round(line.debit*100)-Math.round(line.credit*100),0),0);
   const before=structuredClone(f.rows);assert.equal((await f.call(body)).reused,true);assert.deepEqual(f.rows,before);
   await assert.rejects(f.call({...body,stockReplacements:[{...body.stockReplacements[0],quantity:2}]}),/different supply details/);assert.deepEqual(f.rows,before);
   if(source==='issued'){const recon=await dispatchReconciliationData(f.client.asServiceRole,await f.s.Dispatch.get('run-a'));assert.equal(recon.hasVariance,false);}
@@ -393,7 +394,7 @@ for(const sourceType of ['company','warehouse','issued'])for(const exchangeOnly 
  const result=await f.call(args);assert.equal(result.exchangeOnly,exchangeOnly);
  assert.equal((await stock()).products.find(p=>p.id==='product-a').available,before-2);
  assert.equal((await f.s.Invoice.list()).length,exchangeOnly?0:1);
- const lines=await f.s.JournalLine.list();assert.equal(lines.reduce((sum,line)=>sum+Number(line.debit||0)-Number(line.credit||0),0),0);
+ const lines=await f.s.JournalLine.list();assert.equal(lines.reduce((cents,line)=>cents+Math.round(Number(line.debit||0)*100)-Math.round(Number(line.credit||0)*100),0),0);
  const snapshot=structuredClone(f.rows);assert.equal((await f.call(args)).reused,true);assert.deepEqual(f.rows,snapshot);
 });
 

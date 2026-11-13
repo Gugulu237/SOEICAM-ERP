@@ -11,8 +11,11 @@ import {openingPartyLines} from '../../lib/opening-records.js';
 import { supplierCatalogue, supplierItems, supplierMaterial } from '../../lib/supplier-catalogue.js';
 import {receiptSupplierPayable,billSupplierPayable,supplierAdvanceSource} from './supplier-payables.js';
 import {journalCents} from './journal-validation.js';
+import {isStandardPurchaseRate,purchaseQuoteAmounts,purchaseReceiptAmounts} from '../../lib/purchase-vat.js';
+import {splitIncludedVat,STANDARD_VAT_RATE} from '../../lib/sale-vat.js';
+import {supplierBillVat,supplierReceiptVat} from './purchase-vat.js';
 
-export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','confirmSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill'];
+export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','confirmSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill','recordSupplierBillVat'];
 const pick = (row, keys) => Object.fromEntries(keys.split(' ').map(key=>[key,row[key]]));
 const inventory = supplierMaterial;
 const active = p => p && p.is_active !== false && p.configuration_status !== 'draft';
@@ -74,10 +77,30 @@ async function billForReceipt(svc, user, supplier, po, receipt) {
   if(poBills.some(b=>!b.receipt_id && b.status!=='cancelled'))throw Error('This order already has a legacy bill. Reconcile it before adding another receipt bill.');
   const {account:payable,journal,value}=await receiptSupplierPayable(s,receipt,supplier.id);
   const due=new Date(receipt.receipt_date+'T12:00:00Z');due.setUTCDate(due.getUTCDate()+(po.payment_terms==='cash'?0:Number(supplier.payment_terms_days ?? 30)));
-  const bill=await s.Bill.create({bill_number:await nextSequence(svc,'next_bill_number','BILL',6),supplier_id:supplier.id,supplier_name:supplier.name,po_id:po.id,po_number:po.po_number,receipt_id:receipt.id,receipt_number:receipt.receipt_number,bill_date:receipt.receipt_date,due_date:due.toISOString().slice(0,10),total:value,amount_paid:0,balance:value,status:'open',journal_id:journal.id,payable_account_id:payable.id,accounting_source:'goods_receipt'});
+  const bill=await s.Bill.create({bill_number:await nextSequence(svc,'next_bill_number','BILL',6),supplier_id:supplier.id,supplier_name:supplier.name,po_id:po.id,po_number:po.po_number,receipt_id:receipt.id,receipt_number:receipt.receipt_number,bill_date:receipt.receipt_date,due_date:due.toISOString().slice(0,10),total:value,amount_paid:0,balance:value,status:'open',journal_id:journal.id,payable_account_id:payable.id,accounting_source:'goods_receipt',...supplierBillVat(receipt)});
   await s.GoodsReceipt.update(receipt.id,{bill_id:bill.id});
   await audit(svc,{action:'register_supplier_bill',module:'suppliers',entityType:'Bill',entityId:bill.id,userId:user.id,description:`Registered ${bill.bill_number} against the existing ${receipt.receipt_number} payable; no second journal`});
   return allocateAdvances(svc,bill,user);
+}
+
+async function recordSupplierBillVat(svc,user,body){
+  const s=svc.entities,key=requestKey(user,body),input=body.supplierInvoiceVat;
+  if(!['none','documented'].includes(input?.treatment))throw Error('Choose the VAT shown on the supplier invoice.');
+  const bill=await s.Bill.get(body.billId);
+  if(!bill||bill.accounting_source!=='goods_receipt'||['cancelled','draft'].includes(bill.status)||bill.historical_settlement_id)throw Error('Choose an active receipt-linked supplier bill.');
+  const snapshot=JSON.stringify([input.treatment,input.reference,input.taxAmount,input.confirmed]);
+  if(bill.supplier_vat_request_key===key){
+    if(bill.supplier_vat_request_payload!==snapshot)throw Error('This supplier bill VAT has already been recorded.');
+    return {bill,reused:true};
+  }
+  const receipt=await s.GoodsReceipt.get(bill.receipt_id);
+  if(bill.purchase_vat_treatment!=='unverified'||receipt?.purchase_vat_treatment!=='unverified'||receipt.bill_id!==bill.id)throw Error('Only a supplier bill awaiting invoice VAT details can be updated.');
+  const {value}=await receiptSupplierPayable(s,receipt,bill.supplier_id,bill);
+  const fields=await supplierReceiptVat(s,input,bill.supplier_id,value,receipt.quoted_vat_total,receipt.supplier_vat_maximum);
+  await s.GoodsReceipt.update(receipt.id,fields);
+  const saved=await s.Bill.update(bill.id,{...supplierBillVat(fields),supplier_vat_request_key:key,supplier_vat_request_payload:snapshot});
+  await audit(svc,{action:'record_supplier_bill_vat',module:'suppliers',entityType:'Bill',entityId:bill.id,userId:user.id,description:`Recorded supplier invoice VAT details for ${bill.bill_number}`});
+  return {bill:saved};
 }
 
 export async function supplierAction(client,user,body) {
@@ -85,6 +108,7 @@ export async function supplierAction(client,user,body) {
   const employee=await requirePurchasingAdmin(client,user);
   const role='admin';
   const svc=client.asServiceRole,s=svc.entities;
+  if(action==='recordSupplierBillVat')return recordSupplierBillVat(svc,user,body);
   if(action==='supplierWorkspace') {
     const [suppliers,bills,ledger]=await Promise.all([readRecords(s.Supplier),readRecords(s.Bill),postedSupplierBalances(svc)]);
     const summaries=suppliers.filter(supplier=>body.includeRemoved?!!supplier.supplier_removed_at:!supplier.supplier_removed_at).map(supplier=>{
@@ -145,9 +169,10 @@ export async function supplierAction(client,user,body) {
     let total=0;
     for(const l of lines){
       const product=await s.Product.get(l.product_id),quantity=numberOf(l.quantity,'purchase quantity',true),cost=numberOf(l.unit_price,'unit price'),tax=numberOf(l.tax_rate || 0,'tax rate');
-      if(!active(product) || !inventory(product) || tax>100)throw Error('Review the active purchase items and tax rates before approval');
+      if(!active(product) || !inventory(product) || tax>100 || po.price_includes_vat===true&&!isStandardPurchaseRate(tax))throw Error('Review the active purchase items and tax rates before approval');
       unitFactor(l.unit || stockUnit(product),stockUnit(product));
-      const net=round2(quantity*cost),gross=round2(net+round2(net*tax/100));
+      const net=round2(quantity*cost);
+      const gross=po.price_includes_vat===true?purchaseQuoteAmounts(quantity,cost,tax,true).total:round2(net+round2(net*tax/100));
       if(round2(l.total)!==gross || Number(l.received_quantity || 0)!==0)throw Error('Reconcile purchase quantities, prices and totals before approval');
       total=round2(total+gross);
     }
@@ -169,12 +194,26 @@ export async function supplierAction(client,user,body) {
     const warehouse=form.warehouse_id?await s.Warehouse.get(form.warehouse_id):null;
     if(form.warehouse_id && (!active(warehouse) || ['vehicle','commercial_custody','quarantine'].includes(warehouse.warehouse_type)))throw Error('Choose an active receiving warehouse');
     if(!Array.isArray(form.lines) || !form.lines.length || form.lines.length>200)throw Error('Add 1 to 200 purchase items');
+    if(form.price_includes_vat!=null&&typeof form.price_includes_vat!=='boolean')throw Error('Choose a valid purchase price basis.');
+    const includesVat=form.price_includes_vat===true;
+    if(po&&(po.price_includes_vat===true)!==includesVat)throw Error('Keep the original purchase order price basis.');
     const lines=[],products=new Map((await readRecords(s.Product,{id:{$in:form.lines.map(r=>r?.product_id).filter(Boolean)}})).map(p=>[p.id,p]));
     const linked = new Set(supplierCatalogue(supplier,[...products.values()].map(p=>({...p,unit:stockUnit(p)}))).map(p=>p.id));
     const unconfirmed=form.lines.filter(row=>!linked.has(row?.product_id)).map(row=>row.product_id);
     if((form.catalogue_only || supplier.supplier_items!=null) && unconfirmed.length)throw Error('Choose goods linked to this supplier. Update Items supplied before ordering other goods.');
-    for(const row of form.lines){const p=products.get(row?.product_id);if(!active(p) || !inventory(p))throw Error('Choose active inventory items; use expense requests for services');const quantity=round3(numberOf(row.quantity,'purchase quantity',true)),cost=round2(numberOf(row.unit_price,'unit price')),tax=numberOf(row.tax_rate || 0,'tax rate');if(tax>100)throw Error('Tax rate cannot exceed 100%');const net=round2(quantity*cost),taxAmount=round2(net*tax/100);lines.push({supplier_id:supplier.id,supplier_name:supplier.name,product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity,unit_price:cost,tax_rate:tax,tax_amount:taxAmount,total:round2(net+taxAmount),received_quantity:0});}
-    const data={supplier_id:supplier.id,supplier_name:supplier.name,warehouse_id:warehouse?.id || '',order_date:form.order_date,expected_date:form.expected_date || '',payment_terms:form.payment_terms==='cash'?'cash':'credit',notes:String(form.notes || '').slice(0,4000),requested_by_id:po?.requested_by_id || employee?.id || user.id,requested_by_name:po?.requested_by_name || employee?.full_name || user.full_name || user.email,requested_department_id:po?.requested_department_id || employee?.department_id || '',subtotal:round2(lines.reduce((sum,l)=>sum+round2(l.quantity*l.unit_price),0)),tax_total:round2(lines.reduce((sum,l)=>sum+l.tax_amount,0)),total:round2(lines.reduce((sum,l)=>sum+l.total,0))};
+    for(const row of form.lines){
+      const p=products.get(row?.product_id);
+      if(!active(p)||!inventory(p))throw Error('Choose active inventory items; use expense requests for services');
+      const quantity=round3(numberOf(row.quantity,'purchase quantity',true)),cost=round2(numberOf(row.unit_price,'unit price')),tax=numberOf(row.tax_rate || 0,'tax rate');
+      if(includesVat&&!isStandardPurchaseRate(tax))throw Error('Choose standard included VAT or no VAT for each purchase item.');
+      if(tax>100)throw Error('Tax rate cannot exceed 100%');
+      const {tax:taxAmount,total}=purchaseQuoteAmounts(quantity,cost,tax,includesVat);
+      journalCents(total);
+      lines.push({supplier_id:supplier.id,supplier_name:supplier.name,product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity,unit_price:cost,tax_rate:tax,tax_amount:taxAmount,total,received_quantity:0});
+    }
+    const total=round2(lines.reduce((sum,l)=>sum+l.total,0)),tax=round2(lines.reduce((sum,l)=>sum+l.tax_amount,0));
+    journalCents(total);
+    const data={supplier_id:supplier.id,supplier_name:supplier.name,warehouse_id:warehouse?.id || '',order_date:form.order_date,expected_date:form.expected_date || '',payment_terms:form.payment_terms==='cash'?'cash':'credit',notes:String(form.notes || '').slice(0,4000),requested_by_id:po?.requested_by_id || employee?.id || user.id,requested_by_name:po?.requested_by_name || employee?.full_name || user.full_name || user.email,requested_department_id:po?.requested_department_id || employee?.department_id || '',subtotal:round2(total-tax),tax_total:tax,total,...(includesVat?{price_includes_vat:true}:{})};
     const savedData={...data,status,...(status==='approved'?{purchase_confirmed_by:user.id,purchase_confirmed_at:new Date().toISOString()}:{}),supplier_request_key:key,supplier_request_payload:snapshot};
     const order=po?await s.PurchaseOrder.update(po.id,savedData):await s.PurchaseOrder.create({...savedData,po_number:await nextSequence(svc,'next_po_number','PO',5)});
     if(po)await s.PurchaseOrderLine.deleteMany({po_id:po.id});
@@ -189,7 +228,7 @@ export async function supplierAction(client,user,body) {
     const bills=[];for(const receipt of receipts)bills.push(await billForReceipt(svc,user,supplier,po,receipt));return {bills};
   }
   if(action!=='receiveSupplierOrder')throw Error('Unknown supplier action');
-  const key=requestKey(user,body),snapshot=JSON.stringify([po.id,body.date,body.warehouseId || '',body.lines]);
+  const key=requestKey(user,body),snapshot=JSON.stringify([po.id,body.date,body.warehouseId || '',body.lines,...(body.supplierInvoiceVat==null?[]:[body.supplierInvoiceVat])]);
   const previous=(await readRecords(s.GoodsReceipt,{supplier_request_key:key}))[0];if(previous){if(previous.supplier_request_payload!==snapshot)throw Error('This receipt was already recorded. Refresh the order before receiving more goods.');return {receipt:previous,reused:true};}
   if(po.supplier_catalogue_review_required)throw Error('Confirm the supplier materials before receiving goods.');
   if(!['approved','partially_received'].includes(po.status))throw Error('Receive only a confirmed purchase order with quantities outstanding');
@@ -198,8 +237,8 @@ export async function supplierAction(client,user,body) {
   const poLines=await readRecords(s.PurchaseOrderLine,{po_id:po.id}),rows=body.lines;
   if(poLines.some(l=>l.supplier_id && l.supplier_id!==po.supplier_id))throw Error('This legacy order contains several suppliers. Split or reconcile it before receiving and billing through one supplier.');
   if(!Array.isArray(rows) || !rows.length || rows.length>200)throw Error('Enter received quantities');
-  const seen=new Set(),accepted=[];
-  const pastLines=po.supplier_request_key?await readRecords(s.GoodsReceiptLine,{po_line_id:{$in:poLines.map(l=>l.id)}}):[];
+  const seen=new Set(),accepted=[],includesVat=po.price_includes_vat===true;
+  const pastLines=po.supplier_request_key&&!includesVat?await readRecords(s.GoodsReceiptLine,{po_line_id:{$in:poLines.map(l=>l.id)}}):[];
   const products=new Map((await readRecords(s.Product,{id:{$in:poLines.map(l=>l.product_id)}})).map(p=>[p.id,p]));
   for(const row of rows){
     if(!row || seen.has(row.po_line_id))throw Error('Each order line may be received once per receipt');
@@ -218,23 +257,29 @@ export async function supplierAction(client,user,body) {
     if(expiry){dateOf(expiry,true);if(expiry<=date)throw Error('Received stock must expire after the receipt date');}
     if(p.expiry_tracking && !expiry)throw Error('Enter the expiry date for '+p.name);
     const price=numberOf(l.unit_price,'quoted unit price'),tax=numberOf(l.tax_rate || 0,'quoted tax rate');
-    if(tax>100)throw Error('Review the purchase order tax rate');
+    if(tax>100||includesVat&&!isStandardPurchaseRate(tax))throw Error('Review the purchase order tax rate');
     const factor=unitFactor(l.unit || stockUnit(p),stockUnit(p)),stockQuantity=round3(quantity*factor);
     if(stockQuantity<=0)throw Error('Received quantity is too small for the inventory U/M');
-    let gross=round2(quantity*price*(1+tax/100));
+    if(includesVat&&purchaseQuoteAmounts(l.quantity,price,tax,true).total!==Number(l.total))throw Error('Reconcile the approved purchase item total before receiving more goods.');
+    const amounts=purchaseReceiptAmounts(l,quantity,includesVat);
+    let gross=amounts.total;
     // The final part absorbs the per-receipt rounding cent, so the bills for a
     // managed order total exactly its approved value after partial deliveries.
-    if(po.supplier_request_key && quantity===remaining)gross=round2(Number(l.total)-pastLines.filter(r=>r.po_line_id===l.id).reduce((sum,r)=>sum+Number(r.total || 0),0));
+    if(!includesVat && po.supplier_request_key && quantity===remaining)gross=round2(Number(l.total)-pastLines.filter(r=>r.po_line_id===l.id).reduce((sum,r)=>sum+Number(r.total || 0),0));
     if(gross<0 || !Number.isFinite(gross))throw Error('Reconcile the earlier received value before receiving more goods');
-    accepted.push({line:l,product:p,quantity,stockQuantity,lot,expiry,gross,cost:gross/stockQuantity});
+    accepted.push({line:l,product:p,quantity,stockQuantity,lot,expiry,gross,cost:gross/stockQuantity,quotedTax:includesVat?amounts.tax:splitIncludedVat(gross,tax).tax});
   }
   if(!accepted.length)throw Error('Receive at least one positive item quantity');
   const total=round2(accepted.reduce((sum,r)=>sum+r.gross,0));if(total<=0)throw Error('Receiving requires a positive purchase value');
-  const receipt=await s.GoodsReceipt.create({receipt_number:await nextSequence(svc,'next_receipt_number','GR',6),po_id:po.id,supplier_id:supplier.id,supplier_name:supplier.name,warehouse_id:warehouse.id,receipt_date:date,status:'confirmed',total,supplier_request_key:key,supplier_request_payload:snapshot});
+  const quotedTax=round2(accepted.reduce((sum,r)=>sum+r.quotedTax,0));
+  const taxInput=body.supplierInvoiceVat??(includesVat?{treatment:'unverified'}:null);
+  const maximumTax=includesVat?Math.max(quotedTax,round2(accepted.reduce((sum,r)=>sum+splitIncludedVat(r.gross,STANDARD_VAT_RATE).tax,0))):undefined;
+  const vat=taxInput===null?{}:await supplierReceiptVat(s,taxInput,supplier.id,total,quotedTax,maximumTax);
+  const receipt=await s.GoodsReceipt.create({receipt_number:await nextSequence(svc,'next_receipt_number','GR',6),po_id:po.id,supplier_id:supplier.id,supplier_name:supplier.name,warehouse_id:warehouse.id,receipt_date:date,status:'confirmed',total,supplier_request_key:key,supplier_request_payload:snapshot,...vat});
   for(const r of accepted){
     if(r.lot){const history=await readRecords(s.StockMovement,{product_id:r.product.id,lot_number:r.lot});if(history.some(m=>m.expiry_date && r.expiry && m.expiry_date!==r.expiry))throw Error('The expiry date differs from the recorded expiry for this product batch');}
     await s.GoodsReceiptLine.create({receipt_id:receipt.id,po_line_id:r.line.id,product_id:r.product.id,product_name:r.product.name,ordered_quantity:r.line.quantity,received_quantity:r.quantity,unit_cost:r.line.unit_price,lot_number:r.lot,expiry_date:r.expiry || undefined,total:r.gross,stock_quantity:r.stockQuantity});
-    await stockReceive(svc,{productId:r.product.id,productName:r.product.name,warehouseId:warehouse.id,warehouseName:warehouse.name,quantity:r.stockQuantity,unitCost:r.cost,lotNumber:r.lot,expiryDate:r.expiry,documentType:'GoodsReceipt',documentId:receipt.id,movementType:'purchase_receipt',movementDate:date});
+    await stockReceive(svc,{productId:r.product.id,productName:r.product.name,warehouseId:warehouse.id,warehouseName:warehouse.name,quantity:r.stockQuantity,unitCost:r.cost,totalValue:r.gross,lotNumber:r.lot,expiryDate:r.expiry,documentType:'GoodsReceipt',documentId:receipt.id,movementType:'purchase_receipt',movementDate:date});
     const balances=await readRecords(s.StockBalance,{product_id:r.product.id}),qty=balances.reduce((sum,b)=>sum+Number(b.quantity || 0),0),value=balances.reduce((sum,b)=>sum+Number(b.total_value || 0),0);
     await s.Product.update(r.product.id,{current_cost:qty>0?round2(value/qty):round2(r.cost)});
     await s.PurchaseOrderLine.update(r.line.id,{received_quantity:round3(Number(r.line.received_quantity || 0)+r.quantity)});
