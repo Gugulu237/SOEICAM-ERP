@@ -10,7 +10,7 @@ import MobileSaleReceipt,{MobileReceiptActions} from './MobileSaleReceipt';
 
 // Same mobile receipt hierarchy as orders/exchanges. Invoice issuance, sharing
 // eligibility and all financial actions remain checked by the existing caller.
-export default function MobileInvoiceDetail({data,issued,busy,error,notice,onBack,onPrint,onDownload,onShare,onEmail,onCustomize,onCollect,onReverse,onReload,canManage,vatVersion,children}){
+export default function MobileInvoiceDetail({data,issued,busy,error,notice,onBack,onPrint,onDownload,onShare,onEmail,onCustomize,onCollect,onReverse,onReload,canManage,originalVersion,children}){
  const invoice=data.invoice;
  return <MobileSaleReceipt reference={invoice.receipt_reference||invoice.invoice_number} date={invoice.invoice_date} recordedAt={invoice.recorded_at} status={invoice.status} customerName={invoice.customer_name} customerDetail={[invoice.location_name||invoice.bill_to_location_name,ui(invoice.payment_type==='cash'?'Cash':'Credit')].filter(Boolean).join(' · ')} lines={data.lines} total={invoice.total} replacements={data.replacements} onBack={onBack} tracking={[[ui('Person making the sale'),invoice.salesperson_name],[ui('Recorded by'),invoice.recorded_by_name],[ui('Invoice'),invoice.invoice_number],[ui('Reference'),invoice.receipt_reference||data.options?.reference]]} actions={<MobileReceiptActions disabled={!issued||busy} onPrint={onPrint} onShare={onShare}/>}>
   {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{uiMessage(error)} <button type="button" disabled={busy} onClick={onReload} className="underline">{ui('Reload saved invoice')}</button></p>}{notice&&<p role="status" className="rounded-xl border bg-secondary p-3 text-xs text-primary">{uiMessage(notice)}</p>}
@@ -18,7 +18,7 @@ export default function MobileInvoiceDetail({data,issued,busy,error,notice,onBac
   {!issued&&<p role="alert" className="rounded-xl border p-3 text-xs text-red-700">{ui('This document cannot be issued or shared. Reconcile its source sale first.')}</p>}
   {data.accounting_verified===false&&<p role="alert" className="rounded-xl border p-3 text-xs text-red-700">{ui('The original invoice journal is missing, reversed or does not match this sale. Accounting review is required before printing or sharing an issued invoice.')}</p>}
   {onCollect&&<Button className="min-h-12 w-full" onClick={onCollect}>{ui('Receive Payment')}</Button>}
-  {vatVersion}
+  {originalVersion}
   <dl className="space-y-2 rounded-xl border bg-white p-3 text-sm">
     <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{ui('Amount before VAT')}</dt><dd className="tabular-nums">{formatAccountingXAF(invoice.subtotal)}</dd></div>
     <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{invoiceVatLabel(invoice,data.lines,getLanguage())}</dt><dd className="tabular-nums">{formatAccountingXAF(invoice.tax_total)}</dd></div>

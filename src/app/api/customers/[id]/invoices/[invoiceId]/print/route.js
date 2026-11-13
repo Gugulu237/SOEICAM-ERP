@@ -24,9 +24,12 @@ export async function GET(request, {params}) {
     const user = await client.auth.me();
     if (['fr','en'].includes(user?.preferred_language)) language = user.preferred_language;
     const {id, invoiceId} = await params;
-    const original = new URL(request.url).searchParams.get('version') === 'original';
-    const document = await customerInvoicePrintDocument(client, id, invoiceId, {original});
-    return new Response(invoiceHtml({...document, showVatVersions:true}), {headers});
+    const version = new URL(request.url).searchParams.get('version');
+    const document = await customerInvoicePrintDocument(client, id, invoiceId, {original:version==='original'});
+    if (version==='correction' && !document.vat_correction) {
+      throw Object.assign(Error('Invoice not found.'), {status:404});
+    }
+    return new Response(invoiceHtml(document, {formalCorrection:version==='correction'}), {headers});
   } catch (error) {
     const response = apiError(error);
     const {error: message} = await response.json();

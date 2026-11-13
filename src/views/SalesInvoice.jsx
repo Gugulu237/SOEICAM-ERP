@@ -60,14 +60,13 @@ export default function SalesInvoice({fromCustomer=false}) {
   async function save(){if(busy)return;setBusy(true);setError('');setNotice('');try{const next=await invoiceRequest({action:'customizeSalesInvoice',invoiceId:id,options,dueDate:due,saveCustomerDefaults:defaults,revision:data.revision});setData(next);setOptions(next.options);setDue(next.invoice.due_date);setEdit(false);setDefaults(false);setNotice(sourceMessage("Invoice details saved."));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function share(){setError('');try{const result=await shareInvoice(data);setNotice(result==='copied'?sourceMessage("Invoice text copied. Paste it into your preferred messaging app."):sourceMessage("Invoice shared."));}catch(e){if(e.name!=='AbortError')setError(sourceMessage("Sharing is unavailable here. Download the invoice or use Print / PDF to save a copy."));}}
   const correctionDialogs=data&&editable&&<>{correcting&&issued&&<SaleCorrectionChooser onClose={()=>setCorrecting(false)} onMetadata={()=>{setCorrecting(false);setEdit(true);}} canReverse={canCorrect} onReverse={()=>{setCorrecting(false);setReversing(true);}}/>}{reversing&&canCorrect&&<SaleReversalDialog invoiceId={id} onClose={()=>setReversing(false)} onDone={()=>{setReversing(false);setNotice(sourceMessage('Sale reversed. Received money is retained as customer credit.'));setReload(n=>n+1);}}/>}</>;
-  const vatVersion=(data?.vat_correction||data?.original_vat_document)&&!edit&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white p-3 text-sm">
-    <span>{data.vat_correction?ui('VAT correction {0}',data.vat_correction.number):ui('Original invoice VAT figures')}</span>
+  const originalVersion=original&&data?.original_vat_document&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-white p-3 text-sm">
+    <span>{ui('Original invoice VAT figures')}</span>
     <Button size="sm" variant="outline" onClick={()=>{
       const next=new URLSearchParams(params);
-      next.delete('edit');next.delete('correct');
-      if(original)next.delete('version');else next.set('version','original');
-      setParams(next);
-    }}>{ui(original?'View corrected VAT':'View original invoice')}</Button>
+      next.delete('edit');next.delete('correct');next.delete('version');
+      setParams(next,{replace:true});
+    }}>{ui('View corrected VAT')}</Button>
   </div>;
   const replacementGuidance=data?.invoice.sale_reversal&&canCorrect?<ReversedSaleGuidance customerId={data.invoice.customer_id} onNewSale={()=>navigate('/sales/new?customer='+encodeURIComponent(data.invoice.customer_id))}/>:null;
   const customer=canCollect?{id:data.invoice.customer_id,business_name:data.invoice.customer_name}:null;
@@ -77,7 +76,7 @@ export default function SalesInvoice({fromCustomer=false}) {
     ?<CustomerReceivePayment customer={customer} initialInvoice={{...data.invoice,balance:data.invoice.customer_balance}} onClose={closePayment} onDone={paymentSaved}/>
     :<CustomerCollectionDialog customer={customer} invoiceId={id} onClose={closePayment} onDone={paymentSaved}/>);
   if(phone&&data&&!edit)return <>
-    <MobileInvoiceDetail data={data} issued={issued} busy={busy} error={error} notice={notice} onBack={back} onPrint={()=>printInvoice(data)} onDownload={()=>downloadInvoice(data)} onShare={share} onEmail={()=>{window.location.href=invoiceEmail(data);}} onCustomize={editable?()=>{setNotice('');setEdit(true);}:undefined} onCollect={canCollect?()=>setCollecting(true):undefined} onReverse={()=>setCorrecting(true)} onReload={()=>setReload(n=>n+1)} canManage={canCorrect} vatVersion={vatVersion}>
+    <MobileInvoiceDetail data={data} issued={issued} busy={busy} error={error} notice={notice} onBack={back} onPrint={()=>printInvoice(data)} onDownload={()=>downloadInvoice(data)} onShare={share} onEmail={()=>{window.location.href=invoiceEmail(data);}} onCustomize={editable?()=>{setNotice('');setEdit(true);}:undefined} onCollect={canCollect?()=>setCollecting(true):undefined} onReverse={()=>setCorrecting(true)} onReload={()=>setReload(n=>n+1)} canManage={canCorrect} originalVersion={originalVersion}>
       {replacementGuidance}
       {(!data.company.tax_id||!data.company.registration_number)&&<p className="text-xs text-muted-foreground">{ui('Ask the General Manager to verify the company legal details before sharing.')}</p>}
       {data.has_letterhead_snapshot===false&&<p className="text-xs text-muted-foreground">{ui('This older invoice uses the current company letterhead. Saving its first customization will retain a copy with this document.')}</p>}
@@ -92,7 +91,7 @@ export default function SalesInvoice({fromCustomer=false}) {
     {notice&&<p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{uiMessage(notice)}</p>}
     {!data&&!error&&<p role="status" className="py-12 text-sm text-slate-500">{ui("Loading invoice…")}</p>}
     {data&&<>
-      {vatVersion}
+      {originalVersion}
       {data.invoice.sale_reversal&&<div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm"><strong>{ui('Sale reversed')} · {data.invoice.sale_reversal.date}</strong><p>{data.invoice.sale_reversal.reason}</p><p>{ui('Customer credit')}: {formatXAF(data.invoice.sale_reversal.customer_credit)} · {data.invoice.sale_reversal.journal_number}</p></div>}
       {!edit&&issued&&(canCorrect||canCollect)&&<div className="flex flex-wrap gap-2">{canCollect&&<Button onClick={()=>setCollecting(true)}>{ui('Receive Payment')}</Button>}{canCorrect&&<Button variant="outline" onClick={()=>setCorrecting(true)}>{ui('Correct sale')}</Button>}</div>}
       {paymentDialog}

@@ -5,6 +5,7 @@ import {build} from 'esbuild';
 import {catalogueFromStored, decorateEmployee, validateRoleProfile} from '../src/server/domain/role-catalogue.js';
 import {customerInvoiceDetailPath} from '../src/lib/customer-mobile-summary.js';
 import {invoiceEmail,invoiceHtml,invoiceText} from '../src/lib/invoice-documents.js';
+import {salesInvoiceDocument} from '../src/lib/report-models.js';
 import {postJournal} from '../src/server/domain/field-ops.js';
 import {loadInvoiceDocument} from '../src/server/domain/sales-invoices.js';
 import {fixture, user, date} from './helpers/cashier.mjs';
@@ -80,6 +81,7 @@ test('Customers-only staff can print their recent posted invoice and exact headq
     assert.equal(handler,'window.print()');
     assert.ok(response.headers.get('content-security-policy').includes(`'sha256-${createHash('sha256').update(handler).digest('base64')}'`));
   }
+  assert.equal((await print('east','posted-invoice',undefined,'?version=correction')).status,404);
   globalThis.__customerPrint.context=staffContext(['customers','sales'],{fullAccess:false});
   assert.equal((await print('customer-a','posted-invoice')).status,200);
 });
@@ -146,7 +148,7 @@ test('the recent invoice link is encoded and excluded from opening or reversed e
   assert.equal(customerInvoiceDetailPath('branch',{...row,sale_reversal:{}}),null);
 });
 
-test('historical invoice shows the posted VAT correction and keeps the original printable through the same scope', async t => {
+test('the standard invoice keeps its original date and number with verified VAT figures, and both accounting versions remain available', async t => {
   const rows=await setup(t), stores=globalThis.__customerPrint.stores;
   const invoice=rows.Invoice[0], first=rows.InvoiceLine[0];
   const entryDate=date.slice(0,4)+'-01-01';
@@ -168,18 +170,37 @@ test('historical invoice shows the posted VAT correction and keeps the original 
   assert.deepEqual([document.invoice.subtotal,document.invoice.tax_total,document.invoice.total,document.invoice.customer_paid,document.invoice.customer_balance],[2000,385,2385,500,1885]);
   assert.deepEqual(document.lines.map(line=>[line.tax_rate,line.tax_amount,line.total]),[[19.25,192.5,1192.5],[19.25,192.5,1192.5]]);
   assert.equal(document.lines[1].discount_amount,100);
-  assert.match(invoiceText(document),/Rectificatif de TVA VAT-INV-123/);
-  assert.match(decodeURIComponent(invoiceEmail(document)),/Rectificatif de TVA VAT-INV-123/);
-  assert.doesNotMatch(invoiceHtml(document), /\?version=original/);
-  const corrected=await print('east',invoice.id);
+  const correctionNotice=/Rectificatif de TVA|Facture originale|Écriture de correction|VAT-INV-123|version=original/;
+  const text=invoiceText(document),email=decodeURIComponent(invoiceEmail(document));
+  for(const output of [text,email]){
+    assert.match(output,/Invoice INV-123/);
+    assert.match(output,new RegExp('Date\\s*:\\s*'+entryDate));
+    assert.match(output,/TVA incluse.*385 XAF/);
+    assert.doesNotMatch(output,correctionNotice);
+  }
+  const report=salesInvoiceDocument(document);
+  assert.equal(report.title,'Invoice INV-123');
+  assert.deepEqual(report.metadata.slice(0,2),[['Invoice date',entryDate],['Due date',date]]);
+  assert.equal(report.metadata.some(([label])=>/Correction|journal|Original invoice/i.test(label)),false);
+  assert.deepEqual(report.sections[1].rows.map(([,value])=>value),[2000,385,2385,500,1885]);
+  const standard=await print('east',invoice.id);
+  assert.equal(standard.status,200);
+  const standardHtml=await standard.text();
+  assert.equal(standardHtml,invoiceHtml(document));
+  assert.match(standardHtml,/<title>INV-123<\/title>/);
+  assert.match(standardHtml,new RegExp('Date\\s*:\\s*'+entryDate));
+  assert.match(standardHtml,/<span>385 XAF<\/span>/);
+  assert.doesNotMatch(standardHtml,correctionNotice);
+
+  const corrected=await print('east',invoice.id,undefined,'?version=correction');
   assert.equal(corrected.status,200);
   const html=await corrected.text();
   assert.match(html, /<title>VAT-INV-123<\/title>/);
   assert.ok(html.includes(`Facture originale INV-123 du ${entryDate}`));
   assert.ok(html.includes(`Écriture de correction ${correction.journal_number}`));
-  assert.match(html,/Voir la facture originale/);
-  assert.match(html,/href="\?version=original"/);
+  assert.match(html,new RegExp('Date\\s*:\\s*'+date));
   assert.match(html,/<span>385 XAF<\/span>/);
+  assert.equal((await print('west',invoice.id,undefined,'?version=correction')).status,404);
 
   const originalDocument=await loadInvoiceDocument(stores,invoice.id,undefined,{original:true});
   assert.equal(originalDocument.invoice.tax_total,192.5);
@@ -194,7 +215,7 @@ test('historical invoice shows the posted VAT correction and keeps the original 
   assert.equal(originalPrint.status,200);
   const originalHtml=await originalPrint.text();
   assert.match(originalHtml,/<title>INV-123<\/title>/);
-  assert.match(originalHtml,/Voir la TVA corrigée/);
+  assert.match(originalHtml,new RegExp('Date\\s*:\\s*'+entryDate));
   assert.doesNotMatch(originalHtml,/VAT-INV-123|<span>385 XAF<\/span>/);
   assert.equal((await print('west',invoice.id,undefined,'?version=original')).status,404);
   assert.deepEqual({invoices:rows.Invoice,lines:rows.InvoiceLine,journals:rows.JournalEntry,journalLines:rows.JournalLine},snapshot);
