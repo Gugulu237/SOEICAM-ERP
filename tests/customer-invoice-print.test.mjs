@@ -4,6 +4,9 @@ import {createHash} from 'node:crypto';
 import {build} from 'esbuild';
 import {catalogueFromStored, decorateEmployee, validateRoleProfile} from '../src/server/domain/role-catalogue.js';
 import {customerInvoicePrintPath} from '../src/lib/customer-mobile-summary.js';
+import {invoiceEmail,invoiceHtml,invoiceText} from '../src/lib/invoice-documents.js';
+import {postJournal} from '../src/server/domain/field-ops.js';
+import {loadInvoiceDocument} from '../src/server/domain/sales-invoices.js';
 import {fixture, user, date} from './helpers/cashier.mjs';
 
 const path = 'src/app/api/customers/[id]/invoices/[invoiceId]/print/route.js';
@@ -37,7 +40,7 @@ function staffContext(modules, {template='employee', status='active', fullAccess
   return {user:account, employee, roleCatalogue, role:template};
 }
 
-const print = (id, invoiceId, headers) => GET(new Request('http://localhost', {headers}), {params:Promise.resolve({id,invoiceId})});
+const print = (id, invoiceId, headers, query='') => GET(new Request('http://localhost/'+query, {headers}), {params:Promise.resolve({id,invoiceId})});
 
 async function setup(t) {
   const {entities, rows} = await fixture();
@@ -100,4 +103,62 @@ test('the recent invoice link is encoded and excluded from opening or reversed e
   assert.equal(customerInvoicePrintPath('branch & town',row),'/api/customers/branch%20%26%20town/invoices/invoice%2Fid/print');
   assert.equal(customerInvoicePrintPath('branch',{...row,opening_batch_id:'history'}),null);
   assert.equal(customerInvoicePrintPath('branch',{...row,sale_reversal:{}}),null);
+});
+
+test('historical invoice shows the posted VAT correction and keeps the original printable through the same scope', async t => {
+  const rows=await setup(t), stores=globalThis.__customerPrint.stores;
+  const invoice=rows.Invoice[0], first=rows.InvoiceLine[0];
+  const entryDate=date.slice(0,4)+'-01-01';
+  const recordedAt=date+'T12:00:00.000Z';
+  Object.assign(invoice,{sales_order_id:'legacy-order',invoice_date:entryDate,price_includes_vat:true,total:2385,subtotal:2192.5,tax_total:192.5,amount_paid:500,balance:1885,payment_type:'credit',status:'partially_paid'});
+  Object.assign(first,{unit_price:1192.5,total:1192.5,tax_rate:19.25,tax_amount:192.5,price_includes_vat:true});
+  rows.InvoiceLine.push({id:'previously-untaxed',invoice_id:invoice.id,product_name:'Other Yoghurt',quantity:1,unit_price:1292.5,discount_amount:100,total:1192.5,tax_rate:0,tax_amount:0,price_includes_vat:true});
+  rows.JournalEntry.length=0;
+  const post=(sourceDocumentType,lines)=>postJournal({entities:stores},{entryDate,description:sourceDocumentType,sourceModule:'sales',sourceDocumentType,sourceDocumentId:invoice.id,userId:'staff',lines});
+  const {journal:original}=await post('Invoice',[{account_id:'receivable',debit:2385},{account_id:'revenue',credit:2192.5},{account_id:'tax',credit:192.5}]);
+  const {journal:correction}=await post('InvoiceVatCorrection',[{account_id:'revenue',debit:192.5},{account_id:'tax',credit:192.5}]);
+  invoice.journal_id=original.id;
+  const marker={version:1,journal_id:correction.id,journal_number:correction.journal_number,original_journal_id:original.id,tax_account_id:'tax',date:entryDate,recorded_at:recordedAt,subtotal:2000,tax_total:385,original_subtotal:2192.5,original_tax_total:192.5,lines:[{id:first.id,tax_amount:192.5},{id:'previously-untaxed',tax_amount:192.5}]};
+  invoice.invoice_vat_correction=marker;
+  const snapshot=structuredClone({invoices:rows.Invoice,lines:rows.InvoiceLine,journals:rows.JournalEntry,journalLines:rows.JournalLine});
+
+  const document=await loadInvoiceDocument(stores,invoice.id);
+  assert.deepEqual(document.vat_correction,{number:'VAT-INV-123',issued_date:date,accounting_date:entryDate,journal_number:correction.journal_number});
+  assert.deepEqual([document.invoice.subtotal,document.invoice.tax_total,document.invoice.total,document.invoice.customer_paid,document.invoice.customer_balance],[2000,385,2385,500,1885]);
+  assert.deepEqual(document.lines.map(line=>[line.tax_rate,line.tax_amount,line.total]),[[19.25,192.5,1192.5],[19.25,192.5,1192.5]]);
+  assert.equal(document.lines[1].discount_amount,100);
+  assert.match(invoiceText(document),/Rectificatif de TVA VAT-INV-123/);
+  assert.match(decodeURIComponent(invoiceEmail(document)),/Rectificatif de TVA VAT-INV-123/);
+  assert.doesNotMatch(invoiceHtml(document), /\?version=original/);
+  const corrected=await print('east',invoice.id);
+  assert.equal(corrected.status,200);
+  const html=await corrected.text();
+  assert.match(html, /<title>VAT-INV-123<\/title>/);
+  assert.ok(html.includes(`Facture originale INV-123 du ${entryDate}`));
+  assert.ok(html.includes(`Écriture de correction ${correction.journal_number}`));
+  assert.match(html,/Voir la facture originale/);
+  assert.match(html,/href="\?version=original"/);
+  assert.match(html,/<span>385 XAF<\/span>/);
+
+  const originalDocument=await loadInvoiceDocument(stores,invoice.id,undefined,{original:true});
+  assert.equal(originalDocument.invoice.tax_total,192.5);
+  assert.equal(originalDocument.lines[1].tax_amount,0);
+  const originalPrint=await print('customer-a',invoice.id,undefined,'?version=original');
+  assert.equal(originalPrint.status,200);
+  const originalHtml=await originalPrint.text();
+  assert.match(originalHtml,/<title>INV-123<\/title>/);
+  assert.match(originalHtml,/Voir la TVA corrigée/);
+  assert.doesNotMatch(originalHtml,/VAT-INV-123|<span>385 XAF<\/span>/);
+  assert.equal((await print('west',invoice.id,undefined,'?version=original')).status,404);
+  assert.deepEqual({invoices:rows.Invoice,lines:rows.InvoiceLine,journals:rows.JournalEntry,journalLines:rows.JournalLine},snapshot);
+
+  marker.lines[0].tax_amount=190;
+  marker.lines[1].tax_amount=195;
+  assert.equal((await print('east',invoice.id)).status,409);
+  assert.equal((await print('east',invoice.id,undefined,'?version=original')).status,200);
+  invoice.invoice_vat_correction=structuredClone(snapshot.invoices[0].invoice_vat_correction);
+  rows.JournalLine.find(line=>line.journal_id===correction.id&&line.account_id==='tax').credit=100;
+  assert.equal((await print('east',invoice.id)).status,409);
+  delete invoice.invoice_vat_correction;
+  assert.equal((await print('east',invoice.id)).status,409);
 });

@@ -14,6 +14,8 @@ import {commercialSnapshot} from '../src/lib/employee-dashboard.js';
 import {companySalesAction} from '../src/server/domain/company-sales.js';
 import {previewAccountConsolidation,postAccountConsolidation} from '../src/server/domain/account-consolidation.js';
 import {FEATURE_AUTHORITY} from '../src/server/domain/roles.js';
+import {journalPayload} from '../src/server/domain/journal-validation.js';
+import {verifiedCommissionSales} from '../src/server/domain/customer-commission-report.js';
 
 const gm={id:'gm',role:'admin',full_name:'GM'};
 const retainedCostPolicy='unreturned-goods-operating-expense-v1';
@@ -53,6 +55,49 @@ test('returned goods restore exact carrying value in quarantine and retries cann
  const restored=(await f.s.StockBalance.list()).filter(s=>s.stock_origin==='sale_reversal');assert.equal(restored.length,1);assert.equal(restored[0].quantity,2);assert.equal(restored[0].total_value,400);assert.equal(restored[0].qc_status,'pending');assert.equal(restored[0].lot_number,'LOT');
  assert.equal((await f.s.StockBalance.get('stock')).quantity,8);assert.equal((await f.s.Account.get('cogs')).balance,0);assert.equal((await f.s.StockMovement.list()).length,2);
  await assert.rejects(saleReversalAction(f.client,gm,{...body,reason:'Changed reason'}),/different details/);
+});
+
+test('reversing a VAT-corrected invoice cancels its effective revenue and VAT and preserves the posted documents',async()=>{
+ const f=await setup(),{s}=f,invoice=await s.Invoice.get(f.input.invoiceId),original=await s.JournalEntry.get(invoice.journal_id);
+ const [invoiceLine]=await s.InvoiceLine.filter({invoice_id:invoice.id}),revenueLine=(await s.JournalLine.filter({journal_id:original.id,account_id:'revenue'}))[0];
+ const {subtotal,tax_total:tax,total}=invoice;
+
+ // Restore the fixture to a legacy invoice whose item was sold without a VAT split.
+ await s.JournalLine.deleteMany({journal_id:original.id,account_id:'tax'});
+ await s.JournalLine.update(revenueLine.id,{credit:total});
+ await s.Account.update('revenue',{balance:total});await s.Account.update('tax',{balance:0});
+ await s.Invoice.update(invoice.id,{subtotal:total,tax_total:0,price_includes_vat:false});
+ await s.InvoiceLine.update(invoiceLine.id,{tax_amount:0,tax_rate:0,price_includes_vat:false});
+ const oldLines=await s.JournalLine.filter({journal_id:original.id});
+ await s.JournalEntry.update(original.id,{posting_payload:journalPayload({entryDate:date,description:original.description,sourceModule:'sales',sourceDocumentType:'Invoice',lines:oldLines})});
+
+ const stale=await f.preview();
+ const {journal:vat}=await postJournal(f.client.asServiceRole,{entryDate:date,description:'VAT correction for '+invoice.invoice_number,sourceModule:'sales',sourceDocumentType:'InvoiceVatCorrection',sourceDocumentId:invoice.id,userId:gm.id,lines:[{account_id:'revenue',debit:tax},{account_id:'tax',credit:tax}]});
+ await assert.rejects(f.preview(),/Reconcile the posted invoice VAT correction/);
+ const marker={version:1,journal_id:vat.id,journal_number:vat.journal_number,date,original_journal_id:original.id,subtotal,tax_total:tax,lines:[{id:invoiceLine.id,tax_amount:tax}],original_subtotal:total,original_tax_total:0,tax_account_id:'tax'};
+ await s.Invoice.update(invoice.id,{invoice_vat_correction:marker});
+ const vatLines=await s.JournalLine.filter({journal_id:vat.id});
+ await assert.rejects(f.reverse({reviewToken:stale.reviewToken}),/sale or customer balance changed/);
+
+ const {reversal}=await f.reverse();
+ assert.equal(reversal.vat_correction_journal_id,vat.id);
+ const reversalLines=await s.JournalLine.filter({journal_id:reversal.journal_id});
+ assert.equal(reversalLines.find(line=>line.account_id==='revenue').debit,subtotal);
+ assert.equal(reversalLines.find(line=>line.account_id==='tax').debit,tax);
+ assert.equal(reversalLines.find(line=>line.account_id==='receivable').credit,total);
+ assert.equal((await s.Account.get('revenue')).balance,0);assert.equal((await s.Account.get('tax')).balance,0);assert.equal((await s.Customer.get('customer-a')).balance,0);
+ assert.deepEqual(await s.JournalLine.filter({journal_id:original.id}),oldLines);
+ assert.deepEqual(await s.JournalLine.filter({journal_id:vat.id}),vatLines);
+ assert.deepEqual(await s.JournalEntry.get(vat.id),vat);
+ assert.equal((await s.Invoice.get(invoice.id)).subtotal,total);
+
+ const report={invoices:await s.Invoice.list(),journals:await s.JournalEntry.list(),journalLines:await s.JournalLine.list(),accounts:await s.Account.list(),from:date,to:date};
+ const verified=verifiedCommissionSales(report);
+ assert.equal(verified.unverified_sales,0);
+ assert.deepEqual(verified.sales.map(sale=>sale.net),[total,-total]);
+ const missingCorrection=verifiedCommissionSales({...report,journals:report.journals.filter(journal=>journal.id!==vat.id)});
+ assert.equal(missingCorrection.unverified_sales,1);
+ assert.deepEqual(missingCorrection.sales,[]);
 });
 
 test('unreturned-goods classification requires the current reviewed policy and a stable expense mapping before any write',async()=>{
