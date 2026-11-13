@@ -31,7 +31,7 @@ const output=await build({stdin:{contents:`
     '@/lib/navigation-context':"export const useNavigationSession=()=>null;export const usePageState=(key,value)=>globalThis.__clients.state('page:'+key,value);",
     '@/api/erpClient':`export const erp={entities:{Customer:'customers',CustomerLocation:'locations',
       SalesOrder:{aggregate:async()=>({rows:[]}),filter:async()=>({items:[]})},
-      Invoice:{aggregate:async()=>({rows:[]}),filter:async()=>({items:globalThis.__clients.invoices||[]})}}};
+      Invoice:{aggregate:async options=>globalThis.__clients.invoiceAggregate?.(options)??{rows:[]},filter:async()=>({items:globalThis.__clients.invoices||[]})}}};
       export const invalidateERPReads=()=>{};`,
     '@/lib/field-pos':"export const readAll=async entity=>globalThis.__clients[entity]||[];",
     '@/components/customers/useCustomerPaymentStatus':"export default ()=>({data:{}});",
@@ -69,6 +69,40 @@ test('mobile recent invoices and desktop Sales history link to the customer invo
       assert.match(html,/OPEN-001/);
       assert.doesNotMatch(html,/invoices\/opening/);
     }
+  }finally{state.cleanup();delete globalThis.__clients;}
+});
+
+test('customer sales history recovers from a failed read and totals only posted sales invoices',async()=>{
+  const state=hookRuntime();globalThis.__clients=state;
+  const partner={id:'east',parent_id:'shop',business_name:'East branch'};
+  const queries=[];
+  let fail=true;
+  state.invoices=[{id:'posted',customer_id:'shop',customer_name:'Shop A',invoice_number:'INV-001',status:'posted',payment_type:'credit',total:1200,balance:1200}];
+  state.invoiceAggregate=async options=>{
+    queries.push(options);
+    if(fail)throw Error('Temporary read error');
+    return {rows:[{status:'posted',[options.sum[0]==='total'?'sum_total':'sum_balance']:1200}]};
+  };
+  const draw=()=>{state.beforeRender();return render('partnerSales',{partner,headquartersId:'shop'});};
+  try{
+    assert.match(draw(),/role="status"/);
+    await state.flush();
+    const error=draw();
+    assert.match(error,/role="alert"[^>]*>Sales history could not load/);
+    assert.doesNotMatch(error,/animate-spin|INV-001/);
+    fail=false;
+    state.buttons.find(button=>button.label==='Retry').onClick();
+    assert.match(draw(),/role="status"/);
+    await state.flush();
+    const loaded=draw();
+    assert.match(loaded,/Outstanding/);
+    assert.match(loaded,/INV-001/);
+    assert.match(loaded,/1[\s\u00a0\u202f,.]?200/);
+    assert.doesNotMatch(loaded,/role="alert"|animate-spin/);
+    assert.deepEqual(queries.at(-1),{
+      query:{$or:[{customer_id:'east'},{customer_id:'shop',location_id:'east'}],accounting_source:{$ne:'opening_balances'},status:{$in:['posted','partially_paid','paid','overdue']}},
+      groupBy:'status',sum:['total'],
+    });
   }finally{state.cleanup();delete globalThis.__clients;}
 });
 

@@ -36,6 +36,24 @@ async function setup(db,{cash=false,zeroCost=false}={}){
 }
 async function receipt(f,amount){const inv=await f.s.Invoice.get(f.document.invoice.id);const payment=await f.s.Payment.create({payment_number:'RCP-1',payment_type:'customer_payment',party_id:'customer-a',party_name:'Customer A',payment_date:date,amount,status:'pending_approval',cashier_confirmed_by:gm.id,treasury_account_id:'till',allocated_to_invoices:inv.id,invoice_numbers:inv.invoice_number,receipt_allocations:[{invoice_id:inv.id,amount}],receipt_posting_token:''});await approveReceipt(f.client.asServiceRole,payment,gm,{topAdmin:true});return payment;}
 
+async function legacyCashAsCredit(f){
+ const {s}=f,invoice=await s.Invoice.get(f.input.invoiceId),original=await s.JournalEntry.get(invoice.journal_id);
+ const [originalDebit]=await s.JournalLine.filter({journal_id:original.id,account_id:'receivable'});
+ await s.JournalLine.update(originalDebit.id,{account_id:'clearing',account_number:'1050'});
+ await s.Account.update('receivable',{balance:0});await s.Account.update('clearing',{balance:invoice.total});
+ const originalLines=await s.JournalLine.filter({journal_id:original.id});
+ await s.JournalEntry.update(original.id,{posting_payload:journalPayload({entryDate:date,description:original.description,sourceModule:'sales',sourceDocumentType:'Invoice',lines:originalLines})});
+ const {journal}=await postJournal(f.client.asServiceRole,{entryDate:date,description:'Recognize the unpaid sale as customer receivable',sourceModule:'sales',sourceDocumentType:'InvoicePaymentTypeCorrection',sourceDocumentId:invoice.id,userId:gm.id,lines:[
+  {account_id:'receivable',party_type:'customer',party_id:invoice.customer_id,debit:invoice.total},
+  {account_id:'clearing',party_type:'customer',party_id:invoice.customer_id,credit:invoice.total},
+ ]});
+ const marker={version:1,journal_id:journal.id,journal_number:journal.journal_number,date,original_journal_id:original.id,
+  original_payment_type:'cash',payment_type:'credit',amount:invoice.total,clearing_account_id:'clearing',receivable_account_id:'receivable',recorded_at:journal.posted_at};
+ const apply=()=>Promise.all([s.Invoice.update(invoice.id,{invoice_payment_type_correction:marker}),s.SalesOrder.update(f.order.id,{invoice_payment_type_correction:marker})]);
+ await apply();
+ return {invoice,original,journal,marker,apply};
+}
+
 test('unpaid sale reversal cancels the debt and reclassifies unreturned-goods cost without restoring inventory',async()=>{
  const f=await setup(),beforeAccounts=await f.s.Account.list(),beforeRules=await f.s.PostingRule.list(),inventoryBefore=await f.s.Account.get('inventory'),original=await f.s.JournalEntry.get((await f.s.Invoice.get(f.input.invoiceId)).journal_id),originalLines=await f.s.JournalLine.filter({journal_id:original.id}),stockBefore=await f.s.StockBalance.list(),movementsBefore=await f.s.StockMovement.list(),p=await f.preview();assert.equal(p.unpaid_cancelled,1000);assert.equal(p.customer_credit,0);
  assert.deepEqual(await f.s.Account.list(),beforeAccounts);assert.deepEqual(await f.s.PostingRule.list(),beforeRules);assert.equal(p.retained_cost_review.amount,400);assert.equal(p.retained_cost_review.policy,retainedCostPolicy);assert.equal(p.retained_cost_review.expense_account.account_number,'UNRETURNED-GOODS');assert.equal(p.retained_cost_review.will_create_account,true);
@@ -57,8 +75,8 @@ test('returned goods restore exact carrying value in quarantine and retries cann
  await assert.rejects(saleReversalAction(f.client,gm,{...body,reason:'Changed reason'}),/different details/);
 });
 
-test('reversing a VAT-corrected invoice cancels its effective revenue and VAT and preserves the posted documents',async()=>{
- const f=await setup(),{s}=f,invoice=await s.Invoice.get(f.input.invoiceId),original=await s.JournalEntry.get(invoice.journal_id);
+test('reversing a reclassified and VAT-corrected invoice cancels its effective receivable, revenue and VAT while preserving the posted documents',async()=>{
+ const f=await setup(),{s}=f,{invoice,original,journal:paymentTypeJournal}=await legacyCashAsCredit(f);
  const [invoiceLine]=await s.InvoiceLine.filter({invoice_id:invoice.id}),revenueLine=(await s.JournalLine.filter({journal_id:original.id,account_id:'revenue'}))[0];
  const {subtotal,tax_total:tax,total}=invoice;
 
@@ -81,14 +99,17 @@ test('reversing a VAT-corrected invoice cancels its effective revenue and VAT an
 
  const {reversal}=await f.reverse();
  assert.equal(reversal.vat_correction_journal_id,vat.id);
+ assert.equal(reversal.payment_type_correction_journal_id,paymentTypeJournal.id);
  const reversalLines=await s.JournalLine.filter({journal_id:reversal.journal_id});
  assert.equal(reversalLines.find(line=>line.account_id==='revenue').debit,subtotal);
  assert.equal(reversalLines.find(line=>line.account_id==='tax').debit,tax);
  assert.equal(reversalLines.find(line=>line.account_id==='receivable').credit,total);
+ assert.equal(reversalLines.some(line=>line.account_id==='clearing'),false);
  assert.equal((await s.Account.get('revenue')).balance,0);assert.equal((await s.Account.get('tax')).balance,0);assert.equal((await s.Customer.get('customer-a')).balance,0);
  assert.deepEqual(await s.JournalLine.filter({journal_id:original.id}),oldLines);
  assert.deepEqual(await s.JournalLine.filter({journal_id:vat.id}),vatLines);
  assert.deepEqual(await s.JournalEntry.get(vat.id),vat);
+ assert.deepEqual(await s.JournalEntry.get(paymentTypeJournal.id),paymentTypeJournal);
  assert.equal((await s.Invoice.get(invoice.id)).subtotal,total);
 
  const report={invoices:await s.Invoice.list(),journals:await s.JournalEntry.list(),journalLines:await s.JournalLine.list(),accounts:await s.Account.list(),from:date,to:date};
@@ -98,6 +119,37 @@ test('reversing a VAT-corrected invoice cancels its effective revenue and VAT an
  const missingCorrection=verifiedCommissionSales({...report,journals:report.journals.filter(journal=>journal.id!==vat.id)});
  assert.equal(missingCorrection.unverified_sales,1);
  assert.deepEqual(missingCorrection.sales,[]);
+});
+
+test('a reclassified sale reverses against the receivable after a real partial receipt and blocks inconsistent reclassification evidence',async()=>{
+ const f=await setup(),{s}=f,{invoice,journal,marker,apply}=await legacyCashAsCredit(f);
+ const correctionLines=await s.JournalLine.filter({journal_id:journal.id}),credit=correctionLines.find(line=>line.account_id==='clearing');
+ const assertBlocked=()=>assert.rejects(f.preview(),/Reconcile the posted invoice payment type correction/);
+ await s.Invoice.update(invoice.id,{invoice_payment_type_correction:null});
+ await assertBlocked();
+ await apply();
+ await s.SalesOrder.update(f.order.id,{invoice_payment_type_correction:{...marker,amount:999}});
+ await assertBlocked();
+ await apply();
+ await s.JournalLine.update(credit.id,{party_id:'other'});
+ await assertBlocked();
+ await s.JournalLine.update(credit.id,{party_id:invoice.customer_id});
+ const duplicate=await s.JournalEntry.create({...journal,id:undefined,journal_number:'JV-duplicate'});
+ await assertBlocked();
+ await s.JournalEntry.deleteMany({id:duplicate.id});
+
+ assert.equal((await f.preview()).unpaid_cancelled,1000);
+ const payment=await receipt(f,400),savedPayment=await s.Payment.get(payment.id),beforeTreasury=await s.TreasuryTransaction.list();
+ const {reversal}=await f.reverse();
+ assert.equal(reversal.payment_type_correction_journal_id,journal.id);
+ assert.equal(reversal.unpaid_cancelled,600);
+ assert.equal(reversal.customer_credit,400);
+ assert.equal((await s.Account.get('receivable')).balance,-400);
+ assert.equal((await s.Customer.get(invoice.customer_id)).balance,-400);
+ assert.equal((await s.Account.get('clearing')).balance,0);
+ assert.deepEqual(await s.Payment.get(payment.id),savedPayment);
+ assert.deepEqual(await s.TreasuryTransaction.list(),beforeTreasury);
+ assert.deepEqual(await s.JournalLine.filter({journal_id:journal.id}),correctionLines);
 });
 
 test('unreturned-goods classification requires the current reviewed policy and a stable expense mapping before any write',async()=>{

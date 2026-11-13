@@ -9,6 +9,7 @@ import {canReadManagementAccounting} from '../../lib/management-access.js';
 import {resolveNonSaleInventoryExpense,nonSaleInventoryExpenseAccount} from './non-sale-inventory-expense.js';
 import {openingSaleCostBasis,OPENING_COST_MARKER} from './opening-cost-basis.js';
 import {INVOICE_VAT_CORRECTION_TYPE,invoiceVatEffectiveLines,verifyInvoiceVatCorrection} from './invoice-vat-correction-evidence.js';
+import {INVOICE_PAYMENT_TYPE_CORRECTION_TYPE,invoicePaymentTypeEffectiveLines,verifyInvoicePaymentTypeCorrection} from './invoice-payment-type-correction.js';
 
 export const SALE_REVERSAL_ACTIONS=['previewSaleReversal','reverseSale'];
 const retainedCostPolicy='unreturned-goods-operating-expense-v1';
@@ -52,15 +53,24 @@ async function plan(ctx){
   if(invoice&&round2(Number(invoice.amount_paid||0)+Number(invoice.balance))!==round2(invoice.total))throw Error('Reconcile the invoice receipts and balance before reversal.');
   const original=checkedJournalLines(await readRecords(s.JournalLine,{journal_id:journal.id}));
   if(original.debit!==round2(journal.total_debit)||original.credit!==round2(journal.total_credit))throw Error('The original sale journal totals need reconciliation.');
-  const [accounts,correctionJournals]=await Promise.all([
+  const [accounts,corrections]=await Promise.all([
     readRecords(s.Account),
-    invoice&&!field?readRecords(s.JournalEntry,{source_document_type:INVOICE_VAT_CORRECTION_TYPE,source_document_id:invoice.id}):[]
+    invoice&&!field?readRecords(s.JournalEntry,{source_document_type:{$in:[INVOICE_VAT_CORRECTION_TYPE,INVOICE_PAYMENT_TYPE_CORRECTION_TYPE]},source_document_id:invoice.id}):[],
   ]);
-  if(correctionJournals.length>1)throw Error('Reconcile the posted invoice VAT correction before continuing.');
-  const [correctionJournal]=correctionJournals,aliases=resolveAccountConsolidations(accounts);
+  const vatJournals=corrections.filter(row=>row.source_document_type===INVOICE_VAT_CORRECTION_TYPE);
+  const paymentTypeJournals=corrections.filter(row=>row.source_document_type===INVOICE_PAYMENT_TYPE_CORRECTION_TYPE);
+  if(vatJournals.length>1)throw Error('Reconcile the posted invoice VAT correction before continuing.');
+  if(paymentTypeJournals.length>1)throw Error('Reconcile the posted invoice payment type correction before continuing.');
+  const [correctionJournal]=vatJournals,[paymentTypeJournal]=paymentTypeJournals,aliases=resolveAccountConsolidations(accounts);
   const vatCorrection=verifyInvoiceVatCorrection({invoice,originalJournal:journal,originalLines:original.lines,journal:correctionJournal,
     lines:correctionJournal?await readRecords(s.JournalLine,{journal_id:correctionJournal.id}):[],accounts:aliases.byId});
-  const financialLines=invoiceVatEffectiveLines(original.lines,vatCorrection);
+  const settlement=!field&&invoice.cash_sale_settlement;
+  const receivable=await getRuleAccount(svc,'customer_receivable');
+  const cashAccount=settlement?aliases.byId.get(aliases.canonicalId(settlement.ledger_account_id)):await getAccountByNumber(svc,'1050');
+  const paymentTypeCorrection=verifyInvoicePaymentTypeCorrection({invoice,order:ctx.order,originalJournal:journal,originalLines:original.lines,
+    journal:paymentTypeJournal,lines:paymentTypeJournal?await readRecords(s.JournalLine,{journal_id:paymentTypeJournal.id}):[],
+    clearing:aliases.byId.get(cashAccount?.id),receivable:aliases.byId.get(receivable.id)});
+  const financialLines=invoicePaymentTypeEffectiveLines(invoiceVatEffectiveLines(original.lines,vatCorrection),paymentTypeCorrection);
   const postingAccounts=new Map([...original.lines,...financialLines].map(line=>[line.account_id,aliases.byId.get(aliases.canonicalId(line.account_id))]));
   for(const account of postingAccounts.values())if(!account||account.is_active===false||account.is_posting===false||!['debit','credit'].includes(account.normal_balance)||account.currency&&account.currency!=='XAF')throw Error('Review the active posting accounts and currency before reversal.');
   for(const account of [...postingAccounts.values()])postingAccounts.set(account.id,account);
@@ -73,10 +83,7 @@ async function plan(ctx){
   if(invoice&&pending.some(p=>(p.receipt_allocations||[]).some(a=>a.invoice_id===invoice.id)))throw Error('Complete or reject the pending receipt for this invoice before reversing the sale. Cash already handed over must be approved first.');
   const total=round2(record.total),due=round2(field?field.amount_due:invoice.payment_type==='cash'?0:invoice.balance),paid=round2(total-due);
   if(!Number.isFinite(total)||total<=0||!Number.isFinite(due)||due<0||due>total||!lines.length)throw Error('Reconcile the sale amounts and product lines first.');
-  const settlement=!field&&invoice.cash_sale_settlement;
-  const receivable=await getRuleAccount(svc,'customer_receivable');
-  const cashAccount=settlement?postingAccounts.get(settlement.ledger_account_id):await getAccountByNumber(svc,'1050');
-  const cashLines=original.lines.filter(l=>l.account_id===(settlement?settlement.ledger_account_id:cashAccount?.id));
+  const cashLines=financialLines.filter(l=>l.account_id===(settlement?settlement.ledger_account_id:cashAccount?.id));
   const cash=sum(cashLines,'debit');
   let receipt;
   if(settlement){
@@ -88,7 +95,7 @@ async function plan(ctx){
        invoice.deposit_treasury_account_id!==settlement.treasury_account_id||receipt.transaction_type!=='receipt'||round2(receipt.amount)!==cash||receipt.transaction_date!==journal.entry_date)
       throw Error('Reconcile the original treasury receipt before reversing this sale.');
   }
-  const originalDebt=sum(original.lines.filter(l=>l.account_id===receivable.id),'debit');
+  const originalDebt=sum(financialLines.filter(l=>l.account_id===receivable.id),'debit');
   if(round2(cash+originalDebt)!==total)throw Error('The original cash and receivable accounts need reconciliation before reversal.');
   if(cash){
     if(field){
@@ -113,8 +120,8 @@ async function plan(ctx){
   const period=(await readRecords(s.AccountingPeriod)).find(p=>p.start_date<=today()&&today()<=p.end_date&&['closed','locked'].includes(p.status));
   if(period)throw Error('The current accounting period is closed or locked. Reopen an authorized period before recording the correction.');
   const affectedIds=new Set([...postingAccounts.keys(),...[...postingAccounts.values()].map(account=>account.id)]);
-  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(settlement?{settlement,receipt}:{}),...(openingBasis?{openingCostBasis:openingBasis.proof}:{}),...(vatCorrection?{vatCorrection:{...vatCorrection,lines:sorted(vatCorrection.lines)}}:{})};
-  return {journal,financialLines,vatCorrection,postingAccounts,lines,customer,total,due,paid,cash,cashAccount,settlement,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
+  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(settlement?{settlement,receipt}:{}),...(openingBasis?{openingCostBasis:openingBasis.proof}:{}),...(vatCorrection?{vatCorrection:{...vatCorrection,lines:sorted(vatCorrection.lines)}}:{}),...(paymentTypeCorrection?{paymentTypeCorrection:{...paymentTypeCorrection,lines:sorted(paymentTypeCorrection.lines)}}:{})};
+  return {journal,financialLines,vatCorrection,paymentTypeCorrection,postingAccounts,lines,customer,total,due,paid,cash,cashAccount,settlement,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
 }
 
 export async function saleReversalAction(client,user,body){
@@ -158,7 +165,7 @@ export async function saleReversalAction(client,user,body){
     await s.StockBalance.create({product_id:issue.product_id,product_name:issue.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,quantity:Number(issue.quantity),unit_cost:Number(issue.total_value)/Number(issue.quantity),total_value:Number(issue.total_value),lot_number:issue.lot_number||'',expiry_date:issue.expiry_date||'',production_order_id:issue.production_order_id||'',batch_number:issue.batch_number||'',qc_status:'pending',stock_origin:'sale_reversal',sale_reversal_journal_id:journal.id,original_stock_movement_id:issue.id});
     await s.StockMovement.create({product_id:issue.product_id,product_name:issue.product_name,quantity:Number(issue.quantity),unit_cost:Number(issue.total_value)/Number(issue.quantity),total_value:Number(issue.total_value),destination_warehouse_id:warehouse.id,lot_number:issue.lot_number||'',expiry_date:issue.expiry_date||'',production_order_id:issue.production_order_id||'',batch_number:issue.batch_number||'',movement_type:'customer_return',document_type:'SaleReversal',document_id:journal.id,original_stock_movement_id:issue.id,movement_date:p.snapshot.date,status:'approved',reason:request.reason,qc_status:'pending'});
   }
-  const reversal={journal_id:journal.id,journal_number:journal.journal_number,date:p.snapshot.date,reason:request.reason,reversed_by:user.id,reversed_by_name:user.full_name||user.email||'',customer_credit:p.paid,unpaid_cancelled:p.due,total:p.total,stock_disposition:request.stock,warehouse_id:warehouse?.id||'',...(retainedCostExpense?{retained_cost_expense:retainedCostExpense}:{}),...(p.vatCorrection?{vat_correction_journal_id:p.vatCorrection.journal.id}:{}),request_hash:requestHash,created_at:new Date().toISOString()};
+  const reversal={journal_id:journal.id,journal_number:journal.journal_number,date:p.snapshot.date,reason:request.reason,reversed_by:user.id,reversed_by_name:user.full_name||user.email||'',customer_credit:p.paid,unpaid_cancelled:p.due,total:p.total,stock_disposition:request.stock,warehouse_id:warehouse?.id||'',...(retainedCostExpense?{retained_cost_expense:retainedCostExpense}:{}),...(p.vatCorrection?{vat_correction_journal_id:p.vatCorrection.journal.id}:{}),...(p.paymentTypeCorrection?{payment_type_correction_journal_id:p.paymentTypeCorrection.journal.id}:{}),request_hash:requestHash,created_at:new Date().toISOString()};
   await s.JournalEntry.update(journal.id,{reversal_of:p.journal.id,reversal_reason:request.reason,sale_reversal:reversal});
   await s.JournalEntry.update(p.journal.id,{reversed_by_journal:journal.id,reversed_at:reversal.created_at,reversed_by:user.id,is_immutable:true});
   await s.Customer.update(source.customer_id,{balance:round2(Number(p.customer.balance||0)-p.total)});
