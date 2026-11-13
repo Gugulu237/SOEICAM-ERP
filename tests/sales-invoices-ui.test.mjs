@@ -77,7 +77,7 @@ test('sale correction chooses safe metadata editing or the checked source revers
  }finally{state.cleanup();delete globalThis.__invoiceUI;}
 });
 
-test('customer invoice uses the shared detail, keeps print and VAT versions, and returns to the customer profile',async()=>{
+test('customer invoice shows its original date and verified VAT, with history available by direct link',async()=>{
  const render=await ui();
  for(const phone of [true,false]){
   const state=hookRuntime(),calls=[];globalThis.__invoiceUI=state;
@@ -88,17 +88,26 @@ test('customer invoice uses the shared detail, keeps print and VAT versions, and
    calls.push({customerId,invoiceId,original});
    return original
     ? {...structuredClone(saved),original_vat_document:true}
-    : {...structuredClone(saved),vat_correction:{number:'VAT-INV-1',issued_date:'2026-10-19',accounting_date:'2026-10-18',journal_number:'JV-1'}};
+    : {...structuredClone(saved),invoice:{...saved.invoice,price_includes_vat:true,subtotal:838.57,tax_total:161.43},
+       lines:[{...saved.lines[0],tax_rate:19.25,tax_amount:161.43}],
+       vat_correction:{number:'VAT-INV-1',issued_date:'2026-10-19',accounting_date:'2026-10-18',journal_number:'JV-1'}};
   };
   const draw=()=>{state.beforeRender();return render('detail',{fromCustomer:true});};
   try{
-   draw();await state.flush();assert.match(draw(),/VAT correction VAT-INV-1/);
+   draw();await state.flush();
+   const html=draw();
+   assert.match(html,/Date: 2026-10-18/);
+   assert.match(html,/VAT included \(19\.25%\)/);
+   assert.doesNotMatch(html,/VAT correction|VAT-INV-1|2026-10-19|View original invoice/);
    assert.deepEqual(calls[0],{customerId:'branch & town',invoiceId:'invoice-1',original:false});
    assert.equal(state.buttons.find(button=>button.label===(phone?'Print':'Print / PDF')).disabled,false);
    assert.equal(state.buttons.some(button=>['Customize','Correct sale','Receive Payment','Review sale correction'].includes(button.label)),false);
-   state.buttons.find(button=>button.label==='View original invoice').onClick();
+   state.query+='&version=original';
    draw();await state.flush();assert.match(draw(),/Original invoice VAT figures/);
    assert.equal(calls.at(-1).original,true);
+   state.buttons.find(button=>button.label==='View corrected VAT').onClick();
+   draw();await state.flush();assert.doesNotMatch(draw(),/Original invoice VAT figures/);
+   assert.equal(calls.at(-1).original,false);
    state.buttons.find(button=>button['aria-label']===(phone?'Back':'Back to customers')).onClick();
    assert.deepEqual(state.navigation,['/customers?view=list&customer=branch%20%26%20town'+(phone?'':'&tab=sales')]);
   }finally{state.cleanup();delete globalThis.__invoiceUI;}
