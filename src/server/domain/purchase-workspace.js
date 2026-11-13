@@ -9,6 +9,7 @@ import { forbidden } from '../access.js';
 import { principalRole } from './roles.js';
 
 const pick = (row, fields) => Object.fromEntries(fields.split(' ').map(key => [key, row[key]]));
+const billVatFields = 'subtotal tax_total purchase_vat_treatment quoted_vat_total supplier_invoice_reference';
 export function canReadPurchase(role, _employee, po) {
   return !!po && role === 'admin';
 }
@@ -24,7 +25,7 @@ export async function purchaseWorkspace(client, user, body) {
   await requirePurchasingAdmin(client,user);
   const s = client.asServiceRole.entities, permissions = purchasePermissions('admin');
   const orders = await readRecords(s.PurchaseOrder);
-  const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required')) };
+  const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total price_includes_vat requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required')) };
   if (body.section === 'suppliers' && !permissions.suppliers || ['bills','payments'].includes(body.section) && !permissions.finance || body.section === 'receiving' && !permissions.receive) throw forbidden('This Purchases section is reserved for authorized purchasing, warehouse or finance staff.');
   if (body.orderId || body.compose) {
     const order = body.orderId ? orders.find(po => po.id === body.orderId) : null;
@@ -44,7 +45,7 @@ export async function purchaseWorkspace(client, user, body) {
       suppliers: suppliers.filter(v => v.is_active !== false || v.id === order?.supplier_id).map(v => pick(v, 'id name is_active supplier_items')),
       products: products.map(p => ({ ...pick(p, 'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days'), unit: stockUnit(p), cost: itemUnitCost(p) })),
       warehouses: warehouses.filter(w => !['vehicle', 'commercial_custody', 'quarantine'].includes(w.warehouse_type)).map(w => pick(w, 'id name warehouse_type')),
-      orderBills: orderBills.map(b => pick(b, 'id bill_number bill_date due_date total balance status supplier_name po_id')),
+      orderBills: orderBills.map(b => pick(b, 'id bill_number bill_date due_date total balance status supplier_id supplier_name po_id '+billVatFields)),
       orderPayments: orderPayments.map(p => pick(p, 'id bill_id status amount')),
       accounts: accounts.map(a=>pick(a,'id name balance account_type')),
       orderLines: lines, requires_supplier_split: !!order && lines.some(l => l.supplier_id && l.supplier_id !== order.supplier_id),
@@ -52,7 +53,7 @@ export async function purchaseWorkspace(client, user, body) {
   }
   if (['bills','payments'].includes(body.section)) {
     const [bills, payments] = await Promise.all([readRecords(s.Bill), readRecords(s.Payment, { payment_type: 'supplier_payment' })]);
-    return { ...base, bills: bills.map(b => pick(b, 'id bill_number supplier_id supplier_name po_id po_number receipt_number bill_date due_date total amount_paid balance status')), payments: payments.map(p => pick(p, 'id payment_number party_id party_name amount payment_date payment_method reference status po_id bill_id treasury_account_id treasury_account_name approved_by approved_at journal_id')) };
+    return { ...base, bills: bills.map(b => pick(b, 'id bill_number supplier_id supplier_name po_id po_number receipt_number bill_date due_date total amount_paid balance status '+billVatFields)), payments: payments.map(p => pick(p, 'id payment_number party_id party_name amount payment_date payment_method reference status po_id bill_id treasury_account_id treasury_account_name approved_by approved_at journal_id')) };
   }
   return base;
 }

@@ -4,8 +4,19 @@ import {build} from 'esbuild';
 import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
-const output=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Customers,{CustomerDirectory} from './src/views/Customers.jsx';import List from './src/components/customers/CustomerQuickList.jsx';import Tasks from './src/components/customers/CustomerTasks.jsx';import Zones from './src/components/customers/CustomerDeliveryZones.jsx';export const render=(kind,props)=>renderToStaticMarkup(React.createElement(kind==='zones'?Zones:kind==='tasks'?Tasks:kind==='directory'?CustomerDirectory:kind==='customers'?Customers:List,props));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'compact-customers',setup(b){
-  b.onResolve({filter:/^react$/},a=>/(Customers|CustomerQuickList|CustomerMapLinks|CustomerTasks|CustomerActionGrid|CustomerDeliveryZones|MobileCustomerHeader)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
+const output=await build({stdin:{contents:`
+  import React from 'react';
+  import {renderToStaticMarkup} from 'react-dom/server';
+  import Customers,{CustomerDirectory} from './src/views/Customers.jsx';
+  import List from './src/components/customers/CustomerQuickList.jsx';
+  import Tasks from './src/components/customers/CustomerTasks.jsx';
+  import Zones from './src/components/customers/CustomerDeliveryZones.jsx';
+  import MobileOverview from './src/components/customers/MobileCustomerOverview.jsx';
+  import PartnerSales from './src/components/customers/PartnerSalesPanel.jsx';
+  const screens={zones:Zones,tasks:Tasks,directory:CustomerDirectory,customers:Customers,mobileOverview:MobileOverview,partnerSales:PartnerSales};
+  export const render=(kind,props)=>renderToStaticMarkup(React.createElement(screens[kind]||List,props));
+`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'compact-customers',setup(b){
+  b.onResolve({filter:/^react$/},a=>/(Customers|CustomerQuickList|CustomerMapLinks|CustomerTasks|CustomerActionGrid|CustomerDeliveryZones|MobileCustomerHeader|PartnerSalesPanel)\.jsx$/.test(a.importer)?{path:a.importer.split(/[\\/]/).at(-1),namespace:'hooks'}:undefined);
   b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({resolveDir:process.cwd(),contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__clients.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__clients.state("+JSON.stringify(key)+",v),useEffect=(fn,deps)=>globalThis.__clients.effect("+JSON.stringify(key)+",fn,deps),useMemo=fn=>fn(),useCallback=fn=>fn;"}));
   const mocks={
     '@/hooks/usePhoneLayout':"export const usePhoneLayout=()=>Boolean(globalThis.__clients.phone);",
@@ -18,7 +29,10 @@ const output=await build({stdin:{contents:"import React from 'react';import {ren
     '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__clients.session||({isAdmin:true,role:'admin'});",
     '@/lib/router':"export const useNavigate=()=>path=>{globalThis.__clients.navigation.push(path);globalThis.__clients.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__clients.query||''),params=>{globalThis.__clients.query=params.toString();}];",
     '@/lib/navigation-context':"export const useNavigationSession=()=>null;export const usePageState=(key,value)=>globalThis.__clients.state('page:'+key,value);",
-    '@/api/erpClient':"export const erp={entities:{Customer:'customers',CustomerLocation:'locations'}};export const invalidateERPReads=()=>{};",
+    '@/api/erpClient':`export const erp={entities:{Customer:'customers',CustomerLocation:'locations',
+      SalesOrder:{aggregate:async()=>({rows:[]}),filter:async()=>({items:[]})},
+      Invoice:{aggregate:async()=>({rows:[]}),filter:async()=>({items:globalThis.__clients.invoices||[]})}}};
+      export const invalidateERPReads=()=>{};`,
     '@/lib/field-pos':"export const readAll=async entity=>globalThis.__clients[entity]||[];",
     '@/components/customers/useCustomerPaymentStatus':"export default ()=>({data:{}});",
     '@/components/customers/CustomerPaymentBadge':"export default ()=>null;",
@@ -36,6 +50,25 @@ const output=await build({stdin:{contents:"import React from 'react';import {ren
 const module={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,module,module.exports);
 const render=module.exports.render;
 const customer={id:'shop',business_name:'Shop A',phone:'699001122',contact_person:'Madame Alice',address:'Entrance 4',town:'Yaoundé',gps_lat:3.85,gps_lng:11.51};
+
+test('mobile recent invoices and desktop Sales history open the scoped printable document directly',async()=>{
+  const state=hookRuntime();globalThis.__clients=state;
+  const partner={id:'east',parent_id:'shop',business_name:'East branch'};
+  const invoice={id:'posted',customer_id:'shop',customer_name:'Shop A',invoice_number:'INV-001',invoice_date:'2026-11-13',status:'paid',total:1200};
+  state.invoices=[invoice,{...invoice,id:'opening',invoice_number:'OPEN-001',opening_batch_id:'old-debt'}];
+  try{
+    const mobile=render('mobileOverview',{partner,sales:state.invoices});
+    state.beforeRender();render('partnerSales',{partner,headquartersId:'shop'});
+    await state.flush();
+    state.beforeRender();const desktop=render('partnerSales',{partner,headquartersId:'shop'});
+    for(const html of [mobile,desktop]){
+      assert.match(html,/href="\/api\/customers\/east\/invoices\/posted\/print" target="_blank" rel="noopener noreferrer"/);
+      assert.match(html,/Open invoice INV-001/);
+      assert.match(html,/OPEN-001/);
+      assert.doesNotMatch(html,/invoices\/opening\/print/);
+    }
+  }finally{state.cleanup();delete globalThis.__clients;}
+});
 
 test('only the branch arrow expands a group and one tap opens the chosen branch profile',async()=>{
   const state=hookRuntime();globalThis.__clients=state;state.customers=[customer,{id:'branch-a',parent_id:'shop',business_name:'East branch'},{id:'branch-b',parent_id:'shop',business_name:'West branch'}];

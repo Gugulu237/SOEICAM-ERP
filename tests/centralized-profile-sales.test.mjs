@@ -47,7 +47,7 @@ test('profile sales use the activated company pool without an issued load and po
  const result=await f.call(f.body),retry=await f.call(f.body),invoice=await f.s.Invoice.get(result.invoiceId),line=(await f.s.InvoiceLine.filter({invoice_id:invoice.id}))[0];
  assert.equal(retry.reused,true);assert.equal(result.order.salesperson_id,'cashier');assert.equal(result.order.sales_supply_recorded_by,user.id);assert.equal(result.order.dispatch_id,'');assert.equal(invoice.salesperson_id,'cashier');assert.equal(invoice.recorded_by,user.id);assert.equal(invoice.sales_supply_acquisition_agent_id,'cashier');assert.equal(invoice.sales_supply_registration_user_id,user.id);assert.equal(line.cogs_total,953.31);
  assert.equal((await f.s.StockBalance.get(f.pooled.id)).quantity,0);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,9);assert.equal((await f.s.StockBalance.get(f.factory.id)).total_value,2278.61);assert.deepEqual(await f.s.StockBalance.get('stock'),beforeCustody);
- assert.equal((await f.s.Invoice.list()).length,1);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.JournalLine.list()).reduce((sum,row)=>sum+row.debit-row.credit,0),0);assert.equal((await f.s.StockMovement.list()).length,2);assert.equal((await f.s.Customer.get('customer-a')).balance,0);
+ assert.equal((await f.s.Invoice.list()).length,1);assert.equal((await f.s.JournalEntry.list()).length,1);assert.equal((await f.s.JournalLine.list()).reduce((cents,row)=>cents+Math.round(row.debit*100)-Math.round(row.credit*100),0),0);assert.equal((await f.s.StockMovement.list()).length,2);assert.equal((await f.s.Customer.get('customer-a')).balance,0);
 });
 
 test('authorized central sellers can supply all active company customers while preserving the original acquisition beneficiary',async()=>{
@@ -151,7 +151,7 @@ test('a profile credit sale and free customer exchange deduct central stock once
  assert.equal(invoice.total,1000);assert.equal(invoice.balance,1000);assert.equal((await f.s.Customer.get('customer-a')).balance,1000);assert.equal((await f.s.StockBalance.get(f.pooled.id)).quantity,2);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,10);
  assert.equal((await f.s.InvoiceLine.filter({invoice_id:invoice.id}))[0].cogs_total,280.05);assert.equal((await f.s.JournalEntry.list()).length,2);
  const cogs=new Set((await f.s.Account.list()).filter(row=>row.account_type==='cogs').map(row=>row.id)),cogsTotal=(await f.s.JournalLine.list()).filter(row=>cogs.has(row.account_id)).reduce((sum,row)=>sum+row.debit-row.credit,0);assert.equal(cogsTotal,280.05);
- const replacement=(await f.s.Account.list()).find(row=>row.account_number==='CUSTOMER-REPLACEMENTS');assert.ok(replacement);assert.equal(replacement.balance,140.03);assert.equal((await f.s.JournalLine.list()).reduce((sum,row)=>sum+row.debit-row.credit,0),0);
+ const replacement=(await f.s.Account.list()).find(row=>row.account_number==='CUSTOMER-REPLACEMENTS');assert.ok(replacement);assert.equal(replacement.balance,140.03);assert.equal((await f.s.JournalLine.list()).reduce((cents,row)=>cents+Math.round(row.debit*100)-Math.round(row.credit*100),0),0);
 });
 
 test('activation does not repost an exact completed legacy personal sale retry',async()=>{

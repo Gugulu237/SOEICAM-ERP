@@ -5,6 +5,7 @@ import {ui} from '@/lib/i18n';
 import {formatAccountingXAF,formatXAF,formatDate} from '@/lib/formatters';
 import {branchTotalDue,customerAccountBalance,headquartersDueForBranch} from '@/lib/customer-billing-summary';
 import {hasCustomerLocation} from '@/lib/customer-location';
+import {customerInvoicePrintPath} from '@/lib/customer-mobile-summary';
 import CustomerMapLinks from './CustomerMapLinks';
 import CustomerGpsButton from './CustomerGpsButton';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -39,7 +40,31 @@ export default function MobileCustomerOverview({partner,balanceLabel='Account ba
         {hasCustomerLocation(point)&&<button type="button" aria-label={ui('Locate {0}',branch.business_name)} onClick={()=>setMapPoint({...point,business_name:branch.business_name})} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border text-primary"><MapPin size={18}/></button>}
       </div>;
     })}</div></section>}
-    <section><h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-primary">{ui('Recent invoices')}</h3><div className="divide-y rounded-xl border bg-white">{loading?<p role="status" className="p-4 text-sm text-muted-foreground">{ui('Loading...')}</p>:salesUnavailable?<p className="p-4 text-sm text-muted-foreground">{ui('Sales history is not available in this customer workspace.')}</p>:salesError?<p role="alert" className="p-4 text-sm text-red-700">{ui('Sales history could not load.')} {onRetrySales&&<button type="button" className="underline" onClick={onRetrySales}>{ui('Retry')}</button>}</p>:sales.length?sales.slice(0,6).map(order=><div key={order.id} className="flex min-h-14 items-start justify-between gap-3 p-3"><div className="min-w-0"><p className="break-words text-sm font-semibold">{order.invoice_number||ui('Invoice')}</p>{order.customer_id&&order.customer_id!==partner.id&&<p className="mt-1 break-words text-xs text-muted-foreground">{ui('Billed to {0}',order.customer_name)}</p>}<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatDate(order.invoice_date)}</span><StatusBadge status={order.status}/></div></div><strong className="text-right text-xs tabular-nums">{formatXAF(order.total)}</strong></div>):<p className="p-4 text-sm text-muted-foreground">{ui('No posted invoices yet.')}</p>}</div></section>
+    <section>
+      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-primary">{ui('Recent invoices')}</h3>
+      <div className="divide-y rounded-xl border bg-white">
+        {loading?<p role="status" className="p-4 text-sm text-muted-foreground">{ui('Loading...')}</p>
+          :salesUnavailable?<p className="p-4 text-sm text-muted-foreground">{ui('Sales history is not available in this customer workspace.')}</p>
+          :salesError?<p role="alert" className="p-4 text-sm text-red-700">{ui('Sales history could not load.')} {onRetrySales&&<button type="button" className="underline" onClick={onRetrySales}>{ui('Retry')}</button>}</p>
+          :sales.length?sales.slice(0,6).map(invoice=>{
+            const href = customerInvoicePrintPath(partner.id, invoice);
+            const number = invoice.invoice_number || ui('Invoice');
+            const row = <>
+              <div className="min-w-0 flex-1">
+                <p className={'break-words text-sm font-semibold '+(href?'text-primary':'')}>{number}</p>
+                {invoice.customer_id&&invoice.customer_id!==partner.id&&<p className="mt-1 break-words text-xs text-muted-foreground">{ui('Billed to {0}',invoice.customer_name)}</p>}
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatDate(invoice.invoice_date)}</span><StatusBadge status={invoice.status}/></div>
+              </div>
+              <strong className="text-right text-xs tabular-nums">{formatXAF(invoice.total)}</strong>
+              {href&&<ChevronRight size={16} aria-hidden="true" className="shrink-0 text-primary"/>}
+            </>;
+            const rowClass = 'flex min-h-14 items-start justify-between gap-3 p-3';
+            return href
+              ? <a key={invoice.id} href={href} target="_blank" rel="noopener noreferrer" aria-label={`${ui('Open invoice')} ${number}`} className={`${rowClass} hover:bg-muted focus-visible:outline-primary`}>{row}</a>
+              : <div key={invoice.id} className={rowClass}>{row}</div>;
+          }):<p className="p-4 text-sm text-muted-foreground">{ui('No posted invoices yet.')}</p>}
+      </div>
+    </section>
     {mapPoint&&<GoogleCustomerMap customers={[mapPoint]} selectedId={mapPoint.id} initialExpanded onClose={()=>setMapPoint(null)}/>}
     {onSale&&partner.is_active!==false&&<div data-mobile-action-bar className="fixed inset-x-0 bottom-[calc(64px_+_env(safe-area-inset-bottom))] z-30 border-t bg-white p-3"><button type="button" onClick={onSale} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-white"><Receipt size={18}/>{ui('Register sales')}</button></div>}
   </div>;

@@ -5,6 +5,7 @@ import { purchaseWorkspace,requirePurchasingAdmin } from './purchase-workspace.j
 import { supplierAction } from './supplier-workspace.js';
 import { businessDate } from '../../lib/business-date.js';
 import { createHash } from 'node:crypto';
+import { STANDARD_VAT_RATE } from '../../lib/sale-vat.js';
 
 function sourceKey(body) {
   const plan = body.plan || {};
@@ -45,13 +46,13 @@ export async function productionPurchaseAction(client, user, body) {
     if (!Number.isFinite(Number(row.quantity)) || round3(row.quantity)<needed.purchase_quantity) throw Error('The shortage changed. Refresh and cover the current missing quantity.');
     if (!Number.isFinite(Number(row.unit_price)) || Number(row.unit_price)<0) throw Error('Enter a valid supplier unit price');
     const groupKey=supplier.id+':'+needed.warehouse_id, group=groups.get(groupKey) || {supplierId:supplier.id,warehouseId:needed.warehouse_id,warehouseName:needed.warehouse_name,lines:[]};
-    group.lines.push({product_id:row.product_id,quantity:round3(row.quantity),unit_price:Number(row.unit_price),tax_rate:0}); groups.set(groupKey,group);
+    group.lines.push({product_id:row.product_id,quantity:round3(row.quantity),unit_price:Number(row.unit_price),tax_rate:row.tax_rate??STANDARD_VAT_RATE}); groups.set(groupKey,group);
   }
   const saved=[];
   for (const [groupKey, group] of groups) {
     const hash=createHash('sha256').update(body.requestKey+':'+groupKey).digest('hex').slice(0,32);
     const vendorKey=[hash.slice(0,8),hash.slice(8,12),hash.slice(12,16),hash.slice(16,20),hash.slice(20)].join('-');
-    const result=await supplierAction(client,user,{action:'saveSupplierOrder',requestKey:vendorKey, status:'confirmed',order:{supplier_id:group.supplierId,order_date:businessDate(),warehouse_id:group.warehouseId,payment_terms:'credit',catalogue_only:true,notes:`Production materials: ${plan.order?.order_number || 'planned production'}; receive at ${group.warehouseName}.`,lines:group.lines}});
+    const result=await supplierAction(client,user,{action:'saveSupplierOrder',requestKey:vendorKey, status:'confirmed',order:{supplier_id:group.supplierId,order_date:businessDate(),warehouse_id:group.warehouseId,payment_terms:'credit',price_includes_vat:true,catalogue_only:true,notes:`Production materials: ${plan.order?.order_number || 'planned production'}; receive at ${group.warehouseName}.`,lines:group.lines}});
     const po=await stores.PurchaseOrder.update(result.order.id,{production_purchase_source:source,production_source_order_id:body.orderId || '',production_purchase_request:request,production_purchase_payload:payload});
     saved.push({id:po.id,po_number:po.po_number,status:po.status,supplier_catalogue_review_required:!!po.supplier_catalogue_review_required});
   }

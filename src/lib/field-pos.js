@@ -1,4 +1,4 @@
-import {inclusiveSaleLine} from './sale-vat.js';
+import {inclusiveSaleLine,STANDARD_VAT_RATE} from './sale-vat.js';
 export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 export const roundQuantity = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
 
@@ -27,12 +27,11 @@ export function availableCustody(balances, productId, today = new Date().toISOSt
 }
 export const saleIsLocked = (sale) => Boolean(sale && (sale.stock_moved_at || !['draft', 'returned'].includes(sale.status)));
 
-export function saleTotals(lines, stock) {
+export function saleTotals(lines) {
   let subtotal = 0;
   let tax = 0;
   for (const line of lines) {
-    const product = stock.find((s) => s.product_id === line.product_id);
-    let amounts;try{amounts=inclusiveSaleLine(roundQuantity(line.quantity),roundMoney(line.unit_price),Number(product?.tax_rate ?? line.tax_rate)||0);}catch{continue;}
+    let amounts;try{amounts=inclusiveSaleLine(roundQuantity(line.quantity),roundMoney(line.unit_price),STANDARD_VAT_RATE);}catch{continue;}
     subtotal=roundMoney(subtotal+amounts.net);
     tax=roundMoney(tax+amounts.tax);
   }
@@ -53,10 +52,9 @@ export function validateSale(form, stock, { isAdmin = false, submit = false } = 
     if (!Number.isFinite(Number(line.quantity)) || roundQuantity(line.quantity) <= 0) return `Enter a quantity for ${product.name}.`;
     if (roundQuantity(line.quantity) > product.quantity) return `Only ${product.quantity} available for ${product.name}.`;
     if (!Number.isFinite(Number(line.unit_price)) || roundMoney(line.unit_price) <= 0) return `Enter a valid price for ${product.name}.`;
-    const vatRate=Number(product.tax_rate ?? line.tax_rate ?? 0);if(!Number.isFinite(vatRate)||vatRate<0||vatRate>100)return 'Review the product VAT rate before recording this sale.';
     if (!isAdmin && roundMoney(line.unit_price) < roundMoney(product.selling_price)) return `The price for ${product.name} is below its authorized selling price.`;
   }
-  const { total } = saleTotals(form.lines, stock);
+  const { total } = saleTotals(form.lines);
   if (exchangeOnly) {
     if (Number(form.amount_collected || 0) !== 0) return 'An exchange cannot collect cash. Add sold products to record a payment.';
     if (submit && !form.receipt_reference.trim()) return 'Add the receipt reference before submitting.';

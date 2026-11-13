@@ -1,5 +1,16 @@
+import {isOpeningRecord} from './opening-records.js';
+
 // Posted invoice sales exclude opening balances, drafts and cancelled documents.
 export const CUSTOMER_SALE_STATUSES = ['posted', 'partially_paid', 'paid', 'overdue'];
+
+export function isPrintableCustomerInvoice(invoice) {
+  return Boolean(invoice?.id && CUSTOMER_SALE_STATUSES.includes(invoice.status) && !isOpeningRecord(invoice) && !invoice.sale_reversal);
+}
+
+export function customerInvoicePrintPath(customerId, invoice) {
+  if (!customerId || !isPrintableCustomerInvoice(invoice)) return null;
+  return `/api/customers/${encodeURIComponent(customerId)}/invoices/${encodeURIComponent(invoice.id)}/print`;
+}
 export function customerActivityScope(customerId, headquartersId) {
   return headquartersId ? { $or: [
     { customer_id: customerId },

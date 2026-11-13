@@ -7,7 +7,7 @@ import {approvalHistory} from '../domain/approval-history.js';
 import {SALE_REVERSAL_ACTIONS,saleReversalAction} from '../domain/sale-reversals.js';
 import {CUSTOMER_ACTIVITY_ACTIONS,customerActivityAction} from '../domain/customer-activity.js';
 import {ASSEMBLY_BUILD_ACTIONS,assemblyBuildAction} from '../domain/assembly-build.js';
-import {inclusiveSaleLine} from '../../lib/sale-vat.js';
+import {inclusiveSaleLine,STANDARD_VAT_RATE} from '../../lib/sale-vat.js';
 import {approvalActionTargets} from '../domain/role-catalogue.js';
 import {salesOrderAction,SALES_ORDER_ACTIONS} from '../domain/sales-orders.js';
 import { CUSTOMER_REGISTRATION_ACTIONS, customerRegistrationAction } from '../domain/customer-registration.js';
@@ -323,13 +323,12 @@ export default async function (req) {
           throw new Error(`${product.name} sells at ${listPrice} XAF — selling below the authorized price needs an authorized discount`);
         }
         const discount = round2(Math.max(0, listPrice - unitPrice) * qty);
-        const taxRate = Number(product.tax_rate) || 0;
-        const amounts=inclusiveSaleLine(qty,unitPrice,taxRate);
+        const amounts=inclusiveSaleLine(qty,unitPrice,STANDARD_VAT_RATE);
         const lineTotal=amounts.net,taxAmount=amounts.tax;
         subtotal = round2(subtotal + lineTotal);
         discountTotal = round2(discountTotal + discount);
         taxTotal = round2(taxTotal + taxAmount);
-        lines.push({ product, qty, unitPrice, listPrice, discount, taxRate, taxAmount, lineTotal });
+        lines.push({ product, qty, unitPrice, listPrice, discount, taxRate: STANDARD_VAT_RATE, taxAmount, lineTotal });
       }
 
       const total = round2(subtotal + taxTotal);

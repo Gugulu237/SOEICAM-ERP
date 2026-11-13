@@ -5,7 +5,7 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { formatXAF, formatDate } from "@/lib/formatters";
-import { CUSTOMER_SALE_STATUSES, customerActivityScope } from '@/lib/customer-mobile-summary';
+import { CUSTOMER_SALE_STATUSES, customerActivityScope, customerInvoicePrintPath } from '@/lib/customer-mobile-summary';
 import StatusBadge from "@/components/shared/StatusBadge";
 import { ShoppingCart, Receipt } from "lucide-react";
 
@@ -99,18 +99,24 @@ export default function PartnerSalesPanel({ partner, subPartners = [], headquart
       <div>
         <h3 className="text-sm font-semibold text-slate-900 mb-2 inline-flex items-center gap-1.5"><Receipt size={14} />{ui(" Recent invoices")}</h3>
         <Table head={["Invoice", "Date", "Status", "Total", "Balance"]} empty={data.invoiceList.length === 0 ? "No invoices yet." : null}>
-          {data.invoiceList.map(i => (
-            <tr key={i.id}>
-              <td className="px-3 py-2">
-                <p className="text-slate-900">{i.invoice_number}</p>
-                <p className="text-xs text-slate-500">{i.customer_id===headquartersId ? ui('Billed to {0}', i.customer_name) : i.bill_to_location_name || i.location_name || i.customer_name}</p>
-              </td>
-              <td className="px-3 py-2 text-right text-slate-600">{formatDate(i.invoice_date)}</td>
-              <td className="px-3 py-2 text-right"><StatusBadge status={i.status} /></td>
-              <td className="px-3 py-2 text-right text-slate-600">{formatXAF(i.total)}</td>
-              <td className="px-3 py-2 text-right font-medium text-slate-900">{formatXAF(i.payment_type!=='cash'&&CUSTOMER_SALE_STATUSES.includes(i.status)?i.balance:0)}</td>
-            </tr>
-          ))}
+          {data.invoiceList.map(i => {
+            const href = customerInvoicePrintPath(partner.id, i);
+            const number = i.invoice_number || ui('Invoice');
+            return (
+              <tr key={i.id}>
+                <td className="px-3 py-2">
+                  {href ? (
+                    <a href={href} target="_blank" rel="noopener noreferrer" aria-label={`${ui('Open invoice')} ${number}`} className="font-semibold text-primary underline underline-offset-2">{number}</a>
+                  ) : <p className="text-slate-900">{number}</p>}
+                  <p className="text-xs text-slate-500">{i.customer_id===headquartersId ? ui('Billed to {0}', i.customer_name) : i.bill_to_location_name || i.location_name || i.customer_name}</p>
+                </td>
+                <td className="px-3 py-2 text-right text-slate-600">{formatDate(i.invoice_date)}</td>
+                <td className="px-3 py-2 text-right"><StatusBadge status={i.status} /></td>
+                <td className="px-3 py-2 text-right text-slate-600">{formatXAF(i.total)}</td>
+                <td className="px-3 py-2 text-right font-medium text-slate-900">{formatXAF(i.payment_type!=='cash'&&CUSTOMER_SALE_STATUSES.includes(i.status)?i.balance:0)}</td>
+              </tr>
+            );
+          })}
         </Table>
       </div>
     </div>

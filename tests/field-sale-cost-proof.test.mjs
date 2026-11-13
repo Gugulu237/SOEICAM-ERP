@@ -98,7 +98,7 @@ test('verified posted retries inspect historical money lines without depending o
  const before=snapshot(f);
  try{
   const retry=await invoke(handler,f,args);assert.equal((await retry.json()).reused,true);assert.deepEqual(f.tables,before);
-  manager(f);const preview=await invoke(handler,f,{action:'proposedJournal',saleId:sale.id}),plan=await preview.json();assert.equal(preview.status,200,plan.error);assert.ok(plan.lines.some(line=>line.account_id==='revenue'&&line.credit===1000));assert.ok(plan.lines.some(line=>line.account_id==='receivable'&&line.debit===600));assert.deepEqual(f.tables,before);
+  manager(f);const preview=await invoke(handler,f,{action:'proposedJournal',saleId:sale.id}),plan=await preview.json();assert.equal(preview.status,200,plan.error);assert.ok(plan.lines.some(line=>line.account_id==='revenue'&&line.credit===838.57));assert.ok(plan.lines.some(line=>line.account_id==='tax'&&line.credit===161.43));assert.ok(plan.lines.some(line=>line.account_id==='receivable'&&line.debit===600));assert.deepEqual(f.tables,before);
  }finally{delete globalThis.__dailySupplyClient;}
 });
 

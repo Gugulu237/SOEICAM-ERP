@@ -5,7 +5,7 @@ import ExchangePackagingNotice,{exchangePackagingWarningText} from '@/components
 import {watchSalesStock} from '@/lib/sales-stock-refresh';
 import SaleReplacements from '@/components/field/SaleReplacements';
 import {validateSaleReplacements,validateReplacementDeclaration} from '@/lib/sale-replacements';
-import {inclusiveSaleLine} from '@/lib/sale-vat';
+import {inclusiveSaleLine,STANDARD_VAT_RATE} from '@/lib/sale-vat';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {ui,uiMessage} from '@/lib/i18n';
 import {useLocaleRender} from '@/lib/localization';
@@ -14,7 +14,7 @@ import {useBack,useNavigate,useParams} from '@/lib/router';
 import {invokeFieldOps} from '@/lib/field-ops';
 import {readAll,roundMoney} from '@/lib/field-pos';
 import {businessDate} from '@/lib/business-date';
-import {formatXAF,formatNumber} from '@/lib/formatters';
+import {formatXAF,formatAccountingXAF,formatNumber} from '@/lib/formatters';
 import SaleStockPicker,{vehicleSaleLabel} from '@/components/sales/SaleStockPicker';
 import CustomerPicker from '@/components/field/CustomerPicker';
 import SaleProductPicker from '@/components/sales/SaleProductPicker';
@@ -79,7 +79,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
       pending=true;setSourceLoading(true);
       try{
         const data=await call({action:'salesOrderStock',date:form.date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{})});
-        if(active){setSourceError('');setStockResult({key:stockKey,data});setLines(previous=>previous.map(line=>{const p=data.products.find(p=>p.id===line.product_id);return p?{...line,tax_rate:p.tax_rate??0}:line;}));}
+        if(active){setSourceError('');setStockResult({key:stockKey,data});}
       }catch(e){if(active)setSourceError(e.message);}finally{pending=false;if(active)setSourceLoading(false);}
     };
     refresh();const stop=watchSalesStock(refresh);
@@ -96,8 +96,8 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const products=sourceData?.products||[],customer=catalogue?.customers.find(c=>c.id===form.customer_id);
   const calculated=useMemo(()=>lines.map(line=>{
     if(locked)return {...line,tax_amount:Number(line.tax_amount)||0,total:Number(line.total)||0};
-    let amounts;try{amounts=inclusiveSaleLine(Number(line.quantity)||0,Number(line.unit_price)||0,Number(line.tax_rate)||0,Number(line.discount_pct)||0);}catch(e){return {...line,pricing_error:e.message,discount_amount:0,tax_amount:0,total:0};}
-    return {...line,pricing_error:null,price_includes_vat:true,discount_amount:amounts.discount,tax_amount:amounts.tax,total:amounts.total};
+    let amounts;try{amounts=inclusiveSaleLine(Number(line.quantity)||0,Number(line.unit_price)||0,STANDARD_VAT_RATE,Number(line.discount_pct)||0);}catch(e){return {...line,pricing_error:e.message,discount_amount:0,tax_amount:0,total:0};}
+    return {...line,pricing_error:null,tax_rate:STANDARD_VAT_RATE,price_includes_vat:true,discount_amount:amounts.discount,tax_amount:amounts.tax,total:amounts.total};
   }),[lines,locked]);
   const exchangeOnly=!lines.length&&replacements.length>0;
   const cashAccountId=form.cash_account_id||catalogue?.defaultCashAccountId||'';
@@ -108,7 +108,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   function changeLine(index,key,value){
     setLines(previous=>previous.map((line,i)=>{
       if(i!==index)return line;
-      if(key==='product_id'){const product=products.find(p=>p.id===value);return {...line,product_id:value,product_name:product?.name,unit:product?.unit,unit_price:product?.selling_price??0,tax_rate:product?.tax_rate??0};}
+      if(key==='product_id'){const product=products.find(p=>p.id===value);return {...line,product_id:value,product_name:product?.name,unit:product?.unit,unit_price:product?.selling_price??0};}
       return {...line,[key]:value};
     }));
   }
@@ -119,7 +119,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
       const selected=previous.find(line=>line.product_id===product.id);
       if(value===null)return previous.filter(line=>line.product_id!==product.id);
       if(!selected&&(!(Number(product.available)>0)||!(Number(product.selling_price)>0)||previous.length>=50))return previous;
-      return selected?previous.map(line=>line.product_id===product.id?{...line,quantity:value}:line):[...previous,{product_id:product.id,product_name:product.name,unit:product.unit,quantity:value,unit_price:product.selling_price,tax_rate:product.tax_rate||0,discount_pct:0}];
+      return selected?previous.map(line=>line.product_id===product.id?{...line,quantity:value}:line):[...previous,{product_id:product.id,product_name:product.name,unit:product.unit,quantity:value,unit_price:product.selling_price,discount_pct:0}];
     });
   }
   function stepError(index){
@@ -209,7 +209,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
           {sourceError&&<p role="alert" className="text-sm text-red-700">{uiMessage(sourceError)} <button type="button" className="underline" onClick={()=>setStockRetry(n=>n+1)}>{ui('Refresh stock')}</button></p>}
           {sourceData&&!products.length&&<p role="status" className="text-xs text-slate-500">{ui('No saleable finished products remain at this source.')} {ui(central?'Check that the finished stock is approved and unexpired. Previously expensed promotional products are tracked separately.':'Check that the finished stock is approved and unexpired. Goods on quality hold or already issued for delivery are excluded.')}</p>}
         </section>
-        {!locked&&<p className="text-xs text-slate-600">{ui('Selling prices already include VAT. The total will not have VAT added on top.')}</p>}
+        {!locked&&<p className="text-xs text-slate-600">{ui('Selling prices already include VAT at 19.25%.')}</p>}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">{ui('Products sold (optional for an exchange)')}</h2>
           <div className="space-y-3">{calculated.map((line,index)=>{
@@ -233,7 +233,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
         {!locked&&!exchangeOnly&&<SaleBillingPreview customerName={customer?.business_name} amountDue={form.payment_type==='credit'?totals.total:0}/>}
         <label className="block min-w-0 space-y-1 text-sm">{ui('Receipt reference number *')}<Input required aria-label={ui('Receipt reference number')} autoComplete="off" maxLength={200} value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/></label>
         <label className="block space-y-1 text-sm">{ui('Notes')}<Input value={form.notes} maxLength={2000} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label>
-        <div className="space-y-1 text-right text-sm"><p>{ui('Net sales')}: {formatXAF(totals.net)}</p><p>{ui(!locked||order?.price_includes_vat?'VAT included':'Tax')}: {formatXAF(totals.tax)}</p><p className="text-lg font-bold">{ui('Total')}: {formatXAF(totals.total)}</p></div>
+        <div className="space-y-1 text-right text-sm"><p>{ui('Net sales')}: {formatAccountingXAF(totals.net)}</p><p>{ui(!locked?'VAT included (19.25%)':order?.price_includes_vat?'VAT included':'Tax')}: {formatAccountingXAF(totals.tax)}</p><p className="text-lg font-bold">{ui('Total')}: {formatAccountingXAF(totals.total)}</p></div>
         </>}
       </fieldset>
       {saveError&&<p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(saveError)}</p>}

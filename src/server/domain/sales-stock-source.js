@@ -1,3 +1,4 @@
+import {STANDARD_VAT_RATE} from '../../lib/sale-vat.js';
 import {readRecords} from './commercial-workspace.js';
 import {supplyRun,runManifest} from './commercial-runs.js';
 import {FACTORY_SALES_LOCATION_TYPES,finishedStockForSale,companySalesWarehouse} from '../../lib/sales-stock.js';
@@ -35,5 +36,5 @@ export async function salesSourceProducts(svc,context,date=businessDate()){
     const manifest=await runManifest(svc,context.dispatch_id,context.stock_warehouse_id);
     available=available.map(p=>({...p,available:Math.min(p.available,Math.max(0,manifest.get(p.id)||0)),unavailable_reason:p.unavailable_reason||(!(manifest.get(p.id)>0)?'No saleable stock at this source':'')}));
   }
-  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:p.tax_rate,available:p.available,unavailable_reason:p.unavailable_reason}));
+  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:STANDARD_VAT_RATE,available:p.available,unavailable_reason:p.unavailable_reason}));
 }
