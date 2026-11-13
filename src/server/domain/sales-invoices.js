@@ -14,6 +14,8 @@ import { postedInvoiceStatuses, saleReadMetadata, saleProductMetadata } from '..
 import {salesDeliveryPoints} from './sales-delivery-points.js';
 import {centralizedInventoryPolicy,assertCentralInventory} from './centralized-inventory-policy.js';
 import {cashDestinationId,cashSaleDestination,cashSaleOptions,recordCashSaleReceipt} from './sale-treasury.js';
+import {INVOICE_VAT_CORRECTION_TYPE,verifyInvoiceVatCorrection} from './invoice-vat-correction-evidence.js';
+import {invoiceVatLineTaxes} from './invoice-vat-document-lines.js';
 
 export const CASHIER_INVOICE_ACTIONS=['invoiceWorkspace','invoiceDetail','customizeSalesInvoice'];
 export const INVOICE_ACTIONS = ['invoiceWorkspace','invoiceDetail','invoiceSource','createSalesInvoice','customizeSalesInvoice','saveInvoiceCompany'];
@@ -72,7 +74,28 @@ async function sourceJournal(stores, source, type) {
   if(!journal || journal.status!=='posted' || journal.source_document_id!==source.id || journal.source_document_type!==type)throw Error('The source sale has no matching posted journal. Reconcile it before issuing an invoice.');
   return journal;
 }
-export async function loadInvoiceDocument(stores,id,invoice=undefined) {
+async function invoiceVatDocument(stores,invoice,invoiceLines,originalJournal) {
+  const marked=Object.hasOwn(invoice,'invoice_vat_correction');
+  if(!invoice.sales_order_id&&!marked)return null;
+  const reconcile=()=>Object.assign(Error('Accounting review is required before displaying the invoice VAT correction.'),{status:409});
+  const journals=await readRecords(stores.JournalEntry,{source_module:'sales',source_document_type:INVOICE_VAT_CORRECTION_TYPE,source_document_id:invoice.id});
+  if(!marked&&!journals.length)return null;
+  if(!marked||!originalJournal||journals.length!==1)throw reconcile();
+  const [journal]=journals;
+  const [originalLines,lines]=await Promise.all([
+    readRecords(stores.JournalLine,{journal_id:originalJournal.id}),
+    readRecords(stores.JournalLine,{journal_id:journal.id}),
+  ]);
+  const accounts=new Map((await recordsByIds(stores.Account,[...originalLines,...lines].map(line=>line.account_id))).map(account=>[account.id,account]));
+  try {
+    const {marker}=verifyInvoiceVatCorrection({invoice,originalJournal,originalLines,journal,lines,accounts});
+    const taxes=invoiceVatLineTaxes(invoice,invoiceLines,marker);
+    const issuedAt=new Date(marker.recorded_at);
+    if(typeof marker.recorded_at!=='string'||!Number.isFinite(issuedAt.getTime())||issuedAt.toISOString()!==marker.recorded_at)throw reconcile();
+    return {taxes,subtotal:Number(marker.subtotal),taxTotal:Number(marker.tax_total),reference:{number:'VAT-'+invoice.invoice_number,issued_date:marker.recorded_at.slice(0,10),accounting_date:marker.date,journal_number:journal.journal_number}};
+  }catch{throw reconcile();}
+}
+export async function loadInvoiceDocument(stores,id,invoice=undefined,{original=false}={}) {
   invoice??=await stores.Invoice.get(id);
   if(!invoice||invoice.id!==id)throw Error('Invoice not found.');
   const [lines,settings,customer,journal]=await Promise.all([readRecords(stores.InvoiceLine,{invoice_id:id}),readRecords(stores.CompanySettings),stores.Customer.get(invoice.customer_id),invoice.journal_id?stores.JournalEntry.get(invoice.journal_id):null]);
@@ -94,11 +117,22 @@ export async function loadInvoiceDocument(stores,id,invoice=undefined) {
   if(source&&(source.customer_id!==invoice.customer_id||source.invoice_id&&source.invoice_id!==invoice.id))throw Error('The linked source sale needs reconciliation before viewing its receipt details.');
   const receipt={recorded_at:saleReadMetadata(invoice).recorded_at,receipt_reference:invoice.receipt_reference||source?.receipt_reference||'',salesperson_name:invoice.salesperson_name||source?.salesperson_name||source?.commercial_name||'',recorded_by_name:invoice.recorded_by_name||source?.recorded_by_name||source?.sales_supply_recorded_by_name||''};
   const replacements=Array.isArray(source?.stock_replacements)?source.stock_replacements.map(row=>pick(row,'product_id product_name quantity unit reason expiry_date lot_number')):undefined;
-  const products=new Map((await recordsByIds(stores.Product,lines.map(line=>line.product_id))).map(product=>[product.id,product]));
+  const [productRows,correction]=await Promise.all([
+    recordsByIds(stores.Product,lines.map(line=>line.product_id)),
+    original?null:invoiceVatDocument(stores,invoice,lines,journal),
+  ]);
+  const products=new Map(productRows.map(product=>[product.id,product]));
   const company=invoice.invoice_document?.company || invoiceCompany(settings[0]);
   const options={...invoiceDefaults(customer,company),...invoice.invoice_document?.options};
-  const accountingVerified=journal?.status==='posted' && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
-  return {replacements,invoice:{...receipt,...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),customer_balance:customerBalance,customer_paid:customerPaid},lines:lines.map(l=>({...pick(l,'id product_id product_name quantity unit unit_price discount_amount tax_rate tax_amount total price_includes_vat'),image_url:saleProductMetadata(l,products.get(l.product_id)).image_url})),company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null};
+  const accountingVerified=journal?.status==='posted' && !journal.reversed_by_journal && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
+  return {
+    replacements,
+    invoice:{...receipt,...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),...(correction?{subtotal:correction.subtotal,tax_total:correction.taxTotal}:{}),customer_balance:customerBalance,customer_paid:customerPaid},
+    lines:lines.map(line=>({...pick(line,'id product_id product_name quantity unit unit_price discount_amount tax_rate tax_amount total price_includes_vat'),...(correction?{tax_rate:STANDARD_VAT_RATE,tax_amount:correction.taxes.get(line.id)}:{}),image_url:saleProductMetadata(line,products.get(line.product_id)).image_url})),
+    company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null,
+    ...(correction?{vat_correction:correction.reference}:{}),
+    ...(original&&invoice.invoice_vat_correction?{original_vat_document:true}:{}),
+  };
 }
 async function workspace(stores,role) {
   const [invoices,orders,fields,customers,settings]=await Promise.all([readRecords(stores.Invoice),role==='cashier'?[]:readRecords(stores.SalesOrder,{status:{$in:['draft','confirmed','ready','delivered','dispatched','partially_delivered']}}),readRecords(stores.FieldSale,{status:'approved_posted'}),role==='cashier'?[]:readRecords(stores.Customer),readRecords(stores.CompanySettings)]);
@@ -146,7 +180,7 @@ export async function invoiceAction(client,user,body,{ownIssuedStock=false}={}) 
   else client.auth.assertModule?.(CASHIER_INVOICE_ACTIONS.includes(body.action)&&['accounting','cashier'].includes(feature)?feature:role==='cashier'?'cashier':'sales');
   const svc=client.asServiceRole,s=svc.entities;
   if(body.action==='invoiceWorkspace')return workspace(s,feature&&feature!=='sales'?'cashier':role);
-  if(body.action==='invoiceDetail')return loadInvoiceDocument(s,body.invoiceId);
+  if(body.action==='invoiceDetail')return loadInvoiceDocument(s,body.invoiceId,undefined,{original:body.version==='original'});
   if(body.action==='invoiceSource') {
     if(!['order','field'].includes(body.sourceType))throw Error('Choose an invoice source.');
     const source=await s[body.sourceType==='order'?'SalesOrder':'FieldSale'].get(body.sourceId);if(!source)throw Error('Source sale not found.');if(source.supply_kind==='exchange')throw Error('An exchange has no sales invoice. Open its replacement records.');if(source.sale_reversal)throw Error('This sale was reversed. Record a new sale for the corrected transaction.');

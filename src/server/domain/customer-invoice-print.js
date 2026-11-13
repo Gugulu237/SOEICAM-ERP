@@ -3,7 +3,7 @@ import {loadInvoiceDocument} from './sales-invoices.js';
 
 const notFound = () => Object.assign(Error('Invoice not found.'), {status: 404});
 
-export async function customerInvoicePrintDocument(client, customerId, invoiceId) {
+export async function customerInvoicePrintDocument(client, customerId, invoiceId, {original=false}={}) {
   client.auth.assertModule('customers');
 
   // These reads use the same authenticated entity scope as the invoice history.
@@ -21,7 +21,7 @@ export async function customerInvoicePrintDocument(client, customerId, invoiceId
     if (!billedThroughHeadquarters && !billedToDirectBranch) throw notFound();
   }
 
-  const document = await loadInvoiceDocument(client.asServiceRole.entities, invoiceId, invoice);
+  const document = await loadInvoiceDocument(client.asServiceRole.entities, invoiceId, invoice, {original});
   if (!document.accounting_verified) {
     throw Object.assign(Error('The original invoice journal is missing, reversed or does not match this sale. Accounting review is required before printing or sharing an issued invoice.'), {status: 409});
   }

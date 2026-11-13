@@ -38,6 +38,16 @@
   "Amount before VAT": "Montant HT",
   "Before VAT": "HT",
   "VAT included (19.25%)": "TVA comprise (19,25 %)",
+  "VAT correction": "Rectificatif de TVA",
+  "VAT correction {0}": "Rectificatif de TVA {0}",
+  "Original invoice {0} dated {1}": "Facture originale {0} du {1}",
+  "Correction journal {0}": "Écriture de correction {0}",
+  "Accounting date:": "Date comptable :",
+  "The total, payments and balance shown are for the original invoice.": "Le total, les règlements et le solde affichés se rapportent à la facture originale.",
+  "View corrected VAT": "Voir la TVA corrigée",
+  "View original invoice": "Voir la facture originale",
+  "Original invoice VAT figures": "TVA de la facture originale",
+  "Accounting review is required before displaying the invoice VAT correction.": "Une vérification comptable est nécessaire avant d’afficher le rectificatif de TVA.",
   "Selling prices already include VAT at 19.25%.": "Les prix de vente incluent déjà la TVA à 19,25 %.",
   "Cash deposited to": "Compte d’encaissement",
   "Choose a deposit account": "Sélectionnez un compte d’encaissement",
@@ -648,5 +658,7 @@
   "This journal requires accountant review.": "Cette écriture doit être vérifiée par le comptable.",
   "This posts the reversal and reviewed replacement together on the selected date. If either fails, neither is saved. The original stays in the audit history.": "La contrepassation et le remplacement vérifié sont comptabilisés ensemble à la date choisie. Si l’un des deux échoue, aucun n’est enregistré. L’écriture initiale reste dans l’historique d’audit.",
   "This save reference belongs to different draft edits. Reload the journal.": "Cette référence d’enregistrement correspond à d’autres modifications du brouillon. Rechargez l’écriture.",
-  "This save reference is already in use. Reload before editing another journal.": "Cette référence d’enregistrement est déjà utilisée. Rechargez avant de modifier une autre écriture."
+  "This save reference is already in use. Reload before editing another journal.": "Cette référence d’enregistrement est déjà utilisée. Rechargez avant de modifier une autre écriture.",
+  "VAT correction journal": "Écriture de régularisation de la TVA",
+  "Original amounts are shown for {0} VAT corrections that need review.": "Les montants d’origine sont affichés pour {0} régularisations de TVA à vérifier."
 }

@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { companySalesRegister, saleReadMetadata } from '../src/lib/company-sales.js';
 import { companySalesAction } from '../src/server/domain/company-sales.js';
+import { salesTransactionsDocument, productSalesDocument } from '../src/lib/sales-report-drilldown.js';
+import { salesAnalysisDocument } from '../src/lib/sales-report-documents.js';
+import { journalPayload } from '../src/server/domain/journal-validation.js';
 
 const from = '2026-10-01', to = '2026-10-18';
 test('Supply Chain sales reporting is an explicit read-only grant and revoked or inactive staff cannot use it',async()=>{
@@ -99,4 +102,69 @@ test('product report opt-in carries exact original/reversal journals, deduplicat
 test('proof-only reports and forged product flags never add line joins to numeric/dashboard reads',async()=>{
  const rows={Invoice:[{id:'i',invoice_number:'INV',invoice_date:to,status:'posted',journal_id:'j',subtotal:10,tax_total:0,total:10}],JournalEntry:[{id:'j',journal_number:'JV',status:'posted',source_document_type:'Invoice',source_document_id:'i'}]};
  for(const flags of [{includeReport:true},{includeProducts:true},{includeReport:'true',includeProducts:true},{includeReport:true,includeProducts:'true'}]){const f=metadataClient(rows),result=await companySalesAction(f.client,{id:'login',role:'user'},{from,to,...flags});assert.equal(result.totals.sales,10);assert.equal(f.reads.some(read=>['InvoiceLine','FieldSaleLine','Product'].includes(read.entity)),false);assert.equal(result.product_report,undefined);assert.equal(result.rows[0].journal_id,flags.includeReport===true?'j':undefined);}
+});
+
+test('historical VAT correction reconciles report totals and product lines to the posted journal without modifying the original invoice',async()=>{
+ const invoiceDate='2026-10-16',reversalDate='2026-10-17';
+ const marker={version:1,journal_id:'vat',journal_number:'JV-VAT',date:invoiceDate,original_journal_id:'original',subtotal:200,tax_total:38.5,original_subtotal:219.25,original_tax_total:19.25,tax_account_id:'vat-account',lines:[{id:'nature-line',tax_amount:19.25},{id:'fruit-line',tax_amount:19.25}]};
+ const invoice={id:'invoice',invoice_number:'INV-HISTORICAL',invoice_date:invoiceDate,status:'posted',customer_id:'customer',sales_order_id:'order',payment_type:'credit',journal_id:'original',subtotal:219.25,tax_total:19.25,total:238.5,balance:238.5,price_includes_vat:true,invoice_vat_correction:marker};
+ const journalLine=(id,journal_id,account_id,debit,credit)=>({id,journal_id,account_id,debit,credit,status:'posted'});
+ const originalLines=[journalLine('ar','original','receivable',238.5,0),journalLine('rev','original','revenue',0,219.25),journalLine('tax','original','vat-account',0,19.25)];
+ const correctionLines=[journalLine('rev-correction','vat','revenue',19.25,0),journalLine('vat-correction','vat','vat-account',0,19.25)];
+ const journal=(id,journal_number,source_document_type,total,lines)=>({id,journal_number,entry_date:invoiceDate,status:'posted',source_module:'sales',source_document_type,source_document_id:invoice.id,is_immutable:true,total_debit:total,total_credit:total,posting_payload:journalPayload({entryDate:invoiceDate,sourceModule:'sales',sourceDocumentType:source_document_type,lines})});
+ const savedLine=(id,product_id,tax_amount)=>({id,invoice_id:invoice.id,product_id,product_name:product_id,quantity:1,unit:'ea',unit_price:119.25,discount_amount:0,tax_amount,total:119.25});
+ const savedRows={Invoice:[invoice],JournalEntry:[journal('original','JV-ORIGINAL','Invoice',238.5,originalLines),journal('vat','JV-VAT','InvoiceVatCorrection',19.25,correctionLines)],JournalLine:[...originalLines,...correctionLines],InvoiceLine:[savedLine('nature-line','Nature',19.25),savedLine('fruit-line','Fruit',0)],Account:[{id:'receivable',account_type:'asset',normal_balance:'debit'},{id:'revenue',account_type:'revenue',normal_balance:'credit'},{id:'vat-account',account_type:'liability',normal_balance:'credit'}]};
+ const fixture=metadataClient(savedRows),period={from,to},flags={...period,includeReport:true,includeProducts:true};
+ const report=body=>companySalesAction(fixture.client,{id:'login',role:'user'},body);
+ const original=structuredClone(savedRows),valid=await report(flags);
+ assert.deepEqual(valid.totals,{count:1,net:200,tax:38.5,sales:238.5});
+ assert.equal(valid.overview.credit_sales,238.5);
+ assert.equal(valid.overview.pending_amount,238.5);
+ assert.equal(valid.unverified_vat_corrections,undefined);
+ assert.equal(valid.rows[0].journal_id,'original');
+ assert.equal(valid.rows[0].vat_correction_journal_id,'vat');
+ assert.equal(valid.product_report.coverage.complete,true);
+ assert.deepEqual(valid.product_report.products.map(row=>[row.net_quantity,row.net_revenue,row.tax,row.total_revenue]),[[1,100,19.25,119.25],[1,100,19.25,119.25]]);
+ assert.equal(valid.product_report.transactions[0].vat_correction_journal_number,'JV-VAT');
+ const exportSheet=salesTransactionsDocument(valid.product_report.transactions,period,{product:true}).sections[0];
+ const vatColumn=exportSheet.columns.findIndex(column=>column.label==='VAT correction journal');
+ assert.equal(exportSheet.rows[0][vatColumn],'JV-VAT');
+ assert.equal(fixture.reads.filter(read=>read.entity==='InvoiceLine').length,1);
+ assert.deepEqual(savedRows,original);
+
+ invoice.payment_type='cash';
+ invoice.balance=0;
+ const cash=await report(period);
+ assert.equal(cash.totals.tax,38.5);
+ assert.equal(cash.overview.cash_sales,238.5);
+ assert.equal(cash.rows[0].vat_correction_journal_id,undefined);
+
+ invoice.status='credited';
+ invoice.sale_reversal_date=reversalDate;
+ invoice.sale_reversal={date:reversalDate,journal_id:'reversal',vat_correction_journal_id:'vat'};
+ savedRows.JournalEntry.push({id:'reversal',journal_number:'JV-REVERSAL',status:'posted',source_document_type:'SaleReversal',source_document_id:'original',reversal_of:'original'});
+ const reversal=await report({...flags,from:reversalDate,to:reversalDate});
+ assert.deepEqual(reversal.totals,{count:0,net:-200,tax:-38.5,sales:-238.5});
+ assert.equal(reversal.overview.cash_sales,-238.5);
+ assert.equal(reversal.product_report.coverage.complete,true);
+ assert.equal(reversal.product_report.transactions[0].quantity,-1);
+ assert.equal(reversal.product_report.transactions[0].journal_id,'reversal');
+ assert.equal(reversal.product_report.transactions[0].original_journal_id,'original');
+ assert.equal(reversal.product_report.transactions[0].vat_correction_journal_id,'vat');
+ const combined=await report(flags);
+ assert.deepEqual(combined.totals,{count:1,net:0,tax:0,sales:0});
+
+ delete invoice.sale_reversal.vat_correction_journal_id;
+ const unmatchedReversal=await report({...flags,from:reversalDate,to:reversalDate});
+ assert.equal(unmatchedReversal.unverified_vat_corrections,1);
+ assert.equal(unmatchedReversal.totals.tax,-19.25);
+ invoice.sale_reversal.vat_correction_journal_id='vat';
+ marker.lines[0].tax_amount=0;
+ marker.lines[1].tax_amount=38.5;
+ const mismatchedLines=await report({...flags,to:invoiceDate});
+ assert.deepEqual(mismatchedLines.totals,{count:1,net:219.25,tax:19.25,sales:238.5});
+ assert.equal(mismatchedLines.unverified_vat_corrections,1);
+ assert.equal(mismatchedLines.rows[0].vat_correction_journal_id,undefined);
+ assert.match(salesAnalysisDocument(mismatchedLines,period).notes.join('\n'),/1 VAT corrections that need review/);
+ assert.match(productSalesDocument(mismatchedLines.product_report,period).notes.join('\n'),/1 VAT corrections that need review/);
 });

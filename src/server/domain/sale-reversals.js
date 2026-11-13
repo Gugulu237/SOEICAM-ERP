@@ -8,6 +8,7 @@ import {resolveAccountConsolidations} from '../../lib/account-consolidation.js';
 import {canReadManagementAccounting} from '../../lib/management-access.js';
 import {resolveNonSaleInventoryExpense,nonSaleInventoryExpenseAccount} from './non-sale-inventory-expense.js';
 import {openingSaleCostBasis,OPENING_COST_MARKER} from './opening-cost-basis.js';
+import {INVOICE_VAT_CORRECTION_TYPE,invoiceVatEffectiveLines,verifyInvoiceVatCorrection} from './invoice-vat-correction-evidence.js';
 
 export const SALE_REVERSAL_ACTIONS=['previewSaleReversal','reverseSale'];
 const retainedCostPolicy='unreturned-goods-operating-expense-v1';
@@ -51,7 +52,16 @@ async function plan(ctx){
   if(invoice&&round2(Number(invoice.amount_paid||0)+Number(invoice.balance))!==round2(invoice.total))throw Error('Reconcile the invoice receipts and balance before reversal.');
   const original=checkedJournalLines(await readRecords(s.JournalLine,{journal_id:journal.id}));
   if(original.debit!==round2(journal.total_debit)||original.credit!==round2(journal.total_credit))throw Error('The original sale journal totals need reconciliation.');
-  const accounts=await readRecords(s.Account),aliases=resolveAccountConsolidations(accounts),postingAccounts=new Map(original.lines.map(line=>[line.account_id,aliases.byId.get(aliases.canonicalId(line.account_id))]));
+  const [accounts,correctionJournals]=await Promise.all([
+    readRecords(s.Account),
+    invoice&&!field?readRecords(s.JournalEntry,{source_document_type:INVOICE_VAT_CORRECTION_TYPE,source_document_id:invoice.id}):[]
+  ]);
+  if(correctionJournals.length>1)throw Error('Reconcile the posted invoice VAT correction before continuing.');
+  const [correctionJournal]=correctionJournals,aliases=resolveAccountConsolidations(accounts);
+  const vatCorrection=verifyInvoiceVatCorrection({invoice,originalJournal:journal,originalLines:original.lines,journal:correctionJournal,
+    lines:correctionJournal?await readRecords(s.JournalLine,{journal_id:correctionJournal.id}):[],accounts:aliases.byId});
+  const financialLines=invoiceVatEffectiveLines(original.lines,vatCorrection);
+  const postingAccounts=new Map([...original.lines,...financialLines].map(line=>[line.account_id,aliases.byId.get(aliases.canonicalId(line.account_id))]));
   for(const account of postingAccounts.values())if(!account||account.is_active===false||account.is_posting===false||!['debit','credit'].includes(account.normal_balance)||account.currency&&account.currency!=='XAF')throw Error('Review the active posting accounts and currency before reversal.');
   for(const account of [...postingAccounts.values()])postingAccounts.set(account.id,account);
   const [lines,customer,pending,warehouses,moves]=await Promise.all([
@@ -103,8 +113,8 @@ async function plan(ctx){
   const period=(await readRecords(s.AccountingPeriod)).find(p=>p.start_date<=today()&&today()<=p.end_date&&['closed','locked'].includes(p.status));
   if(period)throw Error('The current accounting period is closed or locked. Reopen an authorized period before recording the correction.');
   const affectedIds=new Set([...postingAccounts.keys(),...[...postingAccounts.values()].map(account=>account.id)]);
-  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(settlement?{settlement,receipt}:{}),...(openingBasis?{openingCostBasis:openingBasis.proof}:{})};
-  return {journal,original,postingAccounts,lines,customer,total,due,paid,cash,cashAccount,settlement,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
+  const snapshot={record:record.id,journal:journal.id,total,due,paid,customerBalance:customer.balance,lines:sorted(original.lines),accounts:sorted(accounts.filter(account=>affectedIds.has(account.id))),issues:sorted(issues),invoiceStatus:invoice?.status,invoicePaid:invoice?.amount_paid,invoiceBalance:invoice?.balance,date:today(),retainedCostExpense:retainedExpense,retainedCostExpenseError:retainedExpenseError,retainedCostPolicy,...(settlement?{settlement,receipt}:{}),...(openingBasis?{openingCostBasis:openingBasis.proof}:{}),...(vatCorrection?{vatCorrection:{...vatCorrection,lines:sorted(vatCorrection.lines)}}:{})};
+  return {journal,financialLines,vatCorrection,postingAccounts,lines,customer,total,due,paid,cash,cashAccount,settlement,receivable,cost,costLines,cogsLines,retainedCostReview,issues,canRestore,openingBasis,warehouses:warehouses.filter(companyWarehouse),snapshot,reviewToken:hash(snapshot)};
 }
 
 export async function saleReversalAction(client,user,body){
@@ -130,7 +140,7 @@ export async function saleReversalAction(client,user,body){
   const restoring=request.stock==='return_stock',warehouse=p.warehouses.find(w=>w.id===request.warehouse);
   if(restoring&&(!p.canRestore||!warehouse))throw Error('Choose an active company return warehouse; all original stock issue layers must reconcile.');
   if(!restoring&&p.cost&&(body.costTreatmentPolicy!==retainedCostPolicy||!p.retainedCostReview.available))throw Error(p.retainedCostReview.error?(ctx.costsVisible?p.retainedCostReview.error:'The operating expense for unreturned goods needs accounting review.'):'Review and confirm the operating expense for goods that have not returned.');
-  const financial=p.original.lines.filter(l=>restoring&&!p.openingBasis||!p.costLines.some(c=>c.id===l.id)).map(l=>({account_id:p.postingAccounts.get(l.account_id).id,party_type:l.party_type,party_id:l.party_id,debit:l.credit,credit:l.debit,description:'Sale reversal: '+(l.description||'Original posting')}));
+  const financial=p.financialLines.filter(l=>restoring&&!p.openingBasis||!p.costLines.some(c=>c.id===l.id)).map(l=>({account_id:p.postingAccounts.get(l.account_id).id,party_type:l.party_type,party_id:l.party_id,debit:l.credit,credit:l.debit,description:'Sale reversal: '+(l.description||'Original posting')}));
   if(restoring&&p.openingBasis)financial.push(...[...p.openingBasis.effectiveCogsLines,...p.openingBasis.effectiveInventoryLines].map(line=>({account_id:line.account_id,debit:line.credit,credit:line.debit,description:'Sale reversal using confirmed opening-stock basis: '+line.description})));
   let retainedCostExpense=null;
   if(!restoring&&p.cost){
@@ -148,7 +158,7 @@ export async function saleReversalAction(client,user,body){
     await s.StockBalance.create({product_id:issue.product_id,product_name:issue.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,quantity:Number(issue.quantity),unit_cost:Number(issue.total_value)/Number(issue.quantity),total_value:Number(issue.total_value),lot_number:issue.lot_number||'',expiry_date:issue.expiry_date||'',production_order_id:issue.production_order_id||'',batch_number:issue.batch_number||'',qc_status:'pending',stock_origin:'sale_reversal',sale_reversal_journal_id:journal.id,original_stock_movement_id:issue.id});
     await s.StockMovement.create({product_id:issue.product_id,product_name:issue.product_name,quantity:Number(issue.quantity),unit_cost:Number(issue.total_value)/Number(issue.quantity),total_value:Number(issue.total_value),destination_warehouse_id:warehouse.id,lot_number:issue.lot_number||'',expiry_date:issue.expiry_date||'',production_order_id:issue.production_order_id||'',batch_number:issue.batch_number||'',movement_type:'customer_return',document_type:'SaleReversal',document_id:journal.id,original_stock_movement_id:issue.id,movement_date:p.snapshot.date,status:'approved',reason:request.reason,qc_status:'pending'});
   }
-  const reversal={journal_id:journal.id,journal_number:journal.journal_number,date:p.snapshot.date,reason:request.reason,reversed_by:user.id,reversed_by_name:user.full_name||user.email||'',customer_credit:p.paid,unpaid_cancelled:p.due,total:p.total,stock_disposition:request.stock,warehouse_id:warehouse?.id||'',...(retainedCostExpense?{retained_cost_expense:retainedCostExpense}:{}),request_hash:requestHash,created_at:new Date().toISOString()};
+  const reversal={journal_id:journal.id,journal_number:journal.journal_number,date:p.snapshot.date,reason:request.reason,reversed_by:user.id,reversed_by_name:user.full_name||user.email||'',customer_credit:p.paid,unpaid_cancelled:p.due,total:p.total,stock_disposition:request.stock,warehouse_id:warehouse?.id||'',...(retainedCostExpense?{retained_cost_expense:retainedCostExpense}:{}),...(p.vatCorrection?{vat_correction_journal_id:p.vatCorrection.journal.id}:{}),request_hash:requestHash,created_at:new Date().toISOString()};
   await s.JournalEntry.update(journal.id,{reversal_of:p.journal.id,reversal_reason:request.reason,sale_reversal:reversal});
   await s.JournalEntry.update(p.journal.id,{reversed_by_journal:journal.id,reversed_at:reversal.created_at,reversed_by:user.id,is_immutable:true});
   await s.Customer.update(source.customer_id,{balance:round2(Number(p.customer.balance||0)-p.total)});

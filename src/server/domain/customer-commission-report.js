@@ -5,6 +5,7 @@ import {requireStaff} from './field-ops.js';
 import {readRecords} from './commercial-workspace.js';
 import {principalRole,ROLE_KEYS} from './roles.js';
 import {journalCents,journalDate,checkedJournalLines,journalPayload,ledgerStatuses} from './journal-validation.js';
+import {INVOICE_VAT_CORRECTION_TYPE,invoiceVatEffectiveLines,verifyInvoiceVatCorrection} from './invoice-vat-correction-evidence.js';
 
 export const CUSTOMER_COMMISSION_ACTIONS=['customerCommissions'];
 const invoiceStatuses=['posted','partially_paid','paid','overdue','credited'];
@@ -36,12 +37,24 @@ function checkedRevenue(journal,lines,accounts){
  return revenue;
 }
 
+function vatReversalMatches(correction,originalLines,reversalLines,accounts){
+ const relevant=id=>id===correction.marker.tax_account_id||accounts.get(id)?.account_type==='revenue';
+ const effective=invoiceVatEffectiveLines(originalLines,correction).filter(line=>relevant(line.account_id));
+ const expected=new Map(effective.map(line=>[line.account_id,money(line.credit)]));
+ for(const line of reversalLines.filter(line=>relevant(line.account_id))){
+  if(!expected.has(line.account_id)||money(line.credit)||money(line.debit)!==expected.get(line.account_id))return false;
+  expected.delete(line.account_id);
+ }
+ return !expected.size;
+}
+
 // Sales belong to their customer acquisition owner, independently of the seller.
 // Linked invoices and FieldSales represent one source, never two commissions.
 export function verifiedCommissionSales({invoices=[],fieldSales=[],journals=[],journalLines=[],accounts=[],from,to}){
- const headers=new Map(journals.map(j=>[j.id,j])),accountMap=new Map(accounts.map(a=>[a.id,a])),lines=new Map(),sourceHeaders=new Map();
+ const headers=new Map(journals.map(j=>[j.id,j])),accountMap=new Map(accounts.map(a=>[a.id,a])),lines=new Map(),sourceHeaders=new Map(),vatHeaders=new Map();
  for(const line of journalLines){const rows=lines.get(line.journal_id)||[];rows.push(line);lines.set(line.journal_id,rows);}
  for(const header of journals.filter(j=>ledgerStatuses.includes(j.status))){const key=header.source_document_type+':'+header.source_document_id;sourceHeaders.set(key,(sourceHeaders.get(key)||0)+1);}
+ for(const header of journals.filter(j=>j.source_document_type===INVOICE_VAT_CORRECTION_TYPE)){const rows=vatHeaders.get(header.source_document_id)||[];rows.push(header);vatHeaders.set(header.source_document_id,rows);}
  const fields=fieldSales.filter(row=>row.status==='approved_posted'&&row.supply_kind!=='exchange');
  const fieldJournals=new Set(fields.map(row=>row.journal_id).filter(Boolean));
  const linked=invoices.filter(row=>fieldSource(row)||fieldJournals.has(row.journal_id));
@@ -51,12 +64,18 @@ export function verifiedCommissionSales({invoices=[],fieldSales=[],journals=[],j
  const sales=[];
  for(const {row,type,kind,dateKey,sellerKey,nameKey} of candidates){
   try{
-   const originalDate=date(row[dateKey]),total=money(row.total),net=money(row.subtotal),tax=money(row.tax_total??0),header=headers.get(row.journal_id);
-   if(!text(row.id)||!text(row.customer_id)||!total||sum(net,tax)!==total||journalUses.get(row.journal_id)!==1||sourceHeaders.get(type+':'+row.id)!==1||!header||header.source_document_type!==type||header.source_document_id!==row.id||header.source_module!==(type==='Invoice'?'sales':'field_sales')||header.entry_date!==originalDate||header.reversal_of||checkedRevenue(header,lines.get(header.id)||[],accountMap)!==net)throw Error('Unverified sale source.');
+   const originalDate=date(row[dateKey]),total=money(row.total),net=money(row.subtotal),tax=money(row.tax_total??0),header=headers.get(row.journal_id),originalLines=lines.get(row.journal_id)||[];
+   if(!text(row.id)||!text(row.customer_id)||!total||sum(net,tax)!==total||journalUses.get(row.journal_id)!==1||sourceHeaders.get(type+':'+row.id)!==1||!header||header.source_document_type!==type||header.source_document_id!==row.id||header.source_module!==(type==='Invoice'?'sales':'field_sales')||header.entry_date!==originalDate||header.reversal_of||checkedRevenue(header,originalLines,accountMap)!==net)throw Error('Unverified sale source.');
+   const vatJournals=type==='Invoice'?vatHeaders.get(row.id)||[]:[];
+   if(vatJournals.length>1)throw Error('Unverified invoice VAT correction.');
+   const [vatJournal]=vatJournals;
+   const vatCorrection=type==='Invoice'?verifyInvoiceVatCorrection({invoice:row,originalJournal:header,originalLines,journal:vatJournal,lines:lines.get(vatJournal?.id)||[],accounts:accountMap}):null;
    const reversal=row.sale_reversal;
    if(reversal){
-    const correction=headers.get(reversal.journal_id),reversalDate=date(reversal.date);
-    if(!text(reversal.journal_id)||header.reversed_by_journal!==reversal.journal_id||reversalDate<originalDate||row.sale_reversal_date!==reversalDate||money(reversal.total)!==total||sum(money(reversal.customer_credit),money(reversal.unpaid_cancelled))!==total||!correction||correction.status!=='posted'||correction.source_module!=='sales'||correction.source_document_type!=='SaleReversal'||correction.source_document_id!==header.id||correction.reversal_of!==header.id||correction.reversed_by_journal||correction.entry_date!==reversalDate||checkedRevenue(correction,lines.get(correction.id)||[],accountMap)!==-net||type==='Invoice'&&row.status!=='credited')throw Error('Unverified sale reversal.');
+    const correction=headers.get(reversal.journal_id),reversalDate=date(reversal.date),reversalLines=lines.get(reversal.journal_id)||[];
+    const reversedRevenue=vatCorrection?money(vatCorrection.marker.subtotal):net;
+    if(!text(reversal.journal_id)||header.reversed_by_journal!==reversal.journal_id||reversalDate<originalDate||row.sale_reversal_date!==reversalDate||money(reversal.total)!==total||sum(money(reversal.customer_credit),money(reversal.unpaid_cancelled))!==total||!correction||correction.status!=='posted'||correction.source_module!=='sales'||correction.source_document_type!=='SaleReversal'||correction.source_document_id!==header.id||correction.reversal_of!==header.id||correction.reversed_by_journal||correction.entry_date!==reversalDate||checkedRevenue(correction,reversalLines,accountMap)!==-reversedRevenue||type==='Invoice'&&row.status!=='credited')throw Error('Unverified sale reversal.');
+    if(reversal.vat_correction_journal_id!==vatCorrection?.journal.id||vatCorrection&&!vatReversalMatches(vatCorrection,originalLines,reversalLines,accountMap))throw Error('Unverified invoice VAT reversal.');
    }else if(header.status!=='posted'||header.reversed_by_journal||row.sale_reversal_date||type==='Invoice'&&row.status==='credited')throw Error('Missing sale reversal evidence.');
    const frozenOwner=Object.hasOwn(row,'sales_supply_acquisition_agent_id');
    if(frozenOwner&&typeof row.sales_supply_acquisition_agent_id!=='string')throw Error('Invalid customer acquisition snapshot.');
@@ -142,8 +161,9 @@ export async function customerCommissionAction(client,user,body={}){
  const belongs=row=>!selected||!Object.hasOwn(row,'sales_supply_acquisition_agent_id')||row.sales_supply_acquisition_agent_id===selected;
  const invoices=[...new Map([...customerInvoices,...frozenInvoices].filter(belongs).map(row=>[row.id,row])).values()],fields=[...new Map([...customerFields,...frozenFields].filter(belongs).map(row=>[row.id,row])).values()];
  const extraCustomers=await byIds(s.Customer,'id',[...invoices,...fields].map(row=>row.customer_id).filter(id=>!owned.some(c=>c.id===id))),reportCustomers=[...new Map([...owned,...extraCustomers].map(row=>[row.id,row])).values()];
- const journalIds=[...invoices,...fields].flatMap(row=>[row.journal_id,row.sale_reversal?.journal_id]),[byReference,invoiceHeaders,fieldHeaders,accounts]=await Promise.all([byIds(s.JournalEntry,'id',journalIds),byIds(s.JournalEntry,'source_document_id',invoices.filter(i=>!fieldSource(i)).map(i=>i.id),{source_document_type:'Invoice'}),byIds(s.JournalEntry,'source_document_id',fields.map(f=>f.id),{source_document_type:'FieldSale'}),readRecords(s.Account)]);
- const journals=[...new Map([...byReference,...invoiceHeaders,...fieldHeaders].map(row=>[row.id,row])).values()],journalLines=await byIds(s.JournalLine,'journal_id',journals.map(j=>j.id)),verified=verifiedCommissionSales({invoices,fieldSales:fields,journals,journalLines,accounts,...period});
+ const journalIds=[...invoices,...fields].flatMap(row=>[row.journal_id,row.sale_reversal?.journal_id]),invoiceIds=invoices.filter(i=>!fieldSource(i)).map(i=>i.id);
+ const [byReference,invoiceHeaders,fieldHeaders,vatHeaders,accounts]=await Promise.all([byIds(s.JournalEntry,'id',journalIds),byIds(s.JournalEntry,'source_document_id',invoiceIds,{source_document_type:'Invoice'}),byIds(s.JournalEntry,'source_document_id',fields.map(f=>f.id),{source_document_type:'FieldSale'}),byIds(s.JournalEntry,'source_document_id',invoiceIds,{source_document_type:INVOICE_VAT_CORRECTION_TYPE}),readRecords(s.Account)]);
+ const journals=[...new Map([...byReference,...invoiceHeaders,...fieldHeaders,...vatHeaders].map(row=>[row.id,row])).values()],journalLines=await byIds(s.JournalLine,'journal_id',journals.map(j=>j.id)),verified=verifiedCommissionSales({invoices,fieldSales:fields,journals,journalLines,accounts,...period});
  const result=customerCommissionModel({employees,customers:reportCustomers,sales:verified.sales,...period});
  const canAssign=role==='admin',[assignmentCustomers,assignmentEmployees]=await Promise.all([canAssign&&selected?readRecords(s.Customer):reportCustomers,canAssign&&selected?readRecords(s.Employee):employees]);
  const unassigned=canAssign?assignmentCustomers.filter(customer=>!owner(customer)&&customer.is_active!==false&&!customer.customer_removed_at):[];
