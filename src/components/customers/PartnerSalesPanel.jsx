@@ -5,7 +5,8 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
 import { formatXAF, formatDate } from "@/lib/formatters";
-import { CUSTOMER_SALE_STATUSES, customerActivityScope, customerInvoicePrintPath } from '@/lib/customer-mobile-summary';
+import { CUSTOMER_SALE_STATUSES, customerActivityScope, customerInvoiceDetailPath } from '@/lib/customer-mobile-summary';
+import { Link } from '@/lib/router';
 import StatusBadge from "@/components/shared/StatusBadge";
 import { ShoppingCart, Receipt } from "lucide-react";
 
@@ -100,13 +101,13 @@ export default function PartnerSalesPanel({ partner, subPartners = [], headquart
         <h3 className="text-sm font-semibold text-slate-900 mb-2 inline-flex items-center gap-1.5"><Receipt size={14} />{ui(" Recent invoices")}</h3>
         <Table head={["Invoice", "Date", "Status", "Total", "Balance"]} empty={data.invoiceList.length === 0 ? "No invoices yet." : null}>
           {data.invoiceList.map(i => {
-            const href = customerInvoicePrintPath(partner.id, i);
+            const href = customerInvoiceDetailPath(partner.id, i, {fromSales:true});
             const number = i.invoice_number || ui('Invoice');
             return (
               <tr key={i.id}>
                 <td className="px-3 py-2">
                   {href ? (
-                    <a href={href} target="_blank" rel="noopener noreferrer" aria-label={`${ui('Open invoice')} ${number}`} className="font-semibold text-primary underline underline-offset-2">{number}</a>
+                    <Link to={href} aria-label={`${ui('Open invoice')} ${number}`} className="font-semibold text-primary underline underline-offset-2">{number}</Link>
                   ) : <p className="text-slate-900">{number}</p>}
                   <p className="text-xs text-slate-500">{i.customer_id===headquartersId ? ui('Billed to {0}', i.customer_name) : i.bill_to_location_name || i.location_name || i.customer_name}</p>
                 </td>

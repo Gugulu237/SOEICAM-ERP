@@ -13,8 +13,9 @@ async function ui() {
     const mocks={
       '@/hooks/usePhoneLayout':'export const usePhoneLayout=()=>!!globalThis.__invoiceUI.phone;',
       '@/components/shared/DataTable':"import React from 'react';export default function Table(props){return React.createElement('div',null,props.data.map(row=>React.createElement('div',{key:row.id},row.invoice_number,props.columns.find(c=>c.key==='customize')?.render(null,row))));}",
-      '@/api/erpClient':`export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__invoiceUI.request(body)})}};`,
-      '@/lib/router':`const navigate=path=>globalThis.__invoiceUI.navigation.push(path);export const useNavigate=()=>navigate;export const useParams=()=>({id:'invoice-1'});export const useSearchParams=()=>[new URLSearchParams(globalThis.__invoiceUI.query||'')];`,
+      '@/api/erpClient':`export const erp={customers:{invoiceDetail:(...args)=>globalThis.__invoiceUI.customerInvoice(...args)},functions:{invoke:async(name,body)=>({data:await globalThis.__invoiceUI.request(body)})}};`,
+      '@/lib/router':`const navigate=path=>globalThis.__invoiceUI.navigation.push(path);export const useNavigate=()=>navigate;export const useParams=()=>globalThis.__invoiceUI.params||({id:'invoice-1'});export const useSearchParams=()=>[new URLSearchParams(globalThis.__invoiceUI.query||''),next=>{globalThis.__invoiceUI.query=next.toString();}];`,
+      '@/hooks/useMenuBack':`export const useMenuBack=path=>()=>globalThis.__invoiceUI.navigation.push(path);`,
       '@/hooks/useCurrentUser':'export const useCurrentUser=()=>globalThis.__invoiceUI.session||({isAdmin:true,role:"admin"});',
       '@/components/ui/button':`import React from 'react';export function Button({children,onClick,...props}){globalThis.__invoiceUI.capture('button',{...props,onClick},children);return React.createElement('button',props,children);}`,
       '@/components/ui/dialog':`import React from 'react';export const Dialog=({children,open})=>open?React.createElement('div',null,children):null;export const DialogContent=({children})=>React.createElement('div',null,children);export const DialogHeader=DialogContent,DialogTitle=DialogContent,DialogDescription=DialogContent;`,
@@ -74,4 +75,32 @@ test('sale correction chooses safe metadata editing or the checked source revers
  const draw=()=>{state.beforeRender();return render('detail');};
  try{draw();await state.flush();draw();state.buttons.find(button=>button.label==='Correct sale').onClick();assert.match(draw(),/Products, customer or amounts/);state.buttons.find(button=>button.label==='Edit invoice details').onClick();draw();assert.ok(state.editor);state.buttons.find(button=>button.label==='Cancel').onClick();draw();state.buttons.find(button=>button.label==='Correct sale').onClick();draw();state.buttons.find(button=>button.label==='Review sale correction').onClick();draw();assert.equal(state.reversal.invoiceId,'invoice-1');assert.equal(calls.filter(call=>call.action!=='invoiceDetail').length,0);
  }finally{state.cleanup();delete globalThis.__invoiceUI;}
+});
+
+test('customer invoice uses the shared detail, keeps print and VAT versions, and returns to the customer profile',async()=>{
+ const render=await ui();
+ for(const phone of [true,false]){
+  const state=hookRuntime(),calls=[];globalThis.__invoiceUI=state;
+  state.phone=phone;state.params={id:'branch & town',invoiceId:'invoice-1'};
+  state.query=phone?'edit=1&correct=1':'from=sales&edit=1&correct=1';
+  state.request=async()=>assert.fail('Customer detail must use the Customers endpoint');
+  state.customerInvoice=async(customerId,invoiceId,{original})=>{
+   calls.push({customerId,invoiceId,original});
+   return original
+    ? {...structuredClone(saved),original_vat_document:true}
+    : {...structuredClone(saved),vat_correction:{number:'VAT-INV-1',issued_date:'2026-10-19',accounting_date:'2026-10-18',journal_number:'JV-1'}};
+  };
+  const draw=()=>{state.beforeRender();return render('detail',{fromCustomer:true});};
+  try{
+   draw();await state.flush();assert.match(draw(),/VAT correction VAT-INV-1/);
+   assert.deepEqual(calls[0],{customerId:'branch & town',invoiceId:'invoice-1',original:false});
+   assert.equal(state.buttons.find(button=>button.label===(phone?'Print':'Print / PDF')).disabled,false);
+   assert.equal(state.buttons.some(button=>['Customize','Correct sale','Receive Payment','Review sale correction'].includes(button.label)),false);
+   state.buttons.find(button=>button.label==='View original invoice').onClick();
+   draw();await state.flush();assert.match(draw(),/Original invoice VAT figures/);
+   assert.equal(calls.at(-1).original,true);
+   state.buttons.find(button=>button['aria-label']===(phone?'Back':'Back to customers')).onClick();
+   assert.deepEqual(state.navigation,['/customers?view=list&customer=branch%20%26%20town'+(phone?'':'&tab=sales')]);
+  }finally{state.cleanup();delete globalThis.__invoiceUI;}
+ }
 });

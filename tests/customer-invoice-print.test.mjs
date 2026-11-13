@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {build} from 'esbuild';
 import {catalogueFromStored, decorateEmployee, validateRoleProfile} from '../src/server/domain/role-catalogue.js';
-import {customerInvoicePrintPath} from '../src/lib/customer-mobile-summary.js';
+import {customerInvoiceDetailPath} from '../src/lib/customer-mobile-summary.js';
 import {invoiceEmail,invoiceHtml,invoiceText} from '../src/lib/invoice-documents.js';
 import {postJournal} from '../src/server/domain/field-ops.js';
 import {loadInvoiceDocument} from '../src/server/domain/sales-invoices.js';
 import {fixture, user, date} from './helpers/cashier.mjs';
 
-const path = 'src/app/api/customers/[id]/invoices/[invoiceId]/print/route.js';
-const output = await build({entryPoints:[path], bundle:true, format:'esm', platform:'node', write:false, plugins:[{
-  name:'customer-print-fixture',
+const routeRoot = 'src/app/api/customers/[id]/invoices/[invoiceId]';
+const fixturePlugin = {
+  name:'customer-invoice-fixture',
   setup(b) {
     const mocks = {
       auth: `export async function authenticateRequest(){const context=globalThis.__customerPrint.context;if(!context)throw Object.assign(Error('Please sign in.'),{status:401});return context;}
-        export const apiError=error=>Response.json({error:error.message},{status:error.status||400});`,
+        export const apiError=error=>Response.json({error:error.message},{status:error.status||400,headers:{'Cache-Control':'private, no-store'}});`,
       db: 'export const transaction=fn=>fn();export const database=()=>{throw Error("Unexpected database call");};',
       files: 'export const validateReceiptPhotos=()=>{},validateExpenseReceipt=()=>{};',
       entities: 'export const serviceEntities=new Proxy({},{get:(_,name)=>globalThis.__customerPrint.stores[name]});export const entityStore=name=>serviceEntities[name];',
@@ -24,12 +24,20 @@ const output = await build({entryPoints:[path], bundle:true, format:'esm', platf
     b.onResolve({filter:/^(?:@\/server\/auth|\.\/(?:auth|entities|db|files)\.js|server-only)$/}, args => {
       if (args.path.startsWith('./') && !args.importer.includes('/src/server/')) return;
       const name = args.path.split('/').at(-1).replace(/\.js$/,'');
-      return {path:name, namespace:'customer-print-fixture'};
+      return {path:name, namespace:'customer-invoice-fixture'};
     });
-    b.onLoad({filter:/.*/, namespace:'customer-print-fixture'}, args => ({contents:mocks[args.path]}));
+    b.onLoad({filter:/.*/, namespace:'customer-invoice-fixture'}, args => ({contents:mocks[args.path]}));
   },
-}]});
-const {GET} = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
+};
+async function invoiceHandler(path) {
+  const output = await build({entryPoints:[path], bundle:true, format:'esm', platform:'node', write:false, plugins:[fixturePlugin]});
+  const {GET} = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
+  return GET;
+}
+const [printInvoice,readInvoice] = await Promise.all([
+  invoiceHandler(routeRoot+'/print/route.js'),
+  invoiceHandler(routeRoot+'/route.js'),
+]);
 
 function staffContext(modules, {template='employee', status='active', fullAccess=true}={}) {
   const role = validateRoleProfile({key:'print_clerk', label:'Print clerk', category:'Operations', template_role:template, modules});
@@ -40,7 +48,8 @@ function staffContext(modules, {template='employee', status='active', fullAccess
   return {user:account, employee, roleCatalogue, role:template};
 }
 
-const print = (id, invoiceId, headers, query='') => GET(new Request('http://localhost/'+query, {headers}), {params:Promise.resolve({id,invoiceId})});
+const print = (id, invoiceId, headers, query='') => printInvoice(new Request('http://localhost/'+query, {headers}), {params:Promise.resolve({id,invoiceId})});
+const read = (id, invoiceId, query='') => readInvoice(new Request('http://localhost/'+query), {params:Promise.resolve({id,invoiceId})});
 
 async function setup(t) {
   const {entities, rows} = await fixture();
@@ -98,11 +107,43 @@ test('print route checks authentication, invoice access, customer relation and p
   assert.equal((await print('customer-a','posted-invoice')).status,409);
 });
 
+test('the in-app invoice document uses the authenticated customer and branch scope', async t => {
+  const rows=await setup(t);
+  for (const id of ['customer-a','east']) {
+    const response=await read(id,'posted-invoice');
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type'),/^application\/json/);
+    assert.equal(response.headers.get('cache-control'),'private, no-store');
+    const document=await response.json();
+    assert.equal(document.invoice.invoice_number,'INV-123');
+    assert.equal(document.company.company_name,'Saved SOEICAM letterhead');
+    assert.equal(document.lines[0].product_name,'Saved Yoghurt Line');
+  }
+  for (const id of ['west','unrelated','missing']) {
+    const response=await read(id,'posted-invoice');
+    assert.equal(response.status,404);
+    assert.equal(response.headers.get('cache-control'),'private, no-store');
+    assert.deepEqual(await response.json(),{error:'Invoice not found.'});
+  }
+  for (const [context,status] of [[null,401],[staffContext(['sales']),403],[staffContext(['customers'],{status:'inactive'}),403],[staffContext(['customers'],{template:'commercial'}),403]]) {
+    globalThis.__customerPrint.context=context;
+    assert.equal((await read('east','posted-invoice')).status,status);
+  }
+  globalThis.__customerPrint.context=staffContext(['customers']);
+  rows.Invoice[0].opening_batch_id='historical';
+  assert.equal((await read('east','posted-invoice')).status,404);
+  delete rows.Invoice[0].opening_batch_id;
+  rows.JournalEntry[0].source_document_id='different-invoice';
+  assert.equal((await read('east','posted-invoice')).status,409);
+});
+
 test('the recent invoice link is encoded and excluded from opening or reversed entries', () => {
   const row={id:'invoice/id',status:'paid'};
-  assert.equal(customerInvoicePrintPath('branch & town',row),'/api/customers/branch%20%26%20town/invoices/invoice%2Fid/print');
-  assert.equal(customerInvoicePrintPath('branch',{...row,opening_batch_id:'history'}),null);
-  assert.equal(customerInvoicePrintPath('branch',{...row,sale_reversal:{}}),null);
+  const path='/customers/branch%20%26%20town/invoices/invoice%2Fid';
+  assert.equal(customerInvoiceDetailPath('branch & town',row),path);
+  assert.equal(customerInvoiceDetailPath('branch & town',row,{fromSales:true}),path+'?from=sales');
+  assert.equal(customerInvoiceDetailPath('branch',{...row,opening_batch_id:'history'}),null);
+  assert.equal(customerInvoiceDetailPath('branch',{...row,sale_reversal:{}}),null);
 });
 
 test('historical invoice shows the posted VAT correction and keeps the original printable through the same scope', async t => {
@@ -143,6 +184,12 @@ test('historical invoice shows the posted VAT correction and keeps the original 
   const originalDocument=await loadInvoiceDocument(stores,invoice.id,undefined,{original:true});
   assert.equal(originalDocument.invoice.tax_total,192.5);
   assert.equal(originalDocument.lines[1].tax_amount,0);
+  for (const [query,expected] of [['',document],['?version=original',originalDocument]]) {
+    const response=await read('east',invoice.id,query);
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),JSON.parse(JSON.stringify(expected)));
+    assert.equal((await read('west',invoice.id,query)).status,404);
+  }
   const originalPrint=await print('customer-a',invoice.id,undefined,'?version=original');
   assert.equal(originalPrint.status,200);
   const originalHtml=await originalPrint.text();
@@ -156,6 +203,8 @@ test('historical invoice shows the posted VAT correction and keeps the original 
   marker.lines[1].tax_amount=195;
   assert.equal((await print('east',invoice.id)).status,409);
   assert.equal((await print('east',invoice.id,undefined,'?version=original')).status,200);
+  assert.equal((await read('east',invoice.id)).status,409);
+  assert.equal((await read('east',invoice.id,'?version=original')).status,200);
   invoice.invoice_vat_correction=structuredClone(snapshot.invoices[0].invoice_vat_correction);
   rows.JournalLine.find(line=>line.journal_id===correction.id&&line.account_id==='tax').credit=100;
   assert.equal((await print('east',invoice.id)).status,409);

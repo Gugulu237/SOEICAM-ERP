@@ -27,7 +27,7 @@ const output=await build({stdin:{contents:`
     '@/components/customers/CustomerDeliveryPlanner':"export default ()=>null;",
     '@/components/customers/CustomerGpsDialog':"export default props=>{globalThis.__clients.gpsDialog=props;return null;};",
     '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__clients.session||({isAdmin:true,role:'admin'});",
-    '@/lib/router':"export const useNavigate=()=>path=>{globalThis.__clients.navigation.push(path);globalThis.__clients.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__clients.query||''),params=>{globalThis.__clients.query=params.toString();}];",
+    '@/lib/router':"import React from 'react';export const Link=({to,...props})=>React.createElement('a',{href:to,...props});export const useNavigate=()=>path=>{globalThis.__clients.navigation.push(path);globalThis.__clients.query=path.split('?')[1]||'';},useSearchParams=()=>[new URLSearchParams(globalThis.__clients.query||''),params=>{globalThis.__clients.query=params.toString();}];",
     '@/lib/navigation-context':"export const useNavigationSession=()=>null;export const usePageState=(key,value)=>globalThis.__clients.state('page:'+key,value);",
     '@/api/erpClient':`export const erp={entities:{Customer:'customers',CustomerLocation:'locations',
       SalesOrder:{aggregate:async()=>({rows:[]}),filter:async()=>({items:[]})},
@@ -51,7 +51,7 @@ const module={exports:{}};new Function('require','module','exports',output.outpu
 const render=module.exports.render;
 const customer={id:'shop',business_name:'Shop A',phone:'699001122',contact_person:'Madame Alice',address:'Entrance 4',town:'Yaoundé',gps_lat:3.85,gps_lng:11.51};
 
-test('mobile recent invoices and desktop Sales history open the scoped printable document directly',async()=>{
+test('mobile recent invoices and desktop Sales history link to the customer invoice page in the same window',async()=>{
   const state=hookRuntime();globalThis.__clients=state;
   const partner={id:'east',parent_id:'shop',business_name:'East branch'};
   const invoice={id:'posted',customer_id:'shop',customer_name:'Shop A',invoice_number:'INV-001',invoice_date:'2026-11-13',status:'paid',total:1200};
@@ -61,11 +61,13 @@ test('mobile recent invoices and desktop Sales history open the scoped printable
     state.beforeRender();render('partnerSales',{partner,headquartersId:'shop'});
     await state.flush();
     state.beforeRender();const desktop=render('partnerSales',{partner,headquartersId:'shop'});
+    assert.match(mobile,/href="\/customers\/east\/invoices\/posted"/);
+    assert.match(desktop,/href="\/customers\/east\/invoices\/posted\?from=sales"/);
     for(const html of [mobile,desktop]){
-      assert.match(html,/href="\/api\/customers\/east\/invoices\/posted\/print" target="_blank" rel="noopener noreferrer"/);
+      assert.doesNotMatch(html,/<a[^>]*(?:target="_blank"|href="\/api\/customers)[^>]*aria-label="Open invoice/);
       assert.match(html,/Open invoice INV-001/);
       assert.match(html,/OPEN-001/);
-      assert.doesNotMatch(html,/invoices\/opening\/print/);
+      assert.doesNotMatch(html,/invoices\/opening/);
     }
   }finally{state.cleanup();delete globalThis.__clients;}
 });

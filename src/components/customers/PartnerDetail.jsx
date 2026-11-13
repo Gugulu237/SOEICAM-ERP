@@ -8,7 +8,7 @@ import CustomerBillingSummary from './CustomerBillingSummary';
 import useHeadquartersDeliveryBalances from './useHeadquartersDeliveryBalances';
 import React, { useState, useEffect, useCallback } from "react";
 import { erp } from "@/api/erpClient";
-import { useNavigate } from "@/lib/router";
+import { useNavigate, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/shared/StatusBadge";
 import CustomerMapLinks from "./CustomerMapLinks";
@@ -31,6 +31,13 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
+  const [params,setParams] = useSearchParams();
+  const tab = params.get('tab');
+  const selectTab = value => {
+    const next = new URLSearchParams(params);
+    if(value==='overview')next.delete('tab');else next.set('tab',value);
+    setParams(next,{replace:true});
+  };
   const phone=usePhoneLayout();
   const [mobileSales,setMobileSales]=useState({loading:true,invoices:[],total:null,error:''});
   const [salesReload,setSalesReload]=useState(0);
@@ -104,7 +111,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </section>
         {billingSummary}
       </div>}
-      <Tools className={phone?'rounded-xl border bg-white':'space-y-5'}>
+      <Tools open={phone&&tab==='sales'?true:undefined} className={phone?'rounded-xl border bg-white':'space-y-5'}>
       {phone&&<summary className="min-h-12 cursor-pointer p-3 text-sm font-semibold">{ui('Customer tools and details')}</summary>}
       <div className={phone?'space-y-5 border-t p-3':'space-y-5'}>
       {phone&&canReportSpoilage&&<Button variant="outline" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={15}/>{ui('Add branch')}</Button>}
@@ -119,7 +126,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
           {onEditGps&&partner.is_active!==false&&point.is_active!==false&&<CustomerGpsButton point={point} onClick={()=>onEditGps(partner,point.id===partner.id?undefined:point)}/>}
         </div>)}
       </section>
-      <Tabs defaultValue="overview">
+      <Tabs value={tab==='sales'||tab==='stock'?tab:'overview'} onValueChange={selectTab}>
         <TabsList>
           <TabsTrigger value="overview">{ui("Overview")}</TabsTrigger>
           <TabsTrigger value="stock">{ui("Stock & Expiry")}</TabsTrigger>
