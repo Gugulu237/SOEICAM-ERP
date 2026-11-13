@@ -100,6 +100,9 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if('invoice_payment_type_correction' in value||entity==='AuditLog'&&[value,existing].some(row=>row&&(
+    row.action==='correct_invoice_payment_type'||'invoice_payment_type_correction' in row||String(row.id||'').startsWith('IPTC-')
+  )))throw forbidden('Invoice payment type corrections are managed by Accounting.');
   if(entity==='AuditLog'&&[value,existing].some(row=>row&&(row.action==='post_invoice_vat_correction'||'invoice_vat_correction' in row||String(row.id||'').startsWith('IVC-'))))throw forbidden('Invoice VAT correction records are managed by Accounting.');
   if([value,existing].some(row=>row&&(Object.keys(row).some(key=>key.startsWith('central_promotional_'))||row.document_type==='CentralPromotionalHandoff'||row.action==='handoff_expensed_degustation')))throw forbidden('Promotional stock handoff evidence is immutable.');
   const acquisitionEvidence=row=>row&&(Object.keys(row).some(key=>key.startsWith('customer_acquisition_'))||String(row.id||'').startsWith('CAA-'));
