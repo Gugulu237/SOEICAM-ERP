@@ -82,7 +82,11 @@ test('employee exchanges without a vehicle remain unreceived until counted reque
  const accept={action:'receiveUnsoldReturn',requestId:pending.request.id,token:pending.request.token,countedLines:counts,confirmed:true};await unsoldStockReturnAction(f.client,gm,accept);assert.equal((await unsoldStockReturnAction(f.client,gm,accept)).reused,true);
  const returned=(await recovered(f.s)).filter(b=>b.quantity>0);assert.equal(returned.length,1);assert.equal(returned[0].quantity,2);assert.equal(returned[0].total_value,0);assert.equal(returned[0].qc_status,'quarantine');assert.ok(returned[0].inventory_recovery_received_at);assert.equal(returned[0].inventory_recovery_return_dispatch_id,dispatch.id);assert.equal((await f.s.StockBalance.get(held.id)).quantity,0);
  assert.ok((await f.s.SpoilageRecord.get(record.id)).return_received_at);assert.equal((await f.s.JournalEntry.list()).length,1);
- await expiryRecoveryAction(f.client,gm,{action:'release',balanceId:returned[0].id,reference:'QC passed',inspectionConfirmed:true});assert.equal((await f.s.StockBalance.get(returned[0].id)).qc_status,'approved');
+ const packagingWarehouse=await f.s.Warehouse.create({name:'Packaging',warehouse_type:'packaging',is_active:true});
+ await assert.rejects(expiryRecoveryAction(f.client,gm,{action:'release',balanceId:returned[0].id,reference:'QC passed',inspectionConfirmed:true,warehouseId:packagingWarehouse.id}),/documented food-contact reuse approval/);
+ await expiryRecoveryAction(f.client,gm,{action:'release',balanceId:returned[0].id,reference:'QC approval record',inspectionConfirmed:true,reuseApproved:true,warehouseId:packagingWarehouse.id});
+ assert.equal((await f.s.StockBalance.get(returned[0].id)).qc_status,'approved');
+ assert.equal((await f.s.StockBalance.get(returned[0].id)).warehouse_id,packagingWarehouse.id);
 });
 
 test('reversing the paid-product sale leaves separate exchange recovery and replacement cost intact',async()=>{

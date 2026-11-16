@@ -5,6 +5,8 @@ import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 
 import React from 'react';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { purchaseEnabled, supportsPurchasing } from '@/lib/supplier-catalogue';
 import AssemblyProfitability from './AssemblyProfitability';
 import ItemAccountSelect from './ItemAccountSelect';
 
@@ -14,6 +16,7 @@ export default function InventoryFields({ form, set, accounts, suppliers, isAsse
   return <div className="space-y-5">
     <div className={isAssembly?"grid gap-4 md:grid-cols-2":"grid gap-4"}>
       <section className="space-y-4 rounded-xl border border-slate-200 p-4"><h2 className="text-sm font-semibold text-slate-900">{ui("Purchase information")}</h2>
+        {supportsPurchasing(form) && <label className="flex items-center gap-2 text-sm font-medium"><Switch aria-label={ui("Purchasable item")} checked={purchaseEnabled(form)} onCheckedChange={value => set('is_purchasable', value)} />{ui("Purchasable item")}</label>}
         <label className="block space-y-1.5 text-sm font-medium">{isAssembly ? ui("Component cost") : ui("Cost")}{ui(" (XAF / ")}{isAssembly ? form.unit_of_measure : purchaseUnit})<Input type="number" min="0" step="any" readOnly={isAssembly} value={isAssembly ? estimatedCost ?? "" : form.purchase_price} onChange={event => set('purchase_price', event.target.value)} /></label>
         {isAssembly && <p className="text-xs text-slate-500">{ui("Calculated from the components for one ")}{form.unit_of_measure}.</p>}
         {!isAssembly && purchaseUnit !== form.unit_of_measure && <p className="text-xs text-slate-800">{ui("Existing purchase pricing is per ")}{purchaseUnit}{ui("; stock is counted in ")}{form.unit_of_measure}.</p>}

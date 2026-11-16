@@ -52,16 +52,18 @@ test('unchanged responses omit the body but changed quantities and scoped data g
 test('real overview route authenticates and reads afresh before accepting an unchanged tag; denial cannot reuse it',async()=>{
   const out=await build({entryPoints:['src/app/api/inventory/overview/route.js'],bundle:true,format:'esm',platform:'node',write:false,plugins:[{name:'route-fixture',setup(b){
     const mocks={'@/server/auth':'export const authenticateRequest=async module=>{const f=globalThis.__speedRoute;f.auth++;if(f.denied)throw Object.assign(Error("Denied"),{status:403});return f.context;};export const apiError=e=>Response.json({error:e.message},{status:e.status||500});','@/server/entities':'export const serviceEntities=new Proxy({},{get:(_,key)=>globalThis.__speedRoute.stores[key]});'};
-    b.onResolve({filter:/^@\/server\/(auth|entities)$/},a=>({path:a.path,namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:mocks[a.path]}));
+    mocks['@/server/db']='export const transaction=async work=>{globalThis.__speedRoute.transactions++;return work();};';
+    b.onResolve({filter:/^@\/server\/(auth|entities|db)$/},a=>({path:a.path,namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:mocks[a.path]}));
   }}]});
   const {GET}=await import('data:text/javascript;base64,'+Buffer.from(out.outputFiles[0].text).toString('base64'));
-  const f=fixture();globalThis.__speedRoute={...f,context:admin,auth:0};
+  const f=fixture();globalThis.__speedRoute={...f,context:admin,auth:0,transactions:0};
   const request=tag=>new Request('http://localhost/api/inventory/overview?compact=1',{headers:tag?{'If-None-Match':tag}:{}});
   try{
     const first=await GET(request()),tag=first.headers.get('etag'),reads=f.reads.length;
     const same=await GET(request(tag));assert.equal(same.status,304);assert.ok(f.reads.length>reads);assert.equal(globalThis.__speedRoute.auth,2);
     f.rows.StockBalance[0].quantity=5;const changed=await GET(request(tag));assert.equal(changed.status,200);assert.equal((await changed.json()).balances[0].quantity,5);
     globalThis.__speedRoute.denied=true;const count=f.reads.length;assert.equal((await GET(request(tag))).status,403);assert.equal(f.reads.length,count);
+    assert.equal(globalThis.__speedRoute.transactions,3);
   }finally{delete globalThis.__speedRoute;}
 });
 
@@ -74,6 +76,7 @@ async function inventoryUI(){
     const mocks={
       '@/lib/localization':'export const useLocaleRender=()=>{};',
       '@/hooks/useMenuBack':'export const useMenuBack=()=>()=>{};',
+      '@/hooks/usePhoneLayout':'export const usePhoneLayout=()=>false;',
       '@/hooks/useCurrentUser':'export const useCurrentUser=()=>({role:"admin",principalRole:"admin",loading:false});',
       '@/lib/router':'export const useBack=()=>()=>{},useParams=()=>({}),useNavigate=()=>()=>{};export const useSearchParams=()=>[new URLSearchParams(globalThis.__mobileUI.query),()=>{}];',
       '@/lib/navigation-context':'export const usePageState=(_key,value)=>[value,()=>{}];',

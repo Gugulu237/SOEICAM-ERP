@@ -42,14 +42,17 @@ async function customerLocation(stores, customer, locationId) {
     ...pick(customer, ['address', 'town', 'neighbourhood', 'phone', 'contact_person', 'gps_lat', 'gps_lng', 'gps_accuracy_m', 'gps_captured_at', 'delivery_instructions']) });
 }
 
-async function replace(stores, record, context, date, actorId) {
-  if(context.dispatch_id)await assertRunSupplyStock({ entities: stores }, context, [{ product_id: record.product_id, quantity: record.quantity }], date);
+async function replace(stores, record, context, date, actorId, replacement=null) {
+  const productId=replacement?.id||record.product_id;
+  const productName=replacement?.name||record.product_name;
+  const quantity=replacement?.quantity??record.quantity;
+  if(context.dispatch_id)await assertRunSupplyStock({ entities: stores }, context, [{ product_id: productId, quantity }], date);
   else if(!['company','warehouse'].includes(context.source_type))throw Error('Choose a verified replacement stock source.');
-  const product=await stores.Product.get(record.product_id),inventory=product?.inventory_account_id?await stores.Account.get(product.inventory_account_id):await stores.Account.get((await getRuleAccount({entities:stores},'finished_goods_inventory')).id),treasury=await readRecords(stores.TreasuryAccount);
-  if(!validPostingRuleAccount(inventory,'finished_goods_inventory')||inventory.is_control_account||inventory.is_treasury||inventory.account_number==='1050'||treasury.some(row=>row.gl_account_id===inventory.id))throw Error('Review the inventory account for '+record.product_name+' before recording a customer replacement.');
+  const product=replacement||await stores.Product.get(productId),inventory=product?.inventory_account_id?await stores.Account.get(product.inventory_account_id):await stores.Account.get((await getRuleAccount({entities:stores},'finished_goods_inventory')).id),treasury=await readRecords(stores.TreasuryAccount);
+  if(!validPostingRuleAccount(inventory,'finished_goods_inventory')||inventory.is_control_account||inventory.is_treasury||inventory.account_number==='1050'||treasury.some(row=>row.gl_account_id===inventory.id))throw Error('Review the inventory account for '+productName+' before recording a customer replacement.');
   const expense=await nonSaleInventoryExpenseAccount(stores,'customer_replacement_expense');
-  const issue = await stockIssue({ entities: stores }, { productId: record.product_id, productName: record.product_name,
-    warehouseId: context.stock_warehouse_id, warehouseIds: context.stock_warehouse_ids, quantity: record.quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
+  const issue = await stockIssue({ entities: stores }, { productId, productName,
+    warehouseId: context.stock_warehouse_id, warehouseIds: context.stock_warehouse_ids, quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
     documentId: record.id, dispatchId: context.dispatch_id, movementDate: date, saleableOnly: true,
     reason: `No-charge customer-product replacement for ${record.customer_name} (${record.record_number})` });
   let journal = null;
@@ -59,27 +62,40 @@ async function replace(stores, record, context, date, actorId) {
       description: `Customer-product replacement ${record.record_number} - ${record.customer_name}`, userId: actorId,
       lines: lines.map(line => ({ ...line, description: line.debit ? 'Cost of no-charge replacement' : 'Fresh inventory issued for replacement' })) });
     journal = posted.journal;
+    if(replacement)for(const move of await readRecords(stores.StockMovement,{document_type:'SpoilageRecord',document_id:record.id,movement_type:'promotional_issue'}))await stores.StockMovement.update(move.id,{journal_id:journal.id,inventory_account_id:inventory.id});
   }
   await stores.SpoilageRecord.update(record.id, { status: 'replaced', replaced_by: actorId, replaced_at: new Date().toISOString(), replacement_date: date,
     replacement_dispatch_id: context.dispatch_id, replacement_warehouse_id: context.stock_warehouse_id,
-    replacement_cost: issue.totalValue, unit_cost: round2(issue.totalValue / record.quantity), total_value: issue.totalValue,
+    replacement_cost: issue.totalValue, unit_cost: round2(issue.totalValue / quantity), total_value: issue.totalValue,
+    ...(replacement?{exchange_packaging_replacement_product_id:productId,exchange_packaging_replacement_product_name:productName,exchange_packaging_replacement_quantity:quantity,exchange_packaging_replacement_expense_account_id:expense.id}:{}),
     journal_id: journal?.id || '', journal_number: journal?.journal_number || '' });
 }
 
+async function centralReturnBin(stores,sourceId){
+  const bins=(await readRecords(stores.Warehouse,{warehouse_type:'quarantine',is_active:{$ne:false}})).filter(w=>!w.vehicle_id&&!w.custodian_employee_id&&!w.field_return_bin);
+  const designated=bins.filter(w=>w.source_warehouse_id===sourceId&&(w.customer_supply_return_bin||w.field_return_base));
+  const shared=bins.filter(w=>!w.source_warehouse_id);
+  const bin=designated.length===1?designated[0]:!designated.length&&shared.length===1?shared[0]:null;
+  if(!bin)throw Error('A quarantine location for central customer returns is not configured. Please contact the administrator.');
+  return bin;
+}
 
 // Called only from saveSale's authenticated, atomic submission. It deliberately
 // does not approve a standalone request or claim independent verification.
-export async function postSaleReplacements(svc, user, sale, replacements, suppliedContext) {
+export async function postSaleReplacements(svc, user, sale, replacements, suppliedContext, {point,original}={}) {
   if (!replacements.length) return;
   const stores = svc.entities;
-  const context=suppliedContext||sale;
+  const source=suppliedContext||sale,central=source.central_exchange===true;
+  const context=central?{...source,stock_warehouse_id:source.replacement_warehouse_id,stock_warehouse_name:source.replacement_warehouse_name,stock_warehouse_ids:undefined}:source;
   const [customer, vehicle] = await Promise.all([stores.Customer.get(sale.customer_id), sale.vehicle_id?stores.Vehicle.get(sale.vehicle_id):null]);
   if (!customer || customer.is_active === false || sale.vehicle_id&&(!vehicle||vehicle.is_active===false)) throw Error('The exchange customer or delivery vehicle is no longer active');
   let location;
-  if(sale.source_order_id){const branch=sale.location_id?await stores.Customer.get(sale.location_id):null;location=branch?.parent_id===customer.id&&branch.is_active!==false?{id:branch.id,name:branch.business_name}:sale.location_id?await customerLocation(stores,customer,sale.location_id):{id:'',name:customer.business_name};}
+  if(central)location={id:point?.id||null,name:point?.name||customer.business_name};
+  else if(sale.source_order_id){const branch=sale.location_id?await stores.Customer.get(sale.location_id):null;location=branch?.parent_id===customer.id&&branch.is_active!==false?{id:branch.id,name:branch.business_name}:sale.location_id?await customerLocation(stores,customer,sale.location_id):{id:null,name:customer.business_name};}
   else location=await customerLocation(stores,customer,sale.location_id);
   let bin;
-  if(vehicle)bin=await returnBin(stores,vehicle);
+  if(central)bin=await centralReturnBin(stores,context.stock_warehouse_id);
+  else if(vehicle)bin=await returnBin(stores,vehicle);
   else {
     const code='ER-SUPPLY-'+(context.stock_warehouse_id||'COMPANY'),bins=await readRecords(stores.Warehouse,{code});
     if(bins.length>1||bins[0]&&(bins[0].warehouse_type!=='quarantine'||bins[0].is_active===false||!bins[0].customer_supply_return_bin))throw Error('The customer return quarantine location needs management review.');
@@ -89,7 +105,9 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
   const recoveryWarnings=[];
   for (const row of replacements) {
     const product = await stores.Product.get(row.product_id);
-    if (!finishedProduct(product) || product.is_active === false) throw Error('Choose an active finished product for each replacement');
+    if (!finishedProduct(product) || !central&&product.is_active === false) throw Error('Choose a recorded finished product for each return.');
+    const replacement=central?await stores.Product.get(row.replacement_product_id):null;
+    if(central&&(!finishedProduct(replacement)||replacement.is_active===false||replacement.item_removed_at))throw Error('Choose an active finished product for each replacement.');
     const record = await stores.SpoilageRecord.create({ record_type: kind, record_number: 'ER-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
       source_sale_id: sale.source_order_id?'':sale.id, source_order_id:sale.source_order_id||'', source_sale_number: sale.sale_number, posting_basis: sale.source_order_id?'sales_order_exchange':'sale_exchange', request_type: 'collection', replace_now: true,
       customer_id: customer.id, customer_name: customer.business_name, location_id: location.id, location_name: location.name,
@@ -97,13 +115,14 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
       ...pick(sale, ['dispatch_id', 'driver_id', 'driver_name', 'vehicle_id', 'vehicle_name', 'commercial_id', 'commercial_name', 'recorded_by']),
       returned_expiry_date: row.expiry_date, returned_lot_number: row.lot_number, reason: row.reason === 'damaged' ? 'damaged_at_store' : 'expired', status: 'reported',
       collection_warehouse_id: bin.id, unit_cost: 0, total_value: 0, receipt_reference: sale.receipt_reference,
+      ...(central?{exchange_packaging_delivery_point_kind:point?.kind||'customer',exchange_packaging_original_invoice_id:original?.id||null,exchange_packaging_original_invoice_number:original?.invoice_number||null,exchange_packaging_declared_recovery:row.recovered_packaging}:{}),
       receipt_file_uris: sale.receipt_file_uris||[], ...(!vehicle&&!context.dispatch_id?{return_received_at:new Date().toISOString(),return_received_by:user.id,return_received_warehouse_id:bin.id}:{}), notes: (sale.supply_kind==='exchange'?'Exchange-only receipt ':'Stock exchange recorded with sale ') + sale.sale_number });
     await stockReceive(svc, { productId: product.id, productName: product.name, warehouseId: bin.id, warehouseName: bin.name,
       quantity: row.quantity, unitCost: 0, qcStatus: 'quarantine', lotNumber: 'ER-' + record.id, expiryDate: row.expiry_date || undefined,
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,
       reason: row.reason + ' customer goods collected during ' + sale.sale_number + '; not available for sale' });
-    await replace(stores, record, context, sale.transaction_date, user.id);
-    const recovery=await recoverSaleExchangePackaging(svc,{record,product,warehouse:bin,date:sale.transaction_date,user});
+    await replace(stores, record, context, sale.transaction_date, user.id,replacement?{...replacement,quantity:row.replacement_quantity}:null);
+    const recovery=await recoverSaleExchangePackaging(svc,{record,product,warehouse:bin,date:sale.transaction_date,user,declared:central?row.recovered_packaging:undefined});
     recoveryWarnings.push(...recovery.warnings.map(message=>({product_id:product.id,product_name:product.name,record_id:record.id,message})));
     await audit(svc, { action: 'sale_stock_exchange', module: 'field_returns', entityType: 'SpoilageRecord', entityId: record.id, userId: user.id,
       description: row.quantity + ' ' + stockUnit(product) + ' ' + row.reason + ' goods exchanged during ' + sale.sale_number + '; fresh stock issued without customer charge' });

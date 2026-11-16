@@ -23,15 +23,20 @@ export async function expiryRecoveryAction(client,user,body) {
   const [products,warehouses,balances,accounts,treasury]=await Promise.all([readRecords(s.Product),readRecords(s.Warehouse),readRecords(s.StockBalance),readRecords(s.Account),readRecords(s.TreasuryAccount)]);
   const pmap=new Map(products.map(p=>[p.id,p])),wmap=new Map(warehouses.map(w=>[w.id,w]));
   const treasuryIds=new Set(treasury.map(t=>t.gl_account_id));
-  const account=(id,asset=false)=>{const a=accounts.find(a=>a.id===id);if(!a || a.is_active===false || a.is_posting===false || a.is_treasury || treasuryIds.has(id) || a.account_number==='1050' || a.normal_balance!=='debit' || !(asset?a.account_type==='asset':['expense','other_expense'].includes(a.account_type)))throw Error('Configure active inventory asset and loss expense accounts.');return a;};
+  const account=(id,asset=false)=>{const a=accounts.find(a=>a.id===id);if(!a || a.is_active===false || a.is_posting===false || a.is_treasury || a.is_control_account || treasuryIds.has(id) || a.account_number==='1050' || a.currency&&a.currency!=='XAF' || a.normal_balance!=='debit' || !(asset?a.account_type==='asset':['expense','other_expense'].includes(a.account_type)))throw Error('Configure active inventory asset and loss expense accounts.');return a;};
+  const canReviewValue=()=>{
+    if(!['admin','cashier','warehouse_manager'].includes(role))return false;
+    try{client.auth.assertModule?.('accounting');return true;}catch{return false;}
+  };
   if(body.action==='workspace') {
     const access=await adjustmentAccess(client,role,employee,{user,requirePermission:false});
-    return {can_post:role==='cashier' || ['admin','warehouse_manager'].includes(role) && access.can_adjust,can_receive:role==='admin' || role==='warehouse_manager' && employee?.assigned_role!=='production_manager',can_release:(role==='admin' || role==='production_manager') && (role==='admin' || !employee?.allowed_modules || employee.allowed_modules.includes('quality')),
+    const canValue=canReviewValue();
+    return {can_post:role==='cashier' || ['admin','warehouse_manager'].includes(role) && access.can_adjust,can_value:canValue,can_receive:role==='admin' || role==='warehouse_manager' && employee?.assigned_role!=='production_manager',can_release:(role==='admin' || role==='production_manager') && (role==='admin' || !employee?.allowed_modules || employee.allowed_modules.includes('quality')),
       lots:balances.filter(b=>eligible(b,pmap.get(b.product_id),wmap.get(b.warehouse_id))).map(b=>({...b,unit:stockUnit(pmap.get(b.product_id)),fingerprint:snapshot(b)})),
       packaging:products.filter(p=>isPackagingItem(p) && p.is_active!==false && p.configuration_status!=='draft').map(p=>({id:p.id,name:p.name,unit:stockUnit(p)})),
-      locations:warehouses.filter(w=>factory(w) && ['packaging','raw_material'].includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name})),
+      locations:warehouses.filter(w=>factory(w) && ['packaging','raw_material'].includes(w.warehouse_type)).map(w=>({id:w.id,name:w.name,warehouse_type:w.warehouse_type})),
       accounts:role==='cashier' || access.can_adjust?accounts.filter(a=>{try{account(a.id);return true;}catch{return false;}}).map(a=>({id:a.id,name:a.name,account_number:a.account_number})):[],
-      held:balances.filter(b=>b.inventory_recovery_id && b.qc_status==='quarantine' && Number(b.quantity)>0).map(b=>({id:b.id,product_name:b.product_name,quantity:b.quantity,unit:stockUnit(pmap.get(b.product_id)),lot_number:b.lot_number,warehouse_name:wmap.get(b.warehouse_id)?.name,receipt_required:b.inventory_recovery_receipt_required===true,received_at:b.inventory_recovery_received_at || null})),
+      held:balances.filter(b=>b.inventory_recovery_id && b.qc_status==='quarantine' && Number(b.quantity)>0).map(b=>({id:b.id,product_name:b.product_name,quantity:b.quantity,unit:stockUnit(pmap.get(b.product_id)),lot_number:b.lot_number,warehouse_name:wmap.get(b.warehouse_id)?.name,receipt_required:b.inventory_recovery_receipt_required===true,received_at:b.inventory_recovery_received_at || null,disposition:b.inventory_recovery_disposition||null,valued_at:b.inventory_recovery_valued_at||null,...(canValue?{value:b.total_value,valuation_ceiling:b.inventory_recovery_valuation_ceiling??null}:{})})),
       history:(await s.AuditLog.filter({module:'expiry_recovery',action:'dispose_expired_stock'},'-created_date',30)).filter(a=>a.audit_source!=='client_reported').map(a=>({id:a.id,date:a.created_date,actor:a.user_name,...a.inventory_recovery_result}))};
   }
   if(body.action==='receive') {
@@ -47,17 +52,53 @@ export async function expiryRecoveryAction(client,user,body) {
     await s.AuditLog.create({action:'receive_recovered_packaging',module:'expiry_recovery',entity_type:'StockBalance',entity_id:b.id,user_id:user.id,user_name:employee?.full_name || user.full_name || user.email,description:reference,inventory_recovery_id:b.inventory_recovery_id,inventory_recovery_received_quantity:quantity});
     return {received:true};
   }
+  if(body.action==='value_exchange_packaging') {
+    if(!canReviewValue())throw Error('Accounting must approve exchange packaging valuation.');
+    const b=balances.find(row=>row.id===body.balanceId),pack=pmap.get(b?.product_id);
+    if(!b?.inventory_recovery_disposition||b.inventory_recovery_source!=='sale_exchange'||!isPackagingItem(pack)||!factory(wmap.get(b.warehouse_id)))throw Error('Choose physically received exchange packaging for valuation.');
+    const reference=typeof body.reference==='string'?body.reference.trim():'',value=amount(body.value);
+    if(reference.length<5||reference.length>500||body.inspectionConfirmed!==true)throw Error('Confirm usable or realizable value and enter its supporting evidence reference.');
+    if(b.inventory_recovery_valued_at){
+      if(Number(b.inventory_recovery_approved_value)!==value||b.inventory_recovery_value_reference!==reference)throw Error('This recovery already has a valuation. Use an auditable accounting correction.');
+      return {valued:true,reused:true,journal_id:b.inventory_recovery_value_journal_id};
+    }
+    if(b.qc_status!=='quarantine'||!b.inventory_recovery_received_at||!(Number(b.quantity)>0)||Number(b.quantity)!==Number(b.inventory_recovery_received_quantity)||Number(b.total_value)!==0)throw Error('Reconcile the physically received quantity before recognizing exchange packaging.');
+    const ceiling=b.inventory_recovery_valuation_ceiling;
+    if(value>0&&(ceiling!=null&&value>Number(ceiling)||ceiling==null&&b.inventory_recovery_disposition!=='salvage'))throw Error('The recovery value exceeds the supported packaging cost.');
+    const exchange=await s.SpoilageRecord.get(b.inventory_recovery_return_id),result=exchange?.exchange_packaging_result;
+    if(!result?.recovered.some(row=>row.balance_id===b.id))throw Error('Reconcile the package lot with its original exchange before recognizing value.');
+    const date=businessDate();let journal,inventoryAccountId=null;
+    if(value>0){
+      const periods=await readRecords(s.AccountingPeriod,{start_date:{$lte:date},end_date:{$gte:date}});
+      if(!periods.length||periods.some(p=>p.status!=='open'))throw Error('An open accounting period is required to recognize exchange packaging.');
+      const asset=account(pack.inventory_account_id,true),expense=account(exchange.exchange_packaging_replacement_expense_account_id);
+      const posted=await postJournal({entities:s},{entryDate:date,description:'Exchange packaging recovery / '+exchange.record_number,sourceModule:'expiry_recovery',sourceDocumentType:'ExpiryRecovery',sourceDocumentId:b.id,userId:user.id,lines:[{account_id:asset.id,debit:value,credit:0,description:'Recognize recovered packaging inventory'},{account_id:expense.id,debit:0,credit:value,description:'Recover part of the exchange expense'}]});
+      if(posted.reused)throw Error('Reconcile the existing packaging valuation journal.');
+      journal=posted.journal;
+      inventoryAccountId=asset.id;
+      await s.StockMovement.create({product_id:pack.id,product_name:pack.name,quantity:0,unit:stockUnit(pack),destination_warehouse_id:b.warehouse_id,lot_number:b.lot_number,movement_type:'packaging_recovery_valuation',movement_date:date,status:'approved',total_value:value,unit_cost:value/b.quantity,document_type:'ExpiryRecovery',document_id:b.inventory_recovery_id,journal_id:journal.id,inventory_account_id:asset.id,reason:reference,created_by:user.id});
+    }
+    await s.StockBalance.update(b.id,{total_value:value,unit_cost:value/b.quantity,inventory_recovery_account_id:inventoryAccountId,inventory_recovery_approved_value:value,inventory_recovery_valued_at:new Date().toISOString(),inventory_recovery_valued_by:user.id,inventory_recovery_value_reference:reference,inventory_recovery_value_journal_id:journal?.id||null});
+    const recovered=result.recovered.map(row=>row.balance_id===b.id?{...row,value,journal_id:journal?.id||null}:row);
+    await s.SpoilageRecord.update(exchange.id,{exchange_packaging_result:{...result,recovered,recovered_value:roundMoney(recovered.reduce((n,row)=>n+Number(row.value||0),0))}});
+    await s.AuditLog.create({action:'value_exchange_packaging',module:'expiry_recovery',entity_type:'StockBalance',entity_id:b.id,user_id:user.id,audit_source:'server_verified',description:reference,inventory_recovery_id:b.inventory_recovery_id,inventory_recovery_approved_value:value,inventory_recovery_value_journal_id:journal?.id||null});
+    return {valued:true,journal_id:journal?.id||null};
+  }
   if(body.action==='release') {
     if(!['admin','production_manager'].includes(role))throw Error('Production quality control must release recovered packaging.');
     client.auth.assertModule?.('quality');
     const b=balances.find(b=>b.id===body.balanceId);
     if(!b?.inventory_recovery_id || !isPackagingItem(pmap.get(b.product_id)) || !factory(wmap.get(b.warehouse_id)))throw Error('Choose a recovered packaging lot.');
+    if(b.inventory_recovery_disposition==='salvage')throw Error('Recycling and salvage packaging cannot be released into production.');
     if(b.inventory_recovery_receipt_required && !b.inventory_recovery_received_at)throw Error('Warehouse must receive this recovered packaging before quality release.');
     if(b.qc_status==='approved' && b.inventory_recovery_released_by)return {released:true,reused:true};
     const note=typeof body.reference==='string'?body.reference.trim():'';
     if(b.qc_status!=='quarantine' || body.inspectionConfirmed!==true || note.length<3 || note.length>500)throw Error('Confirm the packaging inspection and enter its evidence reference.');
-    await s.StockBalance.update(b.id,{qc_status:'approved',inventory_recovery_released_by:user.id,inventory_recovery_released_at:new Date().toISOString(),qc_notes:note,qc_released_by:employee?.full_name || user.full_name || user.email,qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString()});
-    await s.StockMovement.create({product_id:b.product_id,product_name:b.product_name,quantity:b.quantity,source_warehouse_id:b.warehouse_id,destination_warehouse_id:b.warehouse_id,movement_type:'quality_release',movement_date:businessDate(),status:'approved',lot_number:b.lot_number,document_type:'ExpiryRecovery',document_id:b.inventory_recovery_id,reason:note,created_by:user.id});
+    if(body.reuseApproved!==true||b.inventory_recovery_disposition==='reuse_review'&&!b.inventory_recovery_valued_at)throw Error('Confirm documented food-contact reuse approval and complete any pending accounting valuation before release.');
+    const destination=wmap.get(body.warehouseId||b.warehouse_id);
+    if(!factory(destination)||destination.warehouse_type!=='packaging')throw Error('Choose an active packaging warehouse to receive the approved lot.');
+    await s.StockBalance.update(b.id,{warehouse_id:destination.id,warehouse_name:destination.name,qc_status:'approved',inventory_recovery_released_by:user.id,inventory_recovery_released_at:new Date().toISOString(),inventory_recovery_reuse_approval_reference:note,qc_notes:note,qc_released_by:employee?.full_name || user.full_name || user.email,qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString()});
+    await s.StockMovement.create({product_id:b.product_id,product_name:b.product_name,quantity:b.quantity,source_warehouse_id:b.warehouse_id,destination_warehouse_id:destination.id,movement_type:'quality_release',movement_date:businessDate(),status:'approved',lot_number:b.lot_number,total_value:Number(b.total_value||0),unit_cost:Number(b.unit_cost||0),document_type:'ExpiryRecovery',document_id:b.inventory_recovery_id,reason:note,created_by:user.id});
     await s.AuditLog.create({action:'release_recovered_packaging',module:'expiry_recovery',entity_type:'StockBalance',entity_id:b.id,user_id:user.id,user_name:employee?.full_name || user.full_name || user.email,description:note,inventory_recovery_id:b.inventory_recovery_id});
     return {released:true};
   }

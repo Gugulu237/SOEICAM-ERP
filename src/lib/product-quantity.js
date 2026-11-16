@@ -7,7 +7,7 @@ export function validProductQuantity(value, maximum) {
 // Sale and replacement lines share the same physical stock.
 export function quantityAfterReplacements(product, replacements=[]) {
   const available=Number(product.available??product.quantity);
-  const replaced=replacements.filter(row=>row.product_id===product.id).reduce((total,row)=>total+Math.max(0,Number(row.quantity||0)),0);
+  const replaced=replacements.filter(row=>(row.replacement_product_id??row.product_id)===product.id).reduce((total,row)=>total+Math.max(0,Number((row.replacement_quantity??row.quantity)||0)),0);
   if(!Number.isFinite(available)||!Number.isFinite(replaced))return 0;
   return Math.max(0,Math.round((available-Math.max(0,replaced))*1000)/1000);
 }

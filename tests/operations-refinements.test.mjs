@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fixture,user} from './helpers/cashier.mjs';
 import {fourStageFixture,act,asRole} from './helpers/four-stage-yogurt.mjs';
 import {supplierAction} from '../src/server/domain/supplier-workspace.js';
-import {supplierMaterial,supplierCatalogue} from '../src/lib/supplier-catalogue.js';
+import {isPurchasableItem,purchaseOrderItems,supplierCatalogue} from '../src/lib/supplier-catalogue.js';
 import {catalogueFromStored} from '../src/server/domain/role-catalogue.js';
 import {employeeRoleChange} from '../src/server/domain/employee-role-change.js';
 import {staffRoleAction} from '../src/server/domain/staff-role-management.js';
@@ -13,16 +13,20 @@ import {productRecipeDraft} from '../src/lib/yogurt-recipe-presets.js';
 import {recipeBucketPlan,yogurtRequirements} from '../src/lib/yogurt-production.js';
 import {idelleCashierAssignment} from '../src/server/domain/local-staff-reassignment.js';
 
-test('supplier catalogues accept every stock component and exclude own finished products and services',async()=>{
+test('supplier catalogues accept every stock component and explicitly purchasable finished goods only',async()=>{
   const f=await fixture(),s=f.entities;await s.Employee.update('cashier',{role:'admin'});
   const materials=await Promise.all(['raw_material','inventory_part','inventory_item','consumable','additive','packaging'].map((type,i)=>s.Product.create({name:type+' component',inventory_type:type,unit_of_measure:i%2?'ea':'kg',is_active:true})));
   const forbidden=await Promise.all(['assembly','finished_product','service'].map(type=>s.Product.create({name:type,inventory_type:type,is_active:true,unit_of_measure:'ea'})));
+  const boughtFinished=await s.Product.create({name:'Externally sourced product',inventory_type:'finished_product',is_active:true,unit_of_measure:'ea',is_purchasable:true});
+  const eligible=[...materials,boughtFinished];
   const call=body=>supplierAction(f.client,user,body),list=await call({action:'supplierWorkspace'});
-  assert.ok(materials.every(item=>list.products.some(row=>row.id===item.id)));assert.ok(forbidden.every(item=>!list.products.some(row=>row.id===item.id)));
-  const body={action:'saveSupplier',requestKey:crypto.randomUUID(),supplier:{name:'Component vendor',supplier_items:materials.map(item=>({product_id:item.id,unit_price:10}))}};
-  const {supplier}=await call(body);assert.equal(supplier.supplier_items.length,materials.length);
-  assert.equal(supplierCatalogue(supplier,list.products).length,materials.length);
-  for(const item of forbidden){assert.equal(supplierMaterial(item),false);await assert.rejects(call({...body,requestKey:crypto.randomUUID(),supplier:{...body.supplier,supplier_items:[{product_id:item.id,unit_price:1}]}}),/registered active items/);}
+  const options=purchaseOrderItems({id:'supplier'},list.products);
+  assert.ok(eligible.every(item=>options.some(row=>row.id===item.id)));
+  assert.ok(forbidden.every(item=>!options.some(row=>row.id===item.id)));
+  const body={action:'saveSupplier',requestKey:crypto.randomUUID(),supplier:{name:'Component vendor',supplier_items:eligible.map(item=>({product_id:item.id,unit_price:10}))}};
+  const {supplier}=await call(body);assert.equal(supplier.supplier_items.length,eligible.length);
+  assert.equal(supplierCatalogue(supplier,list.products).length,eligible.length);
+  for(const item of forbidden){assert.equal(isPurchasableItem(item),false);await assert.rejects(call({...body,requestKey:crypto.randomUUID(),supplier:{...body.supplier,supplier_items:[{product_id:item.id,unit_price:1}]}}),/active item eligible for purchasing/);}
 });
 
 test('primary-role changes preserve the employee account and salary while clearing the previous active role',async()=>{

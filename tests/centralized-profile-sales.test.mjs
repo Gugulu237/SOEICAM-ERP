@@ -147,11 +147,13 @@ test('administrators retain actual Commercial attribution while explicit empty a
 });
 
 test('a profile credit sale and free customer exchange deduct central stock once with separate receivable, COGS and replacement expense',async()=>{
- const f=await setup(),result=await f.call({...f.body,paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500}],replacementsDeclared:true,stockReplacements:[{product_id:'product-a',quantity:1,reason:'damaged',expiry_date:''}]}),invoice=await f.s.Invoice.get(result.invoiceId);
- assert.equal(invoice.total,1000);assert.equal(invoice.balance,1000);assert.equal((await f.s.Customer.get('customer-a')).balance,1000);assert.equal((await f.s.StockBalance.get(f.pooled.id)).quantity,2);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,10);
+ const f=await setup();
+ await f.s.Warehouse.create({name:'Customer-return quarantine',warehouse_type:'quarantine',is_active:true});
+ const result=await f.call({...f.body,paymentType:'credit',expectedTotal:1000,lines:[{product_id:'product-a',quantity:2,unit_price:500}],replacementsDeclared:true,stockReplacements:[{product_id:'product-a',quantity:1,reason:'damaged',expiry_date:''}]}),invoice=await f.s.Invoice.get(result.invoiceId);
+ assert.equal(invoice.total,1000);assert.equal(invoice.balance,1000);assert.equal((await f.s.Customer.get('customer-a')).balance,1000);assert.equal((await f.s.StockBalance.get(f.pooled.id)).quantity,3);assert.equal((await f.s.StockBalance.get(f.factory.id)).quantity,9);
  assert.equal((await f.s.InvoiceLine.filter({invoice_id:invoice.id}))[0].cogs_total,280.05);assert.equal((await f.s.JournalEntry.list()).length,2);
  const cogs=new Set((await f.s.Account.list()).filter(row=>row.account_type==='cogs').map(row=>row.id)),cogsTotal=(await f.s.JournalLine.list()).filter(row=>cogs.has(row.account_id)).reduce((sum,row)=>sum+row.debit-row.credit,0);assert.equal(cogsTotal,280.05);
- const replacement=(await f.s.Account.list()).find(row=>row.account_number==='CUSTOMER-REPLACEMENTS');assert.ok(replacement);assert.equal(replacement.balance,140.03);assert.equal((await f.s.JournalLine.list()).reduce((cents,row)=>cents+Math.round(row.debit*100)-Math.round(row.credit*100),0),0);
+ const replacement=(await f.s.Account.list()).find(row=>row.account_number==='CUSTOMER-REPLACEMENTS');assert.ok(replacement);assert.equal(replacement.balance,253.18);assert.equal((await f.s.JournalLine.list()).reduce((cents,row)=>cents+Math.round(row.debit*100)-Math.round(row.credit*100),0),0);
 });
 
 test('activation does not repost an exact completed legacy personal sale retry',async()=>{

@@ -34,7 +34,7 @@ function snapshot(balance, c) {
   const row = { balance_id: balance.id, product_id: product.id, product_name: product.name, sku: product.sku || '', unit: stockUnit(product),
     warehouse_id: warehouse.id, warehouse_name: warehouse.name, warehouse_type: warehouse.warehouse_type || '',
     lot_number: balance.lot_number || '', batch_number: balance.batch_number || '', expiry_date: balance.expiry_date || '', qc_status: balance.qc_status || 'approved', production_order_id: balance.production_order_id || '',
-    book_quantity: Number(balance.quantity), book_value: Number(balance.total_value), unit_cost: Number(balance.unit_cost ?? 0), inventory_account_id: inventoryAccount(product, c),
+    book_quantity: Number(balance.quantity), book_value: Number(balance.total_value), unit_cost: Number(balance.unit_cost ?? 0), inventory_account_id: balance.inventory_recovery_account_id || inventoryAccount(product, c),
     counted_quantity: null, reason: '', difference: null, value_difference: null };
   row.fingerprint = hash([balance, product.inventory_account_id || '', stockUnit(product), row.inventory_account_id, warehouse.warehouse_type, warehouse.is_active, product.inventory_type, product.is_active,product.item_removed_at,product.configuration_status]);
   return row;

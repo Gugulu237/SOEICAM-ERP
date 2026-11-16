@@ -38,6 +38,7 @@ const admin = { user: { id: 'manager', role: 'admin' }, employee: null };
 const staff = role => ({ user: { id: 'login', role: 'user' }, employee: { id: 'agent', role, status: 'active' } });
 function fixture() {
   const rows = {
+    CompanySettings: [],
     Product: [product, { id: 'part', inventory_type: 'raw_material' }],
     Warehouse: [...warehouses, { id: 'mine', name: 'My custody', warehouse_type: 'commercial_custody', custodian_employee_id: 'agent' }, { id: 'other', name: 'Other agent', warehouse_type: 'commercial_custody', custodian_employee_id: 'someone-else' }],
     StockBalance: [lot('mine', 4, 20, { warehouse_id: 'mine' }), lot('other', 100, 500, { warehouse_id: 'other' }), lot('unrelated', 1000, 9999, { warehouse_id: 'mine', product_id: 'part' })],
@@ -92,10 +93,12 @@ test('stock transport is fresh and abortable, with checked server errors', async
 test('the stock HTTP route authenticates, returns scoped stock and disables caching on success and errors', async () => {
   const output = await build({ entryPoints: ['src/app/api/items/[id]/stock/route.js'], bundle: true, format: 'esm', platform: 'node', write: false, alias: { '@': process.cwd() + '/src' },
     plugins: [{ name: 'stock-route-fixture', setup(builder) {
-      builder.onResolve({ filter: /^@\/server\/(auth|entities)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stock-route-fixture' }));
+      builder.onResolve({ filter: /^@\/server\/(auth|entities|db)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stock-route-fixture' }));
       builder.onLoad({ filter: /.*/, namespace: 'stock-route-fixture' }, args => ({ contents: args.path === 'auth'
         ? 'export const authenticateRequest = async () => { globalThis.__stockRoute.calls.push("auth"); if (globalThis.__stockRoute.authError) throw globalThis.__stockRoute.authError; return globalThis.__stockRoute.context; }; export const apiError = error => Response.json({error:error.message}, {status:error.status || 400});'
-        : 'export const serviceEntities = new Proxy({}, {get: (_, name) => globalThis.__stockRoute.stores[name]});' }));
+        : args.path === 'db'
+          ? 'export const transaction = async work => { globalThis.__stockRoute.calls.push("transaction"); return work(); };'
+          : 'export const serviceEntities = new Proxy({}, {get: (_, name) => globalThis.__stockRoute.stores[name]});' }));
     } }] });
   const { GET } = await import('data:text/javascript;base64,' + Buffer.from(output.outputFiles[0].text).toString('base64'));
   const { stores, reads } = fixture(); globalThis.__stockRoute = { calls: [], context: admin, stores };
@@ -105,6 +108,7 @@ test('the stock HTTP route authenticates, returns scoped stock and disables cach
     const denied = await GET(request, params); assert.equal(denied.status, 401); assert.equal(denied.headers.get('cache-control'), 'private, no-store'); assert.equal(reads.length, 0);
     delete globalThis.__stockRoute.authError;
     const response = await GET(request, params); assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.equal((await response.json()).quantity_on_hand, 104);
+    assert.deepEqual(globalThis.__stockRoute.calls, ['auth', 'auth', 'transaction']);
     assert.match(response.headers.get('server-timing'), /auth;dur=.*stock;dur=.*total;dur=/);
   } finally { delete globalThis.__stockRoute; }
 });

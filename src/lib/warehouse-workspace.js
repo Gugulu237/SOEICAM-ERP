@@ -5,7 +5,7 @@ export const WAREHOUSE_TYPES = {
 };
 export const MANAGED_WAREHOUSE_TYPES = ['vehicle','commercial_custody','field_delivery_pending'];
 export const WAREHOUSE_MANAGERS = ['admin','warehouse_manager','production_manager'];
-export const MOVEMENT_TYPES = ['purchase_receipt','supplier_return','production_issue','production_return','production_consumption','production_output','warehouse_transfer','vehicle_load','customer_delivery','customer_return','damage','expiry','quality_quarantine','quality_release','stock_adjustment','stock_count_variance','promotional_issue','sample_issue','commercial_issue','commercial_return','field_delivery','field_delivery_return'];
+export const MOVEMENT_TYPES = ['purchase_receipt','supplier_return','production_issue','production_return','production_consumption','production_output','warehouse_transfer','vehicle_load','customer_delivery','customer_return','damage','expiry','expired_disposal','exchange_contents_removed','packaging_recovery','packaging_recovery_valuation','quality_quarantine','quality_release','stock_adjustment','stock_count_variance','promotional_issue','sample_issue','commercial_issue','commercial_return','field_delivery','field_delivery_return'];
 export const movementLabel = value => ui(String(value || '').replaceAll('_',' '));
 export function defaultMovementFilters(warehouse = '') {
   const to = businessDate(), start = new Date(to + 'T12:00:00Z'); start.setUTCDate(start.getUTCDate()-29);

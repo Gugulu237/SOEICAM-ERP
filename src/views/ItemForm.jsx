@@ -73,7 +73,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     unit_of_measure: requestedType === "service" ? "hr" : requestedType === "inventory_item" && initialInventoryType === "raw_material" ? "kg" : "ea",
     costing_method: "average", purchase_price: 0, current_cost: 0, standard_cost: 0, selling_price: 0,
     cogs_account_id: "", revenue_account_id: "", inventory_account_id: "", preferred_supplier_id: "",
-    reorder_level: 0, min_stock: 0, max_stock: 0, lot_tracking: false, expiry_tracking: false, shelf_life_days: 0, tax_rate: 0, is_active: true,
+    reorder_level: 0, min_stock: 0, max_stock: 0, lot_tracking: false, expiry_tracking: false, shelf_life_days: 0, tax_rate: 0, is_active: true, is_purchasable: null,
   });
 
   useEffect(() => {
@@ -96,6 +96,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
         setForm(previous => { const loaded = { ...previous,
           ...Object.fromEntries(Object.keys(previous).filter(key => item[key] != null).map(key => [key, item[key]])),
           inventory_type: type === "assembly" ? "assembly" : item.inventory_type,
+          is_purchasable: item.is_purchasable ?? null,
           attributes: itemAttributes(item), unit_of_measure: unit, purchase_price: item.purchase_price ?? Number(item.current_cost || 0) * Number(item.purchase_to_storage_factor || 1),
           ...(catalogueDraft ? { selling_price: item.selling_price ?? "" } : {}),
         }; originalForm.current = {...loaded,components:item.components || []}; return loaded; });
@@ -139,7 +140,11 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const set = (key, value) => {
     if (key === "inventory_type") {
       setItemType(itemFormType(value));
-      setForm(previous => ({ ...previous, inventory_type: isAssemblyInventoryType(value) ? "assembly" : value }));
+      setForm(previous => ({
+        ...previous,
+        inventory_type: isAssemblyInventoryType(value) ? "assembly" : value,
+        is_purchasable: previous.inventory_type === (isAssemblyInventoryType(value) ? "assembly" : value) ? previous.is_purchasable : null,
+      }));
     } else setForm(previous => {const next={...previous,[key]:value};return {...next,...(['product_family','size','name','category'].includes(key)?validateAssemblyYieldChanges({[key]:value},previous):{})};});
   };
   const changeType = type => set("inventory_type", type === "inventory_item" ? itemFormType(form.inventory_type) === "inventory_item" ? form.inventory_type : initialInventoryType : type);

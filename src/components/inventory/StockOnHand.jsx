@@ -13,13 +13,16 @@ import {inventoryDisplayName, inventoryVariants} from '@/lib/inventory-groups';
 import {Button} from '@/components/ui/button';
 
 const PAGE_SIZE = 20;
-function BatchDetails({group}) {
+function BatchDetails({group, location}) {
   const unit = stockUnit(group.product);
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
       <span>{ui('On hand')}: <strong>{formatNumber(group.quantity, 3)} {unit}</strong></span>
       <span>{ui('Available in company stock')}: <strong>{formatNumber(group.available, 3)} {unit}</strong></span>
+      {group.reservedQuantity>0&&<span>{ui('Reserved for delivery')}: <strong>{formatNumber(group.reservedQuantity, 3)} {unit}</strong></span>}
+      <span>{ui('Damaged or unusable')}: <strong>{formatNumber(group.blockedQuantity, 3)} {unit}</strong></span>
     </div>
+    <p className="text-xs text-slate-600">{ui('Stock location: {0}',location)}</p>
     {group.issues && <p role="alert" className="text-sm text-red-700">{ui('Some stock records need reconciliation. Ask a top administrator to review the count.')}</p>}
     {group.rows.some(row => row.expiryMissing && row.available > 0) && <p className="text-xs text-amber-800">{ui('Some available stock has no verified expiry. Check it before supply.')}</p>}
     <div className="space-y-2" aria-label={ui('Remaining batches for {0}', group.product.name)}>
@@ -34,6 +37,7 @@ function BatchDetails({group}) {
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           <span className={'rounded-full px-2 py-1 text-xs font-medium ' + (row.expired || row.countIssue || row.status === 'Rejected' ? 'bg-red-50 text-red-800' : row.status !== 'Available' || row.daysLeft !== null && row.daysLeft <= 7 ? 'bg-amber-50 text-amber-900' : 'bg-green-50 text-green-800')}>{ui(row.status)}</span>
+          {row.inventory_recovery_id && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{ui(row.inventory_recovery_disposition === 'salvage' ? 'Recovered packaging for salvage' : 'Recovered packaging')}</span>}
           {row.priorityQuantity > 0 && row.expiry_date === group.nextExpiry && <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">{ui('Send first')}</span>}
           {row.expired && <span className="self-center text-xs text-red-700">{ui('Do not supply')}</span>}
         </div>
@@ -50,6 +54,7 @@ export default function StockOnHand({products, balances, warehouses, warehouseId
   const matching = useMemo(() => stockOnHandGroups(products, balances, warehouses, {warehouseId, search, expiry, date}), [products, balances, warehouses, warehouseId, search, expiry, date]);
   const groups=sortProductRows(matching,sort,row=>row.product);
   const selected=groups.find(group=>group.product.id===expanded);
+  const location=warehouses.find(row=>row.id===warehouseId)?.name||ui('All locations');
   const pages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE)), currentPage = Math.min(page, pages);
   const filtered = search.trim() || expiry !== 'all';
   return <div className="min-w-0 space-y-3">
@@ -76,7 +81,7 @@ export default function StockOnHand({products, balances, warehouses, warehouseId
         </button>
       </section>;
     })}</div>
-    {selected&&<ProductQuickView title={selected.product.name} focusRef={anchor} onClose={()=>setExpanded(null)}><BatchDetails group={selected}/></ProductQuickView>}
+    {selected&&<ProductQuickView title={selected.product.name} focusRef={anchor} onClose={()=>setExpanded(null)}><BatchDetails group={selected} location={location}/></ProductQuickView>}
     {groups.length > PAGE_SIZE && <div className="flex items-center justify-between gap-2 text-sm"><Button variant="outline" disabled={currentPage <= 1} onClick={() => {setPage(currentPage - 1); setExpanded(null);}}>{ui('Previous')}</Button><span>{ui('Page {0} of {1}', currentPage, pages)}</span><Button variant="outline" disabled={currentPage >= pages} onClick={() => {setPage(currentPage + 1); setExpanded(null);}}>{ui('Next')}</Button></div>}
   </div>;
 }

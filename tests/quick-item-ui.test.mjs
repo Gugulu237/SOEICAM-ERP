@@ -53,8 +53,8 @@ async function renderPanel(overrides = {}) {
       import { quickItemDraft } from './src/lib/item-quick-edit.js';
       const item = {id:'finished', name:'Yogurt', inventory_type:'assembly', selling_price:150, unit_of_measure:'ea', reorder_level:20,
         components:[{quantity:0.5,unit_cost:100},{quantity:0.25,unit_cost:20}]};
-      const current = {product_id:'finished',unit:'ea',quantity_on_hand:80,usable_quantity:70,blocked_quantity:10,stock_value:4400,reorder_level:20,below_reorder:false,
-        warehouses:[{id:'main',name:'Main warehouse',quantity_on_hand:60,usable_quantity:50},{id:'shop',name:'Shop',quantity_on_hand:20,usable_quantity:20}],as_of:'2026-10-18T12:30:00.000Z',reservations_included:false};
+      const current = {product_id:'finished',unit:'ea',quantity_on_hand:80,available_quantity:68,reserved_quantity:2,blocked_quantity:10,stock_value:4400,reorder_level:20,below_reorder:false,
+        warehouses:[{id:'main',name:'Main warehouse',quantity_on_hand:60,available_quantity:50},{id:'shop',name:'Shop',quantity_on_hand:20,available_quantity:18}],as_of:'2026-10-18T12:30:00.000Z',reservations_included:true};
       export function render(overrides) {
         const props = {item,draft:quickItemDraft(item),choices:[{code:'ea',name:'Each'},{code:'kg',name:'Kilogram'}],stock:{status:'ready',data:current,error:''},formId:'edit',dirty:true,...overrides};
         return renderToStaticMarkup(React.createElement(QuickItemPanel, props));
@@ -81,8 +81,8 @@ test('landscape quick edit keeps pricing separate from a fresh warehouse stock r
   assert.match(markup, /readonly=""[^>]*value="55"/i);
   assert.doesNotMatch(markup, /Purchase cost \(XAF/);
   assert.match(markup, /80 ea/);
-  assert.match(markup, /70 ea/);
-  assert.match(markup, /before order reservations/);
+  assert.match(markup, /68 ea/);
+  assert.match(markup, /Reserved for delivery/);
   assert.match(markup, /Main warehouse/);
   assert.match(markup, /Shop/);
   assert.match(markup, /Held or expired stock:/);
@@ -120,7 +120,7 @@ test('loading and failed stock reports show unknown quantities rather than stale
       assert.match(markup, /Retry stock report/);
     }
   }
-  const empty = await renderPanel({ stock: { status: 'ready', data: { unit: 'ea', quantity_on_hand: 0, usable_quantity: 0, blocked_quantity: 0, stock_value: 0, reorder_level: 20, below_reorder: true, warehouses: [] } } });
+  const empty = await renderPanel({ stock: { status: 'ready', data: { unit: 'ea', quantity_on_hand: 0, available_quantity: 0, blocked_quantity: 0, stock_value: 0, reorder_level: 20, below_reorder: true, warehouses: [] } } });
   assert.match(empty, /0 ea/);
   assert.match(empty, /No recorded stock at any warehouse/);
   assert.match(empty, /Below reorder point/);

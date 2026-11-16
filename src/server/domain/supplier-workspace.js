@@ -1,4 +1,3 @@
-import {itemUnitCost} from '../../lib/item-units.js';
 import {canUseTreasury,visibleTreasuryDocuments} from '../../lib/treasury-access.js';
 import { requireFinishedStorage } from '../../lib/finished-product-storage.js';
 import { round2, round3, nextSequence, postJournal, getRuleAccount, stockReceive, audit } from './field-ops.js';
@@ -6,9 +5,10 @@ import { readRecords } from './commercial-workspace.js';
 import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { businessDate } from '../../lib/business-date.js';
 import { purchaseItemPostings } from '../../lib/item-posting.js';
-import { requirePurchasingAdmin } from './purchase-workspace.js';
+import { purchaseProduct, requirePurchasingAdmin } from './purchase-workspace.js';
 import {openingPartyLines} from '../../lib/opening-records.js';
-import { supplierCatalogue, supplierItems, supplierMaterial } from '../../lib/supplier-catalogue.js';
+import { isPurchasableItem, supplierCatalogue, supplierItems, supportsPurchasing } from '../../lib/supplier-catalogue.js';
+import { isAssemblyInventoryType } from '../../lib/item-types.js';
 import {receiptSupplierPayable,billSupplierPayable,supplierAdvanceSource} from './supplier-payables.js';
 import {journalCents} from './journal-validation.js';
 import {isStandardPurchaseRate,purchaseQuoteAmounts,purchaseReceiptAmounts} from '../../lib/purchase-vat.js';
@@ -17,8 +17,7 @@ import {supplierBillVat,supplierReceiptVat} from './purchase-vat.js';
 
 export const SUPPLIER_ACTIONS = ['supplierWorkspace','saveSupplier','saveSupplierOrder','confirmSupplierOrder','approveSupplierOrder','rejectSupplierOrder','receiveSupplierOrder','registerSupplierBill','recordSupplierBillVat'];
 const pick = (row, keys) => Object.fromEntries(keys.split(' ').map(key=>[key,row[key]]));
-const inventory = supplierMaterial;
-const active = p => p && p.is_active !== false && p.configuration_status !== 'draft';
+const active = p => p && p.is_active !== false && p.configuration_status !== 'draft' && !p.item_removed_at && !p.supplier_removed_at;
 const dateOf = (value, future = false) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '') || !Number.isFinite(Date.parse(value)) || new Date(value+'T12:00:00Z').toISOString().slice(0,10)!==value || (!future && value>businessDate())) throw Error('Choose a valid date'+(future?'':' no later than today'));
   return value;
@@ -116,8 +115,8 @@ export async function supplierAction(client,user,body) {
       return {...pick(supplier,supplierFields),ledger_balance:round2(ledger[supplier.id] || 0),recorded_balance:Number(supplier.balance || 0),balance_difference:round2(Number(supplier.balance || 0)-Number(ledger[supplier.id] || 0)),unpaid_bills:round2(open.reduce((sum,b)=>sum+Number(b.balance),0)),overdue:round2(open.filter(b=>b.due_date && b.due_date<businessDate()).reduce((sum,b)=>sum+Number(b.balance),0)),open_bill_count:open.length};
     });
     const permissions={manage:true,purchase:true,receive:true,pay:true,approve:true};
-    const products=await readRecords(s.Product),catalogueProducts=products.filter(supplierMaterial).map(p=>({...pick(p,'id name sku inventory_type image_url is_active configuration_status preferred_supplier_id batch_tracking expiry_tracking shelf_life_days material_group category attributes flavor size product_family'),unit:stockUnit(p),cost:itemUnitCost(p)}));
-    const materialIds=new Set(catalogueProducts.map(item=>item.id)),visibleSuppliers=summaries.map(supplier=>({...supplier,supplier_items:supplierItems(supplier).filter(row=>materialIds.has(row.product_id))}));
+    const products=await readRecords(s.Product),catalogueProducts=products.map(purchaseProduct);
+    const visibleSuppliers=summaries.map(supplier=>({...supplier,supplier_items:supplierItems(supplier)}));
     if(!body.supplierId)return {suppliers:visibleSuppliers,products:catalogueProducts,permissions,date:businessDate()};
     const supplier=visibleSuppliers.find(v=>v.id===body.supplierId);if(!supplier)throw Error('Supplier not found');
     const [orders,receipts,payments,warehouses,accounts]=await Promise.all([
@@ -128,7 +127,7 @@ export async function supplierAction(client,user,body) {
     return {suppliers:visibleSuppliers,supplier,permissions,date:businessDate(),
       products:catalogueProducts,
       orders:orders.map(o=>({...o,...(role==='cashier'?{cash_treasury_account_id:undefined,cash_treasury_account_name:undefined}:{}),requires_supplier_split:orderLines.some(l=>l.po_id===o.id && l.supplier_id && l.supplier_id!==o.supplier_id)})),orderLines,receipts,bills:bills.filter(b=>b.supplier_id===supplier.id),payments:visibleTreasuryDocuments(role,payments,accounts).map(p=>pick(p,'id payment_number party_name amount payment_date payment_method reference status po_id bill_id treasury_account_id treasury_account_name approved_by approved_at journal_id')),
-      warehouses:warehouses.filter(w=>!['vehicle','commercial_custody','quarantine'].includes(w.warehouse_type)).map(w=>pick(w,'id name warehouse_type')),
+      warehouses:warehouses.filter(w=>!['vehicle','commercial_custody','quarantine'].includes(w.warehouse_type)).map(w=>pick(w,'id name warehouse_type is_active central_inventory_pool custodian_employee_id vehicle_id')),
       accounts:accounts.filter(a=>a.is_active!==false&&canUseTreasury(role,a)).map(a=>pick(a,'id name balance account_type'))};
   }
   if(action==='saveSupplier') {
@@ -141,7 +140,18 @@ export async function supplierAction(client,user,body) {
     const email=String(form.email || '').trim();if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Enter a valid supplier email');
     const items=form.supplier_items ?? supplierItems(existing);if(!Array.isArray(items) || items.length>1000)throw Error('Choose up to 1,000 supplier items');
     const catalogue=[],seen=new Set(),products=new Map((await readRecords(s.Product,{id:{$in:items.map(r=>r?.product_id).filter(Boolean)}})).map(p=>[p.id,p]));
-    for(const row of items){if(!row || seen.has(row.product_id))throw Error('Each item may appear only once');seen.add(row.product_id);const p=products.get(row.product_id);if(!supplierMaterial(p) || (!active(p) && !supplierItems(existing).some(v=>v.product_id===p.id)))throw Error('Choose registered active items');catalogue.push({product_id:p.id,unit:stockUnit(p),unit_price:round2(numberOf(row.unit_price,'supplier unit price')),supplier_code:String(row.supplier_code || '').trim().slice(0,100)});}
+    const savedOffers = new Map(supplierItems(existing).map(offer => [offer.product_id, offer]));
+    for (const row of items) {
+      if (!row || seen.has(row.product_id)) throw Error('Each item may appear only once');
+      seen.add(row.product_id);
+      const product = products.get(row.product_id), previous = savedOffers.get(row.product_id);
+      if (!isPurchasableItem(product)) {
+        if (!previous) throw Error('Choose an active item eligible for purchasing.');
+        catalogue.push(previous);
+        continue;
+      }
+      catalogue.push({product_id:product.id,unit:stockUnit(product),unit_price:round2(numberOf(row.unit_price,'supplier unit price')),supplier_code:String(row.supplier_code || '').trim().slice(0,100)});
+    }
     const data={name,email,payment_terms_days:terms,supplier_items:catalogue,is_active:form.is_active!==false};
     for(const field of ['contact_person','phone','address','city','tax_id','category','notes'])data[field]=String(form[field] || '').trim().slice(0,field==='notes'?4000:500);
     const supplier=existing?await s.Supplier.update(existing.id,data):await s.Supplier.create({...data,supplier_number:'S-'+crypto.randomUUID().slice(0,8).toUpperCase(),supplier_request_key:key,supplier_request_payload:snapshot,balance:0});
@@ -167,16 +177,19 @@ export async function supplierAction(client,user,body) {
       if(lines.some(l=>!supplied.has(l.product_id)))throw Error('Procurement must confirm these materials in the supplier catalogue before General Manager approval.');
     }
     let total=0;
+    const finishedLines = [];
     for(const l of lines){
       const product=await s.Product.get(l.product_id),quantity=numberOf(l.quantity,'purchase quantity',true),cost=numberOf(l.unit_price,'unit price'),tax=numberOf(l.tax_rate || 0,'tax rate');
-      if(!active(product) || !inventory(product) || tax>100 || po.price_includes_vat===true&&!isStandardPurchaseRate(tax))throw Error('Review the active purchase items and tax rates before approval');
+      if(!isPurchasableItem(product) || tax>100 || po.price_includes_vat===true&&!isStandardPurchaseRate(tax))throw Error('Review the active purchase items and tax rates before approval');
       unitFactor(l.unit || stockUnit(product),stockUnit(product));
       const net=round2(quantity*cost);
       const gross=po.price_includes_vat===true?purchaseQuoteAmounts(quantity,cost,tax,true).total:round2(net+round2(net*tax/100));
       if(round2(l.total)!==gross || Number(l.received_quantity || 0)!==0)throw Error('Reconcile purchase quantities, prices and totals before approval');
+      if(isAssemblyInventoryType(product.inventory_type) && !l.finished_purchase_authorized)finishedLines.push(l.id);
       total=round2(total+gross);
     }
     if(!Number.isFinite(Number(po.total)) || round2(po.total)!==total)throw Error('Reconcile the purchase order total before approval');
+    for (const id of finishedLines) await s.PurchaseOrderLine.update(id,{finished_purchase_authorized:true});
     const order=await s.PurchaseOrder.update(po.id,{status:'approved',supplier_catalogue_review_required:false,purchase_confirmed_by:user.id,purchase_confirmed_at:new Date().toISOString()});
     await audit(svc,{action:'confirm_supplier_order',module:'procurement',entityType:'PurchaseOrder',entityId:po.id,userId:user.id,description:`Confirmed existing order ${po.po_number}`});return {order};
   }
@@ -198,18 +211,22 @@ export async function supplierAction(client,user,body) {
     const includesVat=form.price_includes_vat===true;
     if(po&&(po.price_includes_vat===true)!==includesVat)throw Error('Keep the original purchase order price basis.');
     const lines=[],products=new Map((await readRecords(s.Product,{id:{$in:form.lines.map(r=>r?.product_id).filter(Boolean)}})).map(p=>[p.id,p]));
-    const linked = new Set(supplierCatalogue(supplier,[...products.values()].map(p=>({...p,unit:stockUnit(p)}))).map(p=>p.id));
-    const unconfirmed=form.lines.filter(row=>!linked.has(row?.product_id)).map(row=>row.product_id);
-    if((form.catalogue_only || supplier.supplier_items!=null) && unconfirmed.length)throw Error('Choose goods linked to this supplier. Update Items supplied before ordering other goods.');
+    if (form.catalogue_only === true) {
+      const linked = new Set(supplierCatalogue(supplier,[...products.values()].map(purchaseProduct)).map(p=>p.id));
+      if (form.lines.some(row=>!linked.has(row?.product_id))) throw Error('Choose goods linked to this supplier. Update Items supplied before ordering other goods.');
+    }
     for(const row of form.lines){
       const p=products.get(row?.product_id);
-      if(!active(p)||!inventory(p))throw Error('Choose active inventory items; use expense requests for services');
+      if(!isPurchasableItem(p))throw Error('The selected inventory item is not eligible for purchasing.');
+      if(warehouse)requireFinishedStorage(p,warehouse);
       const quantity=round3(numberOf(row.quantity,'purchase quantity',true)),cost=round2(numberOf(row.unit_price,'unit price')),tax=numberOf(row.tax_rate || 0,'tax rate');
       if(includesVat&&!isStandardPurchaseRate(tax))throw Error('Choose standard included VAT or no VAT for each purchase item.');
       if(tax>100)throw Error('Tax rate cannot exceed 100%');
       const {tax:taxAmount,total}=purchaseQuoteAmounts(quantity,cost,tax,includesVat);
       journalCents(total);
-      lines.push({supplier_id:supplier.id,supplier_name:supplier.name,product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity,unit_price:cost,tax_rate:tax,tax_amount:taxAmount,total,received_quantity:0});
+      lines.push({supplier_id:supplier.id,supplier_name:supplier.name,product_id:p.id,product_name:p.name,unit:stockUnit(p),quantity,unit_price:cost,tax_rate:tax,tax_amount:taxAmount,total,received_quantity:0,
+        ...(isAssemblyInventoryType(p.inventory_type)?{finished_purchase_authorized:true}:{}),
+      });
     }
     const total=round2(lines.reduce((sum,l)=>sum+l.total,0)),tax=round2(lines.reduce((sum,l)=>sum+l.tax_amount,0));
     journalCents(total);
@@ -249,7 +266,7 @@ export async function supplierAction(client,user,body) {
     if(!quantity)continue;
     if(quantity>remaining)throw Error('Received quantity exceeds the remaining order quantity');
     const p=products.get(l.product_id);
-    if(!active(p) || !inventory(p))throw Error('Only active inventory items can be received into stock');
+    if(!active(p) || !supportsPurchasing(p) || isAssemblyInventoryType(p.inventory_type) && l.finished_purchase_authorized!==true && !isPurchasableItem(p))throw Error('Only active inventory items eligible for the purchase can be received into stock');
     requireFinishedStorage(p,warehouse);
     const lot=String(row.lot_number || '').trim();
     if(lot.length>80 || ((p.batch_tracking || p.expiry_tracking) && !lot))throw Error('Enter the printed batch/lot number for '+p.name);
@@ -285,7 +302,10 @@ export async function supplierAction(client,user,body) {
     await s.PurchaseOrderLine.update(r.line.id,{received_quantity:round3(Number(r.line.received_quantity || 0)+r.quantity)});
   }
   const payable=await getRuleAccount(svc,'supplier_payable');
-  const inventoryLines=await purchaseItemPostings(s,accepted.map(r=>({product_id:r.product.id,total:r.gross})),{total,fallback:()=>getRuleAccount(svc,'raw_material_inventory')});
+  const inventoryLines=await purchaseItemPostings(s,accepted.map(r=>({product_id:r.product.id,total:r.gross})),{
+    total,
+    fallback:(_field, product)=>getRuleAccount(svc,isAssemblyInventoryType(product.inventory_type)?'finished_goods_inventory':'raw_material_inventory'),
+  });
   const {journal}=await postJournal(svc,{entryDate:date,description:`Goods received ${receipt.receipt_number} - ${po.po_number}`,sourceModule:'procurement',sourceDocumentType:'GoodsReceipt',sourceDocumentId:receipt.id,userId:user.id,lines:[...inventoryLines,{account_id:payable.id,account_number:payable.account_number,account_name:payable.account_name,debit:0,credit:total,party_type:'supplier',party_id:supplier.id}]});
   await s.GoodsReceipt.update(receipt.id,{journal_id:journal.id});
   await s.Supplier.update(supplier.id,{balance:round2(Number(supplier.balance || 0)+total)});

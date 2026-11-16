@@ -31,9 +31,9 @@ export async function warehouseTransfer(context,stores,input) {
   const balances = await readRecords(stores.StockBalance,{product_id:productId,warehouse_id:fromWarehouseId});
   // Held/expired goods may move only into isolation; their QC state is preserved or tightened.
   const isolation = ['quarantine','damaged'].includes(to.warehouse_type);
-  const lots = balances.filter(row => Number(row.quantity)>0 && (isolation || (row.qc_status || 'approved') === 'approved' && (!row.expiry_date || row.expiry_date >= today)))
+  const lots = balances.filter(row => Number(row.quantity)>0 && (!row.inventory_recovery_id || row.qc_status==='approved'&&row.inventory_recovery_disposition!=='salvage') && (isolation || (row.qc_status || 'approved') === 'approved' && (!row.expiry_date || row.expiry_date >= today)))
     .sort((a,b) => String(a.expiry_date || '9999').localeCompare(String(b.expiry_date || '9999')) || a.id.localeCompare(b.id));
-  if (round(lots.reduce((sum,row) => sum+Number(row.quantity),0)) < quantity) throw Error('Insufficient eligible stock. Held or expired lots can only move into quarantine or damaged storage.');
+  if (round(lots.reduce((sum,row) => sum+Number(row.quantity),0)) < quantity) throw Error('Insufficient eligible stock. Held or expired lots can only move into quarantine or damaged storage. Recovered packaging on hold uses the recovery workspace.');
   let remaining = quantity;
   const movements = [];
   for (const lot of lots) {
@@ -45,7 +45,7 @@ export async function warehouseTransfer(context,stores,input) {
     if (!Number.isFinite(value) || value < 0 || bookValue < value) throw Error('The lot value needs reconciliation before transfer.');
     const qc = isolation && (lot.qc_status || 'approved') === 'approved' ? 'quarantine' : lot.qc_status || 'approved';
     const targetLots = await readRecords(stores.StockBalance,{product_id:productId,warehouse_id:toWarehouseId,lot_number:lot.lot_number || '',qc_status:qc});
-    const provenanceKeys=['production_order_id','batch_number','opening_batch_id','stock_origin','inventory_recovery_id'];
+    const provenanceKeys=['production_order_id','batch_number','opening_batch_id','stock_origin',...Object.keys(lot).filter(key=>key.startsWith('inventory_recovery_'))];
     const target = targetLots.find(row => (row.expiry_date || '') === (lot.expiry_date || '') && provenanceKeys.every(key=>(row[key]||'')===(lot[key]||'')));
     if (target && (!Number.isFinite(Number(target.quantity)) || Number(target.quantity) < 0 || Number(target.quantity)!==round(target.quantity) || !Number.isFinite(Number(target.total_value)) || Number(target.total_value) < 0 || Number(target.total_value)!==round(target.total_value,2) || Number(target.quantity)===0 && Number(target.total_value)!==0)) throw Error('Reconcile the destination stock balance before transferring more goods.');
     const remainingQuantity=round(Number(lot.quantity)-take),remainingValue=round(bookValue-value,2);
@@ -54,7 +54,7 @@ export async function warehouseTransfer(context,stores,input) {
     const stock = {quantity:targetQuantity,total_value:targetValue,unit_cost:targetValue/targetQuantity};
     if (target) await stores.StockBalance.update(target.id,stock);
     else await stores.StockBalance.create({...stock,product_id:productId,product_name:product.name,warehouse_id:toWarehouseId,warehouse_name:to.name,lot_number:lot.lot_number || '',expiry_date:lot.expiry_date || '',qc_status:qc,...Object.fromEntries(provenanceKeys.filter(key=>lot[key]).map(key=>[key,lot[key]]))});
-    movements.push(await stores.StockMovement.create({product_id:productId,product_name:product.name,quantity:take,source_warehouse_id:fromWarehouseId,destination_warehouse_id:toWarehouseId,movement_type:to.warehouse_type === 'quarantine' ? 'quality_quarantine' : 'warehouse_transfer',lot_number:lot.lot_number || '',expiry_date:lot.expiry_date || undefined,unit_cost:cost,total_value:value,status:'approved',movement_date:date,document_type:'WarehouseTransfer',document_id:requestKey,warehouse_transfer_payload:payload,reason,created_by:context.user.email,...(lot.production_order_id ? {production_order_id:lot.production_order_id} : {}),...(lot.batch_number ? {batch_number:lot.batch_number} : {})}));
+    movements.push(await stores.StockMovement.create({product_id:productId,product_name:product.name,quantity:take,source_warehouse_id:fromWarehouseId,destination_warehouse_id:toWarehouseId,movement_type:to.warehouse_type === 'quarantine' ? 'quality_quarantine' : 'warehouse_transfer',lot_number:lot.lot_number || '',expiry_date:lot.expiry_date || undefined,unit_cost:cost,total_value:value,status:'approved',movement_date:date,document_type:'WarehouseTransfer',document_id:requestKey,warehouse_transfer_payload:payload,reason,created_by:context.user.email,...(lot.production_order_id ? {production_order_id:lot.production_order_id} : {}),...(lot.batch_number ? {batch_number:lot.batch_number} : {}),...(lot.inventory_recovery_id?{inventory_recovery_id:lot.inventory_recovery_id,inventory_account_id:lot.inventory_recovery_account_id||undefined}:{})}));
     remaining=round(remaining-take);
   }
   await stores.AuditLog.create({action:'warehouse_transfer',module:'inventory',entity_type:'StockMovement',entity_id:movements[0].id,user_id:context.user.id,description:`Transferred ${quantity} of ${product.name} from ${from.name} to ${to.name}. Reference ${requestKey}`});

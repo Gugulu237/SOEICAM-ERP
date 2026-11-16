@@ -7,6 +7,7 @@ import {useLocaleRender} from '@/lib/localization';
 import {invokeFieldOps} from '@/lib/field-ops';
 import {businessDate} from '@/lib/business-date';
 import {roundMoney,roundQuantity} from '@/lib/inventory-audit';
+import {recordedStockQuantity,stockQuantityTotal} from '@/lib/stock-balance';
 import {physicalItemCount,itemCountJournal} from '@/lib/warehouse-item-count';
 import {COUNT_ITEM_GROUPS,stockCountGroup,warehouseCountGroup,changedCountItems} from '@/lib/stock-count-scope';
 import {sortProductRows} from '@/lib/product-sorting';
@@ -74,7 +75,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
   const items=(data?.items||[]).filter(item=>(!productId||item.id===productId)&&(activeGroup==='all'||(item.count_group||stockCountGroup(item))===activeGroup));
   const entries=items.filter(item=>counts[item.id]!==undefined&&counts[item.id]!=='').map(item=>{
     try{return {...physicalItemCount(item,stock.get(item.id)||[],counts[item.id],batches[item.id],found[item.id]),item};}
-    catch(e){const rows=stock.get(item.id)||[],book=roundQuantity(rows.reduce((sum,row)=>sum+Number(row.book_quantity),0)),quantity=Number(counts[item.id]);return {product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:book,counted_quantity:quantity,difference:roundQuantity(quantity-book),batch_rows:quantity<book?rows.filter(row=>row.book_quantity>0):rows,item,error:e.message,rows:[]};}
+    catch(e){const rows=stock.get(item.id)||[],book=stockQuantityTotal(rows.map(row=>row.book_quantity)),quantity=Number(counts[item.id]);return {product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:book,counted_quantity:quantity,difference:roundQuantity(quantity-book),batch_rows:quantity<book?rows.filter(row=>row.book_quantity>0):rows,item,error:e.message,rows:[]};}
   });
   const changes=entries.filter(entry=>entry.difference||entry.error);
   const bad=entries.some(entry=>entry.error);
@@ -122,16 +123,18 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
     {loading&&<p role="status">{ui('Loading warehouse quantities...')}</p>}
     {data&&!loading&&<div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
       {stage==='count'?<>
+        <p className="text-xs text-slate-600">{ui('System quantities for {0}. Count only stock physically held at this location.',data.warehouse.name)}</p>
         <details open={!phone} className={phone?'rounded-[22px] border bg-white p-3':'contents'}><summary className={phone?'min-h-6 cursor-pointer text-xs font-semibold':'hidden'}>{ui('Count tools')} · {data.warehouse.name}</summary><div className="space-y-3 pt-3 sm:pt-0">
         <div className="grid min-w-0 gap-2 sm:grid-cols-2"><label className="min-w-0 text-xs text-slate-600">{ui('Warehouse')}<select aria-label={ui('Adjustment warehouse')} disabled={saving||entries.length>0} value={data.warehouse.id} onChange={e=>{if(!busy.current&&!entries.length){setWarehouse(e.target.value);setGroup('');}}} className="mt-1 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">{data.warehouses.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label className="min-w-0 text-xs text-slate-600">{ui('Search items')}<Input aria-label={ui('Search count items')} placeholder={ui('Item name or code')} value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} className="mt-1 h-11 min-w-0 text-base"/></label></div>
         <div className="grid min-w-0 items-end gap-2 sm:grid-cols-2"><label className="min-w-0 text-xs text-slate-600">{ui('Item group')}<select aria-label={ui('Count item group')} disabled={saving||entries.length>0||!!productId} value={activeGroup} onChange={e=>{if(!busy.current&&!entries.length){setGroup(e.target.value);setPage(0);}}} className="mt-1 h-11 w-full min-w-0 rounded-lg border bg-white px-2 text-sm">{COUNT_ITEM_GROUPS.map(([key,label])=><option key={key} value={key}>{ui(label)}</option>)}</select></label><div className="flex min-w-0 flex-wrap items-center gap-2"><Button type="button" variant="outline" disabled={saving||syncing} onClick={()=>checker.current?.()}>{ui(syncing?'Checking stock...':'Refresh quantities')}</Button>{data.as_of&&<span className="text-[11px] text-slate-500">{ui('Stock checked at {0}',new Date(data.as_of).toLocaleTimeString(getLocale(),{hour:'2-digit',minute:'2-digit'}))}</span>}</div></div>
         <div className="flex items-center justify-between gap-2"><ProductSortSelect value={sort} onChange={value=>{setSort(value);setPage(0);}} className="min-w-0 sm:max-w-xs"/>{entries.length>0&&<Button type="button" variant="ghost" onClick={clear}>{ui('Clear counts')}</Button>}</div>
         </div></details>
         <div role="table" aria-label={ui('Physical stock count')} className={phone?"space-y-3":"overflow-hidden rounded-xl border"}>
-          <div role="row" className="hidden sm:grid grid-cols-[minmax(0,1fr)_3.5rem_5.25rem_3.5rem] items-center gap-2 bg-slate-50 p-2 text-[11px] font-semibold sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem] sm:text-sm"><span role="columnheader">{ui('Item')}</span><span role="columnheader" className="text-right">{ui('On hand')}</span><span role="columnheader">{ui('Physical quantity')}</span><span role="columnheader" className="text-right">{ui('Difference')}</span></div>
+          <div role="row" className="hidden sm:grid grid-cols-[minmax(0,1fr)_3.5rem_5.25rem_3.5rem] items-center gap-2 bg-slate-50 p-2 text-[11px] font-semibold sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem] sm:text-sm"><span role="columnheader">{ui('Item')}</span><span role="columnheader" className="text-right">{ui('System quantity')}</span><span role="columnheader">{ui('Physical count')}</span><span role="columnheader" className="text-right">{ui('Variance')}</span></div>
           {visible.map(item=>{
-            const rows=stock.get(item.id)||[],invalidBook=rows.some(row=>row.count_issue||row.requires_reconciliation||!Number.isFinite(Number(row.book_quantity)));
-            const book=invalidBook?null:roundQuantity(rows.reduce((sum,row)=>sum+Number(row.book_quantity),0)),entry=entries.find(entry=>entry.product_id===item.id);
+            const rows=stock.get(item.id)||[],missingBook=rows.some(row=>!Number.isFinite(recordedStockQuantity(row.book_quantity)));
+            const invalidBook=missingBook||rows.some(row=>row.count_issue||row.requires_reconciliation);
+            const book=missingBook?null:stockQuantityTotal(rows.map(row=>row.book_quantity)),entry=entries.find(entry=>entry.product_id===item.id);
             return <div role="row" key={item.id} className={phone?"rounded-[22px] border bg-white p-3":"border-t p-2"}>
               {phone?<MobileCountItem item={item} book={book} entry={entry} value={counts[item.id]??''} onChange={value=>changeCount(item.id,value)} disabled={saving||invalidBook}/>:<>
               <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_5.25rem_3.5rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_8rem_7rem]">
@@ -141,6 +144,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
                 <span role="cell" aria-label={ui('Difference for {0}',item.name)} className={'break-words text-right text-xs font-semibold tabular-nums sm:text-sm '+(entry?.difference<0?'text-red-700':entry?.difference>0?'text-emerald-700':'text-slate-500')}>{entry&&!entry.error?(entry.difference>0?'+':'')+formatNumber(entry.difference,3):'—'}</span>
               </div>
               </>}
+              {Number.isFinite(item.on_hand_all_locations)&&item.on_hand_all_locations!==book&&<p className="mt-1 text-xs text-slate-500">{ui('On hand across all locations: {0}',formatNumber(item.on_hand_all_locations,3)+' '+item.unit)}</p>}
               {entry?.error&&<p role="alert" className="mt-1 text-xs text-red-700">{uiMessage(entry.error)}</p>}
               {!invalidBook&&item.count_group==='finished'&&rows.some(row=>row.qc_status&&row.qc_status!=='approved'&&!row.production_order_id)&&<button type="button" className="mt-1 min-h-11 text-xs text-primary underline" onClick={()=>openDetails(item.id)}>{ui('Review sale availability')}</button>}
               {invalidBook&&<button type="button" className="mt-1 min-h-11 text-xs text-amber-800 underline" onClick={()=>openDetails(item.id)}>{ui('Review accounting correction')}</button>}
@@ -164,7 +168,7 @@ export default function StockAdjustmentDialog({open,onOpenChange,warehouseId='',
           {entry.item.count_group==='finished'&&!(stock.get(entry.product_id)||[]).length&&<div className="space-y-2 rounded-lg bg-slate-50 p-2 text-xs"><label className="flex items-start gap-2"><input type="checkbox" disabled={saving} aria-label={ui('Ready for sale: {0}',entry.item.name)} checked={found[entry.product_id]?.ready_for_sale===true} onChange={e=>setFound(previous=>({...previous,[entry.product_id]:{...previous[entry.product_id],ready_for_sale:e.target.checked,confirm_missing_expiry:false}}))}/>{ui('Ready for sale — quality verified')}</label>{found[entry.product_id]?.ready_for_sale&&!found[entry.product_id]?.expiry_date&&<label className="flex items-start gap-2"><input type="checkbox" disabled={saving} aria-label={ui('Confirm missing expiry for {0}',entry.item.name)} checked={found[entry.product_id]?.confirm_missing_expiry===true} onChange={e=>setFound(previous=>({...previous,[entry.product_id]:{...previous[entry.product_id],confirm_missing_expiry:e.target.checked}}))}/>{ui('No expiry date is available; I confirm this counted stock is fit for sale.')}</label>}</div>}
           {entry.error&&<p role="alert" className="text-xs text-red-700">{uiMessage(entry.error)}</p>}
           {entry.item.count_group==='packaging'&&!(stock.get(entry.product_id)||[]).length&&<p className="text-xs text-slate-500">{ui('No batch or expiry is needed for packaging. Quality verification still applies.')}</p>}
-          {!entry.error&&!entry.needs_batches&&!entry.needs_lot&&<p className="text-xs text-slate-600">{ui('Inventory value change')}: <strong>{formatXAF(entry.value_difference)}</strong></p>}
+          {!entry.error&&!entry.needs_batches&&!entry.needs_lot&&<p className="text-xs text-slate-600">{ui('Financial impact')}: <strong>{formatXAF(entry.value_difference)}</strong></p>}
           <button type="button" disabled={saving} className="min-h-11 text-xs text-slate-500 underline" onClick={()=>openDetails(entry.product_id)}>{ui('New lot or accounting correction')}</button>
         </section>)}
         <InventoryAdjustmentTreatment purpose={purpose} onPurpose={value=>{setPurpose(value);setCorrectionAccountId('');setCorrectionConfirmed(false);}} accountId={correctionAccountId} onAccount={value=>{setCorrectionAccountId(value);setCorrectionConfirmed(false);}} confirmed={correctionConfirmed} onConfirmed={setCorrectionConfirmed} accounts={data.correction_accounts||[]} disabled={saving} requiresOffset={requiresOffset} offsetAccount={offsetAccount} offsetAccountId={offsetAccountId} onOffsetAccount={setOffsetAccountId}/>

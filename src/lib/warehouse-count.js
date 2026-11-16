@@ -1,15 +1,7 @@
 import { countedQuantity, roundMoney, roundQuantity } from './inventory-audit.js';
+import { recordedStockQuantity as normalizeRecordedQuantity, stockQuantityTotal } from './stock-balance.js';
 
-// Older opening entries accepted arithmetic noise but stored the original
-// number. Canonicalize only positive values within a few machine ULPs of the
-// existing quantity precision; real fractional stock and residuals stay intact.
-export function normalizeRecordedQuantity(value) {
-  const number=Number(value);
-  if(!Number.isFinite(number)||number<=0)return number;
-  const rounded=roundQuantity(number);
-  const tolerance=Math.min(4*Number.EPSILON*Math.max(1,Math.abs(number)),0.000001);
-  return rounded>0&&Math.abs(number-rounded)<=tolerance?rounded:number;
-}
+export { normalizeRecordedQuantity };
 
 // Display each item once, while retaining every stock record for checked,
 // lot-specific counts. Equal lot labels are not proof of duplicate stock.
@@ -21,7 +13,7 @@ export function groupWarehouseCountRows(rows) {
     groups.get(id).rows.push(row);
   }
   return [...groups.values()].map(group=>({...group,
-    book_quantity:group.rows.every(row=>Number.isFinite(Number(row.book_quantity)))?roundQuantity(group.rows.reduce((sum,row)=>sum+Number(row.book_quantity),0)):null,
+    book_quantity:group.rows.every(row=>Number.isFinite(normalizeRecordedQuantity(row.book_quantity)))?stockQuantityTotal(group.rows.map(row=>row.book_quantity)):null,
   }));
 }
 

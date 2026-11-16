@@ -7,6 +7,7 @@ import { warehouseAdjustmentAction } from '../src/server/domain/warehouse-adjust
 import { guardMutation } from '../src/server/access.js';
 import {FEATURE_AUTHORITY} from '../src/server/domain/roles.js';
 import {physicalItemCount} from '../src/lib/warehouse-item-count.js';
+import {stockOnHandGroups} from '../src/lib/stock-on-hand.js';
 
 test('packaging physical counts post without entered lots or expiry and retry without duplicate quantities or journals',async()=>{
  const f=await setup(),s=f.entities;
@@ -20,6 +21,18 @@ test('packaging physical counts post without entered lots or expiry and retry wi
  assert.equal((await f.call(body)).reused,true);assert.equal((await s.StockBalance.filter({product_id:p.id})).length,1);assert.equal((await s.JournalEntry.list()).length,count);
  const line=await s.JournalLine.filter({journal_id:result.journal_id});assert.equal(line.reduce((sum,l)=>sum+l.debit-l.credit,0),0);
  await assert.rejects(f.call({...body,requestKey:crypto.randomUUID()}),/Stock changed/);
+});
+
+test('the count workspace compares warehouse system quantities and all-location totals with Stock on Hand',async()=>{
+ const f=await setup(),s=f.entities;
+ await s.StockBalance.create({product_id:f.product.id,warehouse_id:f.other.id,quantity:2.125,total_value:21.25,unit_cost:10,qc_status:'approved'});
+ const workspace=await f.call({action:'warehouseAdjustmentWorkspace',productId:f.product.id,itemGroup:'auto'});
+ const stock=await s.StockBalance.list(),warehouses=await s.Warehouse.list();
+ const [all]=stockOnHandGroups([f.product],stock,warehouses);
+ const [local]=stockOnHandGroups([f.product],stock,warehouses,{warehouseId:workspace.warehouse.id});
+ assert.equal(workspace.items[0].on_hand_all_locations,all.quantity);
+ assert.equal(workspace.rows.reduce((total,row)=>total+row.book_quantity,0),local.quantity);
+ assert.equal(all.quantity-local.quantity,2.125);
 });
 
 test('direct count posting is denied to non-admin principals even with elevated feature access',async()=>{
@@ -691,7 +704,7 @@ test('missing-expiry acknowledgement never clears known expiry or releases manuf
  const f=await finishedFixture(),s=f.entities;
  const balance=await s.StockBalance.create({product_id:f.product.id,warehouse_id:f.warehouse.id,quantity:14,total_value:140,unit_cost:10,lot_number:'HOLD',stock_origin:'adjustment',qc_status:mode==='rejected'?'rejected':'quarantine',expiry_date:mode==='expired'?'2020-01-01':mode==='invalid'?'2026-02-31':'',...(mode==='production'?{production_order_id:'production-1'}:{}),...(mode==='recovery'?{inventory_recovery_id:'return-1'}:{})});
  const row=(await f.workspace()).rows.find(r=>r.balance_id===balance.id);
- await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'BAD-RELEASE',reason:'Attempt to reuse acknowledgement',rows:[{balance_id:balance.id,fingerprint:row.fingerprint,counted_quantity:14,ready_for_sale:true,confirm_missing_expiry:true}]}),/verified counted stock|expiry/);
+ await assert.rejects(f.call({action:'postWarehouseAdjustment',requestKey:crypto.randomUUID(),date,reference:'BAD-RELEASE',reason:'Attempt to reuse acknowledgement',rows:[{balance_id:balance.id,fingerprint:row.fingerprint,counted_quantity:14,ready_for_sale:true,confirm_missing_expiry:true}]}),mode==='recovery'?/checked inspection workflow/:/verified counted stock|expiry/);
  assert.deepEqual(await s.StockBalance.get(balance.id),balance);assert.equal((await s.JournalEntry.list()).length,0);
  }
 });

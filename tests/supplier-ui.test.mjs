@@ -5,10 +5,10 @@ import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
 const require=createRequire(import.meta.url);
 async function ui(){
-  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {SupplierReceiveForm,SupplierPaymentForm} from './src/components/suppliers/SupplierDialogs.jsx';export const render=(props,payment=false)=>renderToStaticMarkup(React.createElement(payment?SupplierPaymentForm:SupplierReceiveForm,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,
+  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {SupplierReceiveForm,SupplierPaymentForm,SupplierOrderForm} from './src/components/suppliers/SupplierDialogs.jsx';export const render=(props,payment=false)=>renderToStaticMarkup(React.createElement(payment==='order'?SupplierOrderForm:payment?SupplierPaymentForm:SupplierReceiveForm,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,
     plugins:[{name:'supplier-ui',setup(b){
       b.onResolve({filter:/^react$/},args=>args.importer.endsWith('SupplierDialogs.jsx')?{path:'hooks',namespace:'fixture'}:undefined);
-      b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__supplierUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__supplierUI.state('form',v);`,resolveDir:process.cwd()}));
+      b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__supplierUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__supplierUI.state('form',v);export const useEffect=(fn,deps)=>globalThis.__supplierUI.effect('form',fn,deps);`,resolveDir:process.cwd()}));
       const mocks={
         '@/api/erpClient':`export const invalidateERPReads=()=>{};export const erp={functions:{invoke:(name,body)=>globalThis.__supplierUI.invoke(name,body)}};`,
         '@/components/ui/use-toast':`export const useToast=()=>({toast:v=>globalThis.__supplierUI.notifications.push(v)});`,
@@ -22,6 +22,38 @@ async function ui(){
   const mod={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,mod,mod.exports);return mod.exports.render;
 }
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.inputs=[];r.beforeRender=()=>{before();r.inputs=[];};return r;}
+test('an open purchase order refreshes master items without replacing draft lines',async()=>{
+  const render=await ui(),r=runtime(),writes=[];
+  const supplier={id:'supplier',name:'Supplier',supplier_items:[]};
+  const milk={id:'milk',name:'Milk',sku:'MILK',inventory_type:'raw_material',unit:'kg',cost:200};
+  const cup={id:'cup',name:'New cup',sku:'CUP',inventory_type:'packaging',unit:'ea',cost:30};
+  const disabled={id:'disabled',name:'Inactive carton',sku:'D',inventory_type:'packaging',is_active:false};
+  let products=[milk];
+  r.invoke=async (_name,body)=>{
+    if(body.catalogue)return {data:{supplier,products}};
+    writes.push(body);
+    return {data:{order:{id:'po'}}};
+  };
+  globalThis.__supplierUI=r;
+  const props={data:{supplier,products:[milk,disabled],warehouses:[]},onClose:()=>{},onSaved:()=>{}};
+  const paint=()=>{r.beforeRender();return render(props,'order');};
+  const button=label=>r.buttons.find(b=>b['aria-label']===label || b.label===label);
+  try{
+    assert.doesNotMatch(paint(),/Inactive carton|New cup/);
+    globalThis.window=new EventTarget();
+    await r.flush();
+    paint();button('Add Milk').onClick();
+    products=[milk,cup];
+    window.dispatchEvent(new Event('soeicam:item-catalogue-changed'));
+    await r.flush();
+    assert.match(paint(),/New cup/);
+    button('Add New cup').onClick();
+    paint();
+    await button('Save purchase order').onClick();
+    assert.deepEqual(writes[0].order.lines.map(item=>[item.product_id,item.quantity,item.unit]),[['milk',1,'kg'],['cup',1,'ea']]);
+  }finally{r.cleanup();delete globalThis.window;delete globalThis.__supplierUI;}
+});
+
 test('receiving form keeps a failed draft and retry key, then submits exact quantities and batch in place',async()=>{
   const render=await ui(),r=runtime(),calls=[];let fail=true,saved=0,closed=0;
   r.invoke=async(name,body)=>{calls.push(body);if(fail)throw Error('Connection interrupted');return {data:{receipt:{id:'receipt'}}};};globalThis.__supplierUI=r;

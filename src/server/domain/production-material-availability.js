@@ -2,6 +2,7 @@ import {isPackagingItem} from '../../lib/inventory-packaging.js';
 import { businessDate } from '../../lib/business-date.js';
 import { stockUnit, unitFactor } from '../../lib/item-units.js';
 import { MATERIAL_WAREHOUSE_TYPES } from '../../lib/production-handoff.js';
+import { recordedStockQuantity, stockLotHoldReason, stockQuantityTotal, validStockQuantity } from '../../lib/stock-balance.js';
 export { MATERIAL_WAREHOUSE_TYPES };
 
 // The same source warehouse and saleable lots must be used when materials are issued.
@@ -19,9 +20,11 @@ export function materialAvailability(recipeLines, products, balances, output, ba
   }
   const today = businessDate();
   return [...required.values()].map(row => {
-    const available = balances.filter(b => b.product_id === row.material_id && b.warehouse_id === warehouse?.id && Number(b.quantity) > 0 && (b.qc_status || 'approved') === 'approved' && (!b.expiry_date || b.expiry_date >= today)).reduce((sum, b) => sum + Number(b.quantity), 0);
+    const quantities = balances.filter(b => warehouse?.id && b.product_id === row.material_id && b.warehouse_id === warehouse.id && !stockLotHoldReason(b,today))
+      .map(b => recordedStockQuantity(b.quantity)).filter(validStockQuantity);
+    const available = stockQuantityTotal(quantities);
     const needed = Math.ceil((row.required - 1e-9) * 1000) / 1000;
-    return { ...row, required: needed, available: Math.floor((available + 1e-9) * 1000) / 1000, missing: Math.max(0, Math.ceil((needed - available - 1e-9) * 1000) / 1000), warehouse_id: warehouse?.id || '', warehouse_name: warehouse?.name || 'No raw-material warehouse' };
+    return { ...row, required: needed, available, missing: Math.max(0, Math.ceil((needed - available - 1e-9) * 1000) / 1000), warehouse_id: warehouse?.id || '', warehouse_name: warehouse?.name || 'No raw-material warehouse' };
   });
 }
 

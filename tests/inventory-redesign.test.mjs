@@ -116,7 +116,8 @@ test('packaging release requires production inspection and generic API writes ca
   await f.call({action:'receive',balanceId:id,quantity:10,reference:'RCV-001',inspectionConfirmed:true});
   await s.Employee.update('cashier',{role:'production_manager'});
   await assert.rejects(f.call({action:'release',balanceId:id,reference:'',inspectionConfirmed:true}),/evidence/);
-  await f.call({action:'release',balanceId:id,reference:'QC-001 sanitation record',inspectionConfirmed:true});assert.equal((await s.StockBalance.get(id)).qc_status,'approved');
+  await assert.rejects(f.call({action:'release',balanceId:id,reference:'QC-001 sanitation record',inspectionConfirmed:true}),/documented food-contact reuse approval/);
+  await f.call({action:'release',balanceId:id,reference:'QC-001 sanitation record',inspectionConfirmed:true,reuseApproved:true});assert.equal((await s.StockBalance.get(id)).qc_status,'approved');
   assert.equal((await f.call({action:'release',balanceId:id})).reused,true);
   const context={user:{id:'gm',role:'admin'}};
   for(const [entity,input,existing] of [['AuditLog',{action:'fermentation_notification'}],['StockBalance',{qc_status:'approved'},{inventory_recovery_id:'recovery'}],['StockMovement',{document_type:'ExpiryRecovery'}],['ProductionOrder',{fermentation_due_at:date}]])assert.throws(()=>guardMutation(context,entity,'update',input,existing),/checked/);
@@ -219,7 +220,7 @@ test('Accounting records recovery, warehouse confirms the count once, and produc
   assert.equal((await s.JournalEntry.list()).length,journals);assert.equal((await s.StockMovement.list()).length,moves);
   assert.equal((await s.AuditLog.filter({action:'receive_recovered_packaging'})).length,1);
   await s.Employee.update('cashier',{role:'production_manager',allowed_modules:['inventory','quality']});
-  await f.call({action:'release',balanceId:id,reference:'QC-PACK-001',inspectionConfirmed:true});
+  await f.call({action:'release',balanceId:id,reference:'QC-PACK-001',inspectionConfirmed:true,reuseApproved:true});
   assert.equal((await s.StockBalance.get(id)).qc_status,'approved');
 });
 
@@ -232,6 +233,6 @@ test('disabled accounting cannot read or post recovery and legacy inspected pack
   delete f.client.auth.assertModule;
   const lot=await s.StockBalance.create({product_id:f.pack.id,product_name:f.pack.name,warehouse_id:f.store.id,quantity:2,total_value:0,qc_status:'quarantine',inventory_recovery_id:'legacy-recovery'});
   await s.Employee.update('cashier',{role:'production_manager'});
-  await f.call({action:'release',balanceId:lot.id,reference:'LEGACY-QC',inspectionConfirmed:true});
+  await f.call({action:'release',balanceId:lot.id,reference:'LEGACY-QC',inspectionConfirmed:true,reuseApproved:true});
   assert.equal((await s.StockBalance.get(lot.id)).qc_status,'approved');
 });

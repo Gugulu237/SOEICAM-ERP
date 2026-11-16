@@ -78,7 +78,7 @@ test('account deletion and its tombstone roll back together on a failed delete a
   }finally{await f.db.close();}
 });
 
-test('stock entity writes cannot bypass checked quantity/value workflows, while QC metadata remains editable',async()=>{
+test('stock entity writes cannot bypass checked quantity, valuation or quality workflows',async()=>{
  const f=await environment();try{
   const s=f.stores,admin={user:{id:'gm',role:'admin',email:'gm@example.test'},role:'admin'};
   const stock={product_id:'fg',product_name:'Finished product',warehouse_id:'cold',quantity:5,unit_cost:1,total_value:5};
@@ -87,7 +87,8 @@ test('stock entity writes cannot bypass checked quantity/value workflows, while 
   const lot=await s.StockBalance.create(stock);
   for(const changes of [{quantity:6},{total_value:6},{unit_cost:2},{warehouse_id:'dry'}])await assert.rejects(f.operation(admin,'StockBalance','update',[lot.id,changes]),/checked stock workflow/);
   await assert.rejects(f.operation(admin,'StockBalance','delete',[lot.id]),/checked stock workflow/);
-  await f.operation(admin,'StockBalance','update',[lot.id,{qc_status:'quarantine'}]);assert.equal((await s.StockBalance.get(lot.id)).qc_status,'quarantine');
+  await assert.rejects(f.operation(admin,'StockBalance','update',[lot.id,{qc_status:'quarantine'}]),/checked stock workflow/);
+  assert.equal((await s.StockBalance.get(lot.id)).qc_status,lot.qc_status);
  }finally{await f.db.close();}
 });
 test('account deletion audit tombstones cannot be forged, rewritten or removed through generic record endpoints',()=>{

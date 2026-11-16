@@ -8,7 +8,6 @@ import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
 import React, { useState, useEffect } from "react";
 import { erp } from "@/api/erpClient";
-import { setLotQcStatus } from "@/lib/inventory";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
@@ -34,7 +33,7 @@ export default function BatchReleasePanel({onTrace}) {
 
   async function load() {
     setLoading(true);setError('');
-    try{const [held,movements] = await Promise.all([readAll(erp.entities.StockBalance,{qc_status:'quarantine'}),readAll(erp.entities.StockMovement,{})]);const positive=held.filter(l=>Number(l.quantity)>0);setExistingCount(positive.filter(l=>isExistingStockOrigin(stockOrigin(l,movements))).length);setLots(positive.filter(l=>!isExistingStockOrigin(stockOrigin(l,movements))));}
+    try{const [held,movements] = await Promise.all([readAll(erp.entities.StockBalance,{qc_status:'quarantine'}),readAll(erp.entities.StockMovement,{})]);const positive=held.filter(l=>Number(l.quantity)>0&&!l.inventory_recovery_id&&!l.exchange_return_record_id&&l.stock_origin!=='sale_reversal');setExistingCount(positive.filter(l=>isExistingStockOrigin(stockOrigin(l,movements))).length);setLots(positive.filter(l=>!isExistingStockOrigin(stockOrigin(l,movements))));}
     catch(e){setError(e.message);}finally{setLoading(false);}
   }
 
@@ -42,17 +41,7 @@ export default function BatchReleasePanel({onTrace}) {
     setBusy(lot.id);
     try {
       const production=lot.production_order_id?await erp.entities.ProductionOrder.get(lot.production_order_id):null;
-      if(isYogurt(production)) {
-        await invokeFieldOps({action:'releaseYogurtLot',balanceId:lot.id,status,notes:notes[lot.id] || ''});
-        toast({title:status==='approved'?ui('Batch released for sale'):ui('Batch rejected')});
-        await load();return;
-      }
-      await setLotQcStatus({ balanceId: lot.id, status, notes: notes[lot.id] || "" });
-      if (lot.production_order_id) {
-        await erp.entities.ProductionOrder.update(lot.production_order_id, {
-          status: status === "approved" ? "released" : "rejected",
-        });
-      }
+      await invokeFieldOps({action:isYogurt(production)?'releaseYogurtLot':'reviewStockLot',balanceId:lot.id,status,notes:notes[lot.id] || ''});
       toast({ title: status === "approved" ? ui("Batch released for sale") : ui("Batch rejected") });
       await load();
     } catch (e) {

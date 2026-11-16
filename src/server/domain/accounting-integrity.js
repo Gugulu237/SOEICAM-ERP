@@ -4,9 +4,10 @@ import {assertModule} from './role-catalogue.js';
 import {readRecords} from './commercial-workspace.js';
 import {journalCents,journalDate,ledgerStatuses} from './journal-validation.js';
 import {supplierPayableMismatches} from './supplier-payables.js';
+import {reconcileInventory} from './inventory-reconciliation.js';
 export async function accountingIntegrity(stores,context){
  if(requireActiveContext(context)!=='admin')throw forbidden('Only administrators can run the accounting integrity check.');assertModule({...context,role:'admin'},'accounting');
- const [accounts,journals,lines,treasury,periods,payments,allocations,invoices,bills,rules]=await Promise.all(['Account','JournalEntry','JournalLine','TreasuryAccount','AccountingPeriod','Payment','PaymentAllocation','Invoice','Bill','PostingRule'].map(n=>readRecords(stores[n])));
+ const [accounts,journals,lines,treasury,periods,payments,allocations,invoices,bills,rules,products,warehouses,balances,movements]=await Promise.all(['Account','JournalEntry','JournalLine','TreasuryAccount','AccountingPeriod','Payment','PaymentAllocation','Invoice','Bill','PostingRule','Product','Warehouse','StockBalance','StockMovement'].map(n=>readRecords(stores[n])));
  const issues=[],counts={},byAccount=new Map(accounts.map(a=>[a.id,a])),byJournal=new Map(journals.map(j=>[j.id,j])),nets=new Map(),headerLines=new Map();let totalDebit=0,totalCredit=0,invalid=false;
  const issue=(code,reference)=>{counts[code]=(counts[code]||0)+1;if(issues.length<100)issues.push({code,reference:String(reference||'')});};
  for(const line of lines){
@@ -63,6 +64,13 @@ export async function accountingIntegrity(stores,context){
  const supplier_payable_mismatches=await supplierPayableMismatches(stores);
  for(const row of supplier_payable_mismatches.mismatches)issue('supplier_payment_account_mismatch',row.payment_number||row.payment_id);
  for(const row of supplier_payable_mismatches.blocked)issue('supplier_payment_evidence_unverified',row.payment_number||row.payment_id);
+ const inventory_reconciliation=reconcileInventory({products,warehouses,balances,movements,accounts,rules,journals,lines});
+ for(const row of inventory_reconciliation.lots)issue('inventory_lot_mismatch',[row.product_name,row.warehouse_name,row.lot_number].filter(Boolean).join(' / '));
+ for(const row of inventory_reconciliation.accounts.filter(row=>row.value_difference))issue('inventory_gl_mismatch',row.account_number||row.account_id);
+ for(const row of inventory_reconciliation.references)issue('inventory_reference_issue',row.source+' '+row.id);
+ if(inventory_reconciliation.lot_difference_count)counts.inventory_lot_mismatch=inventory_reconciliation.lot_difference_count;
+ if(inventory_reconciliation.reference_issue_count)counts.inventory_reference_issue=inventory_reconciliation.reference_issue_count;
  const safe=!invalid&&Number.isSafeInteger(totalDebit)&&Number.isSafeInteger(totalCredit);
- return {checked_at:new Date().toISOString(),journal_count:journals.length,line_count:lines.length,issue_count:Object.values(counts).reduce((n,v)=>n+v,0),counts,issues,truncated:Object.values(counts).reduce((n,v)=>n+v,0)>issues.length,totals:safe?{debit:totalDebit/100,credit:totalCredit/100,difference:(totalDebit-totalCredit)/100}:null,duplicate_source_journals,supplier_payable_mismatches};
+ const issueCount=Object.values(counts).reduce((n,v)=>n+v,0);
+ return {checked_at:new Date().toISOString(),journal_count:journals.length,line_count:lines.length,issue_count:issueCount,counts,issues,truncated:issueCount>issues.length,totals:safe?{debit:totalDebit/100,credit:totalCredit/100,difference:(totalDebit-totalCredit)/100}:null,duplicate_source_journals,supplier_payable_mismatches,inventory_reconciliation};
 }

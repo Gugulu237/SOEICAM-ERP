@@ -8,6 +8,8 @@ import {supplierAction} from '../src/server/domain/supplier-workspace.js';
 import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {postJournal} from '../src/server/domain/field-ops.js';
 import {purchaseSections,purchasePath,legacySupplierPath} from '../src/lib/purchase-workspace.js';
+import {purchaseOrderItems, supplierCatalogue} from '../src/lib/supplier-catalogue.js';
+import {prepareProductDefinition} from '../src/server/domain/product-definition.js';
 
 async function setup(db){
   const f=await fixture(db),s=f.entities;
@@ -40,6 +42,48 @@ test('only administrators can read, save or receive purchases',async()=>{
   const options=await purchaseWorkspace(f.client,user,{compose:true});
   assert.equal(options.suppliers[0].name,'Supplier');
   assert.equal(options.suppliers[0].bank_account,undefined);
+});
+
+test('the purchase form lists the canonical paged register and accepts newly created unlinked items',async()=>{
+  const f=await setup(),s=f.entities;
+  // Leave the supplier offer list present, with the new products absent from it.
+  await s.Supplier.update('supplier',{supplier_items:[{product_id:f.product.id,unit:'kg',unit_price:90}]});
+  for(let index=0; index<200; index++) await s.Product.create({name:'Material '+index,inventory_type:'raw_material',is_active:true});
+  const createItem = async input => s.Product.create(await prepareProductDefinition(s,{
+    unit_of_measure:'ea',cogs_account_id:'cogs',inventory_account_id:'inventory',purchase_price:25,is_active:true,
+    ...input,
+  }));
+  const cups=await createItem({sku:'CUP-500',name:'500 g Cups',category:'Packaging',inventory_type:'packaging'});
+  const culture=await createItem({sku:'CULTURE',name:'Starter Culture',category:'Additives',inventory_type:'additive',unit_of_measure:'g'});
+  const blocked = await Promise.all([
+    s.Product.create({name:'Inactive material',inventory_type:'raw_material',is_active:false}),
+    s.Product.create({name:'Removed material',inventory_type:'raw_material',item_removed_at:date,is_active:true}),
+    s.Product.create({name:'Nonpurchasable material',inventory_type:'raw_material',is_purchasable:false,is_active:true}),
+    s.Product.create({name:'Internal finished product',inventory_type:'finished_product',is_active:true}),
+    s.Product.create({name:'Draft finished product',inventory_type:'assembly',is_purchasable:true,configuration_status:'draft',is_active:true}),
+    s.Product.create({name:'Damaged stock',inventory_type:'damaged',is_purchasable:true,is_active:true}),
+  ]);
+  const view=await purchaseWorkspace(f.client,user,{compose:true,supplierId:'supplier'});
+  const fresh=await purchaseWorkspace(f.client,user,{catalogue:true,supplierId:'supplier'});
+  assert.equal(view.products.length,203);
+  assert.deepEqual(fresh.products,view.products);
+  const choices = purchaseOrderItems(view.supplier,view.products);
+  assert.deepEqual(choices.find(item=>item.id===cups.id),{
+    ...view.products.find(item=>item.id===cups.id),supplier_code:'',supplier_price:25,has_supplier_price:false,
+  });
+  for(const product of [cups,culture]){
+    const selected=choices.find(item=>item.id===product.id);
+    for(const field of ['id','name','category','inventory_type','unit_of_measure']) assert.equal(selected[field],product[field]);
+  }
+  assert.deepEqual(supplierCatalogue(view.supplier,view.products).map(item=>[item.id,item.supplier_price]),[[f.product.id,90]]);
+  for(const product of blocked){
+    assert.equal(choices.some(item=>item.id===product.id),false);
+    await assert.rejects(f.run({...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,lines:[{product_id:product.id,quantity:1,unit_price:25}]}}),/not eligible for purchasing/);
+  }
+  const orderInput={...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,lines:[{product_id:cups.id,quantity:4,unit_price:25}]}};
+  const {order}=await f.run(orderInput);
+  const [line]=await s.PurchaseOrderLine.filter({po_id:order.id});
+  assert.deepEqual([line.product_id,line.product_name,line.unit,line.quantity,line.total],[cups.id,cups.name,'ea',4,100]);
 });
 
 test('admin draft confirmation uses authenticated attribution, becomes receivable immediately and retries once',async()=>{

@@ -1,13 +1,16 @@
 import React,{useState,useRef,useEffect} from 'react';
 import {Button} from '@/components/ui/button';
 import {ui,uiMessage} from '@/lib/i18n';
-import {formatAccountingXAF as formatXAF} from '@/lib/formatters';
+import {formatAccountingXAF as formatXAF,formatNumber} from '@/lib/formatters';
 import {accountingControlRequest} from '@/lib/accounting-controls-client';
 import SetupStockCorrection from './SetupStockCorrection';
 import AccountConsolidation from './AccountConsolidation';
 import {Link} from '@/lib/router';
 const labels={
  duplicate_source_journal:'Several posted journals use the same source document',
+ inventory_lot_mismatch:'Stock balances differ from lot movements',
+ inventory_gl_mismatch:'Inventory valuation differs from the general ledger',
+ inventory_reference_issue:'Inventory records with missing references or invalid amounts',
  supplier_payment_account_mismatch:'Supplier payment used a different payable account',supplier_payment_evidence_unverified:'Supplier payment evidence could not be verified',
  invalid_posting_rule:"Posting rule maps to an unsuitable account",orphan_line:'Journal line without its journal',posted_header_draft_line:'Draft line attached to a posted journal',missing_account:'Missing ledger account',invalid_line_amount:'Invalid journal amount',invalid_journal_date:'Invalid journal date',unbalanced_journal:'Unbalanced or incomplete posted journal',header_line_mismatch:'Journal totals differ from its lines',invalid_header_total:'Invalid recorded journal totals',duplicate_journal_number:'Duplicate journal number',account_cache_mismatch:'Stored account balance differs from the GL',treasury_missing_account:'Cash account without a GL account',duplicate_treasury_mapping:'Shared cash GL mapping',treasury_gl_mismatch:'Cash balance differs from the GL',overlapping_periods:'Overlapping accounting periods',invalid_allocation:'Invalid payment allocation',unverified_allocation:'Allocation without a matching posted payment',duplicate_allocation:'Duplicate payment allocation',payment_without_posted_journal:'Payment without a posted journal',overallocated_payment:'Allocated payment exceeds its amount',invalid_payment_amount:'Invalid posted payment amount'
 };
@@ -53,6 +56,29 @@ function SupplierPayableReview({review}) {
   </details>;
 }
 
+function InventoryReconciliation({report}) {
+  if(!report)return null;
+  return <details className="rounded-lg border p-3">
+    <summary className="cursor-pointer text-sm font-semibold">{ui('Inventory reconciliation')}</summary>
+    <p className="my-2 text-xs">{ui('Item, location and lot groups checked: {0}',report.groups_checked)}</p>
+    <ul className="space-y-1 text-xs">
+      {report.accounts.map(row=><li key={row.account_id} className="flex flex-wrap justify-between gap-2">
+        <span>{row.account_number} {row.name}</span>
+        <span>{ui('Stock')} {formatXAF(row.inventory_value)} · {ui('General ledger')} {formatXAF(row.ledger_value)} · {ui('Difference')} {formatXAF(row.value_difference)}</span>
+      </li>)}
+    </ul>
+    {report.lots.map(row=><div key={JSON.stringify([row.product_id,row.warehouse_id,row.lot_number])} className="mt-2 rounded border p-2 text-xs">
+      <strong>{[row.product_name,row.warehouse_name,row.lot_number].filter(Boolean).join(' / ')}</strong>
+      <p>{ui('Quantity difference')} {formatNumber(row.quantity_difference,3)} · {ui('Value difference')} {formatXAF(row.value_difference)}</p>
+      <details><summary className="cursor-pointer">{ui('Source references')}</summary>
+        <p className="break-all">{ui('Stock balances')} ({row.balance_count}) {row.balance_ids.join(', ')}</p>
+        <p className="break-all">{ui('Stock movements')} ({row.movement_count}) {row.movement_ids.join(', ')}</p>
+      </details>
+    </div>)}
+    {report.lot_difference_count>report.lots.length&&<p className="mt-2 text-xs">{ui('Showing the first {0} lot differences.',report.lots.length)}</p>}
+  </details>;
+}
+
 export default function AccountingIntegrityCheck({onCorrected}) {
   const [data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),flight=useRef(false);
   const [correctionOpened,setCorrectionOpened]=useState(false),[correctionExpanded,setCorrectionExpanded]=useState(false);
@@ -74,6 +100,7 @@ export default function AccountingIntegrityCheck({onCorrected}) {
       {data.issue_count>0&&<details><summary className="cursor-pointer text-sm">{ui('Review findings')}</summary><ul className="mt-2 space-y-2 text-xs">{Object.entries(data.counts).map(([code,count])=><li key={code}><strong>{ui(labels[code]||code)}: {count}</strong><p className="break-words text-slate-600">{data.issues.filter(issue=>issue.code===code).map(issue=>issue.reference).join(' · ')}</p></li>)}</ul></details>}
       <SupplierPayableReview review={data.supplier_payable_mismatches}/>
       <DuplicateSourceReview groups={data.duplicate_source_journals}/>
+      <InventoryReconciliation report={data.inventory_reconciliation}/>
     </>}
     <details id="setup-stock-corrections" open={correctionExpanded} className="border-t pt-3" onToggle={event=>{setCorrectionExpanded(event.currentTarget.open);if(event.currentTarget.open)setCorrectionOpened(true);}}>
       <summary className="cursor-pointer py-1 text-sm font-semibold">{ui('Correct setup inventory entries')}</summary>

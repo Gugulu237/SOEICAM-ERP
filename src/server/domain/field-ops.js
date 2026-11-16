@@ -2,6 +2,7 @@ import {journalCents,journalDate,checkedJournalLines,journalPayload,ledgerStatus
 import { effectiveRole, hasRoleAccess } from './roles.js';
 import { businessDate } from '../../lib/business-date.js';
 import { validPostingRuleAccount } from '../../lib/posting-rule-types.js';
+import { recordedStockQuantity, stockLotHoldReason, stockQuantityTotal, validStockQuantity } from '../../lib/stock-balance.js';
 export { effectiveRole };
 
 // Server-side engine for field operations: stock custody, field sales and cash handovers.
@@ -171,23 +172,30 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
   if(onlyAppropriated&&(!giveaway||excludeAppropriated||!preserveRecordedValue))throw appropriationError();
   const usable = all
     .filter((b) => (b.quantity || 0) > 0)
+    .filter((b) => !b.inventory_recovery_disposition || movementType==='production_issue'&&saleableOnly&&b.inventory_recovery_disposition==='reuse_review'&&b.qc_status==='approved'&&b.inventory_recovery_reuse_approval_reference)
     .filter(b=>{const appropriation=marked.get(b.id);if(!appropriation)return !onlyAppropriated;if((giveaway||restoration)&&appropriation.dispatch_id!==dispatchId)throw appropriationError();return !excludeAppropriated&&(giveaway||restoration)&&preserveRecordedValue===true;})
-    .filter((b) => !saleableOnly || ((b.qc_status || "approved") === "approved" && (!b.expiry_date || b.expiry_date >= dateStr)))
+    .filter((b) => !saleableOnly || !stockLotHoldReason(b, dateStr))
     .sort((a, b) => String(a.expiry_date || "9999-12-31").localeCompare(String(b.expiry_date || "9999-12-31")));
 
-  if (usable.some(b=>!Number.isFinite(Number(b.quantity)) || !Number.isFinite(Number(b.unit_cost || 0)) || Number(b.unit_cost || 0)<0)) throw new Error('Reconcile invalid lot quantities or costs before issuing stock');
+  if (usable.some(b=>!validStockQuantity(recordedStockQuantity(b.quantity)) || !Number.isFinite(Number(b.unit_cost || 0)) || Number(b.unit_cost || 0)<0)) throw new Error('Reconcile invalid lot quantities or costs before issuing stock');
   if (preserveRecordedValue && usable.some(b=>b.total_value==null || !['number','string'].includes(typeof b.total_value) || String(b.total_value).trim()==='' || !Number.isFinite(Number(b.total_value)) || Number(b.total_value)<0)) throw new Error('Reconcile invalid recorded lot values before issuing stock.');
 
-  const available = round3(usable.reduce((s, b) => s + Number(b.quantity || 0), 0));
+  const available = stockQuantityTotal(usable.map(b => b.quantity));
   if (available < remaining) {
     throw new Error(`Insufficient stock for ${productName || "product"}: ${available} available, ${remaining} required`);
+  }
+  const recoveryAccounts=new Set(usable.map(b=>b.inventory_recovery_account_id).filter(Boolean));
+  if(recoveryAccounts.size){
+    const product=await base44.entities.Product.get(productId);
+    if(recoveryAccounts.size!==1||!recoveryAccounts.has(product?.inventory_account_id))throw Error('Use the assembly build to consume recovered packaging with a different historical inventory account.');
   }
   for(const warehouse of new Set(usable.filter(balance=>marked.get(balance.id)).map(balance=>balance.warehouse_id)))await verifyAppropriatedCustody(base44,dispatchId,warehouse);
 
   const layers = [];
   for (const b of usable) {
     if (remaining <= 0) break;
-    const take = Math.min(round3(b.quantity), remaining);
+    const quantity = recordedStockQuantity(b.quantity);
+    const take = Math.min(round3(quantity), remaining);
     const newQty = round3(b.quantity - take);
     // Sales, material issues and transfers all release recorded carrying value.
     // Rounded or stale unit costs must never revalue the remaining stock or
@@ -210,6 +218,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       qcStatus: b.qc_status || "approved",
       ...(b.production_order_id ? { productionOrderId: b.production_order_id } : {}),
       ...(b.batch_number ? { batchNumber: b.batch_number } : {}),
+      ...(b.inventory_recovery_id?{recoveryId:b.inventory_recovery_id,inventoryAccountId:b.inventory_recovery_account_id}:{}),
       ...(appropriation?{appropriation:{...appropriation,quantity:take,value:appropriatedValue},...(restoration?{restoredValue:appropriatedValue}:{})}:{}),
     });
     remaining = round3(remaining - take);
@@ -226,6 +235,7 @@ export async function stockIssue(base44, { productId, productName, warehouseId, 
       expiry_date: l.expiryDate || undefined,
       ...(l.productionOrderId ? { production_order_id: l.productionOrderId } : {}),
       ...(l.batchNumber ? { batch_number: l.batchNumber } : {}),
+      ...(l.recoveryId?{inventory_recovery_id:l.recoveryId,inventory_account_id:l.inventoryAccountId||undefined}:{}),
       unit_cost: round2(l.unitCost),
       total_value: l.totalValue ?? round2(l.quantity * l.unitCost),
       document_type: documentType || "",

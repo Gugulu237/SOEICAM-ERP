@@ -15,6 +15,7 @@ import {salesDeliveryPoints} from './sales-delivery-points.js';
 import {principalRole} from './roles.js';
 import {cashDestinationId,cashSaleOptions} from './sale-treasury.js';
 import {centralizedInventoryPolicy,assertCentralInventory,assertCentralSalesAccess,centralEmployeeCustomers,assertCentralCustomer} from './centralized-inventory-policy.js';
+import {isPackagingItem} from '../../lib/inventory-packaging.js';
 
 export const SALES_ORDER_ACTIONS=['salesOrderWorkspace','salesOrderDeliveryPoints','salesOrderStock','recordSuppliedOrder'];
 const hash=value=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v && typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
@@ -77,15 +78,17 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
     if(!customer||customer.is_active===false||customer.customer_removed_at)throw Error('Choose an active customer.');
     if(ownIssuedStock&&centralPolicy)await assertCentralCustomer(s,employee,user,customer.id);
     const points=await salesDeliveryPoints(s,customer.id);
-    return {points:points.map(p=>({id:p.id,label:p.label,customer_reporting_point:p.customer_reporting_point===true}))};
+    const invoices=centralPolicy?await s.Invoice.filter({customer_id:customer.id,status:{$in:['posted','paid','partially_paid','overdue']}},'-invoice_date',50):[];
+    return {points:points.map(p=>({id:p.id,label:p.label,customer_reporting_point:p.customer_reporting_point===true})),...(centralPolicy?{invoices:invoices.map(i=>({id:i.id,number:i.invoice_number,date:i.invoice_date,locationId:i.location_id||''}))}:{})};
   }
   if(body.action==='salesOrderStock'){
     const sellerId=selectedSellerId(body,currentSeller,user,canChooseSeller);await resolveSeller(s,sellerId,currentSeller,currentSellerRole);
     const suppliedOn=body.date==null?date:saleDate(body.date,date);
     if(centralPolicy)await assertCentralInventory(s,suppliedOn);
-    const context=await salesStockSource(svc,companySource(body,centralPolicy),suppliedOn);
+    const context=await salesStockSource(svc,companySource(body,centralPolicy),suppliedOn,centralPolicy);
     checkSellerSource(context,sellerId,currentSeller);
-    return {source:context,products:await salesSourceProducts(svc,context,suppliedOn)};
+    const [products,items]=await Promise.all([salesSourceProducts(svc,context,suppliedOn),centralPolicy?readRecords(s.Product,{is_active:{$ne:false}}):[]]);
+    return {source:context,products,...(centralPolicy?{packaging:items.filter(p=>!p.item_removed_at&&p.configuration_status!=='draft'&&isPackagingItem(p)).map(p=>({id:p.id,name:p.name,unit:stockUnit(p)}))}:{})};
   }
   if(body.action!=='recordSuppliedOrder')throw Error('Unknown sales order action.');
   if(!/^[a-f0-9-]{36}$/i.test(body.requestKey||''))throw Error('Reopen this sale for a valid save reference.');
@@ -94,6 +97,7 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   const depositTo=cashDestinationId(body.treasuryAccountId);
   if(depositTo)input.treasuryAccountId=depositTo;
   if(body.stockReplacements!=null)input.stockReplacements=body.stockReplacements;
+  if(body.originalInvoiceId)input.originalInvoiceId=text(body.originalInvoiceId,200);
   if(body.replacementsDeclared!=null)input.replacementsDeclared=body.replacementsDeclared;
   if(body.receiptReference!=null){if(typeof body.receiptReference!=='string'||body.receiptReference.length>200||/[\x00-\x1f\x7f]/.test(body.receiptReference))throw Error('Enter a receipt reference of at most 200 characters.');input.receiptReference=body.receiptReference.trim();}
   const requestId='SSO-'+hash([user.id,body.requestKey]).slice(0,40),payload=hash(input),prior=await s.AuditLog.get(requestId);
@@ -105,14 +109,14 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   }
   companySource(input,centralPolicy);
   if(ownIssuedStock&&centralPolicy&&input.orderId)throw Error('Record a new sale under your own profile. Existing sales cannot be reassigned.');
-  if(!input.receiptReference)throw Error('Enter the reference number of the receipt issued before recording this sale.');
   const suppliedOn=saleDate(body.date,date);
   if(centralPolicy)await assertCentralInventory(s,suppliedOn);
-  const replacements=normalizeSaleReplacements(body.stockReplacements,suppliedOn);
+  const replacements=normalizeSaleReplacements(body.stockReplacements,suppliedOn,{central:!!centralPolicy});
   const replacementError=validateReplacementDeclaration(body.replacementsDeclared,replacements,body.replacementsDeclared!==undefined);
   if(replacementError)throw Error(replacementError);
   const seller=await resolveSeller(s,sellerId,currentSeller,currentSellerRole);
   const exchangeOnly=Array.isArray(body.lines)&&body.lines.length===0&&replacements.length>0;
+  if(!input.receiptReference&&!(exchangeOnly&&centralPolicy))throw Error('Enter the reference number of the receipt issued before recording this sale.');
   if(!exchangeOnly&&!['cash','credit'].includes(body.paymentType))throw Error('Choose cash or credit for this sale.');
   if(depositTo&&(exchangeOnly||body.paymentType!=='cash'))throw Error('Only cash sales use a deposit account.');
   const customer=await s.Customer.get(input.customerId);
@@ -123,8 +127,9 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   if(existing?.updated_date && input.updatedDate!==existing.updated_date)throw Error('This order changed. Reload it before recording the supply.');
   if(existing&&(await readRecords(s.StockMovement,{document_id:existing.id,status:'approved'})).some(m=>Number(m.quantity)>0&&m.source_warehouse_id&&!m.destination_warehouse_id))throw Error('This order already has goods issued. Reconcile its existing delivery before recording it.');
   if(!Array.isArray(body.lines)||!body.lines.length&&!exchangeOnly||body.lines.length>50||new Set(body.lines.map(l=>l?.product_id)).size!==body.lines.length)throw Error('Enter 1 to 50 distinct finished products.');
-  const context=await salesStockSource(svc,input,suppliedOn);
+  const context=await salesStockSource(svc,input,suppliedOn,centralPolicy);
   checkSellerSource(context,sellerId,currentSeller);
+  if(centralPolicy&&replacements.length&&!context.replacement_warehouse_id)throw Error('A central finished goods location is not configured. Please contact the administrator.');
   const products=await salesSourceProducts(svc,context,suppliedOn);
   const lines=body.lines.map(row=>{
     const p=products.find(p=>p.id===row?.product_id);
@@ -136,6 +141,7 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
     return {product_id:p.id,product_name:p.name,unit:p.unit||stockUnit(p),quantity,unit_price:price,price_includes_vat:true,discount_pct:discountPct,discount_amount:amounts.discount,tax_rate:STANDARD_VAT_RATE,tax_amount:amounts.tax,total:amounts.total};
   });
   const combined=combinedSupplyQuantities(lines,replacements);
+  if(centralPolicy&&combinedSupplyQuantities([],replacements).some(line=>line.quantity>Number(products.find(p=>p.id===line.product_id)?.replacement_available||0)))throw Error('Insufficient finished goods inventory in the central warehouse to complete this exchange.');
   if(combined.length>50||combined.some(line=>line.quantity>Number(products.find(p=>p.id===line.product_id)?.available||0)))throw Error('Sold units and free replacements exceed the available delivery stock.');
   const subtotal=round2(lines.reduce((n,l)=>n+l.total-l.tax_amount,0)),tax=round2(lines.reduce((n,l)=>n+l.tax_amount,0)),total=round2(subtotal+tax);
   if(!exchangeOnly&&total<=0||total>1e12)throw Error('Enter a positive sale total.');
@@ -147,18 +153,35 @@ export async function salesOrderAction(client,user,body,{ownIssuedStock=false}={
   const point=input.locationId?points.find(p=>p.id===input.locationId):points.length===1?points[0]:null;
   if(input.locationId&&!point)throw Error('Choose a delivery point belonging to this customer.');
   if(points.length>1&&!point)throw Error('Choose the customer branch that received this supply.');
+  const original=input.originalInvoiceId?await s.Invoice.get(input.originalInvoiceId):null;
+  if(input.originalInvoiceId&&(!centralPolicy||!replacements.length||!original||original.customer_id!==customer.id||original.location_id&&original.location_id!==point?.id||original.invoice_date>suppliedOn||!['posted','paid','partially_paid','overdue'].includes(original.status)))throw Error('Choose a valid original invoice for this customer and delivery point.');
+  if(original){
+    const [billed,recorded]=await Promise.all([readRecords(s.InvoiceLine,{invoice_id:original.id}),readRecords(s.SpoilageRecord,{exchange_packaging_original_invoice_id:original.id})]);
+    const requested=new Map();
+    for(const row of replacements)requested.set(row.product_id,round3((requested.get(row.product_id)||0)+row.quantity));
+    for(const [productId,quantity] of requested){
+      const sold=round3(billed.filter(row=>row.product_id===productId).reduce((sum,row)=>sum+Number(row.quantity||0),0));
+      const returned=round3(recorded.filter(row=>row.product_id===productId).reduce((sum,row)=>sum+Number(row.quantity||0),0));
+      if(round3(returned+quantity)>sold)throw Error('Returned units exceed the remaining quantity on the original invoice.');
+    }
+  }
   const terms=number(customer.payment_terms_days??0,'payment terms',3650);if(!Number.isInteger(terms))throw Error('Enter whole days for the customer payment terms.');
   const now=new Date().toISOString();
   const values={supply_kind:exchangeOnly?'exchange':replacements.length?'sale_exchange':'sale',stock_replacements:replacements.map(row=>({...row,product_name:products.find(p=>p.id===row.product_id)?.name,unit:products.find(p=>p.id===row.product_id)?.unit})),stock_replacements_declared:body.replacementsDeclared??replacements.length>0,price_includes_vat:true,customer_id:customer.id,customer_name:customer.business_name,location_id:point?.id||'',location_name:point?.name||'',warehouse_id:context.stock_warehouse_id,warehouse_name:context.stock_warehouse_name,dispatch_id:context.dispatch_id,vehicle_id:context.vehicle_id,vehicle_name:context.vehicle_name,driver_id:context.driver_id,driver_name:context.driver_name,salesperson_id:seller.id,salesperson_name:seller.name,route_id:context.route_id,order_date:suppliedOn,delivery_date:suppliedOn,payment_type:exchangeOnly?'exchange':body.paymentType,payment_terms_days:exchangeOnly?0:terms,notes:input.notes,receipt_reference:input.receiptReference,subtotal,discount_total:round2(lines.reduce((n,l)=>n+l.discount_amount,0)),tax_total:tax,total,status:'draft',sales_supply_source:context.source_type,sales_supply_seller_id:input.sellerId,sales_supply_seller_role:seller.role,sales_supply_stockholder_id:context.salesperson_id||'',sales_supply_stockholder_name:context.salesperson_name||'',sales_supply_recorded_by:user.id,sales_supply_recorded_at:now,sales_supply_request_id:requestId};
   if(centralPolicy)Object.assign(values,{sales_supply_centralized_inventory:{policy:centralPolicy.policy,activation_id:centralPolicy.activation_id,effective_date:centralPolicy.effective_date,employee_id:seller.id,recorded_by:user.id}});
+  if(centralPolicy&&replacements.length)Object.assign(values,{stock_replacements:values.stock_replacements.map(row=>({...row,replacement_product_name:products.find(p=>p.id===row.replacement_product_id)?.name})),exchange_packaging_original_invoice_id:original?.id||null,exchange_packaging_original_invoice_number:original?.invoice_number||null,...(exchangeOnly?{warehouse_id:context.replacement_warehouse_id,warehouse_name:context.replacement_warehouse_name}:{})});
   Object.assign(values,{sales_supply_acquisition_agent_id:customer.acquired_by_id||customer.registered_employee_id||'',sales_supply_registration_user_id:customer.registered_by_id||''});
   const order=existing?await s.SalesOrder.update(existing.id,values):await s.SalesOrder.create({...values,order_number:'SO-'+crypto.randomUUID().slice(0,12).toUpperCase(),created_by:user.id});
   if(existing)await s.SalesOrderLine.deleteMany({order_id:order.id});
   await s.SalesOrderLine.bulkCreate(lines.map(l=>({...l,order_id:order.id,sales_supply_order_id:order.id})));
   const due=new Date(Date.parse(suppliedOn+'T00:00:00Z')+(body.paymentType==='credit'?terms:0)*86400000).toISOString().slice(0,10);
   const company=invoiceCompany((await readRecords(s.CompanySettings))[0]);
+  const postReplacements=()=>postSaleReplacements(svc,user,{...order,...context,id:order.id,source_order_id:order.id,sale_number:order.order_number,transaction_date:suppliedOn,commercial_id:context.salesperson_id||seller.id,commercial_name:context.salesperson_name||seller.name,recorded_by:user.id},replacements,context,{point,original});
+  // Reserve the exact central replacement stock before a combined sale draws
+  // from the wider company pool. The enclosing transaction posts both or neither.
+  if(centralPolicy)await postReplacements();
   const result=exchangeOnly?null:await invoiceAction(client,user,{action:'createSalesInvoice',sourceType:'order',sourceId:order.id,invoiceDate:suppliedOn,dueDate:due,treasuryAccountId:depositTo,options:{...invoiceDefaults(customer,company),reference:input.receiptReference}},{ownIssuedStock});
-  await postSaleReplacements(svc,user,{...order,...context,id:order.id,source_order_id:order.id,sale_number:order.order_number,transaction_date:suppliedOn,commercial_id:context.salesperson_id||seller.id,commercial_name:context.salesperson_name||seller.name,recorded_by:user.id},replacements,context);
+  if(!centralPolicy)await postReplacements();
   if(exchangeOnly)await s.SalesOrder.update(order.id,{status:'delivered',amount_collected:0,amount_due:0,exchange_completed_at:now});
   const posted=await s.SalesOrder.get(order.id);
   await s.AuditLog.create({id:requestId,action:'record_supplied_order',module:'sales_supply',entity_type:'SalesOrder',entity_id:order.id,user_id:user.id,user_name:employee?.full_name||user.full_name||user.email,audit_source:'server_verified',sales_supply_payload:payload,sales_supply_invoice_id:result?.invoice.id||'',sales_supply_seller_id:sellerId,sales_supply_seller_name:seller.name,sales_supply_seller_role:seller.role,sales_supply_recorded_by:user.id,sales_supply_on_behalf:sellerId!==currentSellerId,description:'Recorded supplied order '+order.order_number});

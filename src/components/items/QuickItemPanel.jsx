@@ -50,8 +50,7 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
       <dl aria-label={ui("Current item summary")} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label={ui("Recorded stock on hand")} value={!inventory ? 'Not stocked' : current ? `${number(current.quantity_on_hand)} ${stockUnit}` : '—'}
           note={!inventory ? 'Service item' : stock.status === 'error' ? 'Stock unavailable' : current ? 'Across the warehouses below' : 'Loading current stock...'} />
-        <Stat label={ui("Usable stock")} value={!inventory ? 'Not stocked' : current ? `${number(current.usable_quantity)} ${stockUnit}` : '—'}
-          note={inventory ? 'Approved, in-date lots; before order reservations' : undefined} />
+        <Stat label={ui("Available in company stock")} value={!inventory ? 'Not stocked' : current ? `${number(current.available_quantity)} ${stockUnit}` : '—'} />
         {prices.isAssembly && <Stat label={ui("Current selling price")} value={money(item.configuration_status === 'draft' && item.selling_price == null ? null : prices.sellingPrice, 'Set selling price')} note={`per ${prices.sellingUnit || prices.unit}`} />}
         <Stat label={prices.isAssembly ? ui("Manufacturing cost") : ui("Current purchase cost")}
           value={money(prices.isAssembly ? prices.manufacturingCost : prices.purchasePrice, prices.isAssembly ? 'Components needed' : 'Review cost')} note={`per ${prices.isAssembly ? prices.unit : prices.purchaseUnit}`} />
@@ -99,14 +98,15 @@ export default function QuickItemPanel({ item, draft, choices = [], unitsLoading
               : <>
                 <div className="max-h-48 overflow-auto rounded-lg border border-slate-200 bg-white">
                   <table className="w-full text-left text-xs"><caption className="sr-only">{ui("Current stock by warehouse in ")}{stockUnit}</caption>
-                    <thead className="sticky top-0 bg-slate-100 text-[11px] text-slate-500"><tr><th scope="col" className="px-3 py-2 font-medium">{ui("Warehouse")}</th><th scope="col" className="px-3 py-2 text-right font-medium">{ui("On hand")}</th><th scope="col" className="px-3 py-2 text-right font-medium">{ui("Usable")}</th></tr></thead>
-                    <tbody>{current.warehouses.length ? current.warehouses.map(warehouse => <tr key={warehouse.id} className="border-t border-slate-100"><th scope="row" className="px-3 py-2 font-medium text-slate-700">{warehouse.name}</th><td className="px-3 py-2 text-right tabular-nums">{number(warehouse.quantity_on_hand)}</td><td className="px-3 py-2 text-right tabular-nums">{number(warehouse.usable_quantity)}</td></tr>) : <tr><td colSpan={3} className="px-3 py-5 text-center text-slate-500">{ui("No recorded stock at any warehouse.")}</td></tr>}</tbody>
+                    <thead className="sticky top-0 bg-slate-100 text-[11px] text-slate-500"><tr><th scope="col" className="px-3 py-2 font-medium">{ui("Warehouse")}</th><th scope="col" className="px-3 py-2 text-right font-medium">{ui("On hand")}</th><th scope="col" className="px-3 py-2 text-right font-medium">{ui("Available")}</th></tr></thead>
+                    <tbody>{current.warehouses.length ? current.warehouses.map(warehouse => <tr key={warehouse.id} className="border-t border-slate-100"><th scope="row" className="px-3 py-2 font-medium text-slate-700">{warehouse.name}</th><td className="px-3 py-2 text-right tabular-nums">{number(warehouse.quantity_on_hand)}</td><td className="px-3 py-2 text-right tabular-nums">{number(warehouse.available_quantity)}</td></tr>) : <tr><td colSpan={3} className="px-3 py-5 text-center text-slate-500">{ui("No recorded stock at any warehouse.")}</td></tr>}</tbody>
                   </table>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
                   <div><dt className="text-slate-500">{ui("Recorded reorder point")}</dt><dd className="mt-0.5 font-medium tabular-nums text-slate-700">{number(current.reorder_level)} {stockUnit}{current.below_reorder && <span className="ml-1.5 text-slate-800">{ui("Below reorder point")}</span>}</dd></div>
                   <div><dt className="text-slate-500">{ui("Recorded stock value")}</dt><dd className="mt-0.5 font-medium tabular-nums text-slate-700">{money(current.stock_value)}</dd></div>
                   <div className="col-span-2"><dt className="inline text-slate-500">{ui("Held or expired stock: ")}</dt><dd className="inline font-medium tabular-nums text-slate-700">{number(current.blocked_quantity)} {stockUnit}</dd></div>
+                  {current.reserved_quantity>0&&<div className="col-span-2"><dt className="inline text-slate-500">{ui('Reserved for delivery')}: </dt><dd className="inline font-medium tabular-nums text-slate-700">{number(current.reserved_quantity)} {stockUnit}</dd></div>}
                 </dl>
                 {asOf && !Number.isNaN(asOf.valueOf()) && <p className="mt-3 text-[10px] leading-4 text-slate-400">{ui("Stock checked ")}{asOf.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{ui(". Refresh for the latest balances.")}</p>}
               </>}

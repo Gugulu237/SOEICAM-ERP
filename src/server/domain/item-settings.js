@@ -6,6 +6,7 @@ import { isAssemblyInventoryType } from '../../lib/item-types.js';
 import { itemPurchasePrice } from '../../lib/item-quick-edit.js';
 import { validateFinishedVariantChanges } from '../../lib/product-variants.js';
 import { validateItemMetadata } from '../../lib/item-attributes.js';
+import { supportsPurchasing } from '../../lib/supplier-catalogue.js';
 
 export async function itemOptions(stores, products) {
   const [accounts, suppliers, settings, productRows] = await Promise.all([readRecords(stores.Account), readRecords(stores.Supplier), stores.CompanySettings.filter({}, 'id', 1), Promise.resolve(products)]);
@@ -34,6 +35,14 @@ export async function validateItemDefinition(stores, input, existing = null, { p
   let result = { ...input, ...validateItemMetadata(input), ...validateFinishedVariantChanges(input,existing || {}), ...validateAssemblyYieldChanges(input,existing || {}) };
   if (['quantity_on_hand', 'opening_quantity', 'on_hand'].some(key => Object.hasOwn(input, key))) throw new Error('Quantity on hand is calculated from stock receipts and adjustments');
   const type = input.inventory_type ?? existing?.inventory_type;
+  if (Object.hasOwn(input, 'is_purchasable')) {
+    if (![null, true, false].includes(input.is_purchasable) || input.is_purchasable === true && !supportsPurchasing({...existing, ...input, inventory_type:type})) {
+      throw new Error('Choose a valid purchasing status for this item.');
+    }
+  } else if (existing && isAssemblyInventoryType(type) && !isAssemblyInventoryType(existing.inventory_type)) {
+    // A material's purchasing setting does not authorize buying the new assembly.
+    result.is_purchasable = null;
+  }
   if (!isAssemblyInventoryType(type)) {
     if (input.selling_price!=null && Number(input.selling_price)!==0) throw new Error('Only finished products carry a selling price');
     result.selling_price=null;

@@ -40,6 +40,13 @@ test('the earliest usable expiry controls product order and decimal quantities r
  const groups=group([lot('milk',{quantity:0.1}),lot('milk2',{quantity:0.2}),lot('yogurt',{product_id:'yogurt',expiry_date:'2026-11-02'})]);
  assert.equal(groups[0].product.id,'yogurt');assert.equal(groups[1].quantity,0.3);assert.equal(groups[1].available,0.3);
 });
+test('held and reserved lots remain physically on hand while neither is available for a new sale',()=>{
+ const warehouseRows=[...warehouses,{id:'awaiting',name:'Pending delivery',warehouse_type:'field_delivery_pending'},{id:'damaged',name:'Damaged',warehouse_type:'damaged'}];
+ const rows=[lot('fresh'),lot('reserved',{warehouse_id:'awaiting',quantity:3}),lot('broken',{warehouse_id:'damaged',quantity:2}),lot('bad-expiry',{expiry_date:'2026-11-31',quantity:1})];
+ const [milk]=stockOnHandGroups(products,rows,warehouseRows,{date:'2026-11-01'});
+ assert.deepEqual([milk.quantity,milk.available,milk.reservedQuantity,milk.blockedQuantity],[16,10,3,3]);
+ assert.equal(finishedStockForSale(products,rows,'cold','2026-11-01')[0].available,10);
+});
 test('searching a later batch cannot mark it Send first while an earlier available lot is hidden',()=>{
  const balances=[lot('later',{expiry_date:'2026-11-15'}),lot('first',{expiry_date:'2026-11-02'}),lot('vehicle',{warehouse_id:'truck',expiry_date:'2026-11-01'})];
  const [filtered]=group(balances,{search:'B-later'});assert.equal(filtered.quantity,10);assert.equal(filtered.nextExpiry,null);

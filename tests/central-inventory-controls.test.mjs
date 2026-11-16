@@ -4,6 +4,7 @@ import {fixture,user,date} from './helpers/cashier.mjs';
 import {guardMutation} from '../src/server/access.js';
 import {employeeStockAction} from '../src/server/domain/employee-stock.js';
 import {inventoryOverview} from '../src/server/domain/inventory-overview.js';
+import {itemStockSummary} from '../src/server/domain/item-stock-summary.js';
 import {distributionControlAction} from '../src/server/domain/distribution-control.js';
 import {dispatchAction} from '../src/server/domain/dispatch-operations.js';
 import {finishedStorageAllowed,finishedStockOutsideColdRoom} from '../src/lib/finished-product-storage.js';
@@ -34,6 +35,10 @@ test('a profile and the Inventory overview agree on central company quantities w
  assert.equal(overview.centralized_inventory.enabled,true);
  assert.equal(overview.balances.reduce((sum,row)=>sum+row.quantity,0),9);
  assert.ok(overview.balances.every(row=>!('unit_cost'in row)&&!('total_value'in row)));
+ const summary=await itemStockSummary(context,f.s,'product-a');
+ assert.equal(summary.quantity_on_hand,9);assert.equal(summary.available_quantity,9);assert.equal(summary.stock_value,null);
+ assert.ok(summary.warehouses.every(row=>row.stock_value===null));
+ assert.ok(!JSON.stringify(summary).includes('foreign-custody'));
  assert.deepEqual(f.rows,before);
  await assert.rejects(employeeStockAction(f.client,user,{action:'employeeStockSnapshot',employeeId:'other'}),/only your own/);
 });

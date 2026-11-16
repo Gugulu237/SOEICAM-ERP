@@ -5,7 +5,16 @@ import {FACTORY_SALES_LOCATION_TYPES,finishedStockForSale,companySalesWarehouse}
 import {businessDate} from '../../lib/business-date.js';
 import {stockUnit} from '../../lib/item-units.js';
 
-export async function salesStockSource(svc,input,date=businessDate()){
+export function centralReplacementWarehouse(warehouses,policy){
+  const eligible=warehouses.filter(companySalesWarehouse);
+  const designated=eligible.filter(w=>w.warehouse_type==='cold_room'&&w.central_finished_goods===true);
+  const coldRooms=eligible.filter(w=>w.warehouse_type==='cold_room');
+  if(designated.length===1)return designated[0];
+  if(designated.length>1||coldRooms.length>1)return null;
+  return coldRooms[0]||eligible.find(w=>w.id===policy.central_warehouse_id&&w.central_inventory_pool===true)||null;
+}
+
+export async function salesStockSource(svc,input,date=businessDate(),centralPolicy=null){
   const s=svc.entities;
   if(input.sourceType==='issued'){
     const run=typeof input.dispatchId==='string'?await s.Dispatch.get(input.dispatchId):null;
@@ -18,8 +27,9 @@ export async function salesStockSource(svc,input,date=businessDate()){
   if(input.sourceType==='company'){
     if(input.dispatchId||input.warehouseId)throw Error('Company stock is selected automatically. Do not attach an issued load or individual location.');
     const warehouses=(await readRecords(s.Warehouse)).filter(companySalesWarehouse);
-    if(!warehouses.length)throw Error('No active company stock location is configured.');
-    return {source_type:'company',stock_warehouse_ids:warehouses.map(w=>w.id),stock_warehouse_id:'',stock_warehouse_name:'Company stock',dispatch_id:'',driver_id:'',driver_name:'',vehicle_id:'',vehicle_name:'',route_id:'',salesperson_id:'',salesperson_name:''};
+    if(!warehouses.length)throw Error('An inventory location is not configured. Please contact the administrator.');
+    const replacement=centralPolicy?centralReplacementWarehouse(warehouses,centralPolicy):null;
+    return {source_type:'company',stock_warehouse_ids:warehouses.map(w=>w.id),stock_warehouse_id:'',stock_warehouse_name:'Company stock',dispatch_id:'',driver_id:'',driver_name:'',vehicle_id:'',vehicle_name:'',route_id:'',salesperson_id:'',salesperson_name:'',...(centralPolicy?{central_exchange:true,replacement_warehouse_id:replacement?.id||null,replacement_warehouse_name:replacement?.name||null}:{})};
   }
   if(input.sourceType!=='warehouse')throw Error('Choose issued stock or the main finished-goods warehouse.');
   if(input.dispatchId)throw Error('A direct warehouse sale cannot use an issued load.');
@@ -31,10 +41,12 @@ export async function salesStockSource(svc,input,date=businessDate()){
 export async function salesSourceProducts(svc,context,date=businessDate()){
   const balances=await readRecords(svc.entities.StockBalance,{warehouse_id:context.source_type==='company'?{$in:context.stock_warehouse_ids}:context.stock_warehouse_id});
   const products=await readRecords(svc.entities.Product,{inventory_type:{$in:['assembly','finished_product']},is_active:{$ne:false}});
-  let available=finishedStockForSale(products,balances,context.source_type==='company'?context.stock_warehouse_ids:context.stock_warehouse_id,date>businessDate()?date:businessDate(),{includeUnavailable:true});
+  const effectiveDate=date>businessDate()?date:businessDate();
+  let available=finishedStockForSale(products,balances,context.source_type==='company'?context.stock_warehouse_ids:context.stock_warehouse_id,effectiveDate,{includeUnavailable:true});
+  const replacementAvailable=new Map(context.replacement_warehouse_id?finishedStockForSale(products,balances,context.replacement_warehouse_id,effectiveDate).map(p=>[p.id,p.available]):[]);
   if(context.dispatch_id){
     const manifest=await runManifest(svc,context.dispatch_id,context.stock_warehouse_id);
     available=available.map(p=>({...p,available:Math.min(p.available,Math.max(0,manifest.get(p.id)||0)),unavailable_reason:p.unavailable_reason||(!(manifest.get(p.id)>0)?'No saleable stock at this source':'')}));
   }
-  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:STANDARD_VAT_RATE,available:p.available,unavailable_reason:p.unavailable_reason}));
+  return available.map(p=>({id:p.id,name:p.name,sku:p.sku,size:p.size,flavor:p.flavor,product_family:p.product_family,category:p.category,inventory_type:p.inventory_type,image_url:p.image_url,unit:stockUnit(p),selling_price:p.selling_price,tax_rate:STANDARD_VAT_RATE,available:p.available,unavailable_reason:p.unavailable_reason,...(context.central_exchange?{replacement_available:replacementAvailable.get(p.id)||0}:{})}));
 }

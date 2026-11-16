@@ -7,7 +7,51 @@ import { Label } from '@/components/ui/label';
 import SaleProductPicker from '@/components/sales/SaleProductPicker';
 import MobileInfo from '@/components/shared/MobileInfo';
 
-export default function SaleReplacements({ rows = [], stock, lines, date, disabled, onChange, declared, onDeclare, onRefresh }) {
+export default function SaleReplacements(props) {
+  return props.central?<CentralReplacements {...props}/>:<LegacyReplacements {...props}/>;
+}
+
+function CentralReplacements({rows=[],stock,date,disabled,onChange,declared,onDeclare,packaging=[],locationConfigured}){
+  const selectClass='mt-1 min-h-11 w-full min-w-0 rounded-md border bg-white px-2 text-sm';
+  const update=(index,changes)=>onChange(rows.map((row,i)=>i===index?{...row,...changes}:row));
+  const add=()=>onChange([...rows,{product_id:'',quantity:'1',replacement_product_id:'',replacement_quantity:'1',reason:'damaged',expiry_date:'',lot_number:'',recovered_packaging:[]}]);
+  return <section aria-label={ui('Stock replacements')} className="min-w-0 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+    <h3 className="flex gap-2 text-sm font-semibold"><RotateCcw size={17} aria-hidden="true"/>{ui('Product exchanges')}</h3>
+    <div role="group" aria-label={ui('Spoilage replacement answer')} className="grid grid-cols-2 gap-2">{[[false,'No replacements'],[true,'Yes, goods replaced']].map(([value,label])=><Button key={label} type="button" variant={declared===value?'default':'outline'} className="min-h-11 whitespace-normal" aria-pressed={declared===value} disabled={disabled} onClick={()=>{onDeclare(value);if(!value)onChange([]);else if(!rows.length)add();}}>{ui(label)}</Button>)}</div>
+    {declared===true&&<>{locationConfigured===false&&<p role="alert" className="text-sm text-red-700">{ui('A central finished goods location is not configured. Please contact the administrator.')}</p>}
+      {rows.map((row,index)=>{
+        const recovered=row.recovered_packaging||[];
+        const editPackaging=(position,field,value)=>update(index,{recovered_packaging:recovered.map((part,i)=>i===position?{...part,[field]:value}:part)});
+        return <fieldset key={index} disabled={disabled} className="min-w-0 space-y-3 rounded-lg border bg-white p-3"><legend className="px-1 text-xs font-semibold">{ui('Replacement {0}',index+1)}</legend>
+          <div className="grid gap-2 sm:grid-cols-[2fr_1fr]">
+            <label className="min-w-0 text-xs">{ui('Returned product')}<select className={selectClass} value={row.product_id} onChange={e=>update(index,{product_id:e.target.value,recovered_packaging:[]})}><option value="">{ui('Choose product')}</option>{stock.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
+            <label className="text-xs">{ui('Returned quantity')}<Input type="number" min="0.001" step="0.001" inputMode="decimal" className="mt-1 min-h-11" value={row.quantity} onChange={e=>update(index,{quantity:e.target.value})}/></label>
+            <label className="min-w-0 text-xs">{ui('Replacement product')}<select className={selectClass} value={row.replacement_product_id??row.product_id} onChange={e=>update(index,{replacement_product_id:e.target.value})}><option value="">{ui('Choose product')}</option>{stock.filter(p=>p.replacement_available>0||p.id===(row.replacement_product_id??row.product_id)).map(p=><option value={p.id} key={p.id}>{p.name} ({p.replacement_available||0} {ui('available')})</option>)}</select></label>
+            <label className="text-xs">{ui('Units replaced')}<Input type="number" min="0.001" step="0.001" inputMode="decimal" className="mt-1 min-h-11" value={row.replacement_quantity??row.quantity} onChange={e=>update(index,{replacement_quantity:e.target.value})}/></label>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="text-xs">{ui('Condition')}<select className={selectClass} value={row.reason} onChange={e=>update(index,{reason:e.target.value})}><option value="expired">{ui('Expired')}</option><option value="damaged">{ui('Damaged')}</option></select></label>
+            <label className="text-xs">{ui(row.reason==='expired'?'Printed expiry date *':'Printed expiry date')}<Input type="date" className="mt-1 min-h-11 min-w-0" max={date} value={row.expiry_date} onChange={e=>update(index,{expiry_date:e.target.value})}/></label>
+            <label className="text-xs">{ui('Batch / lot (optional)')}<Input className="mt-1 min-h-11" maxLength={200} value={row.lot_number} onChange={e=>update(index,{lot_number:e.target.value})}/></label>
+          </div>
+          <div className="space-y-2 rounded-lg bg-muted/60 p-2"><p className="text-xs font-semibold">{ui('Packaging physically recovered')}</p>
+            {recovered.map((part,i)=><div key={i} className="grid gap-2 sm:grid-cols-2">
+              <label className="min-w-0 text-xs">{ui('Packaging item')}<select className={selectClass} value={part.product_id} onChange={e=>editPackaging(i,'product_id',e.target.value)}><option value="">{ui('Choose packaging')}</option>{packaging.map(p=><option value={p.id} key={p.id}>{p.name} ({p.unit})</option>)}</select></label>
+              <label className="text-xs">{ui('Quantity recovered')}<Input type="number" min="0.001" step="0.001" inputMode="decimal" className="mt-1 min-h-11" value={part.quantity} onChange={e=>editPackaging(i,'quantity',e.target.value)}/></label>
+              <label className="text-xs">{ui('Intended use')}<select className={selectClass} value={part.disposition} onChange={e=>editPackaging(i,'disposition',e.target.value)}><option value="salvage">{ui('Recycling / salvage')}</option><option value="reuse_review">{ui('Review for approved reuse')}</option></select></label>
+              <Button type="button" variant="ghost" className="self-end" onClick={()=>update(index,{recovered_packaging:recovered.filter((_,position)=>position!==i)})}>{ui('Remove packaging')}</Button>
+            </div>)}
+            <Button type="button" variant="outline" disabled={recovered.length>=20||!packaging.length} onClick={()=>update(index,{recovered_packaging:[...recovered,{product_id:'',quantity:'1',disposition:'salvage'}]})}>{ui('Add packaging')}</Button>
+          </div>
+          <Button type="button" variant="ghost" aria-label={ui('Remove replacement {0}',index+1)} onClick={()=>onChange(rows.filter((_,i)=>i!==index))}><Trash2 size={17} className="mr-2"/>{ui('Remove')}</Button>
+        </fieldset>;
+      })}
+      <Button type="button" variant="outline" className="min-h-11 w-full" disabled={disabled||rows.length>=50} onClick={add}><Plus size={16} className="mr-2"/>{ui('Add exchange')}</Button>
+    </>}
+  </section>;
+}
+
+function LegacyReplacements({ rows = [], stock, lines, date, disabled, onChange, declared, onDeclare, onRefresh }) {
   const [localAnswer,setLocalAnswer]=useState(rows.length?true:null),[picker,setPicker]=useState(false);
   const answer=declared===undefined?localAnswer:declared;
   const choose=value=>{setLocalAnswer(value);onDeclare?.(value);if(!value)onChange([]);};

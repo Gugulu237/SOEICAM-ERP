@@ -11,6 +11,7 @@ import {accountingIntegrity} from '../src/server/domain/accounting-integrity.js'
 import {purchaseOrderHtml,purchaseOrderEmail,supplierBillHtml} from '../src/lib/supplier-documents.js';
 import {purchaseQuoteAmounts,purchaseReceiptAmounts} from '../src/lib/purchase-vat.js';
 import {STANDARD_VAT_RATE} from '../src/lib/sale-vat.js';
+import {prepareProductDefinition} from '../src/server/domain/product-definition.js';
 
 async function setup(db){
   const f=await fixture(db),s=f.entities;
@@ -125,6 +126,33 @@ test('orders are single-supplier, server totalled and immediately ready to recei
   assert.equal(first.order.approved_by,undefined);
   await assert.rejects(f.run({...f.body,orderId:first.order.id}),/Only a draft/);
   assert.equal((await s.GoodsReceipt.list()).length,0);
+});
+
+test('an explicitly purchasable finished product posts to finished inventory and preserves approved receipt eligibility',async()=>{
+  const f=await setup(),s=f.entities;
+  const product=await s.Product.get('product-a');
+  const changes=await prepareProductDefinition(s,{is_purchasable:true},product);
+  await s.Product.update(product.id,changes);
+  const warehouse=await s.Warehouse.create({name:'Central stock',warehouse_type:'general',central_inventory_pool:true,is_active:true});
+  const view=await purchaseWorkspace(f.client,user,{compose:true,supplierId:'supplier'});
+  assert.equal(view.products.find(item=>item.id===product.id).is_purchasable,true);
+  assert.equal(view.warehouses.find(location=>location.id===warehouse.id).central_inventory_pool,true);
+
+  const body={...f.body,order:{...f.body.order,warehouse_id:warehouse.id,lines:[{product_id:product.id,quantity:2,unit_price:500}]}};
+  await assert.rejects(f.run({...body,order:{...body.order,warehouse_id:f.warehouse.id}}),/Cold Room/);
+  const {order}=await f.run(body);
+  const [line]=await s.PurchaseOrderLine.filter({po_id:order.id});
+  await s.Product.update(product.id,{is_purchasable:false});
+  assert.equal((await purchaseWorkspace(f.client,user,{compose:true,supplierId:'supplier'})).products.some(item=>item.id===product.id),false);
+  assert.equal((await purchaseWorkspace(f.client,user,{orderId:order.id})).products.some(item=>item.id===product.id),true);
+  const result=await f.run({action:'receiveSupplierOrder',orderId:order.id,requestKey:crypto.randomUUID(),date,warehouseId:warehouse.id,lines:[{po_line_id:line.id,quantity:2}]});
+  assert.equal(result.bill.total,1000);
+  const [movement]=await s.StockMovement.filter({product_id:product.id});
+  assert.deepEqual([movement.destination_warehouse_id,movement.quantity,movement.total_value],[warehouse.id,2,1000]);
+  const postings=await s.JournalLine.list();
+  assert.equal(postings.find(entry=>entry.account_id==='inventory').debit,1000);
+  assert.equal(postings.find(entry=>entry.account_id==='payable').credit,1000);
+  assert.equal(postings.some(entry=>entry.account_id===f.inv.id),false);
 });
 
 test('partial receipts create exactly one inventory/AP journal and bill, reject overreceipt, and finish cumulatively',async()=>{

@@ -1,6 +1,7 @@
 import {countedQuantity,roundMoney,roundQuantity} from './inventory-audit.js';
 import {normalizeRecordedQuantity,warehouseCountState,warehouseCountVariance} from './warehouse-count.js';
 import {isPackagingItem} from './inventory-packaging.js';
+import {stockQuantityTotal} from './stock-balance.js';
 
 // A shortage reduces existing valuation layers in the same FEFO order as stock
 // issues. This is an allocation of an item count, not a claim that each lot was
@@ -11,7 +12,7 @@ export function physicalItemCount(item,stockRows,value,batchCounts={},found={}) 
   // the same narrow normalization as the stock snapshot without changing proof.
   stockRows=stockRows.map(row=>({...row,book_quantity:normalizeRecordedQuantity(row.book_quantity)}));
   if(stockRows.some(row=>!Number.isFinite(Number(row.book_quantity))))throw Error('Recorded stock needs an accounting correction before counting.');
-  const book=roundQuantity(stockRows.reduce((sum,row)=>sum+Number(row.book_quantity),0)),difference=roundQuantity(quantity-book);
+  const book=stockQuantityTotal(stockRows.map(row=>row.book_quantity)),difference=roundQuantity(quantity-book);
   const base={product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:book,counted_quantity:quantity,difference,rows:[],value_difference:0};
   if(!difference)return base;
   for(const row of stockRows){
@@ -95,8 +96,8 @@ export function verifyItemCountTotals(itemCounts,inputs,balances,snapshotFor){
     for(const balance of current){
       if(item.snapshots.find(row=>row?.balance_id===balance.id)?.fingerprint!==currentSnapshots.get(balance.id).fingerprint)throw Error('Stock changed since this item count. Reload quantities and count again.');
     }
-    if(current.some(row=>!Number.isFinite(Number(row.quantity))))throw Error('Recorded stock needs an accounting correction before counting.');
-    const book=roundQuantity(current.reduce((sum,row)=>sum+normalizeRecordedQuantity(row.quantity),0));
+    if(current.some(row=>!Number.isFinite(normalizeRecordedQuantity(row.quantity))))throw Error('Recorded stock needs an accounting correction before counting.');
+    const book=stockQuantityTotal(current.map(row=>row.quantity));
     let after=book;
     for(const input of inputs){
       const balance=input?.balance_id?balances.find(row=>row.id===input.balance_id):null;

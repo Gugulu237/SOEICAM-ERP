@@ -41,6 +41,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const [source,setSource]=useState(''),[stockResult,setStockResult]=useState(null),[sourceLoading,setSourceLoading]=useState(false),[sourceError,setSourceError]=useState(''),[stockRetry,setStockRetry]=useState(0);
   const [form,setForm]=useState({customer_id:'',location_id:'',payment_type:'cash',notes:'',receipt_reference:'',date:today,seller_id:'',replacements_declared:null}),[lines,setLines]=useState([]),[points,setPoints]=useState([]),[pointsError,setPointsError]=useState(''),[pointsLoading,setPointsLoading]=useState(false);
   const [replacements,setReplacements]=useState([]);
+  const [originalInvoices,setOriginalInvoices]=useState([]);
   const [pointsCustomerId,setPointsCustomerId]=useState(''),[pointsRetry,setPointsRetry]=useState(0);
   const [saving,setSaving]=useState(false),[saveError,setSaveError]=useState('');
   const [step,setStep]=useState(0),[pickerOpen,setPickerOpen]=useState(false),[sourcePickerOpen,setSourcePickerOpen]=useState(false);
@@ -51,6 +52,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const canChooseSeller=catalogue?.canChooseSeller===true&&(!ownIssuedStock||central);
   const stockKey=JSON.stringify([source,form.date,canChooseSeller?form.seller_id:""]);
   const sourceData=stockResult?.key===stockKey?stockResult.data:null;
+  const centralExchange=sourceData?.source?.central_exchange===true;
   useEffect(()=>{
     let active=true;setLoading(true);setLoadError('');
     Promise.all([call({action:'salesOrderWorkspace'}),id?Promise.all([erp.entities.SalesOrder.get(id),readAll(erp.entities.SalesOrderLine,{order_id:id})]):null])
@@ -86,11 +88,11 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     return()=>{active=false;stop();};
   },[source,locked,stockRetry,form.date,canChooseSeller,form.seller_id,stockKey]);
   useEffect(()=>{
-    let active=true;setPoints([]);setPointsCustomerId('');setPointsError('');setPointsLoading(false);
+    let active=true;setPoints([]);setOriginalInvoices([]);setPointsCustomerId('');setPointsError('');setPointsLoading(false);
     if(!form.customer_id||locked)return()=>{active=false;};
     setPointsLoading(true);
     call({action:'salesOrderDeliveryPoints',customerId:form.customer_id})
-      .then(data=>{if(active){setPoints(data.points);setPointsCustomerId(form.customer_id);if(data.points.length===1)setForm(f=>f.customer_id===form.customer_id&&!f.location_id?{...f,location_id:data.points[0].id}:f);}}).catch(e=>{if(active)setPointsError(e.message);}).finally(()=>{if(active)setPointsLoading(false);});
+      .then(data=>{if(active){setPoints(data.points);setOriginalInvoices(data.invoices||[]);setPointsCustomerId(form.customer_id);if(data.points.length===1)setForm(f=>f.customer_id===form.customer_id&&!f.location_id?{...f,location_id:data.points[0].id}:f);}}).catch(e=>{if(active)setPointsError(e.message);}).finally(()=>{if(active)setPointsLoading(false);});
     return()=>{active=false;};
   },[form.customer_id,locked,pointsRetry]);
   const products=sourceData?.products||[],customer=catalogue?.customers.find(c=>c.id===form.customer_id);
@@ -100,6 +102,13 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     return {...line,pricing_error:null,tax_rate:STANDARD_VAT_RATE,price_includes_vat:true,discount_amount:amounts.discount,tax_amount:amounts.tax,total:amounts.total};
   }),[lines,locked]);
   const exchangeOnly=!lines.length&&replacements.length>0;
+  const receiptRequired=!exchangeOnly||!centralExchange;
+  const exchangeControls={central:centralExchange,packaging:sourceData?.packaging,locationConfigured:!!sourceData?.source?.replacement_warehouse_id};
+  const originalInvoiceField=centralExchange&&replacements.length>0&&<label className="block space-y-1 text-sm">{ui('Original invoice (optional)')}
+    <select className={selectClass} value={form.original_invoice_id||''} onChange={event=>setForm(f=>({...f,original_invoice_id:event.target.value}))}>
+      <option value="">{ui('No linked invoice')}</option>{originalInvoices.filter(i=>i.date<=form.date&&(!i.locationId||i.locationId===form.location_id)).map(i=><option key={i.id} value={i.id}>{i.number} · {i.date}</option>)}
+    </select>
+  </label>;
   const cashAccountId=form.cash_account_id||catalogue?.defaultCashAccountId||'';
   const isCash=!exchangeOnly&&form.payment_type==='cash';
   const missingCashAccount=isCash&&catalogue?.cashAccounts&&!catalogue.cashAccounts.some(account=>account.id===cashAccountId);
@@ -134,10 +143,11 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     if(!calculated.length&&!exchangeOnly)return 'Add at least one product to sell or replace before continuing.';
     const ids=new Set();
     for(const line of calculated){const p=products.find(p=>p.id===line.product_id),qty=Number(line.quantity);if(line.pricing_error||!p||!(qty>0)||!Number.isFinite(qty)||qty>p.available||ids.has(line.product_id))return 'Review product quantities and available stock.';ids.add(line.product_id);}
-    const exchangeError=validateReplacementDeclaration(form.replacements_declared,replacements)||validateSaleReplacements({lines:calculated,stock_replacements:replacements,transaction_date:form.date},products.map(p=>({...p,quantity:p.available})));
+    if(centralExchange&&replacements.length&&!exchangeControls.locationConfigured)return 'A central finished goods location is not configured. Please contact the administrator.';
+    const exchangeError=validateReplacementDeclaration(form.replacements_declared,replacements)||validateSaleReplacements({lines:calculated,stock_replacements:replacements,transaction_date:form.date},products.map(p=>({...p,quantity:p.available})),{central:centralExchange});
     if(exchangeError)return exchangeError;
     if(!exchangeOnly&&totals.total<=0)return 'Enter a positive sale total.';
-    if(index>=2&&!form.receipt_reference.trim())return 'Enter the reference number of the receipt issued before recording this sale.';
+    if(index>=2&&receiptRequired&&!form.receipt_reference.trim())return 'Enter the reference number of the receipt issued before recording this sale.';
     if(index>=2&&missingCashAccount)return 'Choose a deposit account';
     return '';
   }
@@ -159,7 +169,8 @@ export default function SalesOrderForm({ownIssuedStock=false}){
     for(const line of calculated){const p=products.find(p=>p.id===line.product_id),q=Number(line.quantity);if(!p||!Number.isFinite(q)||q<=0||q>p.available||ids.has(line.product_id)){setSaveError(ui('Choose distinct finished products and quantities available at this source.'));return;}ids.add(line.product_id);}
     busy.current=true;setSaving(true);setSaveError('');
     try{
-      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{}),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,...(isCash&&cashAccountId?{treasuryAccountId:cashAccountId}:{}),replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
+      const selectedInvoice=originalInvoices.find(i=>i.id===form.original_invoice_id&&i.date<=form.date&&(!i.locationId||i.locationId===form.location_id));
+      const result=await call({action:'recordSuppliedOrder',requestKey:requestKey.current,orderId:id||undefined,updatedDate:order?.updated_date,...sourceInput(source),...(canChooseSeller?{sellerId:form.seller_id}:{}),customerId:form.customer_id,locationId:form.location_id,date:form.date,receiptReference:form.receipt_reference.trim(),paymentType:exchangeOnly?'exchange':form.payment_type,...(isCash&&cashAccountId?{treasuryAccountId:cashAccountId}:{}),...(centralExchange&&replacements.length&&selectedInvoice?{originalInvoiceId:selectedInvoice.id}:{}),replacementsDeclared:form.replacements_declared,stockReplacements:replacements,expectedTotal:totals.total,notes:form.notes,lines:calculated.map(l=>({product_id:l.product_id,quantity:l.quantity,unit_price:l.unit_price,discount_pct:l.discount_pct||0}))});
       toast({title:ui(exchangeOnly?'Exchange recorded and stock deducted':'Sale recorded and stock deducted'),description:exchangePackagingWarningText(result.order)});
       navigate(ownIssuedStock?'/my-stock':result.invoiceId?'/sales/invoices/'+result.invoiceId:'/sales/'+result.order.id);
     }catch(e){setSaveError(e.message);const reason=e.data?.error||e.response?.data?.error||e.message;if(['Choose the customer branch that received this supply.','Choose a delivery point belonging to this customer.'].includes(reason)){setStep(0);setPointsRetry(n=>n+1);}}finally{busy.current=false;setSaving(false);}
@@ -177,7 +188,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   ];
   const sourceLabel=sourceOptions.find(option=>option.id===source)?.label||order?.warehouse_name||catalogue?.warehouses.find(w=>'warehouse:'+w.id===source)?.name||ui('Saved stock location');
   if(phone&&locked)return <MobileSaleDetail order={order} lines={calculated} products={products} replacements={replacements} sellerName={sellerName} sourceLabel={sourceLabel} back={back} navigate={navigate}/>;
-  if(phone&&wizard)return <MobileSaleFlow record={order} cashDeposit={cashDeposit} initialPurpose={typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('purpose')==='exchange'?'replacement':'sale'} step={step} goTo={goTo} advance={advance} back={back} form={form} setForm={setForm} customer={customer} catalogue={catalogue} points={points} pointsLoading={pointsLoading} pointsError={pointsError} pointsCustomerId={pointsCustomerId} retryPoints={()=>setPointsRetry(n=>n+1)} canChooseSeller={canChooseSeller} changeSeller={changeSeller} sellerName={sellerName} today={today} sourceLabel={sourceLabel} products={products} lines={lines} calculated={calculated} changeLine={changeLine} setProductQuantity={setProductQuantity} replacements={replacements} setReplacements={setReplacements} exchangeOnly={exchangeOnly} totals={totals} saving={saving} saveError={saveError} save={save} canSave={!missingCashAccount&&!calculated.some(line=>line.pricing_error)&&!!sourceData&&!sourceLoading&&!sourceError&&pointsCustomerId===form.customer_id&&!pointsLoading&&!pointsError&&(lines.length>0||replacements.length>0)&&!!form.customer_id&&!!form.seller_id&&!!form.date} onRefreshStock={()=>setStockRetry(n=>n+1)} sourceLoading={sourceLoading} sourceError={sourceError} sourceControls={<>
+  if(phone&&wizard)return <MobileSaleFlow record={order} cashDeposit={cashDeposit} initialPurpose={typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('purpose')==='exchange'?'replacement':'sale'} step={step} goTo={goTo} advance={advance} back={back} form={form} setForm={setForm} customer={customer} catalogue={catalogue} points={points} pointsLoading={pointsLoading} pointsError={pointsError} pointsCustomerId={pointsCustomerId} retryPoints={()=>setPointsRetry(n=>n+1)} canChooseSeller={canChooseSeller} changeSeller={changeSeller} sellerName={sellerName} today={today} sourceLabel={sourceLabel} products={products} lines={lines} calculated={calculated} changeLine={changeLine} setProductQuantity={setProductQuantity} replacements={replacements} setReplacements={setReplacements} exchangeOnly={exchangeOnly} exchangeControls={exchangeControls} receiptRequired={receiptRequired} originalInvoiceField={originalInvoiceField} totals={totals} saving={saving} saveError={saveError} save={save} canSave={!missingCashAccount&&!calculated.some(line=>line.pricing_error)&&!!sourceData&&!sourceLoading&&!sourceError&&pointsCustomerId===form.customer_id&&!pointsLoading&&!pointsError&&(lines.length>0||replacements.length>0)&&!!form.customer_id&&!!form.seller_id&&!!form.date} onRefreshStock={()=>setStockRetry(n=>n+1)} sourceLoading={sourceLoading} sourceError={sourceError} sourceControls={<>
     {central?<p className="rounded-lg border bg-secondary px-3 py-2 text-xs font-semibold text-primary">{ui('Company stock')}</p>:<SaleStockPicker open={sourcePickerOpen} onOpenChange={setSourcePickerOpen} value={source} options={sourceOptions} onChange={setSource} disabled={saving} fallbackLabel={source?sourceLabel:''}/>}
     <div className="flex items-center justify-between gap-2"><LearnMore title={ui('Stock source')}><p>{ui('Your sale deducts from company stock when recorded. No goods issue or unsold-stock return is required.')}</p></LearnMore><button type="button" onClick={()=>setStockRetry(n=>n+1)} disabled={sourceLoading} className="min-h-11 text-xs text-primary underline">{ui('Refresh stock')}</button></div>
     {sourceLoading&&<p role="status" className="text-xs text-muted-foreground">{ui('Checking available finished stock...')}</p>}{sourceError&&<p role="alert" className="text-xs text-red-700">{uiMessage(sourceError)}</p>}
@@ -221,17 +232,19 @@ export default function SalesOrderForm({ownIssuedStock=false}){
           })}</div>
           {!locked&&<button type="button" disabled={!products.length||sourceLoading||!!sourceError} onClick={()=>{setStockRetry(n=>n+1);setPickerOpen(true);}} className="flex min-h-16 w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-dashed border-green-300 bg-green-50/40 px-4 py-5 text-sm font-semibold text-green-800 disabled:opacity-50"><Plus size={22} className="shrink-0"/>{ui(lines.length?'Add or edit products':'Choose products')}</button>}
         </section>
-        <SaleReplacements rows={replacements} stock={products.map(p=>({...p,quantity:p.available}))} lines={calculated} date={form.date} disabled={saving||locked||sourceLoading||!!sourceError} declared={form.replacements_declared} onDeclare={value=>setForm(f=>({...f,replacements_declared:value}))} onChange={setReplacements} onRefresh={()=>setStockRetry(n=>n+1)}/>
+        <SaleReplacements {...exchangeControls} rows={replacements} stock={products.map(p=>({...p,quantity:p.available}))} lines={calculated} date={form.date} disabled={saving||locked||sourceLoading||!!sourceError} declared={form.replacements_declared} onDeclare={value=>setForm(f=>({...f,replacements_declared:value}))} onChange={setReplacements} onRefresh={()=>setStockRetry(n=>n+1)}/>
         </>}
         {wizard&&step===2&&<section className="space-y-4"><div className="rounded-xl bg-green-50 p-4"><p className="text-xs text-green-700">{ui('Customer')}</p><p className="mt-1 font-semibold">{customer?.business_name}</p>{form.location_id&&<p className="text-sm">{points.find(p=>p.id===form.location_id)?.label}</p>}<p className="mt-3 text-xs text-slate-600">{ui('Person making the sale')}: {sellerName}</p><p className="mt-1 text-xs text-slate-600">{form.date} · {sourceLabel}</p></div>
           <div className="divide-y">{calculated.map(line=><div key={line.product_id} className="flex items-center gap-3 py-3"><ProductThumb product={products.find(p=>p.id===line.product_id)} size={40}/><div className="min-w-0 flex-1"><p className="text-sm font-medium">{line.product_name}</p><p className="text-xs text-slate-500">{formatNumber(line.quantity,3)} {line.unit} × {formatXAF(line.unit_price)}</p></div><strong className="text-sm">{formatXAF(line.total)}</strong></div>)}</div>
-<div className="rounded-lg border border-emerald-200 p-3 text-sm"><strong>{ui('Free spoilage replacements')}</strong>{replacements.length?replacements.map((r,i)=><p key={i}>{products.find(p=>p.id===r.product_id)?.name} - {formatNumber(r.quantity,3)} {ui('units')} ({ui(r.reason==='expired'?'Expired':'Damaged')})</p>):<p>{ui('No replacements')}</p>}</div>
+<div className="rounded-lg border border-emerald-200 p-3 text-sm"><strong>{ui('Free spoilage replacements')}</strong>{replacements.length?replacements.map((r,i)=><div key={i} className="mt-1"><p>{products.find(p=>p.id===r.product_id)?.name} · {formatNumber(r.quantity,3)} {ui('units')} ({ui(r.reason==='expired'?'Expired':'Damaged')})</p>{r.replacement_product_id&&<p>{ui('Replacement product')} · {products.find(p=>p.id===r.replacement_product_id)?.name} · {formatNumber(r.replacement_quantity,3)} {ui('units')}</p>}</div>):<p>{ui('No replacements')}</p>}</div>
           <p className="text-sm">{exchangeOnly?ui('Exchange only — no customer charge'):<>{ui('Payment Type')}: <strong>{ui(form.payment_type==='cash'?'Cash':'Credit')}</strong></>}</p><p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">{ui('Check the customer, products and amount. Stock is deducted only when you confirm this sale.')}</p>
         </section>}
         {(!wizard||step===2)&&<>
         {cashDeposit}
         {!locked&&!exchangeOnly&&<SaleBillingPreview customerName={customer?.business_name} amountDue={form.payment_type==='credit'?totals.total:0}/>}
-        <label className="block min-w-0 space-y-1 text-sm">{ui('Receipt reference number *')}<Input required aria-label={ui('Receipt reference number')} autoComplete="off" maxLength={200} value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/></label>
+        {originalInvoiceField}
+        {locked&&order?.exchange_packaging_original_invoice_number&&<p className="text-sm"><a className="text-primary underline" href={'/sales/invoices/'+order.exchange_packaging_original_invoice_id}>{ui('Original invoice')}: {order.exchange_packaging_original_invoice_number}</a></p>}
+        <label className="block min-w-0 space-y-1 text-sm">{ui(receiptRequired?'Receipt reference number *':'Receipt reference number')}<Input required={receiptRequired} aria-label={ui('Receipt reference number')} autoComplete="off" maxLength={200} value={form.receipt_reference} placeholder={ui('Number on the receipt issued')} onChange={e=>setForm(f=>({...f,receipt_reference:e.target.value}))}/></label>
         <label className="block space-y-1 text-sm">{ui('Notes')}<Input value={form.notes} maxLength={2000} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label>
         <div className="space-y-1 text-right text-sm"><p>{ui('Net sales')}: {formatAccountingXAF(totals.net)}</p><p>{ui(!locked?'VAT included (19.25%)':order?.price_includes_vat?'VAT included':'Tax')}: {formatAccountingXAF(totals.tax)}</p><p className="text-lg font-bold">{ui('Total')}: {formatAccountingXAF(totals.total)}</p></div>
         </>}

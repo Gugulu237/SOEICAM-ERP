@@ -8,7 +8,7 @@ import { ITEM_METADATA_FIELDS } from '../../lib/item-attributes.js';
 import { recordItemMetadataChange } from './item-metadata-audit.js';
 import { correctionIdentity, checkCorrectionVersion, correctItemReferences } from './item-unit-correction.js';
 
-const FULL_FIELDS = [...YOGURT_YIELD_FIELDS,'attributes','product_family','material_group','image_url','size','flavor','sku','name','description','category','inventory_type','unit_of_measure','costing_method','purchase_price','current_cost','standard_cost','selling_price','cogs_account_id','revenue_account_id','inventory_account_id','preferred_supplier_id','reorder_level','min_stock','max_stock','lot_tracking','expiry_tracking','shelf_life_days','tax_rate','is_active','components'];
+const FULL_FIELDS = [...YOGURT_YIELD_FIELDS,'attributes','product_family','material_group','image_url','size','flavor','sku','name','description','category','inventory_type','unit_of_measure','costing_method','purchase_price','current_cost','standard_cost','selling_price','cogs_account_id','revenue_account_id','inventory_account_id','preferred_supplier_id','reorder_level','min_stock','max_stock','lot_tracking','expiry_tracking','shelf_life_days','tax_rate','is_active','is_purchasable','components'];
 // Called only inside an authenticated serializable API transaction. Confirmation
 // is request metadata, never a writable Product field or a generic API bypass.
 export async function saveItem(context, stores, input, { quick = false } = {}) {
@@ -33,11 +33,11 @@ export async function saveItem(context, stores, input, { quick = false } = {}) {
   let definition = quick ? await validateItemDefinition(stores,changes,existing,options) : await prepareProductDefinition(stores,changes,existing,options);
   if (quick && existing.configuration_status==='draft') definition = {...definition,configuration_status:'draft',is_active:false};
   const references = correction ? await correctItemReferences(stores,existing,input.unitChange.toUnit) : [];
-  const previousStatus={is_active:existing.is_active!==false,configuration_status:existing.configuration_status || ''};
+  const previousStatus={is_active:existing.is_active!==false,is_purchasable:existing.is_purchasable??null,configuration_status:existing.configuration_status || ''};
   const saved = await stores.Product.update(existing.id,definition);
   await recordItemMetadataChange(stores,context,existing,saved);
   if(['purchase_price','components','unit_of_measure','inventory_type','standard_cost','current_cost'].some(k=>Object.hasOwn(definition,k)))await refreshAssemblyPrices(stores,saved.id);
-  const nextStatus={is_active:saved.is_active!==false,configuration_status:saved.configuration_status || ''};
+  const nextStatus={is_active:saved.is_active!==false,is_purchasable:saved.is_purchasable??null,configuration_status:saved.configuration_status || ''};
   if(JSON.stringify(previousStatus)!==JSON.stringify(nextStatus))await stores.AuditLog.create({action:'change_item_availability',module:'inventory',entity_type:'Product',entity_id:saved.id,user_id:context.user.id,user_name:context.employee?.full_name || context.user.full_name || context.user.id,description:`Updated availability for ${saved.name}`,item_status_before:previousStatus,item_status_after:nextStatus});
   if (correction) await stores.AuditLog.create({id:correction.id,action:'correct_item_unit',module:'inventory',entity_type:'Product',entity_id:existing.id,user_id:context.user.id,description:`Corrected ${existing.name}: ${input.unitChange.fromUnit} to ${input.unitChange.toUnit}`,unit_correction_payload:correction.payload,unit_correction:{mode:'correct_label',from:input.unitChange.fromUnit,to:input.unitChange.toUnit,previous_updated_date:existing.updated_date,previous_units:Object.fromEntries(['purchase_unit','storage_unit','production_unit','sales_unit','purchase_to_storage_factor','storage_to_production_factor','storage_to_sales_factor'].map(k=>[k,existing[k] ?? null])),references}});
   return saved;
