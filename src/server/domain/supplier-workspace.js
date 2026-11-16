@@ -171,15 +171,13 @@ export async function supplierAction(client,user,body) {
     if(!po || po.status!=='pending_approval')throw Error('Select a purchase order awaiting approval');
     const supplier=await s.Supplier.get(po.supplier_id),lines=await readRecords(s.PurchaseOrderLine,{po_id:po.id});
     if(!active(supplier) || !lines.length || lines.some(l=>l.supplier_id && l.supplier_id!==supplier.id))throw Error('Review the supplier and items. Mixed supplier orders must be split before approval.');
-    if(po.supplier_catalogue_review_required){
-      const products=await Promise.all(lines.map(l=>s.Product.get(l.product_id)));
-      const supplied=new Set(supplierCatalogue(supplier,products.filter(Boolean).map(p=>({...p,unit:stockUnit(p)}))).map(p=>p.id));
-      if(lines.some(l=>!supplied.has(l.product_id)))throw Error('Procurement must confirm these materials in the supplier catalogue before General Manager approval.');
-    }
+    const products=new Map((await readRecords(s.Product,{id:{$in:lines.map(line=>line.product_id)}})).map(product=>[product.id,product]));
+    const supplied=new Set(supplierCatalogue(supplier,[...products.values()]).map(p=>p.id));
+    if(lines.some(l=>!supplied.has(l.product_id)))throw Error('Procurement must confirm these materials in the supplier catalogue before General Manager approval.');
     let total=0;
     const finishedLines = [];
     for(const l of lines){
-      const product=await s.Product.get(l.product_id),quantity=numberOf(l.quantity,'purchase quantity',true),cost=numberOf(l.unit_price,'unit price'),tax=numberOf(l.tax_rate || 0,'tax rate');
+      const product=products.get(l.product_id),quantity=numberOf(l.quantity,'purchase quantity',true),cost=numberOf(l.unit_price,'unit price'),tax=numberOf(l.tax_rate || 0,'tax rate');
       if(!isPurchasableItem(product) || tax>100 || po.price_includes_vat===true&&!isStandardPurchaseRate(tax))throw Error('Review the active purchase items and tax rates before approval');
       unitFactor(l.unit || stockUnit(product),stockUnit(product));
       const net=round2(quantity*cost);
@@ -211,13 +209,11 @@ export async function supplierAction(client,user,body) {
     const includesVat=form.price_includes_vat===true;
     if(po&&(po.price_includes_vat===true)!==includesVat)throw Error('Keep the original purchase order price basis.');
     const lines=[],products=new Map((await readRecords(s.Product,{id:{$in:form.lines.map(r=>r?.product_id).filter(Boolean)}})).map(p=>[p.id,p]));
-    if (form.catalogue_only === true) {
-      const linked = new Set(supplierCatalogue(supplier,[...products.values()].map(purchaseProduct)).map(p=>p.id));
-      if (form.lines.some(row=>!linked.has(row?.product_id))) throw Error('Choose goods linked to this supplier. Update Items supplied before ordering other goods.');
-    }
+    const linked = new Set(supplierCatalogue(supplier,[...products.values()]).map(p=>p.id));
     for(const row of form.lines){
       const p=products.get(row?.product_id);
       if(!isPurchasableItem(p))throw Error('The selected inventory item is not eligible for purchasing.');
+      if(!linked.has(p.id))throw Error('Choose goods linked to this supplier. Procurement must update Items supplied before ordering other goods.');
       if(warehouse)requireFinishedStorage(p,warehouse);
       const quantity=round3(numberOf(row.quantity,'purchase quantity',true)),cost=round2(numberOf(row.unit_price,'unit price')),tax=numberOf(row.tax_rate || 0,'tax rate');
       if(includesVat&&!isStandardPurchaseRate(tax))throw Error('Choose standard included VAT or no VAT for each purchase item.');

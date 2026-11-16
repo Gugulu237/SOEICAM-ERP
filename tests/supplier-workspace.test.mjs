@@ -23,7 +23,7 @@ async function setup(db){
   await s.PostingRule.create({rule_key:'raw_material_inventory',is_active:true,account_id:inv.id,account_number:'1310',account_name:'Materials'});
   const product=await s.Product.create({name:'Milk powder',sku:'MILK',inventory_type:'raw_material',unit_of_measure:'kg',purchase_price:100,inventory_account_id:inv.id,is_active:true,batch_tracking:true,expiry_tracking:true,current_cost:100});
   const warehouse=await s.Warehouse.create({name:'Raw materials',warehouse_type:'raw_material',is_active:true});
-  await s.Supplier.update('supplier',{is_active:true,payment_terms_days:30});
+  await s.Supplier.update('supplier',{is_active:true,payment_terms_days:30,supplier_items:[{product_id:product.id,unit:'kg',unit_price:100}]});
   const body={action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'confirmed',order:{supplier_id:'supplier',order_date:date,warehouse_id:warehouse.id,payment_terms:'credit',lines:[{product_id:product.id,quantity:10,unit_price:100,tax_rate:10}]}};
   const run=body=>supplierAction(f.client,user,body);
   return {...f,run,product,warehouse,body,inv,prepayment};
@@ -133,6 +133,7 @@ test('an explicitly purchasable finished product posts to finished inventory and
   const product=await s.Product.get('product-a');
   const changes=await prepareProductDefinition(s,{is_purchasable:true},product);
   await s.Product.update(product.id,changes);
+  await s.Supplier.update('supplier',{supplier_items:[{product_id:product.id,unit:'ea',unit_price:500}]});
   const warehouse=await s.Warehouse.create({name:'Central stock',warehouse_type:'general',central_inventory_pool:true,is_active:true});
   const view=await purchaseWorkspace(f.client,user,{compose:true,supplierId:'supplier'});
   assert.equal(view.products.find(item=>item.id===product.id).is_purchasable,true);
@@ -143,6 +144,7 @@ test('an explicitly purchasable finished product posts to finished inventory and
   const {order}=await f.run(body);
   const [line]=await s.PurchaseOrderLine.filter({po_id:order.id});
   await s.Product.update(product.id,{is_purchasable:false});
+  await s.Supplier.update('supplier',{supplier_items:[]});
   assert.equal((await purchaseWorkspace(f.client,user,{compose:true,supplierId:'supplier'})).products.some(item=>item.id===product.id),false);
   assert.equal((await purchaseWorkspace(f.client,user,{orderId:order.id})).products.some(item=>item.id===product.id),true);
   const result=await f.run({action:'receiveSupplierOrder',orderId:order.id,requestKey:crypto.randomUUID(),date,warehouseId:warehouse.id,lines:[{po_line_id:line.id,quantity:2}]});

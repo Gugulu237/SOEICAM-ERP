@@ -182,12 +182,16 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
       centralized_inventory_policy: policy.policy, centralized_inventory_activation: policy, description: 'Verified fixture activation',
     });
     await s.Customer.create({ id: 'customer', business_name: 'Customer without a branch', is_active: true, balance: 0 });
-    await s.Supplier.create({ id: 'vendor', name: 'Materials vendor', is_active: true, balance: 0, supplier_items: [{product_id:'milk',unit:'kg',unit_price:1100}] });
+    await s.Supplier.create({ id: 'vendor', name: 'Materials vendor', is_active: true, balance: 0 });
     const createInventoryItem = async input => app.entityOperation(admin, 'Product', 'create', [{
       inventory_account_id: 'raw-inventory', cogs_account_id: 'cogs', is_active: true, ...input,
     }]);
     const milk = await createInventoryItem({ sku: 'MILK-NEW', name: 'Yogurt milk', category: 'Ingredients', inventory_type: 'raw_material', unit_of_measure: 'kg', purchase_price: 1000 });
     const cups = await createInventoryItem({ sku: 'CUPS-NEW', name: 'Yogurt cups', category: 'Packaging', inventory_type: 'packaging', unit_of_measure: 'ea', purchase_price: 20 });
+    await s.Supplier.update('vendor', { supplier_items: [
+      { product_id: milk.id, unit: 'kg', unit_price: 1000 },
+      { product_id: cups.id, unit: 'ea', unit_price: 20 },
+    ] });
     const catalogue = await invoke({ action: 'purchasesWorkspace', catalogue: true, supplierId: 'vendor' });
     const initial = await snapshot();
     for (const item of [milk, cups]) {

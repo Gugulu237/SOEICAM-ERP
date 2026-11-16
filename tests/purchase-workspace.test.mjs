@@ -8,7 +8,7 @@ import {supplierAction} from '../src/server/domain/supplier-workspace.js';
 import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {postJournal} from '../src/server/domain/field-ops.js';
 import {purchaseSections,purchasePath,legacySupplierPath} from '../src/lib/purchase-workspace.js';
-import {purchaseOrderItems, supplierCatalogue} from '../src/lib/supplier-catalogue.js';
+import {supplierCatalogue} from '../src/lib/supplier-catalogue.js';
 import {prepareProductDefinition} from '../src/server/domain/product-definition.js';
 
 async function setup(db){
@@ -16,6 +16,7 @@ async function setup(db){
   await s.Employee.update('cashier',{role:'admin',department_id:'materials'});
   await s.Supplier.update('supplier',{is_active:true});
   const product=await s.Product.create({name:'Milk powder',inventory_type:'raw_material',unit_of_measure:'kg',is_active:true});
+  await s.Supplier.update('supplier',{supplier_items:[{product_id:product.id,unit:'kg',unit_price:100}]});
   const body={action:'saveSupplierOrder',requestKey:crypto.randomUUID(),status:'confirmed',order:{supplier_id:'supplier',order_date:date,lines:[{product_id:product.id,quantity:10,unit_price:100,tax_rate:10}]}};
   return {...f,body,product,run:body=>supplierAction(f.client,user,body)};
 }
@@ -44,17 +45,19 @@ test('only administrators can read, save or receive purchases',async()=>{
   assert.equal(options.suppliers[0].bank_account,undefined);
 });
 
-test('the purchase form lists the canonical paged register and accepts newly created unlinked items',async()=>{
+test('purchase options use the selected supplier links and prices across the canonical paged register',async()=>{
   const f=await setup(),s=f.entities;
-  // Leave the supplier offer list present, with the new products absent from it.
-  await s.Supplier.update('supplier',{supplier_items:[{product_id:f.product.id,unit:'kg',unit_price:90}]});
   for(let index=0; index<200; index++) await s.Product.create({name:'Material '+index,inventory_type:'raw_material',is_active:true});
   const createItem = async input => s.Product.create(await prepareProductDefinition(s,{
     unit_of_measure:'ea',cogs_account_id:'cogs',inventory_account_id:'inventory',purchase_price:25,is_active:true,
     ...input,
   }));
   const cups=await createItem({sku:'CUP-500',name:'500 g Cups',category:'Packaging',inventory_type:'packaging'});
-  const culture=await createItem({sku:'CULTURE',name:'Starter Culture',category:'Additives',inventory_type:'additive',unit_of_measure:'g'});
+  const culture=await createItem({sku:'CULTURE',name:'Starter Culture',category:'Additives',inventory_type:'additive',unit_of_measure:'g',preferred_supplier_id:'supplier'});
+  const offered=[{product_id:f.product.id,unit:'kg',unit_price:90},{product_id:cups.id,unit:'ea',unit_price:32,supplier_code:'CUP-4'}];
+  await s.Supplier.update('supplier',{supplier_items:offered});
+  const other=await s.Supplier.create({name:'Other supplier',is_active:true,supplier_items:[{product_id:cups.id,unit:'ea',unit_price:40}]});
+  const unlisted=await createItem({sku:'CARTON',name:'Unlisted carton',category:'Packaging',inventory_type:'packaging'});
   const blocked = await Promise.all([
     s.Product.create({name:'Inactive material',inventory_type:'raw_material',is_active:false}),
     s.Product.create({name:'Removed material',inventory_type:'raw_material',item_removed_at:date,is_active:true}),
@@ -65,25 +68,33 @@ test('the purchase form lists the canonical paged register and accepts newly cre
   ]);
   const view=await purchaseWorkspace(f.client,user,{compose:true,supplierId:'supplier'});
   const fresh=await purchaseWorkspace(f.client,user,{catalogue:true,supplierId:'supplier'});
-  assert.equal(view.products.length,203);
-  assert.deepEqual(fresh.products,view.products);
-  const choices = purchaseOrderItems(view.supplier,view.products);
+  const choices=supplierCatalogue(view.supplier,view.products);
+  assert.deepEqual(view.products,fresh.products);
+  assert.deepEqual(new Set(view.products.map(item=>item.id)),new Set([f.product.id,cups.id,culture.id]));
+  assert.deepEqual(supplierCatalogue(fresh.supplier,fresh.products),choices);
+  assert.deepEqual(new Set(choices.map(item=>item.id)),new Set([f.product.id,cups.id,culture.id]));
   assert.deepEqual(choices.find(item=>item.id===cups.id),{
-    ...view.products.find(item=>item.id===cups.id),supplier_code:'',supplier_price:25,has_supplier_price:false,
+    ...view.products.find(item=>item.id===cups.id),supplier_code:'CUP-4',supplier_price:32,has_supplier_price:true,
   });
   for(const product of [cups,culture]){
     const selected=choices.find(item=>item.id===product.id);
     for(const field of ['id','name','category','inventory_type','unit_of_measure']) assert.equal(selected[field],product[field]);
   }
-  assert.deepEqual(supplierCatalogue(view.supplier,view.products).map(item=>[item.id,item.supplier_price]),[[f.product.id,90]]);
+  const otherView=await purchaseWorkspace(f.client,user,{catalogue:true,supplierId:other.id});
+  assert.deepEqual(otherView.products.map(item=>item.id),[cups.id]);
+  assert.deepEqual(supplierCatalogue(otherView.supplier,otherView.products).map(item=>[item.id,item.supplier_price]),[[cups.id,40]]);
   for(const product of blocked){
     assert.equal(choices.some(item=>item.id===product.id),false);
-    await assert.rejects(f.run({...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,lines:[{product_id:product.id,quantity:1,unit_price:25}]}}),/not eligible for purchasing/);
+    await assert.rejects(f.run({...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,lines:[{product_id:product.id,quantity:1,unit_price:25}]}}),/not eligible for purchasing|goods linked/);
   }
-  const orderInput={...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,lines:[{product_id:cups.id,quantity:4,unit_price:25}]}};
+  for(const catalogue_only of [undefined,false]){
+    const order={...f.body.order,catalogue_only,lines:[{product_id:unlisted.id,quantity:1,unit_price:25}]};
+    await assert.rejects(f.run({...f.body,requestKey:crypto.randomUUID(),order}),/goods linked|supplier catalogue|linked to this supplier/i);
+  }
+  const orderInput={...f.body,requestKey:crypto.randomUUID(),order:{...f.body.order,lines:[{product_id:cups.id,quantity:4,unit_price:32}]}};
   const {order}=await f.run(orderInput);
   const [line]=await s.PurchaseOrderLine.filter({po_id:order.id});
-  assert.deepEqual([line.product_id,line.product_name,line.unit,line.quantity,line.total],[cups.id,cups.name,'ea',4,100]);
+  assert.deepEqual([line.product_id,line.product_name,line.unit,line.quantity,line.total],[cups.id,cups.name,'ea',4,128]);
 });
 
 test('admin draft confirmation uses authenticated attribution, becomes receivable immediately and retries once',async()=>{
@@ -102,7 +113,10 @@ test('Confirming an older order rechecks supplier, lines and totals, is retry-sa
   await s.PurchaseOrder.update(order.id,{status:'pending_approval'});
   await s.PurchaseOrder.update(order.id,{total:10});await assert.rejects(f.run(approve),/total/);
   await s.PurchaseOrder.update(order.id,{total:1100});await s.Supplier.update('supplier',{is_active:false});await assert.rejects(f.run(approve),/supplier/);
-  await s.Supplier.update('supplier',{is_active:true});const first=await f.run(approve),retry=await f.run(approve);assert.equal(first.order.purchase_confirmed_by,user.id);assert.equal(retry.reused,true);
+  await s.Supplier.update('supplier',{is_active:true,supplier_items:[]});
+  await assert.rejects(f.run(approve),/supplier catalogue|goods linked|materials linked|Items supplied/i);
+  await s.Supplier.update('supplier',{supplier_items:[{product_id:f.product.id,unit:'kg',unit_price:100}]});
+  const first=await f.run(approve),retry=await f.run(approve);assert.equal(first.order.purchase_confirmed_by,user.id);assert.equal(retry.reused,true);
   assert.equal((await s.JournalEntry.list()).length,0);assert.equal((await s.GoodsReceipt.list()).length,0);assert.equal((await s.TreasuryTransaction.list()).length,0);
   assert.equal((await s.AuditLog.list()).filter(a=>a.action==='confirm_supplier_order').length,1);
   await assert.rejects(f.run({action:'rejectSupplierOrder',orderId:order.id}),/awaiting approval/);

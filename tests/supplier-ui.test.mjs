@@ -22,11 +22,12 @@ async function ui(){
   const mod={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,mod,mod.exports);return mod.exports.render;
 }
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.inputs=[];r.beforeRender=()=>{before();r.inputs=[];};return r;}
-test('an open purchase order refreshes master items without replacing draft lines',async()=>{
+test('an open purchase order refreshes supplier assignments and quotes without replacing draft lines',async()=>{
   const render=await ui(),r=runtime(),writes=[];
-  const supplier={id:'supplier',name:'Supplier',supplier_items:[]};
+  let supplier={id:'supplier',name:'Supplier',supplier_items:[{product_id:'milk',unit:'kg',unit_price:180}]};
   const milk={id:'milk',name:'Milk',sku:'MILK',inventory_type:'raw_material',unit:'kg',cost:200};
   const cup={id:'cup',name:'New cup',sku:'CUP',inventory_type:'packaging',unit:'ea',cost:30};
+  const unlisted={id:'carton',name:'Unlisted carton',sku:'CARTON',inventory_type:'packaging',unit:'ea',cost:50};
   const disabled={id:'disabled',name:'Inactive carton',sku:'D',inventory_type:'packaging',is_active:false};
   let products=[milk];
   r.invoke=async (_name,body)=>{
@@ -43,14 +44,15 @@ test('an open purchase order refreshes master items without replacing draft line
     globalThis.window=new EventTarget();
     await r.flush();
     paint();button('Add Milk').onClick();
-    products=[milk,cup];
+    supplier={...supplier,supplier_items:[{product_id:'milk',unit:'kg',unit_price:220},{product_id:'cup',unit:'ea',unit_price:33}]};
+    products=[milk,cup,unlisted];
     window.dispatchEvent(new Event('soeicam:item-catalogue-changed'));
     await r.flush();
-    assert.match(paint(),/New cup/);
+    const html=paint();assert.match(html,/New cup/);assert.doesNotMatch(html,/Unlisted carton/);
     button('Add New cup').onClick();
     paint();
     await button('Save purchase order').onClick();
-    assert.deepEqual(writes[0].order.lines.map(item=>[item.product_id,item.quantity,item.unit]),[['milk',1,'kg'],['cup',1,'ea']]);
+    assert.deepEqual(writes[0].order.lines.map(item=>[item.product_id,item.quantity,item.unit,item.unit_price]),[['milk',1,'kg',180],['cup',1,'ea',33]]);
   }finally{r.cleanup();delete globalThis.window;delete globalThis.__supplierUI;}
 });
 

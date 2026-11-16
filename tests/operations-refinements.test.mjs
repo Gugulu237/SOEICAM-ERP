@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {fixture,user} from './helpers/cashier.mjs';
 import {fourStageFixture,act,asRole} from './helpers/four-stage-yogurt.mjs';
 import {supplierAction} from '../src/server/domain/supplier-workspace.js';
-import {isPurchasableItem,purchaseOrderItems,supplierCatalogue} from '../src/lib/supplier-catalogue.js';
+import {isPurchasableItem,supplierCatalogue} from '../src/lib/supplier-catalogue.js';
 import {catalogueFromStored} from '../src/server/domain/role-catalogue.js';
 import {employeeRoleChange} from '../src/server/domain/employee-role-change.js';
 import {staffRoleAction} from '../src/server/domain/staff-role-management.js';
@@ -20,7 +20,7 @@ test('supplier catalogues accept every stock component and explicitly purchasabl
   const boughtFinished=await s.Product.create({name:'Externally sourced product',inventory_type:'finished_product',is_active:true,unit_of_measure:'ea',is_purchasable:true});
   const eligible=[...materials,boughtFinished];
   const call=body=>supplierAction(f.client,user,body),list=await call({action:'supplierWorkspace'});
-  const options=purchaseOrderItems({id:'supplier'},list.products);
+  const options=list.products.filter(isPurchasableItem);
   assert.ok(eligible.every(item=>options.some(row=>row.id===item.id)));
   assert.ok(forbidden.every(item=>!options.some(row=>row.id===item.id)));
   const body={action:'saveSupplier',requestKey:crypto.randomUUID(),supplier:{name:'Component vendor',supplier_items:eligible.map(item=>({product_id:item.id,unit_price:10}))}};

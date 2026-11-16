@@ -77,30 +77,30 @@ for(const kind of ['manufacturing','approvals'])test(`${kind} shows shortage det
   }finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
-test('the supplier order shows eligible inventory, prefills agreed prices, and preserves the retry reference after a failed save',async()=>{
+test('the supplier order shows only listed items, prefills agreed prices, and preserves the retry reference after a failed save',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__productionUI=r;let fail=true,saved=0;
   r.client={functions:{invoke:async(name,body)=>{calls.push(body);if(fail)throw Error('Connection interrupted');return {data:{order:{id:'po'}}};}}};
   const props={data:{supplier,products:[milk,cups],warehouses:[],orderLines:[]},onClose:()=>{},onSaved:()=>saved++},draw=()=>{r.beforeRender();return render('order',props);};
   try{
-    const html=draw();assert.match(html,/Milk powder/);assert.match(html,/>Cups</);assert.match(html,/Inventory cost estimate/);
+    const html=draw();assert.match(html,/Milk powder/);assert.match(html,/DAIRY-01/);assert.doesNotMatch(html,/>Cups</);
     assert.equal(r.buttons.find(b=>b.label==='Save purchase order').disabled,true);
     r.buttons.find(b=>b['aria-label']==='Add Milk powder').onClick();draw();
-    r.buttons.find(b=>b['aria-label']==='Add Cups').onClick();draw();
+    assert.equal(r.buttons.some(b=>b['aria-label']==='Add Cups'),false);
     assert.equal(r.inputs.find(p=>p['aria-label']==='Unit price 1').value,15);
-    assert.equal(r.inputs.find(p=>p['aria-label']==='Unit price 2').value,2);
     r.inputs.find(p=>p['aria-label']==='Quantity 1').onChange({target:{value:'7.5'}});draw();await r.buttons.find(b=>b.label==='Save purchase order').onClick();assert.equal(saved,0);draw();assert.equal(r.inputs.find(p=>p['aria-label']==='Quantity 1').value,'7.5');
-    fail=false;await r.buttons.find(b=>b.label==='Save purchase order').onClick();assert.equal(saved,1);assert.equal(calls[0].requestKey,calls[1].requestKey);assert.deepEqual(calls[1].order.lines.map(line=>[line.product_id,line.unit_price]),[['milk',15],['cups',2]]);assert.equal(calls[1].order.catalogue_only,undefined);assert.equal(calls[1].status,'confirmed');
+    fail=false;await r.buttons.find(b=>b.label==='Save purchase order').onClick();assert.equal(saved,1);assert.equal(calls[0].requestKey,calls[1].requestKey);assert.deepEqual(calls[1].order.lines.map(line=>[line.product_id,line.unit_price]),[['milk',15]]);assert.equal(calls[1].status,'confirmed');
   }finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
-test('an empty supplier catalogue still allows eligible inventory orders',async()=>{
+test('an empty supplier catalogue directs the buyer to Items supplied and blocks ordering',async()=>{
   const render=await renderer(),r=runtime();globalThis.__productionUI=r;
   const props={data:{supplier:{id:'empty',name:'No catalogue',supplier_items:[]},products:[milk,cups],warehouses:[]},onClose:()=>{},onSaved:()=>{}};
   const draw=()=>{r.beforeRender();return render('order',props);};
   try{
-    assert.match(draw(),/Milk powder/);
-    r.buttons.find(b=>b['aria-label']==='Add Cups').onClick();draw();
-    assert.equal(r.buttons.find(b=>b.label==='Save purchase order').disabled,false);
+    const html=draw();assert.match(html,/Items supplied/);
+    assert.doesNotMatch(html,/Milk powder|>Cups</);
+    assert.equal(r.buttons.find(b=>b.label==='Add item').disabled,true);
+    assert.equal(r.buttons.find(b=>b.label==='Save purchase order').disabled,true);
   }finally{r.cleanup();delete globalThis.__productionUI;}
 });
 
@@ -109,7 +109,7 @@ test('without eligible inventory, the purchase order explains why saving is unav
   try{
     r.beforeRender();
     const html=render('order',{data:{supplier,products:[{...milk,is_active:false},{...cups,is_purchasable:false}],warehouses:[]},onClose:()=>{},onSaved:()=>{}});
-    assert.match(html,/No purchasable inventory items are available for this order/);
+    assert.match(html,/Items supplied/);
     assert.doesNotMatch(html,/Milk powder|>Cups</);
     assert.equal(r.buttons.find(b=>b.label==='Add item').disabled,true);
     assert.equal(r.buttons.find(b=>b.label==='Save purchase order').disabled,true);

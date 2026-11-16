@@ -22,24 +22,16 @@ export function supplierItems(supplier) {
   return Array.isArray(rows)?rows.filter(row=>row && typeof row.product_id==='string'):[];
 }
 
-function purchaseChoices(supplier, products, linkedOnly) {
-  if (!supplier) return [];
+export function supplierCatalogue(supplier, products = []) {
+  if (!supplier?.id) return [];
   const offers = new Map(supplierItems(supplier).map(row => [row.product_id, row]));
   return products.filter(isPurchasableItem).flatMap(p => {
     const offer = offers.get(p.id);
-    if (linkedOnly && !offer && p.preferred_supplier_id !== supplier.id) return [];
+    if (!offer && p.preferred_supplier_id !== supplier.id) return [];
     // A stale catalogue unit must be corrected before its price can be reused.
     const hasSupplierPrice = offer?.unit_price != null && (!offer.unit || offer.unit === p.unit);
     return [{ ...p, supplier_code: offer?.supplier_code || '', supplier_price: hasSupplierPrice ? Number(offer.unit_price) : Number(p.cost || 0), has_supplier_price: hasSupplierPrice }];
   });
-}
-
-export function supplierCatalogue(supplier, products = []) {
-  return purchaseChoices(supplier, products, true);
-}
-
-export function purchaseOrderItems(supplier, products = []) {
-  return purchaseChoices(supplier, products, false);
 }
 
 // A purchase request may propose a vendor before Procurement has confirmed its

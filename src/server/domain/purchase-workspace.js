@@ -1,5 +1,5 @@
 import { itemUnitCost, stockUnit } from '../../lib/item-units.js';
-import { isPurchasableItem } from '../../lib/supplier-catalogue.js';
+import { isPurchasableItem, supplierItems } from '../../lib/supplier-catalogue.js';
 import {verifiedPayableBill} from './opening-payments.js';
 import { readRecords } from './commercial-workspace.js';
 import { requireStaff, round2, audit } from './field-ops.js';
@@ -10,7 +10,7 @@ import { principalRole } from './roles.js';
 
 const pick = (row, fields) => Object.fromEntries(fields.split(' ').map(key => [key, row[key]]));
 const billVatFields = 'subtotal tax_total purchase_vat_treatment quoted_vat_total supplier_invoice_reference';
-const supplierFields = 'id name email is_active supplier_items payment_terms_days';
+const supplierFields = 'id name email is_active supplier_removed_at supplier_items payment_terms_days';
 
 export function purchaseProduct(item) {
   const unit = stockUnit(item);
@@ -23,6 +23,17 @@ export function purchaseProduct(item) {
 }
 
 const availableSupplier = supplier => !!supplier && supplier.is_active !== false && !supplier.supplier_removed_at;
+
+async function supplierProducts(stores, supplier, historicalIds = []) {
+  const historical = new Set(historicalIds);
+  const ids = [...new Set([...supplierItems(supplier).map(offer => offer.product_id), ...historical])];
+  if (!supplier && !ids.length) return [];
+  const byId = { id: { $in: ids } };
+  const query = supplier ? { $or: [byId, { preferred_supplier_id: supplier.id }] } : byId;
+  return (await readRecords(stores.Product, query))
+    .filter(product => historical.has(product.id) || isPurchasableItem(product))
+    .map(purchaseProduct);
+}
 
 export function canReadPurchase(role, _employee, po) {
   return !!po && role === 'admin';
@@ -39,11 +50,9 @@ export async function purchaseWorkspace(client, user, body) {
   await requirePurchasingAdmin(client,user);
   const s = client.asServiceRole.entities, permissions = purchasePermissions('admin');
   if (body.catalogue === true) {
-    const [supplier, products] = await Promise.all([s.Supplier.get(body.supplierId), readRecords(s.Product)]);
-    return {
-      supplier: availableSupplier(supplier) ? pick(supplier, supplierFields) : null,
-      products: products.filter(isPurchasableItem).map(purchaseProduct),
-    };
+    const supplier = await s.Supplier.get(body.supplierId);
+    if (!availableSupplier(supplier)) return { supplier: null, products: [] };
+    return { supplier: pick(supplier, supplierFields), products: await supplierProducts(s, supplier) };
   }
   const orders = await readRecords(s.PurchaseOrder);
   const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total price_includes_vat requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required')) };
@@ -52,9 +61,8 @@ export async function purchaseWorkspace(client, user, body) {
     const order = body.orderId ? orders.find(po => po.id === body.orderId) : null;
     if (body.orderId && !order) throw forbidden('This purchase order is outside your permitted scope.');
     if (body.compose && !permissions.purchase) throw forbidden('Your role cannot prepare purchase orders.');
-    const [suppliers, products, warehouses, lines, orderBills, orderPayments, accounts] = await Promise.all([
+    const [suppliers, warehouses, lines, orderBills, orderPayments, accounts] = await Promise.all([
       readRecords(s.Supplier),
-      permissions.purchase || permissions.receive ? readRecords(s.Product) : [],
       permissions.purchase || permissions.receive ? readRecords(s.Warehouse, { is_active: true }) : [],
       order ? readRecords(s.PurchaseOrderLine, { po_id: order.id }) : [],
       order ? readRecords(s.Bill, { po_id: order.id, supplier_id: order.supplier_id }) : [],
@@ -62,10 +70,12 @@ export async function purchaseWorkspace(client, user, body) {
       order ? readRecords(s.TreasuryAccount, { is_active: true, account_type: { $in: ['cash','petty_cash','bank','mobile_money'] } }) : [],
     ]);
     const supplier = suppliers.find(v => v.id === (order?.supplier_id || body.supplierId) && (order || availableSupplier(v)));
-    const historicalItems = new Set(lines.map(line => line.product_id));
+    const products = order || body.supplierId
+      ? await supplierProducts(s, availableSupplier(supplier) ? supplier : null, lines.map(line => line.product_id))
+      : (await readRecords(s.Product)).filter(isPurchasableItem).map(purchaseProduct);
     return { ...base, order, supplier: supplier && pick(supplier, supplierFields),
       suppliers: suppliers.filter(v => availableSupplier(v) || v.id === order?.supplier_id).map(v => pick(v, 'id name is_active supplier_items')),
-      products: products.filter(p => historicalItems.has(p.id) || isPurchasableItem(p)).map(purchaseProduct),
+      products,
       warehouses: warehouses.filter(w => !['vehicle', 'commercial_custody', 'quarantine'].includes(w.warehouse_type)).map(w => pick(w, 'id name warehouse_type is_active central_inventory_pool custodian_employee_id vehicle_id')),
       orderBills: orderBills.map(b => pick(b, 'id bill_number bill_date due_date total balance status supplier_id supplier_name po_id '+billVatFields)),
       orderPayments: orderPayments.map(p => pick(p, 'id bill_id status amount')),
