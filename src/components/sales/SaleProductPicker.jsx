@@ -13,13 +13,13 @@ import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@
 import ProductQuantityBar from '@/components/shared/ProductQuantityBar';
 import {validProductQuantity} from '@/lib/product-quantity';
 
-export default function SaleProductPicker({open,onOpenChange,products,lines,onQuantityChange,disabled=false,purpose='sale'}) {
+export default function SaleProductPicker({open,onOpenChange,products,lines,onQuantityChange,disabled=false,purpose='sale',maxProducts=50}) {
   const [search,setSearch]=useState(''),[family,setFamily]=useState('All'),[size,setSize]=useState('');
   const [sort,setSort]=useState('size'),[filters,setFilters]=useState(false),[shown,setShown]=useState(36);
   useEffect(()=>{if(open){setSearch('');setFamily('All');setSize('');}},[open]);
   useEffect(()=>{setShown(36);},[open,search,family,size,sort]);
   const [editing,setEditing]=useState(''),[draft,setDraft]=useState(''),anchor=useRef(null),heading=useRef(null),entry=useRef(null),latest=useRef(null);
-  latest.current={products,lines,disabled,onQuantityChange,purpose};
+  latest.current={products,lines,disabled,onQuantityChange,purpose,maxProducts};
   const [viewport,setViewport]=useState(null);
   // The visual viewport keeps the quantity field above the phone keyboard.
   useEffect(()=>{
@@ -37,7 +37,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
   const session=entry.current;
   useEffect(()=>{if(open&&editing&&!active){entry.current=null;setEditing('');}},[open,editing,active]);
   const replacement=purpose==='replacement',spoilage=purpose==='spoilage';
-  const selectionBlocked=disabled||!!active&&(!lines.some(line=>line.product_id===active.id)&&lines.length>=50||!replacement&&!spoilage&&!(Number(active.selling_price)>0));
+  const selectionBlocked=disabled||!!active&&(!lines.some(line=>line.product_id===active.id)&&lines.length>=maxProducts||!replacement&&!spoilage&&!(Number(active.selling_price)>0));
   const availableFor=p=>spoilage?1000000:Number(p.available);
   const decorated=useMemo(()=>products.map(catalogueProduct),[products]);
   const families=CATALOGUE_FAMILIES.filter(([key])=>decorated.some(row=>row.family===key));
@@ -56,7 +56,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
     if(current.disabled||!product)return;
     const exists=current.lines.some(line=>line.product_id===product.id);
     const limit=current.purpose==='spoilage'?1000000:Number(product.available);
-    if(quantity!==null&&(!validProductQuantity(quantity,limit)||!exists&&current.lines.length>=50||current.purpose==='sale'&&!(Number(product.selling_price)>0)))return;
+    if(quantity!==null&&(!validProductQuantity(quantity,limit)||!exists&&current.lines.length>=current.maxProducts||current.purpose==='sale'&&!(Number(product.selling_price)>0)))return;
     entry.current=null;
     current.onQuantityChange(product,quantity);setEditing('');
   };
@@ -81,7 +81,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
         <ProductSortSelect value={sort} onChange={setSort} disabled={!!active} className="flex-col !items-stretch !gap-1"/>
       </div>}
     </div>
-    <ProductGrid sections={visibleSections} total={matching.length} shown={shown} onMore={()=>setShown(n=>n+36)} lines={lines} disabled={disabled} editing={!!active} purpose={purpose} onChoose={choose}/>
+    <ProductGrid sections={visibleSections} total={matching.length} shown={shown} onMore={()=>setShown(n=>n+36)} lines={lines} disabled={disabled} editing={!!active} purpose={purpose} maxProducts={maxProducts} onChoose={choose}/>
     {!active&&<div className="shrink-0 border-t bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-5">
       <div className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-1.5 text-xs"><ShoppingBag size={16} className="shrink-0"/>{ui('{0} products selected',lines.length)}</span><Button type="button" className="min-h-11" disabled={disabled||invalid} onClick={()=>closePicker(false)}>{ui('Done selecting')}</Button></div>
     </div>}
@@ -100,7 +100,7 @@ export default function SaleProductPicker({open,onOpenChange,products,lines,onQu
 }
 
 // Keep the image grid stable while the user types a quantity.
-const ProductGrid=React.memo(function ProductGrid({sections,total,shown,onMore,lines,disabled,editing,purpose,onChoose}){
+const ProductGrid=React.memo(function ProductGrid({sections,total,shown,onMore,lines,disabled,editing,purpose,maxProducts,onChoose}){
   const replacement=purpose==='replacement',spoilage=purpose==='spoilage';
   const selectedLines=new Map(lines.map(line=>[line.product_id,line]));
   return (
@@ -110,7 +110,7 @@ const ProductGrid=React.memo(function ProductGrid({sections,total,shown,onMore,l
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">{section.rows.map(({product})=>{
           const line=selectedLines.get(product.id),selected=Boolean(line),available=spoilage?1000000:Number(product.available);
           const bad=selected&&!validProductQuantity(line.quantity,available);
-          const unavailable=disabled||editing||!selected&&(!(available>0)||!Number.isFinite(available)||!spoilage&&!replacement&&!(Number(product.selling_price)>0)||lines.length>=50);
+          const unavailable=disabled||editing||!selected&&(!(available>0)||!Number.isFinite(available)||!spoilage&&!replacement&&!(Number(product.selling_price)>0)||lines.length>=maxProducts);
           return <article key={product.id} className="min-w-0">
             <button type="button" aria-label={ui('Select {0}',product.name)} aria-pressed={selected} disabled={unavailable} onClick={event=>onChoose(product,line,event)} className={'relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary '+(selected?'border-primary bg-primary/5':'border-slate-200')+(!editing&&unavailable?' opacity-50':'')}>
               <ProductPhoto product={product} sizes="(max-width: 639px) 100px, 140px" className="h-14 w-full bg-slate-50 sm:h-16" imageClassName="p-1"/>

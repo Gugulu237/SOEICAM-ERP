@@ -134,6 +134,87 @@ test('Sales records replacements only as an exchange and opens its receipt witho
   }finally{f.close();}
 });
 
+for(const device of ['desktop','phone'])test(device+' records central expired exchanges through the sale product picker without expiry or manual packaging fields',async()=>{
+  const {render}=await bundle();
+  const centralStock={source:{central_exchange:true,replacement_warehouse_id:'main'},products:[
+    {...stock.products[0],replacement_available:5},
+    {...stock.products[0],id:'yola-small',name:'YOLA 250 g',available:7,replacement_available:4},
+  ]};
+  const f=setup(render,{...options,defaultSource:'company',centralized_inventory:{enabled:true}},centralStock);
+  f.r.phone=device==='phone';
+  const invoke=f.r.invoke;
+  f.r.invoke=async body=>{
+    if(body.action==='salesOrderDeliveryPoints'){
+      f.calls.push(body);
+      return {data:{points:[],invoices:[{id:'original',number:'INV-1',date:'2026-01-01'}]}};
+    }
+    if(body.action==='recordSuppliedOrder'){
+      f.calls.push(body);
+      return {data:{order:{id:'exchange'},exchangeOnly:true}};
+    }
+    return invoke(body);
+  };
+  try{
+    await f.ready();
+    await selectCustomer(f);
+    f.button(f.r.phone?'Next':'Continue to products').onClick();f.paint();
+    if(f.r.phone){f.button('Replacement').onClick();f.paint();}
+    f.button('Yes, goods replaced').onClick();f.paint();
+    assert.equal(f.r.replacementPicker.open,true);
+    assert.deepEqual(f.r.replacementPicker.products.map(product=>product.available),[5,4]);
+    f.r.replacementPicker.onQuantityChange(f.r.replacementPicker.products[0],2);f.paint();
+    f.r.replacementPicker.onQuantityChange(f.r.replacementPicker.products[1],1);f.paint();
+    f.r.replacementPicker.onOpenChange(false);
+    assert.doesNotMatch(f.paint(),/Printed expiry date|Batch \/ lot|Packaging physically recovered/);
+    const exceptions=f.r.controls.filter(control=>control.type==='checkbox');
+    assert.equal(exceptions.length,2);
+    assert.equal(exceptions[0].checked,false);
+    exceptions[1].onChange({target:{checked:true}});f.paint();
+    f.button(f.r.phone?'Next':'Review sale').onClick();
+    assert.match(f.paint(),/Exchange only . no customer charge/);
+    assert.equal(f.control('Receipt reference number').required,false);
+    assert.ok(f.control('Original invoice (optional)'));
+    if(!f.r.phone){f.control('Original invoice (optional)').onChange({target:{value:'original'}});f.paint();}
+    await f.r.buttons.find(button=>button.label.startsWith('Record exchange & deduct stock')).onClick();
+    const saved=f.calls.find(call=>call.action==='recordSuppliedOrder');
+    assert.deepEqual(saved.stockReplacements,[
+      {product_id:'yola',quantity:2,reason:'expired'},
+      {product_id:'yola-small',quantity:1,reason:'expired',recovered_packaging:[]},
+    ]);
+    assert.deepEqual(saved.lines,[]);
+    assert.equal(saved.expectedTotal,0);
+    assert.equal(saved.originalInvoiceId,f.r.phone?undefined:'original');
+    assert.deepEqual(f.r.navigation,['/sales/exchange']);
+  }finally{f.close();}
+});
+
+test('manual central exchange lines reserve picker slots and prevent a duplicate undated expired return',async()=>{
+  const {render}=await bundle();
+  const centralStock={source:{central_exchange:true,replacement_warehouse_id:'main'},products:[
+    {...stock.products[0],replacement_available:5},
+    {...stock.products[0],id:'other-size',replacement_available:4},
+  ]};
+  const f=setup(render,{...options,defaultSource:'company',centralized_inventory:{enabled:true}},centralStock);
+  try{
+    await f.ready();await productsStep(f);
+    f.button('Yes, goods replaced').onClick();f.paint();
+    f.r.replacementPicker.onOpenChange(false);f.paint();
+    f.button('Enter exchange details manually').onClick();f.paint();
+    const changeSelect=(label,value)=>{
+      f.control(label).onChange({target:{value}});
+      f.paint();
+    };
+    changeSelect('Returned product','yola');
+    changeSelect('Replacement product','other-size');
+    changeSelect('Condition','expired');
+    f.button('Choose expired products').onClick();f.paint();
+    assert.equal(f.r.replacementPicker.maxProducts,49);
+    assert.equal(f.r.replacementPicker.products[0].available,0);
+    assert.match(f.r.replacementPicker.products[0].unavailable_reason,/Remove the manual exchange line/);
+    assert.equal(f.r.replacementPicker.products[1].available,3);
+  }finally{f.close();}
+});
+
 test('Sales refreshes source availability and new products on focus without discarding entered quantities',async()=>{
   const {render}=await bundle(),current=structuredClone(stock),events=new Map(),previous={window:globalThis.window,document:globalThis.document};let tick;
   globalThis.window={location:{search:''},setInterval(fn){tick=fn;return 1;},clearInterval(){},addEventListener:(name,fn)=>events.set(name,fn),removeEventListener:name=>events.delete(name)};

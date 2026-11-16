@@ -156,6 +156,7 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
     ['revenue', '7010', 'revenue', 'credit'], ['tax', '4430', 'liability', 'credit'],
     ['cogs', '6010', 'cogs', 'debit'], ['over-short', '6500', 'expense', 'debit'],
     ['tasting', '6510', 'expense', 'debit'], ['replacement', '6520', 'expense', 'debit'],
+    ['recovered-packaging', '1330', 'asset', 'debit'],
   ];
   try {
     await s.Account.bulkCreate(accounts.map(([id, account_number, account_type, normal_balance]) => ({
@@ -165,6 +166,7 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
       ['supplier_payable', 'payable'], ['customer_receivable', 'receivable'], ['sales_revenue', 'revenue'],
       ['tax_payable', 'tax'], ['direct_material_cogs', 'cogs'], ['finished_goods_inventory', 'finished-inventory'],
       ['raw_material_inventory', 'raw-inventory'], ['packaging_inventory', 'raw-inventory'],
+      ['recovered_packaging_inventory', 'recovered-packaging'],
       ['stock_count_offset_expense', 'over-short'], ['marketing_degustation_expense', 'tasting'],
       ['customer_replacement_expense', 'replacement'],
     ];
@@ -299,6 +301,7 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
     assert.equal((await s.JournalEntry.list()).length, journalCount);
     const [returnRecord] = await s.SpoilageRecord.list();
     assert.ok(!returnRecord.location_id);
+    assert.equal(returnRecord.exchange_packaging_original_invoice_id, sale.invoiceId);
     assert.equal(returnRecord.replacement_cost, 270);
     assert.equal(returnRecord.exchange_packaging_result.production_order_id, madeLot.production_order_id);
     assert.equal((await stock()).products.find(row => row.id === 'small').available, 1);
@@ -339,22 +342,79 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
 
     const noRecovery = {
       ...exchange, requestKey: crypto.randomUUID(), originalInvoiceId: undefined,
-      stockReplacements: [{ product_id: 'nature', quantity: 1, reason: 'damaged',
+      stockReplacements: [{ product_id: 'nature', quantity: 1, reason: 'expired', expiry_date: '2020-01-01',
         replacement_product_id: 'nature', replacement_quantity: 1, recovered_packaging: [] }],
     };
+    await invoke(noRecovery);
+    assert.equal((await s.Account.get('replacement')).balance, 770);
+    assert.equal((await stock()).products.find(row => row.id === 'nature').available, 97);
+    assert.ok((await s.StockBalance.filter({ product_id: cups.id })).every(row => row.quantity === 0));
+
+    const expiredExchange = {
+      ...exchange, requestKey: crypto.randomUUID(), receiptReference: 'EXPIRED-01', originalInvoiceId: undefined,
+      stockReplacements: [{ product_id: 'nature', quantity: 2, reason: 'expired' }],
+    };
     const affected = ['StockBalance', 'StockMovement', 'JournalEntry', 'JournalLine', 'SalesOrder', 'SpoilageRecord', 'Account', 'CompanySettings', 'AuditLog'];
-    const dbState = () => Promise.all(affected.map(table => s[table].list('id')));
+    const dbState = async () => Object.fromEntries(await Promise.all(affected.map(async table => [table, await s[table].list('id')])));
     const beforeFailure = await dbState();
     state.checkQuery = (sql, params) => {
       if (sql.startsWith('INSERT INTO public."audit_log"') && params.includes('record_supplied_order')) throw Error('Exchange audit unavailable');
     };
-    const failed = await f.invoke(noRecovery);
+    const failed = await f.invoke(expiredExchange);
     state.checkQuery = null;
     assert.equal(failed.status, 400);
     assert.match(failed.data.error, /Exchange audit unavailable/);
     assert.deepEqual(await dbState(), beforeFailure);
-    await invoke(noRecovery);
-    assert.equal((await s.Account.get('replacement')).balance, 770);
+    const savedExpiredExchange = await invoke(expiredExchange);
+    assert.equal(savedExpiredExchange.invoiceId, '');
+    const afterExpiredExchange = await dbState();
+    assert.equal((await invoke(expiredExchange)).reused, true);
+    assert.deepEqual(await dbState(), afterExpiredExchange);
+
+    const [expiredReturn] = await s.SpoilageRecord.filter({ receipt_reference: 'EXPIRED-01' });
+    assert.equal(expiredReturn.status, 'replaced');
+    assert.ok(!expiredReturn.returned_expiry_date);
+    assert.ok(!expiredReturn.exchange_packaging_original_invoice_id);
+    assert.equal(expiredReturn.replacement_cost, 1040);
+    assert.equal(expiredReturn.exchange_packaging_result.recovered_value, 40);
+    assert.equal(afterExpiredExchange.JournalEntry.length, beforeFailure.JournalEntry.length + 1);
+    const expiredJournalLines = await s.JournalLine.filter({ journal_id: expiredReturn.journal_id });
+    assert.deepEqual(expiredJournalLines.map(line => [line.account_id, line.debit, line.credit]).sort(), [
+      ['finished-inventory', 0, 1040], ['recovered-packaging', 40, 0], ['replacement', 1000, 0],
+    ]);
+    const expiredMovements = await s.StockMovement.filter({ journal_id: expiredReturn.journal_id });
+    const issuedYogurt = expiredMovements.filter(row => row.product_id === 'nature');
+    const [recoveredCup] = expiredMovements.filter(row => row.product_id === cups.id);
+    assert.equal(expiredMovements.length, issuedYogurt.length + 1);
+    assert.ok(issuedYogurt.every(row => row.source_warehouse_id === 'finished'));
+    assert.equal(issuedYogurt.reduce((quantity, row) => quantity + row.quantity, 0), 2);
+    assert.equal(issuedYogurt.reduce((value, row) => value + row.total_value, 0), 1040);
+    assert.deepEqual([recoveredCup.quantity, recoveredCup.total_value, recoveredCup.destination_warehouse_id], [2, 40, 'quarantine']);
+    assert.equal((await s.Account.get('replacement')).balance, 1770);
+    assert.equal((await s.Account.get('finished-inventory')).balance, 49670);
+    assert.equal((await s.Account.get('recovered-packaging')).balance, 40);
+    assert.equal((await stock()).products.find(row => row.id === 'nature').available, 95);
+
+    const [autoCup] = (await s.StockBalance.filter({ product_id: cups.id })).filter(row => row.quantity > 0);
+    assert.deepEqual([autoCup.quantity, autoCup.total_value, autoCup.qc_status], [2, 40, 'quarantine']);
+    assert.ok(autoCup.inventory_recovery_valued_at);
+    assert.equal(autoCup.inventory_recovery_account_id, 'recovered-packaging');
+    const revalued = await recoveryRequest({ ...valuePackaging, balanceId: autoCup.id, value: 40 });
+    assert.equal(revalued.status, 400);
+    assert.match(revalued.data.error, /already has a valuation/);
+    const autoRelease = { ...release, balanceId: autoCup.id };
+    assert.equal((await recoveryRequest(autoRelease)).status, 400);
+    state.context = production;
+    const heldPreview = await invoke({ ...f.body, action: 'previewAssemblyBuild', rows: [{ product_id: 'nature', quantity: 2 }] });
+    state.context = admin;
+    assert.equal(heldPreview.can_build, false);
+    const heldCups = heldPreview.materials.find(row => row.product_id === cups.id);
+    assert.deepEqual([heldCups.on_hand, heldCups.available, heldCups.missing], [2, 0, 2]);
+    await recover({ ...autoRelease, reuseApproved: true });
+    assert.equal((await build([{ product_id: 'nature', quantity: 2 }])).total_cost, 1040);
+    const consumedCup = await s.StockBalance.get(autoCup.id);
+    assert.deepEqual([consumedCup.quantity, consumedCup.total_value], [0, 0]);
+    assert.equal((await s.Account.get('recovered-packaging')).balance, 0);
     assert.equal((await stock()).products.find(row => row.id === 'nature').available, 97);
     assert.equal((await s.Invoice.list()).length, 1);
     assert.equal((await s.Customer.get('customer')).balance, 2000);
@@ -365,7 +425,7 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
     assert.deepEqual({
       sales: statements.sales, cogs: statements.cogs, otherIncome: statements.other_income,
       profit: statements.profit, inventory: statements.inventory.amount,
-    }, {sales: 1677.15, cogs: 1040, otherIncome: 0, profit: 1327.15, inventory: 59710});
+    }, {sales: 1677.15, cogs: 1040, otherIncome: 0, profit: 327.15, inventory: 58710});
     const position = await invoke({action: 'accountPosition', date});
     const centsFor = accountType => position.accounts.filter(account => account.account_type === accountType).reduce((total, account) => {
       const entry = position.balances[account.id];

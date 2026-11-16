@@ -8,7 +8,7 @@ import { stockUnit } from '../../lib/item-units.js';
 import { validPostingRuleAccount } from '../../lib/posting-rule-types.js';
 import { nonSaleInventoryExpenseAccount } from './non-sale-inventory-expense.js';
 import { driverReturnRun, driverReturnWorkspace, assertDriverReturnCustomer } from './driver-returns.js';
-import {recoverSaleExchangePackaging,receiveTransferredExchangePackaging} from './exchange-packaging.js';
+import {planAutomaticExchangePackaging,recoverSaleExchangePackaging,receiveTransferredExchangePackaging} from './exchange-packaging.js';
 
 const kind = 'field_expired_return';
 const requestKind = 'field_expired_request';
@@ -42,7 +42,7 @@ async function customerLocation(stores, customer, locationId) {
     ...pick(customer, ['address', 'town', 'neighbourhood', 'phone', 'contact_person', 'gps_lat', 'gps_lng', 'gps_accuracy_m', 'gps_captured_at', 'delivery_instructions']) });
 }
 
-async function replace(stores, record, context, date, actorId, replacement=null) {
+async function replace(stores, record, context, date, actorId, replacement=null, returnedProduct=null) {
   const productId=replacement?.id||record.product_id;
   const productName=replacement?.name||record.product_name;
   const quantity=replacement?.quantity??record.quantity;
@@ -55,12 +55,17 @@ async function replace(stores, record, context, date, actorId, replacement=null)
     warehouseId: context.stock_warehouse_id, warehouseIds: context.stock_warehouse_ids, quantity, movementType: 'promotional_issue', documentType: 'SpoilageRecord',
     documentId: record.id, dispatchId: context.dispatch_id, movementDate: date, saleableOnly: true,
     reason: `No-charge customer-product replacement for ${record.customer_name} (${record.record_number})` });
+  const automatic=returnedProduct?await planAutomaticExchangePackaging(stores,record,returnedProduct,issue.totalValue,treasury):null;
   let journal = null;
   if (issue.totalValue > 0) {
-    const lines = [{account_id:expense.id,debit:issue.totalValue,credit:0},{account_id:inventory.id,debit:0,credit:issue.totalValue}];
+    const recovery=automatic?.recovered.filter(row=>row.value>0)||[];
+    const loss=round2(issue.totalValue-(automatic?.recovered_value||0));
+    const lines = recovery.map(row=>({account_id:row.account_id,debit:row.value,credit:0,description:'Recover '+row.product_name+' from expired products'}));
+    if(loss>0)lines.unshift({account_id:expense.id,debit:loss,credit:0,description:recovery.length?'Net cost of no-charge replacement':'Cost of no-charge replacement'});
+    lines.push({account_id:inventory.id,debit:0,credit:issue.totalValue,description:'Fresh inventory issued for replacement'});
     const posted = await postJournal({ entities: stores }, { entryDate: date, sourceModule: 'field_returns', sourceDocumentType: 'SpoilageRecord', sourceDocumentId: record.id,
       description: `Customer-product replacement ${record.record_number} - ${record.customer_name}`, userId: actorId,
-      lines: lines.map(line => ({ ...line, description: line.debit ? 'Cost of no-charge replacement' : 'Fresh inventory issued for replacement' })) });
+      lines });
     journal = posted.journal;
     if(replacement)for(const move of await readRecords(stores.StockMovement,{document_type:'SpoilageRecord',document_id:record.id,movement_type:'promotional_issue'}))await stores.StockMovement.update(move.id,{journal_id:journal.id,inventory_account_id:inventory.id});
   }
@@ -69,6 +74,7 @@ async function replace(stores, record, context, date, actorId, replacement=null)
     replacement_cost: issue.totalValue, unit_cost: round2(issue.totalValue / quantity), total_value: issue.totalValue,
     ...(replacement?{exchange_packaging_replacement_product_id:productId,exchange_packaging_replacement_product_name:productName,exchange_packaging_replacement_quantity:quantity,exchange_packaging_replacement_expense_account_id:expense.id}:{}),
     journal_id: journal?.id || '', journal_number: journal?.journal_number || '' });
+  return {automatic,journal};
 }
 
 async function centralReturnBin(stores,sourceId){
@@ -121,8 +127,9 @@ export async function postSaleReplacements(svc, user, sale, replacements, suppli
       quantity: row.quantity, unitCost: 0, qcStatus: 'quarantine', lotNumber: 'ER-' + record.id, expiryDate: row.expiry_date || undefined,
       documentType: 'SpoilageRecord', documentId: record.id, movementType: 'customer_return', movementDate: sale.transaction_date,
       reason: row.reason + ' customer goods collected during ' + sale.sale_number + '; not available for sale' });
-    await replace(stores, record, context, sale.transaction_date, user.id,replacement?{...replacement,quantity:row.replacement_quantity}:null);
-    const recovery=await recoverSaleExchangePackaging(svc,{record,product,warehouse:bin,date:sale.transaction_date,user,declared:central?row.recovered_packaging:undefined});
+    const automaticExpired=central&&row.reason==='expired'&&row.recovered_packaging===undefined&&row.replacement_product_id===product.id&&row.replacement_quantity===row.quantity;
+    const {automatic,journal}=await replace(stores, record, context, sale.transaction_date, user.id,replacement?{...replacement,quantity:row.replacement_quantity}:null,automaticExpired?product:null);
+    const recovery=await recoverSaleExchangePackaging(svc,{record,product,warehouse:bin,date:sale.transaction_date,user,declared:central?row.recovered_packaging:undefined,automatic,journal});
     recoveryWarnings.push(...recovery.warnings.map(message=>({product_id:product.id,product_name:product.name,record_id:record.id,message})));
     await audit(svc, { action: 'sale_stock_exchange', module: 'field_returns', entityType: 'SpoilageRecord', entityId: record.id, userId: user.id,
       description: row.quantity + ' ' + stockUnit(product) + ' ' + row.reason + ' goods exchanged during ' + sale.sale_number + '; fresh stock issued without customer charge' });

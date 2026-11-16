@@ -8,7 +8,7 @@ import {distributionControlAction} from '../src/server/domain/distribution-contr
 import {employeeStockAction} from '../src/server/domain/employee-stock.js';
 import {unsoldStockReturnAction} from '../src/server/domain/unsold-stock-returns.js';
 import {expiryRecoveryAction} from '../src/server/domain/expiry-recovery.js';
-import {recoverSaleExchangePackaging} from '../src/server/domain/exchange-packaging.js';
+import {planAutomaticExchangePackaging,recoverSaleExchangePackaging} from '../src/server/domain/exchange-packaging.js';
 import {exchangePackagingEnabled} from '../src/lib/exchange-packaging.js';
 import {guardMutation} from '../src/server/access.js';
 
@@ -65,6 +65,30 @@ test('missing, ambiguous and incompatible container mappings warn without blocki
   await f.s.Product.update('product-a',{components:[{product_id:f.cup.id,quantity:1,unit:'ea'}]});
   const retry=await recoverSaleExchangePackaging(f.client.asServiceRole,{record,product:await f.s.Product.get('product-a'),warehouse:await f.s.Warehouse.get(record.collection_warehouse_id),date,user:gm});assert.equal(retry.reused,true);assert.equal((await recovered(f.s)).length,0,'later mapping changes never backfill history');
  }
+});
+
+test('automatic recovery recognizes supported container cost through the item asset and warns when it cannot be valued', async () => {
+  const f = await setup();
+  const product = await f.s.Product.get('product-a');
+  const plan = () => planAutomaticExchangePackaging(f.s, { quantity: 2 }, product, 400, []);
+  const scenarios = [
+    [{ inventory_account_id: 'inventory' }, /supported component cost/],
+    [{ current_cost: 250 }, /exceeds the replacement stock value/],
+    [{ current_cost: 100, inventory_account_id: 'revenue' }, /valid packaging inventory account/],
+  ];
+  for (const [mapping, warning] of scenarios) {
+    await f.s.Product.update(f.cup.id, mapping);
+    const result = await plan();
+    assert.equal(result.recovered_value, 0);
+    assert.deepEqual(result.recovered.map(row => [row.product_id, row.quantity, row.value]), [[f.cup.id, 2, 0]]);
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], warning);
+  }
+  await f.s.Product.update(f.cup.id, { inventory_account_id: 'inventory' });
+  const supported = await plan();
+  assert.equal(supported.recovered_value, 200);
+  assert.deepEqual(supported.recovered.map(row => [row.quantity, row.value, row.account_id]), [[2, 200, 'inventory']]);
+  assert.deepEqual(supported.warnings, []);
 });
 
 test('employee exchanges without a vehicle remain unreceived until counted request and warehouse acceptance, then QC releases exact packaging',async()=>{

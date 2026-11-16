@@ -52,7 +52,7 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   const canChooseSeller=catalogue?.canChooseSeller===true&&(!ownIssuedStock||central);
   const stockKey=JSON.stringify([source,form.date,canChooseSeller?form.seller_id:""]);
   const sourceData=stockResult?.key===stockKey?stockResult.data:null;
-  const centralExchange=sourceData?.source?.central_exchange===true;
+  const centralExchange=sourceData?.source?.central_exchange===true||(!locked&&central&&source==='company');
   useEffect(()=>{
     let active=true;setLoading(true);setLoadError('');
     Promise.all([call({action:'salesOrderWorkspace'}),id?Promise.all([erp.entities.SalesOrder.get(id),readAll(erp.entities.SalesOrderLine,{order_id:id})]):null])
@@ -103,9 +103,9 @@ export default function SalesOrderForm({ownIssuedStock=false}){
   }),[lines,locked]);
   const exchangeOnly=!lines.length&&replacements.length>0;
   const receiptRequired=!exchangeOnly||!centralExchange;
-  const exchangeControls={central:centralExchange,packaging:sourceData?.packaging,locationConfigured:!!sourceData?.source?.replacement_warehouse_id};
+  const exchangeControls={central:centralExchange,packaging:sourceData?.packaging,locationConfigured:sourceData?!!sourceData.source?.replacement_warehouse_id:undefined};
   const originalInvoiceField=centralExchange&&replacements.length>0&&<label className="block space-y-1 text-sm">{ui('Original invoice (optional)')}
-    <select className={selectClass} value={form.original_invoice_id||''} onChange={event=>setForm(f=>({...f,original_invoice_id:event.target.value}))}>
+    <select aria-label={ui('Original invoice (optional)')} className={selectClass} value={form.original_invoice_id||''} onChange={event=>setForm(f=>({...f,original_invoice_id:event.target.value}))}>
       <option value="">{ui('No linked invoice')}</option>{originalInvoices.filter(i=>i.date<=form.date&&(!i.locationId||i.locationId===form.location_id)).map(i=><option key={i.id} value={i.id}>{i.number} · {i.date}</option>)}
     </select>
   </label>;

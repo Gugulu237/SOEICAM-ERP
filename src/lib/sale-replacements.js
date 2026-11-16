@@ -14,7 +14,7 @@ export function normalizeSaleReplacements(input, date, {central = false} = {}) {
     if (!positiveQuantity(row.quantity)) throw Error('Enter the exact positive quantity being replaced.');
     if (!['expired', 'damaged'].includes(row.reason)) throw Error('Choose expired or damaged for each replacement.');
     const expiry = row.expiry_date || '';
-    if ((expiry && !validDate(expiry)) || row.reason === 'expired' && (!validDate(expiry) || expiry >= date)) throw Error('For expired goods, enter the printed expiry date before the delivery date.');
+    if ((expiry && !validDate(expiry)) || row.reason === 'expired' && (expiry ? expiry >= date : !central)) throw Error('For expired goods, enter the printed expiry date before the delivery date.');
     const lot = String(row.lot_number || '').trim().slice(0, 200);
     const key = JSON.stringify([row.product_id, row.reason, expiry, lot]);
     if (keys.has(key)) throw Error('Combine quantities for the same returned product and batch.');
@@ -27,6 +27,8 @@ export function normalizeSaleReplacements(input, date, {central = false} = {}) {
     const replacementId = row.replacement_product_id ?? row.product_id;
     const replacementQuantity = row.replacement_quantity ?? row.quantity;
     if (!id(replacementId) || !positiveQuantity(replacementQuantity)) throw Error('Choose the replacement product and its exact quantity.');
+    const replacement = {...normalized, replacement_product_id: replacementId, replacement_quantity: round(replacementQuantity)};
+    if (row.recovered_packaging === undefined && row.reason === 'expired' && replacementId === row.product_id && replacement.replacement_quantity === normalized.quantity) return replacement;
     const packaging = row.recovered_packaging ?? [];
     if (!Array.isArray(packaging) || packaging.length > 20) throw Error('Enter up to twenty recovered packaging items.');
     const seen = new Set();
@@ -35,7 +37,7 @@ export function normalizeSaleReplacements(input, date, {central = false} = {}) {
       seen.add(component.product_id);
       return {product_id: component.product_id, quantity: round(component.quantity), disposition: component.disposition};
     });
-    return {...normalized, replacement_product_id: replacementId, replacement_quantity: round(replacementQuantity), recovered_packaging: recovered};
+    return {...replacement, recovered_packaging: recovered};
   });
 }
 
