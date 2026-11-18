@@ -31,7 +31,7 @@ function runtime(){const r=hookRuntime();r.requests=[];r.client={entities:{
  },functions:{invoke:async()=>({data:{balances:{cash:{debit:100.01,credit:0},capital:{debit:0,credit:100}}}})}};return r;}
 test('Accounting journal register renders actual paginated API shapes and typed source groups without a refresh fallback',async()=>{
  const ui=await compiled(),r=runtime();globalThis.__register=r;const draw=()=>{r.beforeRender();return ui.render();};
- try{draw();await r.flush();const html=draw();assert.match(html,/JV-API/);assert.match(html,/Verified entry/);assert.match(html,/manual/);assert.match(html,/opening balances/);assert.match(html,/0.01 XAF/);assert.match(html,/Out by/);assert.match(html,/Recorded entry/);assert.ok(r.requests.some(v=>v.groupBy==='source_module'));assert.deepEqual(await ui.loadJournalSources(),['manual','opening_balances']);
+ try{draw();await r.flush();const html=draw();assert.match(html,/JV-API/);assert.match(html,/Verified entry/);assert.match(html,/manual/);assert.match(html,/opening balances/);assert.match(html,/0.01 FCFA/);assert.match(html,/Out by/);assert.match(html,/Recorded entry/);assert.ok(r.requests.some(v=>v.groupBy==='source_module'));assert.deepEqual(await ui.loadJournalSources(),['manual','opening_balances']);
  const report=await ui.loadJournalReport({});assert.equal(report.debit,200.02);assert.equal(report.credit,200.02);assert.equal(report.total,3);
  }finally{r.cleanup();delete globalThis.__register;}
 });

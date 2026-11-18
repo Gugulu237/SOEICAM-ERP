@@ -132,6 +132,6 @@ test('the gross-profit equation displays exact ledger decimals rather than a mis
   const render=await renderer(),runtime=environment(),input=fixture();delete input.journalsById.setup;
   input.lines=input.lines.filter(line=>line.journal_id==='sale').map(line=>({...line,...(line.account_id==='customer'?{debit:1000.4}:line.account_id==='sales'?{credit:1000.4}:line.account_id==='cost'?{debit:400.6}:{credit:400.6})}));
   input.activity=render.computeActivity(input);
-  try{const html=render.income(input);assert.match(html,/1,000\.4 XAF − \(400\.6 XAF\) = 599\.8 XAF/);assert.equal(profitAmount(runtime.export.report,'Gross profit'),599.8);}
+  try{const html=render.income(input);assert.match(html,/1,000\.4 FCFA − \(400\.6 FCFA\) = 599\.8 FCFA/);assert.equal(profitAmount(runtime.export.report,'Gross profit'),599.8);}
   finally{runtime.dispose();}
 });

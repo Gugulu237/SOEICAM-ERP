@@ -57,7 +57,7 @@ test('COGS consolidation defaults to 7000 into 5100 and only previews after an e
   assert.equal(button(r,'Preview COGS consolidation').disabled,true);reference(r,draw);
   await button(r,'Preview COGS consolidation').onClick();const rendered=draw();
   assert.deepEqual(r.calls,[{action:'previewConsolidation',sourceAccountId:source.id,targetAccountId:target.id,date,reference:'Signed COGS account review'}]);
-  assert.match(rendered,/Combined balance/);assert.match(rendered,/350 XAF/);assert.match(rendered,/Total profit, inventory and cash remain unchanged/);
+  assert.match(rendered,/Combined balance/);assert.match(rendered,/350 FCFA/);assert.match(rendered,/Total profit, inventory and cash remain unchanged/);
   assert.match(rendered,/7000 Direct Material COGS to 5100 Cost of Goods Sold/);assert.doesNotMatch(rendered,/[\uFFFD\u001A\u00b7\u2192]/);
   assert.match(rendered,/Products to remap: <strong>2<\/strong>/);assert.match(rendered,/Posting rules to remap: <strong>1<\/strong>/);assert.match(rendered,/The duplicate account will become read-only\. Historical journal entries remain available for audit\./);
   assert.equal(button(r,'Confirm COGS consolidation').disabled,true);await button(r,'Confirm COGS consolidation').onClick();assert.equal(r.calls.length,1,'a preview must never post without review');

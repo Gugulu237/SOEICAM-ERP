@@ -4,6 +4,7 @@ import NextLink from 'next/link';
 import { useRouter, usePathname, useSearchParams as useNextSearchParams, useParams as useNextParams } from 'next/navigation';
 import { useNavigationHistory, useNavigationSession } from './navigation-context';
 import { announceNavigation } from './navigation-session';
+import {canLeaveForms} from './form-navigation-guard';
 
 const hrefFor = to => typeof to === 'string' ? to : `${to?.pathname || ''}${to?.search || ''}${to?.hash || ''}`;
 export const Link = React.forwardRef(function Link({ to, replace, replaceOverlay = false, resume = false, prefetch = false, onNavigate, ...props }, ref) {
@@ -15,6 +16,7 @@ export const Link = React.forwardRef(function Link({ to, replace, replaceOverlay
     onNavigate?.({ ...event, preventDefault() { cancelled = true; event.preventDefault(); } });
     if (cancelled) return;
     if (href === window.location.pathname + window.location.search + window.location.hash) { event.preventDefault(); return; }
+    if(!canLeaveForms()){event.preventDefault();return;}
     // Consuming a drawer's temporary entry still adds a logical page to Back.
     announceNavigation(href, { replace });
   }} />;
@@ -22,16 +24,17 @@ export const Link = React.forwardRef(function Link({ to, replace, replaceOverlay
 export function useNavigate() {
   const router = useRouter();
   return useCallback((to, options = {}) => {
-    if (typeof to === 'number') { if (to === -1) router.back(); else if (to === 1) router.forward(); return; }
+    if (typeof to === 'number') { if(!canLeaveForms())return;if (to === -1) router.back(); else if (to === 1) router.forward(); return; }
     const href = hrefFor(to);
     if (typeof window !== 'undefined' && href === window.location.pathname + window.location.search + window.location.hash) return;
+    if(!canLeaveForms())return;
     announceNavigation(href, options);
     (options.replace ? router.replace : router.push)(href, { scroll: options.preventScrollReset !== true });
   }, [router]);
 }
 export function useBack(fallback = '/') {
   const router = useRouter(), session = useNavigationSession(), navigate = useNavigate();
-  return useCallback(() => { if (session?.getSnapshot().canBack) router.back(); else navigate(session?.lastPage(fallback) || fallback); }, [router, session, navigate, fallback]);
+  return useCallback(() => { if (session?.getSnapshot().canBack) {if(canLeaveForms())router.back();} else navigate(session?.lastPage(fallback) || fallback); }, [router, session, navigate, fallback]);
 }
 export function useLocation() {
   const pathname = usePathname(), search = useNextSearchParams().toString();

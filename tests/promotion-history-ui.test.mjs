@@ -41,8 +41,8 @@ test('GM all-employee history uses only the checked history reader, filters both
  const f=fixture();try{
   const html=await f.settle();assert.deepEqual(f.state.calls,[{action:'centralDegustationHistory',from:'2026-11-01',to:'2026-11-10',allEmployees:true}]);
   assert.deepEqual(f.state.entityCalls,[{store:'SpoilageRecord',query:{status:'replaced',replacement_date:{$gte:'2026-11-01',$lte:'2026-11-10'}},sort:'-replacement_date'}]);
-  assert.match(html,/All employees/);assert.match(html,/Employee not recorded/);assert.match(html,/Customer a/);assert.match(html,/Customer b/);assert.match(html,/Exchange customer A/);assert.match(html,/Exchange customer B/);assert.match(html,/1,025 XAF/);assert.match(html,/150 XAF/);assert.doesNotMatch(html,/data-mobile-action-bar/);
-  control(f.state,'History employee').onChange({target:{value:'agent-a'}});let selected=f.draw();assert.match(selected,/Customer a/);assert.doesNotMatch((selected.match(/<article\b[\s\S]*?<\/article>/g)||[]).join(''),/Customer b|Exchange customer B/);assert.match(selected,/400 XAF/);assert.match(selected,/70 XAF/);assert.match(selected,/selection filters history only/);assert.equal(f.state.calls.length,1);
+  assert.match(html,/All employees/);assert.match(html,/Employee not recorded/);assert.match(html,/Customer a/);assert.match(html,/Customer b/);assert.match(html,/Exchange customer A/);assert.match(html,/Exchange customer B/);assert.match(html,/1,025 FCFA/);assert.match(html,/150 FCFA/);assert.doesNotMatch(html,/data-mobile-action-bar/);
+  control(f.state,'History employee').onChange({target:{value:'agent-a'}});let selected=f.draw();assert.match(selected,/Customer a/);assert.doesNotMatch((selected.match(/<article\b[\s\S]*?<\/article>/g)||[]).join(''),/Customer b|Exchange customer B/);assert.match(selected,/400 FCFA/);assert.match(selected,/70 FCFA/);assert.match(selected,/selection filters history only/);assert.equal(f.state.calls.length,1);
   button(f.state,'Dégustation').onClick();selected=f.draw();assert.match(selected,/data-single-employee-form/);assert.deepEqual(Object.keys(f.state.form).sort(),['onClose','onSaved']);assert.equal(f.state.calls.length,1);
   control(f.state,'History employee').onChange({target:{value:''}});assert.doesNotMatch(f.draw(),/data-single-employee-form|data-mobile-action-bar/);
  }finally{f.close();}
@@ -50,7 +50,7 @@ test('GM all-employee history uses only the checked history reader, filters both
 
 test('ordinary staff and spoofed UI grants keep personal history, entity scope and hidden costs',async()=>{
  const f=fixture({manager:false});try{
-  f.state.session.role='admin';const html=await f.settle();assert.deepEqual(f.state.calls,[{action:'centralDegustationHistory',from:'2026-11-01',to:'2026-11-10'}]);assert.equal(control(f.state,'History employee'),undefined);assert.match(html,/Customer a/);assert.match(html,/Exchange customer A/);assert.doesNotMatch(html,/Customer b|Exchange customer B|400 XAF|70 XAF/);assert.match(html,/Recorded under profile/);assert.equal(f.state.entityCalls[0].store,'SpoilageRecord');
+  f.state.session.role='admin';const html=await f.settle();assert.deepEqual(f.state.calls,[{action:'centralDegustationHistory',from:'2026-11-01',to:'2026-11-10'}]);assert.equal(control(f.state,'History employee'),undefined);assert.match(html,/Customer a/);assert.match(html,/Exchange customer A/);assert.doesNotMatch(html,/Customer b|Exchange customer B|400 FCFA|70 FCFA/);assert.match(html,/Recorded under profile/);assert.equal(f.state.entityCalls[0].store,'SpoilageRecord');
  }finally{f.close();}
 });
 
@@ -63,7 +63,7 @@ test('read-only history never mounts entry controls, and period changes clear fi
 
 test('failed or stale history stays unavailable instead of showing real-looking zero totals',async()=>{
  const f=fixture();try{
-  await f.settle();f.state.request=async body=>{f.state.calls.push(body);throw Error('History unavailable');};button(f.state,'Refresh').onClick();const html=await f.settle();assert.match(html,/History unavailable/);assert.doesNotMatch(html,/1,025 XAF|0 XAF/);assert.match(html,/—/);
+  await f.settle();f.state.request=async body=>{f.state.calls.push(body);throw Error('History unavailable');};button(f.state,'Refresh').onClick();const html=await f.settle();assert.match(html,/History unavailable/);assert.doesNotMatch(html,/1,025 FCFA|0 FCFA/);assert.match(html,/—/);
   f.state.history.filter_choices_truncated=true;f.state.request=async body=>{f.state.calls.push(body);return {data:f.state.history};};button(f.state,'Retry').onClick();assert.match(await f.settle(),/Filter choices are limited to 500/);
  }finally{f.close();}
 });

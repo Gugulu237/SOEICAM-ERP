@@ -29,8 +29,8 @@ export default function QuickActions() {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   const navigate = useNavigate();
-  const { role, allowedModules } = useCurrentUser();
-  const actions = ACTIONS.filter(a => hasRoleAccess(role, a.roles) && (role === 'admin' || !allowedModules || (a.modules||[moduleForPath(a.path)]).every(module=>allowedModules.includes(module))));
+  const { user,role, allowedModules } = useCurrentUser();
+  const actions = ACTIONS.filter(a => (!user?.centralized_inventory?.enabled||a.path!=='/inventory?issue=1') && (role!=='admin'||a.path!=='/commercial?section=pos&new=1') && hasRoleAccess(role, a.roles) && (role === 'admin' || !allowedModules || (a.modules||[moduleForPath(a.path)]).every(module=>allowedModules.includes(module))));
 
   if (!actions.length) return null;
 

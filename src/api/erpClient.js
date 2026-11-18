@@ -5,15 +5,16 @@ import { createReadBatcher } from '@/lib/read-batcher';
 import { invalidateItemLookups } from '@/lib/item-lookup-cache';
 import { isReadOnlyFunction, createInFlightReads } from '@/lib/function-actions';
 import {disconnectDevice} from '@/lib/device-notifications-client';
+import {readableError} from '@/lib/ui-errors';
 async function request(path, body, { timeoutMs=0 } = {}) {
   const controller=timeoutMs ? new AbortController() : null;
   const timer=controller ? setTimeout(()=>controller.abort(),timeoutMs) : null;
   try {
   const response = await fetch(path, { method:body === undefined ? 'GET' : 'POST', credentials:'same-origin', cache:'no-store', ...(controller?{signal:controller.signal}:{}), ...(body === undefined ? {} : { headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) }) });
   const data = await response.json().catch(() => ({ error:'The server returned an invalid response.' }));
-  if (!response.ok || data?.error) throw Object.assign(new Error(uiMessage(data.error || 'Request failed.')), { status:response.status, data, response:{ status:response.status,data } });
+  if (!response.ok || data?.error) throw Object.assign(new Error(uiMessage(readableError(data.error || 'Request failed.',response.status))), { status:response.status, data, response:{ status:response.status,data } });
   return data;
-  } catch(error) { if(controller?.signal.aborted)throw new Error(uiMessage('Connection timed out. Try again.'));throw error; }
+  } catch(error) { if(controller?.signal.aborted)throw new Error(uiMessage('Connection timed out. Try again.'));if(error instanceof TypeError)throw new Error(uiMessage(readableError(error.message)));throw error; }
   finally { if(timer)clearTimeout(timer); }
 }
 async function authResult(method,...args) { const client=await supabaseBrowser();const {data,error}=await client.auth[method](...args);if(error)throw error;return data; }
@@ -39,7 +40,7 @@ const entities=new Proxy({}, { get:(_,entity)=>new Proxy({}, { get:(_,operation)
   if (operation === 'subscribe') return callback => { const timer=window.setInterval(() => { if (document.visibilityState === 'visible') callback({ type:'refresh' }); },15000); return () => window.clearInterval(timer); };
   return (...args) => {
     const values = entityArguments(operation, args);
-    if (['filter', 'list', 'get', 'count', 'aggregate'].includes(operation)) return read({ entity: String(entity), operation, args: values });
+    if (['filter', 'list', 'get', 'count', 'aggregate'].includes(operation)) return read({ entity: String(entity), operation, args: values }).catch(error=>{error.message=uiMessage(readableError(error.message,error.status));throw error;});
     return request('/api/entities/'+encodeURIComponent(String(entity)),{ operation,args:values }).then(value => { invalidateERPReads(); return value; });
   };
 } }) });

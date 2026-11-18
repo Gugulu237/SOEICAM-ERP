@@ -1,18 +1,5 @@
 /* SOEICAM mobile workspace: white surfaces, original branding and compact controls. */
 @media (max-width: 639px) {
-  :root:not(.dark) {
-    --background: 0 0% 100%; --foreground: 209 67% 22%;
-    --primary: 105 55% 28%; --primary-foreground: 0 0% 100%;
-    --secondary: 210 20% 98%; --secondary-foreground: 209 67% 22%;
-    --muted: 210 20% 97%; --muted-foreground: 215 16% 45%;
-    --accent: 210 20% 96%; --accent-foreground: 105 55% 25%;
-    --card: 0 0% 100%; --card-foreground: 209 67% 22%;
-    --popover: 0 0% 100%; --popover-foreground: 209 67% 22%;
-    --border: 214 20% 89%; --input: 214 20% 89%; --ring: 105 55% 28%;
-    --radius: .75rem;
-    --sidebar-background: 0 0% 100%; --sidebar-foreground: 209 67% 22%;
-    --sidebar-border: 214 20% 89%; --sidebar-accent: 210 20% 97%;
-  }
   html { scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
   [data-erp-content] { padding: 1rem 1rem calc(7rem + env(safe-area-inset-bottom)); }
   [data-erp-topbar] { background: hsl(var(--background)); border-bottom: 1px solid hsl(var(--border)); backdrop-filter: none; }

@@ -48,7 +48,7 @@ test('enabling automatic posting shows overdue total and preserves the existing 
 test('changing to an annual percentage previews the flat monthly charge and retains values on a failed save',async()=>{
   const render=await renderer(),r=hookRuntime(),calls=[];globalThis.__assetUI=r;r.request=async b=>{calls.push(b);throw Error('Connection interrupted');};
   const draw=()=>{r.beforeRender();return render('plan',{asset,accounts:[],onClose(){},onDone(){}});};
-  try{draw();checkbox(r,1).onChange({target:{checked:true}});draw();field(r,'depreciation-rate-mode').onChange({target:{value:'rate'}});draw();field(r,'asset-annual-rate').onChange({target:{value:'20'}});assert.match(draw(),/15 XAF/);await button(r,'Save schedule').onClick();assert.match(draw(),/Connection interrupted/);assert.equal(field(r,'asset-annual-rate').value,'20');assert.equal(calls[0].rateMode,'rate');assert.equal(calls[0].annualRate,'20');assert.equal(calls[0].changeSchedule,true);}finally{r.cleanup();delete globalThis.__assetUI;}
+  try{draw();checkbox(r,1).onChange({target:{checked:true}});draw();field(r,'depreciation-rate-mode').onChange({target:{value:'rate'}});draw();field(r,'asset-annual-rate').onChange({target:{value:'20'}});assert.match(draw(),/15 FCFA/);await button(r,'Save schedule').onClick();assert.match(draw(),/Connection interrupted/);assert.equal(field(r,'asset-annual-rate').value,'20');assert.equal(calls[0].rateMode,'rate');assert.equal(calls[0].annualRate,'20');assert.equal(calls[0].changeSchedule,true);}finally{r.cleanup();delete globalThis.__assetUI;}
 });
 
 test('financial statements wait for depreciation posting before reading journal balances and fail visibly',async()=>{

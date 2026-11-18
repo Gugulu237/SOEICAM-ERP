@@ -57,7 +57,7 @@ function fill(r,draw){
 test('linking existing capitalized cost previews straight-line expense and retries one checked request without a purchase journal',async()=>{
   let changed=0;const f=await env('asset',{account,onClose(){},onChanged(){changed++;}}),{r,draw}=f;
   try{
-    assert.equal(control(r,'account-asset-start'),undefined);fill(r,draw);assert.match(draw(),/20 XAF/);assert.match(draw(),/60 months/);assert.doesNotMatch(draw(),/Paid From|Payable \(optional\)/);
+    assert.equal(control(r,'account-asset-start'),undefined);fill(r,draw);assert.match(draw(),/20 FCFA/);assert.match(draw(),/60 months/);assert.doesNotMatch(draw(),/Paid From|Payable \(optional\)/);
     const requests=[];let fail=true;r.action=async body=>{if(body.action==='assetAccountWorkspace')return workspace();requests.push(body);if(fail)throw Error('Connection interrupted');return {asset:{id:'new-asset'}};};
     await button(r,'Save depreciation schedule').onClick();assert.match(draw(),/Connection interrupted/);assert.equal(control(r,'account-asset-cost').value,'1200');assert.equal(control(r,'Confirm already-recorded asset cost').checked,true);
     fail=false;const submit=button(r,'Save depreciation schedule');await Promise.all([submit.onClick(),submit.onClick()]);assert.equal(requests.length,2);assert.deepEqual(requests[0],requests[1]);assert.equal(changed,1);

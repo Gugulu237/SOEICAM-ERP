@@ -39,22 +39,22 @@ function setup(render,workspace=options,stockData=stock){
 
 
 async function selectCustomer(f){if(f.r.phone){f.control('Search customers').onChange({target:{value:'Customer'}});f.paint();f.r.buttons.find(b=>b['aria-label']==='Choose customer Customer').onClick();}else f.control('Customer').onChange({target:{value:'customer'}});for(let i=0;i<3;i++){f.paint();await f.r.flush();}f.paint();}
-async function productsStep(f){await selectCustomer(f);f.button('Continue to products').onClick();return f.paint();}
+async function productsStep(f){await selectCustomer(f);return f.paint();}
 function quantity(f,value){f.r.productPicker.onQuantityChange(f.r.productPicker.products[0],value);return f.paint();}
 function reviewStep(f,reference='RCPT-001'){f.button('No replacements').onClick();f.paint();f.button('Review sale').onClick();f.paint();if(reference!==null){f.control('Receipt reference number').onChange({target:{value:reference}});f.paint();}}
 
-for(const device of ['tablet','desktop'])test(device+' uses three steps, one product chooser, signed-in seller and mandatory receipt without premature posting',async()=>{
+for(const device of ['tablet','desktop'])test(device+' uses two stages, one product chooser, signed-in seller and mandatory receipt without premature posting',async()=>{
   const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',currentSeller:{id:'seller',name:'Salesperson A'}});f.r.phone=device==='phone';
   try{
-    let html=await f.ready();assert.match(html,/Step 1 of 3/);assert.equal(f.button('Record sale & deduct stock'),undefined);
+    let html=await f.ready();assert.match(html,/Step 1 of 2/);assert.equal(f.button('Record sale & deduct stock'),undefined);
     assert.equal(f.control('Person making the sale').value,'Salesperson A');assert.equal(f.control('Person making the sale').readOnly,true);
-    f.button('Continue to products').onClick();assert.match(f.paint(),/Choose a customer before continuing/);
-    html=await productsStep(f);assert.match(html,/Step 2 of 3/);assert.equal(f.control('Customer'),undefined);assert.equal(f.button('Add product'),undefined);
+    f.button('Review sale').onClick();assert.match(f.paint(),/Choose a customer before continuing/);
+    html=await productsStep(f);assert.match(html,/Step 1 of 2/);assert.equal(f.control('Customer').value,'customer');assert.equal(f.button('Add product'),undefined);
     assert.equal(f.r.buttons.filter(b=>b.label==='Choose products').length,1);
     f.button('Review sale').onClick();assert.match(f.paint(),/Add at least one product/);
     f.button('Choose products').onClick();f.paint();assert.equal(f.r.productPicker.open,true);
     quantity(f,'6');assert.equal(f.control('Qty 1').value,'6');assert.equal(f.control('Qty 2'),undefined);
-    f.r.productPicker.onOpenChange(false);f.paint();reviewStep(f,null);assert.match(f.paint(),/Step 3 of 3/);
+    f.r.productPicker.onOpenChange(false);f.paint();reviewStep(f,null);assert.match(f.paint(),/Step 2 of 2/);
     assert.equal(f.calls.filter(c=>c.action==='recordSuppliedOrder').length,0);
     await f.button('Record sale & deduct stock').onClick();assert.match(f.paint(),/reference number of the receipt/);assert.equal(f.calls.filter(c=>c.action==='recordSuppliedOrder').length,0);
     f.control('Receipt reference number').onChange({target:{value:'  RECEIPT-007  '}});f.paint();
@@ -89,7 +89,7 @@ test('company stock remains automatic without individual warehouse choices, whil
   try{await f.ready();await productsStep(f);assert.equal(f.r.sourcePicker.value,'company');assert.equal(f.r.sourcePicker.options.some(o=>o.id==='warehouse:main'),false);quantity(f,1);reviewStep(f);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').sourceType,'company');}finally{f.close();}
   const g=setup(render,{...options,defaultSource:'company'});g.r.routeId='old';
   g.r.client.entities.SalesOrder={get:async()=>({id:'old',status:'draft',warehouse_id:'main',warehouse_name:'Main Cold Room',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',receipt_reference:'OLD-REF'})};g.r.client.entities.SalesOrderLine={filter:async()=>[]};
-  try{await g.ready();assert.equal(g.control('Person making the sale').value,'Salesperson A');g.button('Continue to products').onClick();assert.match(g.paint(),/Main Cold Room/);assert.equal(g.r.sourcePicker.value,'warehouse:main');quantity(g,1);reviewStep(g,null);assert.equal(g.control('Receipt reference number').value,'OLD-REF');g.r.fail=false;await g.button('Record sale & deduct stock').onClick();assert.equal(g.calls.find(c=>c.action==='recordSuppliedOrder').sellerId,undefined);}finally{g.close();}
+  try{await g.ready();assert.equal(g.control('Person making the sale').value,'Salesperson A');g.paint();assert.match(g.paint(),/Main Cold Room/);assert.equal(g.r.sourcePicker.value,'warehouse:main');quantity(g,1);reviewStep(g,null);assert.equal(g.control('Receipt reference number').value,'OLD-REF');g.r.fail=false;await g.button('Record sale & deduct stock').onClick();assert.equal(g.calls.find(c=>c.action==='recordSuppliedOrder').sellerId,undefined);}finally{g.close();}
 });
 
 test('direct quantity editing merges rows and cannot advance with excessive, blank, zero or invalid amounts',async()=>{
@@ -102,7 +102,7 @@ test('direct quantity editing merges rows and cannot advance with excessive, bla
 
 test('review retains VAT-inclusive prices and shows invalid price previews without crashing',async()=>{
   const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company'},stock);
-  try{await f.ready();await productsStep(f);quantity(f,2);assert.match(f.paint(),/already include VAT/);reviewStep(f);assert.match(f.paint(),/VAT included \(19\.25%\)/);assert.match(f.paint(),/161\.43 XAF/);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').expectedTotal,1000);}finally{f.close();}
+  try{await f.ready();await productsStep(f);quantity(f,2);assert.match(f.paint(),/already include VAT/);reviewStep(f);assert.match(f.paint(),/VAT included \(19\.25%\)/);assert.match(f.paint(),/161\.43 FCFA/);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').expectedTotal,1000);}finally{f.close();}
 });
 
 
@@ -157,7 +157,7 @@ for(const device of ['desktop','phone'])test(device+' records central expired ex
   try{
     await f.ready();
     await selectCustomer(f);
-    f.button(f.r.phone?'Next':'Continue to products').onClick();f.paint();
+    f.paint();
     if(f.r.phone){f.button('Replacement').onClick();f.paint();}
     f.button('Yes, goods replaced').onClick();f.paint();
     assert.equal(f.r.replacementPicker.open,true);
@@ -170,7 +170,7 @@ for(const device of ['desktop','phone'])test(device+' records central expired ex
     assert.equal(exceptions.length,2);
     assert.equal(exceptions[0].checked,false);
     exceptions[1].onChange({target:{checked:true}});f.paint();
-    f.button(f.r.phone?'Next':'Review sale').onClick();
+    f.button('Review sale').onClick();
     assert.match(f.paint(),/Exchange only . no customer charge/);
     assert.equal(f.control('Receipt reference number').required,false);
     assert.ok(f.control('Original invoice (optional)'));
@@ -240,7 +240,7 @@ for(const kind of ['branch','location'])test('a sole '+kind+' is selected in ste
  f.r.invoke=async body=>body.action==='salesOrderDeliveryPoints'?(f.calls.push(body),{data:{points:[point]}}):invoke(body);
  try{
   await f.ready();await selectCustomer(f);assert.equal(f.control('Delivered To (Branch)').value,point.id);
-  f.button('Continue to products').onClick();f.paint();quantity(f,2);reviewStep(f,'BRANCH-001');
+  f.paint();f.paint();quantity(f,2);reviewStep(f,'BRANCH-001');
   assert.match(f.paint(),/Customer delivery destination/);
   await f.button('Record sale & deduct stock').onClick();assert.match(f.paint(),/Connection interrupted/);
   f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
@@ -257,8 +257,8 @@ test('a customer without branches can continue, while multiple destinations requ
  f.r.invoke=async body=>body.action==='salesOrderDeliveryPoints'?(f.calls.push(body),{data:{points}}):invoke(body);
  try{
   await f.ready();await selectCustomer(f);assert.equal(f.control('Delivered To (Branch)').value,'');
-  f.button('Continue to products').onClick();assert.match(f.paint(),/Choose the customer branch that received this supply/);assert.match(f.paint(),/Step 1 of 3/);
-  f.control('Delivered To (Branch)').onChange({target:{value:'south'}});f.paint();f.button('Continue to products').onClick();f.paint();quantity(f,1);reviewStep(f);f.r.fail=false;
+  f.button('Review sale').onClick();assert.match(f.paint(),/Choose the customer branch that received this supply/);assert.match(f.paint(),/Step 1 of 2/);
+  f.control('Delivered To (Branch)').onChange({target:{value:'south'}});f.paint();f.paint();f.paint();quantity(f,1);reviewStep(f);f.r.fail=false;
   await f.button('Record sale & deduct stock').onClick();assert.equal(f.calls.find(c=>c.action==='recordSuppliedOrder').locationId,'south');
  }finally{f.close();}
 });
@@ -267,12 +267,12 @@ test('switching customers waits for the current destinations and ignores an olde
  const {render}=await bundle(),f=setup(render,{...options,customers:[...options.customers,{id:'second',business_name:'Second customer'}]}),invoke=f.r.invoke,resolvers={};
  f.r.invoke=body=>body.action==='salesOrderDeliveryPoints'?new Promise(resolve=>{f.calls.push(body);resolvers[body.customerId]=resolve;}):invoke(body);
  try{
-  await f.ready();await selectCustomer(f);f.button('Continue to products').onClick();assert.match(f.paint(),/Wait for the delivery locations/);
-  f.control('Customer').onChange({target:{value:'second'}});f.paint();f.button('Continue to products').onClick();assert.match(f.paint(),/Step 1 of 3/);
+  await f.ready();await selectCustomer(f);f.button('Review sale').onClick();assert.match(f.paint(),/Wait for the delivery locations/);
+  f.control('Customer').onChange({target:{value:'second'}});f.paint();f.paint();assert.match(f.paint(),/Step 1 of 2/);
   await f.r.flush();f.paint();resolvers.customer({data:{points:[{id:'old-branch',label:'Old customer branch'}]}});await f.r.flush();f.paint();
   assert.equal(f.control('Delivered To (Branch)'),undefined);
   resolvers.second({data:{points:[{id:'current-branch',label:'Current customer branch'}]}});await f.r.flush();f.paint();assert.equal(f.control('Delivered To (Branch)').value,'current-branch');
-  f.button('Continue to products').onClick();f.paint();quantity(f,1);reviewStep(f);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
+  f.paint();f.paint();quantity(f,1);reviewStep(f);f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
   const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.customerId,'second');assert.equal(body.locationId,'current-branch');
  }finally{f.close();}
 });
@@ -284,7 +284,7 @@ test('delivery lookup errors can be retried without losing the selected customer
   await f.ready();await selectCustomer(f);assert.match(f.paint(),/Delivery lookup unavailable/);assert.equal(f.control('Customer').value,'customer');
   failed=false;f.button('Retry').onClick();f.paint();await f.r.flush();f.paint();await f.r.flush();f.paint();
   assert.equal(f.control('Customer').value,'customer');assert.equal(f.control('Delivered To (Branch)').value,'recovered');
-  f.button('Continue to products').onClick();assert.match(f.paint(),/Step 2 of 3/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+  f.paint();assert.match(f.paint(),/Step 1 of 2/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
  }finally{f.close();}
 });
 
@@ -294,8 +294,8 @@ test('an old draft keeps its quantities and requires review of a removed destina
  f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'row',product_id:'yola',product_name:'YOLA 500 g',quantity:2,unit_price:500,tax_rate:0,discount_pct:0}]};
  try{
   assert.match(await f.ready(),/Previous delivery point is unavailable/);assert.equal(f.control('Delivered To (Branch)').value,'removed-point');
-  f.button('Continue to products').onClick();assert.match(f.paint(),/Choose a delivery point belonging to this customer/);
-  f.control('Delivered To (Branch)').onChange({target:{value:''}});f.paint();f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,2);
+  f.button('Review sale').onClick();assert.match(f.paint(),/Choose a delivery point belonging to this customer/);
+  f.control('Delivered To (Branch)').onChange({target:{value:''}});f.paint();f.paint();f.paint();assert.equal(f.control('Qty 1').value,2);
   reviewStep(f,'DRAFT-REF');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.locationId,'');assert.equal(body.lines[0].quantity,2);
  }finally{f.close();}
 });
@@ -309,8 +309,8 @@ for(const language of ['English','French'])test('a changed destination refreshes
  };
  try{
   await f.ready();await productsStep(f);quantity(f,2);reviewStep(f,'PRESERVED-RECEIPT');await f.button('Record sale & deduct stock').onClick();
-  assert.match(f.paint(),/Step 1 of 3/);await f.r.flush();f.paint();await f.r.flush();f.paint();assert.equal(f.control('Customer').value,'customer');
-  f.control('Delivered To (Branch)').onChange({target:{value:'new-b'}});f.paint();f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,2);
+  assert.match(f.paint(),/Step 1 of 2/);await f.r.flush();f.paint();await f.r.flush();f.paint();assert.equal(f.control('Customer').value,'customer');
+  f.control('Delivered To (Branch)').onChange({target:{value:'new-b'}});f.paint();f.paint();f.paint();assert.equal(f.control('Qty 1').value,2);
   reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'PRESERVED-RECEIPT');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();
   const writes=f.calls.filter(c=>c.action==='recordSuppliedOrder');assert.equal(writes[1].locationId,'new-b');assert.equal(writes[0].requestKey,writes[1].requestKey);
  }finally{f.close();}
@@ -333,8 +333,8 @@ test('an administrator attributes stock checks and sale retries to the selected 
   quantity(f,2);reviewStep(f,'SELLER-B-RECEIPT');assert.match(f.paint(),/Person making the sale.*Salesperson B/);
   await f.button('Record sale & deduct stock').onClick();assert.match(f.paint(),/Connection interrupted/);
   const first=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(first.sellerId,'other');assert.equal(first.dispatchId,'run-b');
-  f.button('Customer').onClick();f.paint();assert.equal(f.control('Person making the sale').value,'other');
-  f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,2);reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'SELLER-B-RECEIPT');
+  f.button('Customer & products').onClick();f.paint();assert.equal(f.control('Person making the sale').value,'other');
+  f.paint();f.paint();assert.equal(f.control('Qty 1').value,2);reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'SELLER-B-RECEIPT');
   f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const writes=f.calls.filter(c=>c.action==='recordSuppliedOrder');
   assert.equal(writes.length,2);assert.equal(writes[1].requestKey,writes[0].requestKey);assert.equal(writes[1].sellerId,'other');assert.equal(writes[1].lines[0].quantity,2);
  }finally{f.close();}
@@ -346,8 +346,8 @@ test('changing salesperson retains entered quantities but invalidates the old pr
  try{
   await f.ready();await productsStep(f);quantity(f,4);f.button('Yes, goods replaced').onClick();f.paint();f.button('Choose replacement products').onClick();f.paint();
   f.r.replacementPicker.onQuantityChange(f.r.replacementPicker.products[0],2);f.r.replacementPicker.onOpenChange(false);f.paint();f.r.controls.find(c=>c.id==='exchange-reason-0').onChange({target:{value:'damaged'}});await settle(f);
-  f.button('Customer').onClick();f.paint();changeSeller(f,'other');await settle(f);
-  f.button('Continue to products').onClick();f.paint();assert.equal(f.control('Qty 1').value,4);assert.equal(f.r.sourcePicker.value,'issued:run-b');assert.deepEqual(f.r.productPicker.products,[]);assert.equal(f.r.productPicker.disabled,true);
+  f.button('Customer & products').onClick();f.paint();changeSeller(f,'other');await settle(f);
+  f.paint();f.paint();assert.equal(f.control('Qty 1').value,4);assert.equal(f.r.sourcePicker.value,'issued:run-b');assert.deepEqual(f.r.productPicker.products,[]);assert.equal(f.r.productPicker.disabled,true);
   f.button('Review sale').onClick();assert.match(f.paint(),/Choose a stock source and wait for available products/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
   finishSelectedStock({data:{...stock,products:[{id:'different',name:'Other finished product',available:8,selling_price:500,unit:'ea'}]}});await settle(f);
   assert.equal(f.control('Qty 1').value,4);assert.equal(f.r.controls.find(c=>c.id==='exchange-qty-0').value,2);assert.equal(f.r.controls.find(c=>c.id==='exchange-reason-0').value,'damaged');assert.match(f.paint(),/This product is no longer available at the selected stock source/);
@@ -361,7 +361,7 @@ test('a failed selected-seller stock lookup keeps the choice and retries the sam
  try{
   await f.ready();changeSeller(f,'other');await settle(f);await productsStep(f);assert.match(f.paint(),/Choose issued stock assigned to the selected salesperson/);assert.equal(f.r.sourcePicker.value,'issued:run-b');assert.equal(f.r.productPicker.disabled,true);
   unavailable=false;f.button('Refresh stock').onClick();await settle(f);assert.equal(f.r.productPicker.products[0].available,10);
-  f.button('Customer').onClick();f.paint();assert.equal(f.control('Person making the sale').value,'other');
+  f.button('Customer & products').onClick();f.paint();assert.equal(f.control('Person making the sale').value,'other');
   const reads=f.calls.filter(c=>c.action==='salesOrderStock'&&c.sellerId==='other');assert.equal(reads.length,2);assert.ok(reads.every(c=>c.dispatchId==='run-b'));
  }finally{f.close();}
 });
@@ -401,7 +401,7 @@ test('an administrator editing a draft retains its selected salesperson, saved s
  f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',sales_supply_source:'company',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',salesperson_name:'Salesperson B',receipt_reference:'DRAFT-SELLER-REF'})};
  f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'line',product_id:'yola',product_name:'YOLA 500 g',quantity:3,unit_price:500,tax_rate:0,discount_pct:0}]};
  try{
-  await f.ready();assert.equal(f.control('Person making the sale').value,'other');f.button('Continue to products').onClick();f.paint();assert.equal(f.r.sourcePicker.value,'company');assert.equal(f.control('Qty 1').value,3);
+  await f.ready();assert.equal(f.control('Person making the sale').value,'other');f.paint();f.paint();assert.equal(f.r.sourcePicker.value,'company');assert.equal(f.control('Qty 1').value,3);
   reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'DRAFT-SELLER-REF');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(c=>c.action==='recordSuppliedOrder');assert.equal(body.sellerId,'other');assert.equal(body.sourceType,'company');assert.equal(body.orderId,'draft');
  }finally{f.close();}
 });
@@ -410,8 +410,8 @@ test('an unavailable draft salesperson remains visible until an administrator ex
  const {render}=await bundle(),f=setup(render,adminOptions);f.r.routeId='draft';
  f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',sales_supply_source:'company',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'former',salesperson_name:'Former salesperson',receipt_reference:'DRAFT-OLD'})};f.r.client.entities.SalesOrderLine={filter:async()=>[]};
  try{
-  assert.match(await f.ready(),/Former salesperson/);assert.equal(f.control('Person making the sale').value,'former');f.button('Continue to products').onClick();assert.match(f.paint(),/Step 1 of 3/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
-  changeSeller(f,'other');await settle(f);f.button('Continue to products').onClick();assert.match(f.paint(),/Step 2 of 3/);assert.equal(f.r.sourcePicker.value,'issued:run-b');
+  assert.match(await f.ready(),/Former salesperson/);assert.equal(f.control('Person making the sale').value,'former');f.paint();assert.match(f.paint(),/Step 1 of 2/);assert.equal(f.calls.some(c=>c.action==='recordSuppliedOrder'),false);
+  changeSeller(f,'other');await settle(f);f.paint();assert.match(f.paint(),/Step 1 of 2/);assert.equal(f.r.sourcePicker.value,'issued:run-b');
  }finally{f.close();}
 });
 
@@ -446,7 +446,7 @@ test('central activation converts only an unposted draft stock choice while reta
  const {render}=await bundle(),f=setup(render,{...adminOptions,centralized_inventory:{enabled:true},defaultSource:'company'});f.r.routeId='draft';
  f.r.client.entities.SalesOrder={get:async()=>({id:'draft',status:'draft',dispatch_id:'run-b',warehouse_id:'old-custody',customer_id:'customer',order_date:'2026-10-25',salesperson_id:'other',receipt_reference:'CENTRAL-DRAFT'})};f.r.client.entities.SalesOrderLine={filter:async()=>[{id:'line',product_id:'yola',product_name:'YOLA 500 g',quantity:3,unit_price:500,tax_rate:0,discount_pct:0}]};
  try{
-  await f.ready();assert.equal(f.control('Person making the sale').value,'other');f.button('Continue to products').onClick();const html=f.paint();assert.match(html,/Company stock/);assert.equal(f.r.sourcePicker,undefined);assert.equal(f.control('Qty 1').value,3);
+  await f.ready();assert.equal(f.control('Person making the sale').value,'other');f.paint();const html=f.paint();assert.match(html,/Company stock/);assert.equal(f.r.sourcePicker,undefined);assert.equal(f.control('Qty 1').value,3);
   assert.equal(f.calls.filter(call=>call.action==='salesOrderStock').at(-1).sourceType,'company');reviewStep(f,null);assert.equal(f.control('Receipt reference number').value,'CENTRAL-DRAFT');f.r.fail=false;await f.button('Record sale & deduct stock').onClick();const body=f.calls.find(call=>call.action==='recordSuppliedOrder');assert.equal(body.orderId,'draft');assert.equal(body.sourceType,'company');assert.equal(body.sellerId,'other');
  }finally{f.close();}
 });
@@ -470,7 +470,7 @@ test('a headquarters sale deep link keeps the intended branch, credit defaults a
    assert.equal(f.control('Customer').value,'customer');
    assert.equal(f.control('Delivered To (Branch)').value,'east-branch');
    assert.equal(f.control('Payment Type').value,'credit');
-   f.button('Continue to products').onClick();f.paint();quantity(f,2);reviewStep(f);
+   f.paint();f.paint();quantity(f,2);reviewStep(f);
    const html=f.paint();
    assert.match(html,/Customer account<\/dt><dd[^>]*>Headquarters<\/dd>/);
    assert.match(html,/Amount added to customer balance/);
@@ -484,19 +484,19 @@ test('phone sale flow defaults to cash in hand and carries a chosen account thro
  const {render}=await bundle(),f=setup(render,{...options,defaultSource:'company',centralized_inventory:{enabled:true},currentSeller:{id:'seller',name:'Salesperson A'},defaultCashAccountId:'till',cashAccounts:[{id:'till',name:'Main Cash'},{id:'wallet',name:'Mobile Money'}]});f.r.phone=true;
  const confirm=()=>f.r.buttons.find(button=>button.label.startsWith('Confirm sale'));
  try{
-  let html=await f.ready();assert.match(html,/Step 1 of 3/);assert.match(html,/Salesperson A/);assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
-  f.button('Next').onClick();assert.match(f.paint(),/Choose a customer/);
-  await selectCustomer(f);f.button('Next').onClick();html=f.paint();assert.match(html,/Step 2 of 3/);assert.equal(f.control('Search customers'),undefined);
+  let html=await f.ready();assert.match(html,/Step 1 of 2/);assert.match(html,/Salesperson A/);assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
+  f.button('Review sale').onClick();assert.match(f.paint(),/Choose a customer/);
+  await selectCustomer(f);html=f.paint();assert.match(html,/Step 1 of 2/);assert.ok(f.control('Search customers'));
   f.r.buttons.find(b=>b['aria-label']==='Add one YOLA 500 g').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,1);f.r.buttons.find(b=>b['aria-label']==='Remove one YOLA 500 g').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,'');
   f.control('Units sold for YOLA 500 g').onChange({target:{value:'6'}});f.paint();
-  f.button('Replacement').onClick();f.paint();f.button('No replacements').onClick();f.paint();f.button('Next').onClick();html=f.paint();assert.match(html,/Step 3 of 3/);assert.match(html,/Payment posted directly to treasury/);assert.equal(f.button('Edit salesperson'),undefined);assert.equal(f.r.controls.find(c=>c.name==='sale-payment'&&c.checked)?.type,'radio');
+  f.button('Replacement').onClick();f.paint();f.button('No replacements').onClick();f.paint();f.button('Review sale').onClick();html=f.paint();assert.match(html,/Step 2 of 2/);assert.match(html,/Payment posted directly to treasury/);assert.equal(f.button('Edit salesperson'),undefined);assert.equal(f.r.controls.find(c=>c.name==='sale-payment'&&c.checked)?.type,'radio');
   assert.equal(f.control('Cash deposited to').value,'till');
   f.control('Cash deposited to').onChange({target:{value:'wallet'}});f.paint();
   assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,0);
   await confirm().onClick();assert.match(f.paint(),/reference number of the receipt/);
   f.control('Receipt reference number').onChange({target:{value:'  PHONE-007  '}});f.paint();const save=confirm().onClick;await Promise.all([save(),save()]);assert.match(f.paint(),/Connection interrupted/);
   assert.equal(f.calls.filter(call=>call.action==='recordSuppliedOrder').length,1);assert.equal(f.control('Receipt reference number').value,'  PHONE-007  ');
-  f.r.buttons.find(button=>button['aria-label']==='Back').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,'6');f.button('Next').onClick();f.paint();
+  f.r.buttons.find(button=>button['aria-label']==='Back').onClick();f.paint();assert.equal(f.control('Units sold for YOLA 500 g').value,'6');f.button('Review sale').onClick();f.paint();
   f.r.fail=false;await confirm().onClick();const writes=f.calls.filter(call=>call.action==='recordSuppliedOrder');assert.equal(writes.length,2);assert.equal(writes[0].requestKey,writes[1].requestKey);assert.deepEqual(writes.map(write=>write.treasuryAccountId),['wallet','wallet']);assert.equal(writes[1].receiptReference,'PHONE-007');assert.equal(writes[1].lines[0].quantity,'6');assert.deepEqual(f.r.navigation,['/sales/invoices/invoice']);
  }finally{f.close();}
 });

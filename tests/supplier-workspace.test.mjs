@@ -63,7 +63,7 @@ test('documented supplier VAT validates and records the actual breakdown without
   assert.deepEqual([bill.subtotal,bill.tax_total,bill.total,bill.supplier_invoice_reference],[400.02,76.98,477,'INV-777']);
   const html=supplierBillHtml({...bill,supplier_invoice_reference:'<INV-777>'},key=>key,'en');
   assert.match(html,/&lt;INV-777&gt;/);
-  assert.match(html,/76[.,]98 XAF/);
+  assert.match(html,/76[.,]98 FCFA/);
   assert.equal((await s.JournalLine.list()).find(line=>line.account_id===f.inv.id).debit,477);
   assert.equal((await s.JournalLine.list()).find(line=>line.account_id==='payable').credit,477);
   assert.equal((await s.StockMovement.list())[0].total_value,477);

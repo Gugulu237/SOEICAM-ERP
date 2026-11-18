@@ -37,7 +37,7 @@ export default function ManagerHome({ data, loading, preview, onRefresh }) {
     </nav>
     {section === 'approvals' ? <Approvals embedded preview={preview} onDecision={onRefresh} /> : section === 'quick-reports' ? <ManagementQuickReports preview={preview}/> : <>
     <WorkspaceHero eyebrow="General Manager" title={ui("A clear view of SOEICAM")} description={ui("Full administration of every ERP dashboard and department. Review decisions, manage employee access and oversee cash, production and field teams.")} icon={BriefcaseBusiness}>
-      <WorkspaceButton path="/?section=approvals" preview={preview}>{ui("Review approvals")}<ArrowUpRight size={17} className="ml-3" /></WorkspaceButton><WorkspaceButton path="/team-workspaces?section=reports" preview={preview} variant="outline">{ui("View employee dashboards")}</WorkspaceButton>
+      <WorkspaceButton path="/sales/new" preview={preview}>{ui("Record sale")}<ArrowUpRight size={17} className="ml-3" /></WorkspaceButton><WorkspaceButton path="/reports" preview={preview} variant="outline">{ui("Open company reports")}</WorkspaceButton>
     </WorkspaceHero>
     <WorkspaceMetrics ready={ready} metrics={[
       { label: 'Invoiced sales today', value: formatXAF(summary.today), note: 'Posted sales including tax; drafts excluded' },

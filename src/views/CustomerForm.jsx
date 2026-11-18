@@ -2,6 +2,7 @@
 /* localized-interface */
 import { ui, uiMessage } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
+import {useUnsavedChanges} from '@/hooks/useUnsavedChanges';
 import {usePhoneLayout} from '@/hooks/usePhoneLayout';
 import MobileCustomerHeader from '@/components/customers/MobileCustomerHeader';
 import MobileCustomerForm from '@/components/customers/MobileCustomerForm';
@@ -88,6 +89,10 @@ export default function CustomerForm() {
     return () => { active = false; };
   }, [id, isEdit, isAdmin, authLoading, role, reload]);
 
+  const baseline=useRef(null),signature=JSON.stringify([form,partnerType,acquiredById]);
+  useEffect(()=>{if(!loading&&!loadError&&baseline.current===null)baseline.current=signature;},[loading,loadError,signature]);
+  const markSaved=useUnsavedChanges(baseline.current!==null&&signature!==baseline.current);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   async function handleSave() {
@@ -118,6 +123,7 @@ export default function CustomerForm() {
         const count = (await erp.entities.Customer.filter({})).length;
         await erp.entities.Customer.create({ ...payload, customer_number: `C-${String(count + 1).padStart(4, "0")}` });
       }
+      markSaved();
       toast({ title: ui("Saved") });
       navigate(parentId?'/customers?view=visual&customer='+encodeURIComponent(parentId):'/customers');
     } catch (e) {

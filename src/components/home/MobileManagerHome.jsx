@@ -31,7 +31,7 @@ export default function MobileManagerHome({data, loading, preview}) {
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div><p>{ui('Sales today')}</p><strong>{financeData?.sales==null?'—':formatXAF(financeData.sales)}</strong></div>
         <div><p>{ui('Posted net profit today')}</p><strong className="text-primary">{financeData?.netProfit==null?'—':formatXAF(financeData.netProfit)}</strong>{financeAllowed&&<Link to="/accounting/statements" className="mt-1 block text-[10px] underline">{ui('Income statement')}</Link>}</div>
-        <div className="col-span-2 border-t pt-3 flex items-center justify-between gap-3"><div><p>{ui('Outstanding invoice balances')}</p><strong>{money(summary.receivables)}</strong></div></div>
+        <div className="border-t pt-3"><p>{ui('Company treasury')}</p><strong>{money(cash.balance)}</strong>{!preview&&canOpen('/accounting/treasury')&&<Link to="/accounting/treasury" className="mt-1 block text-xs underline">{ui('View treasury')}</Link>}</div><div className="border-t pt-3"><p>{ui('Outstanding invoice balances')}</p><strong>{money(summary.receivables)}</strong>{!preview&&canOpen('/accounting/receivables')&&<Link to="/accounting/receivables" className="mt-1 block text-xs underline">{ui('View invoices')}</Link>}</div>
       </div>
     </section>
     {financeAllowed&&finance.error&&<p role="alert" className="text-xs text-red-700">{uiMessage(finance.error)}</p>}

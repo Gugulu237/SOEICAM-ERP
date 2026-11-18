@@ -26,10 +26,10 @@ test('catalogue quick-edit actions stay separate from the product navigation but
   new Function('require', 'module', 'exports', output.outputFiles[0].text)(require, module, module.exports);
   const { render } = module.exports;
   const normal = render(false, false);
-  assert.match(normal, /750 XAF/);
+  assert.match(normal, /750 FCFA/);
   assert.doesNotMatch(normal, /data-inline-editor/);
   const edited = render(true, true);
-  assert.doesNotMatch(edited, /750 XAF/);
+  assert.doesNotMatch(edited, /750 FCFA/);
   assert.match(edited, /aria-label="Open Yogurt"/);
   const article = edited.match(/<article\b[\s\S]*?<\/article>/)[0];
   const editorAt = article.indexOf('data-inline-editor');
@@ -75,9 +75,9 @@ test('landscape quick edit keeps pricing separate from a fresh warehouse stock r
   assert.match(markup, /aria-labelledby="edit-prices"/);
   assert.match(markup, /aria-labelledby="edit-stock"/);
   assert.match(markup, /Current selling price/);
-  assert.match(markup, /150 XAF/);
+  assert.match(markup, /150 FCFA/);
   assert.match(markup, /Manufacturing cost/);
-  assert.match(markup, /55 XAF/);
+  assert.match(markup, /55 FCFA/);
   assert.match(markup, /readonly=""[^>]*value="55"/i);
   assert.doesNotMatch(markup, /Purchase cost \(XAF/);
   assert.match(markup, /80 ea/);
@@ -101,7 +101,7 @@ test('unconfigured catalogue drafts show missing prices and a real blank U/M cho
   assert.match(markup, /<option value="" selected="">Select U\/M<\/option>/);
   assert.match(markup, /Selling price \(XAF \/ U\/M\)/);
   assert.match(markup, /type="number"[^>]*value=""/);
-  assert.doesNotMatch(markup, /0 XAF|per ea|XAF \/ ea/);
+  assert.doesNotMatch(markup, /0 FCFA|per ea|XAF \/ ea/);
 });
 
 test('loading and failed stock reports show unknown quantities rather than stale values or fabricated zero', async () => {

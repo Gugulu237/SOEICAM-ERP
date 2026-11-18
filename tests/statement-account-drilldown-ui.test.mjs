@@ -73,9 +73,9 @@ test('a denied statement reader exposes no account drill-down controls or journa
  }finally{r.cleanup();globalThis.window=previousWindow;delete globalThis.__statementAccountUI;}
 });
 
-test('statement account rows and journal detail display exact fractional XAF rather than independently rounded totals',async()=>{
+test('statement account rows and journal detail display exact fractional FCFA rather than independently rounded totals',async()=>{
  const render=await renderer(),r=runtime(),previousWindow=globalThis.window;globalThis.__statementAccountUI=r;globalThis.window={addEventListener(){},removeEventListener(){}};
  const fuel=r.journals.find(j=>j.id==='fuel');fuel.total_debit=100.25;fuel.total_credit=100.25;r.lines.filter(l=>l.journal_id==='fuel').forEach(l=>{if(l.debit)l.debit=100.25;if(l.credit)l.credit=100.25;});
- try{paint(r,render);await r.flush();paint(r,render);dateInputs(r)[0].onChange({target:{value:'2026-10-01'}});let html=paint(r,render);assert.match(html,/100\.25 XAF/);accountButton(r,'Vehicle fuel').onClick();html=paint(r,render);assert.equal(r.drilldown.detail.periodTotal,100.25);assert.match(html,/100\.25 XAF/);assert.equal(r.drilldown.detail.rows[0].effect,100.25);
+ try{paint(r,render);await r.flush();paint(r,render);dateInputs(r)[0].onChange({target:{value:'2026-10-01'}});let html=paint(r,render);assert.match(html,/100\.25 FCFA/);accountButton(r,'Vehicle fuel').onClick();html=paint(r,render);assert.equal(r.drilldown.detail.periodTotal,100.25);assert.match(html,/100\.25 FCFA/);assert.equal(r.drilldown.detail.rows[0].effect,100.25);
  }finally{r.cleanup();globalThis.window=previousWindow;delete globalThis.__statementAccountUI;}
 });

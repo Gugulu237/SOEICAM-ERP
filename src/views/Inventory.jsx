@@ -31,7 +31,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PageBackButton from '@/components/shared/PageBackButton';
-import { Plus, ArrowLeftRight, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal, Package, Warehouse, Bell, Truck } from "lucide-react";
+import { Plus, ArrowLeftRight, Grid2X2, List, RefreshCw, PackageCheck, MoreHorizontal, Package, Warehouse, Bell, Truck, RotateCcw, SlidersHorizontal } from "lucide-react";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -52,7 +52,7 @@ export default function Inventory() {
   const navigate = useNavigate(), [params, setParams] = useSearchParams();
   const phone=usePhoneLayout();
   const requestedWorkspace=inventoryWorkspaceState(params);
-  const workspace=phone&&requestedWorkspace.section==='home'?{...requestedWorkspace,section:'items'}:requestedWorkspace;
+  const workspace=requestedWorkspace;
   const backToMenu = useMenuBack('/inventory');
   const { user,role, principalRole, employee, allowedModules, loading: authLoading } = useCurrentUser(), { toast } = useToast();
   const hasModule=key=>role==='admin' || !allowedModules || allowedModules.includes(key);
@@ -137,7 +137,7 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
       if (sequence === loadSequence.current) { setLoading(false); setRefreshing(false); }
     }
   }, [showRemoved]);
-  const needsOverview = ['items','stock','movements','alerts','locations','counts'].includes(workspace.section) || alertsOpen || showTransfer;
+  const needsOverview = ['home','items','stock','movements','alerts','locations','counts'].includes(workspace.section) || alertsOpen || showTransfer;
   useEffect(() => {
     if(authLoading || !needsOverview)return;
     loadData();
@@ -179,10 +179,13 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
   }, [workspace.section, role, navigate, setParams]);
   const sectionTitle = {items:'Items & pricing',stock:'Stock on Hand',movements:'Movements',alerts:'Stock alerts',adjustments:'Stock counts & adjustments',locations:'Storage locations',counts:'Production count requests'}[workspace.section];
   const menu = [
+    {key:'alerts',label:'Stock alerts',icon:Bell,open:()=>changeWorkspace({section:'alerts'})},
+    ...(['admin','cashier'].includes(role)?[{key:'recovery',label:'Expiry & packaging recovery',icon:RotateCcw,open:()=>navigate('/accounting/recovery')}]:canMoveStock?[{key:'recovery',label:'Recovered packaging',icon:RotateCcw,open:()=>setShowRecoveryReceipt(true)}]:[]),
+    {key:'stock',label:'Stock on Hand',icon:Warehouse,open:()=>changeWorkspace({section:'stock'})},
     {key:'items',label:'Items & pricing',icon:Package,open:()=>changeWorkspace({section:'items'})},
     ...(canReceive?[{key:'receiving',label:'Receive inventory',icon:PackageCheck,open:()=>navigate('/purchases?section=receiving')}]:[]),
     ...(canIssueStock?[{key:'issue',label:'Issue goods',icon:Truck,open:()=>{setIssueAgent('');setShowIssue(true);}}]:[]),
-    {key:'alerts',label:'Stock alerts',icon:Bell,open:()=>changeWorkspace({section:'alerts'})},
+    ...(canAdjustStock?[{key:'adjustments',label:'Adjust quantity',icon:SlidersHorizontal,open:()=>navigate('/accounting/inventory?view=adjustments')}]:[]),
     ...(canManageWarehouses?[{key:'locations',label:'Storage locations',icon:Warehouse,open:()=>changeWorkspace({section:'locations'})}]:[]),
   ];
 
@@ -191,11 +194,11 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
     <header className="flex items-center justify-between gap-2">
       <div data-page-heading className="flex min-w-0 items-center gap-2">{workspace.section!=='home' && !(phone&&workspace.section==='items') && <PageBackButton onClick={backToMenu} label={ui('Inventory menu')}/>}<h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">{ui(phone&&workspace.section==='items'?'Stock':sectionTitle || 'Inventory')}</h1></div>
       <div className="flex shrink-0 items-center gap-2">
-        {['items','stock','movements'].includes(workspace.section) && <InventoryAlertsMenu items={lowStock} loading={loading} open={alertsOpen} onOpenChange={setAlertsOpen} onOpenItem={canEdit?item=>{setAlertsOpen(false);editItem(item);}:undefined}/>}
+        {['home','items','stock','movements'].includes(workspace.section) && <InventoryAlertsMenu items={lowStock} loading={loading} open={alertsOpen} onOpenChange={setAlertsOpen} onOpenItem={canEdit?item=>{setAlertsOpen(false);editItem(item);}:undefined}/>}
         {canEdit && !phone && workspace.section==='items' && <Button aria-label={ui('New item')} className="h-11 gap-1.5 rounded-xl px-3" onClick={() => navigate('/items/new')}><Plus size={17}/><span className="hidden sm:inline">{ui('New item')}</span></Button>}
       </div>
     </header>
-    {workspace.section==='home' && !authLoading && <nav aria-label={ui('Inventory sections')} className="mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">{menu.map(({key,label,icon:Icon,open})=><button key={key} type="button" aria-label={ui(label)} onClick={open} className="group flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48"><span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span><span className="break-words text-sm font-semibold text-slate-900 sm:text-base">{ui(label)}</span></button>)}</nav>}
+    {workspace.section==='home' && !authLoading && <nav aria-label={ui('Inventory sections')} className="mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">{menu.map(({key,label,icon:Icon,open})=><button key={key} type="button" aria-label={ui(label)} onClick={open} className="group flex min-h-28 min-w-0 flex-col items-center justify-center gap-3 rounded-xl border bg-white px-3 py-4 text-center transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"><span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span><span className="break-words text-sm font-semibold text-slate-900 sm:text-base">{ui(label)}</span></button>)}</nav>}
     {authLoading && <Pending/>}
     {workspace.section==='items' && !phone && (showCatalogueReceiving || canIssueStock) && <div role="group" aria-label={ui('Inventory actions')} className={'grid gap-2 '+(showCatalogueReceiving&&canIssueStock?'grid-cols-2':'grid-cols-1')}>
       {showCatalogueReceiving && <Button aria-label={ui('Receive inventory')} className="h-auto min-h-12 min-w-0 gap-2 whitespace-normal rounded-xl px-2 py-3 text-xs sm:px-4 sm:text-sm" onClick={() => navigate('/purchases?section=receiving')}><PackageCheck size={18} className="shrink-0"/><span>{ui('Receive inventory')}</span></Button>}
@@ -207,7 +210,7 @@ if(!authLoading && workspace.section==='adjustments' && canAdjustStock){const qu
     <nav aria-label={ui("Item types")} className={phone?"-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]":"grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"}>
       {ITEM_FILTERS.map(filter => <button type="button" key={filter.key} aria-pressed={workspace.filter === filter.key} onClick={() => changeWorkspace({ section: 'items', filter: filter.key, type: 'all' })} className={(phone?"flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold ":"flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm font-medium sm:justify-center ") + (workspace.filter === filter.key ? "border-primary bg-primary text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400")}>{filter.label}<span className="text-xs opacity-70">{loading ? "-" : counts[filter.key]}</span></button>)}
     </nav>
-    {phone&&hasModule('manufacturing')&&<button type="button" onClick={()=>navigate('/manufacturing?section=recipes')} className="flex min-h-16 w-full items-center gap-3 rounded-[22px] border bg-white p-4 text-left"><span className="rounded-lg bg-secondary p-2"><Package size={22} className="text-primary"/></span><span className="min-w-0 flex-1"><strong className="block text-sm">{ui('Manufacturing')}</strong><span className="block text-xs text-muted-foreground">{ui('Assemblies and production batches')}</span></span><span className="text-xs font-semibold text-primary">{ui('Open')}</span></button>}
+    {phone&&hasModule('manufacturing')&&<button type="button" onClick={()=>navigate('/manufacturing?section=assemblies')} className="flex min-h-16 w-full items-center gap-3 rounded-[22px] border bg-white p-4 text-left"><span className="rounded-lg bg-secondary p-2"><Package size={22} className="text-primary"/></span><span className="min-w-0 flex-1"><strong className="block text-sm">{ui('Manufacturing')}</strong><span className="block text-xs text-muted-foreground">{ui('Assemblies and production batches')}</span></span><span className="text-xs font-semibold text-primary">{ui('Open')}</span></button>}
     {phone&&<section className="grid grid-cols-3 gap-2 rounded-[22px] border bg-white p-4">{[[workspace.filter==='finished'?'Available units':'Items',workspace.filter==='finished'?availableFinished:filtered.length],['References',filtered.length],['Alerts',lowStock.filter(row=>filtered.some(item=>item.id===row.id)).length]].map(([label,value])=><div key={label} className="min-w-0"><p className="text-[10px] text-muted-foreground">{ui(label)}</p><strong className="mt-1 block text-base tabular-nums">{loading?'—':formatNumber(value,3)}</strong></div>)}</section>}
     <div className="flex items-center justify-between gap-2">
       {phone?<div className="flex min-w-0 items-center gap-2">{showCatalogueReceiving?<Button variant="outline" className="min-h-11 gap-2 rounded-xl text-sm" onClick={()=>navigate('/purchases?section=receiving')}><PackageCheck size={17}/>{ui('Receive inventory')}</Button>:<span className="text-xs text-muted-foreground">{ui("{0} items",filtered.length)}</span>}</div>:<ViewToggle value={view} onChange={setView} options={[{ value: "visual", label: "Photos", icon: Grid2X2 }, { value: "table", label: "Table", icon: List }]} />}

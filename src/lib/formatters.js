@@ -1,14 +1,14 @@
 // Currency and number formatting utilities for SOEICAM (XAF)
 import { getLocale,ui } from './i18n.js';
 export function formatXAF(amount) {
-  if (amount == null || isNaN(amount)) return "0 XAF";
+  if (amount == null || isNaN(amount)) return "0 FCFA";
   const num = Math.round(Number(amount));
-  return num.toLocaleString(getLocale()) + " XAF";
+  return num.toLocaleString(getLocale()) + " FCFA";
 }
 
 export function formatAccountingXAF(amount){
   if(amount==null||!Number.isFinite(Number(amount)))return ui('Invalid amount');
-  return Number(amount).toLocaleString(getLocale(),{maximumFractionDigits:2})+' XAF';
+  return Number(amount).toLocaleString(getLocale(),{maximumFractionDigits:2})+' FCFA';
 }
 
 export function formatNumber(num, decimals = 0) {

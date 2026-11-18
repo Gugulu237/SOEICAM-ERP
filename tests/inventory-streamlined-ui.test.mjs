@@ -45,14 +45,14 @@ test('Inventory keeps four categories, opens issue locally and exposes alerts th
   }finally{r.cleanup();delete globalThis.__inventoryFlow;}
 });
 
-test('stock landing removes adjustment shortcuts for every role and keeps secondary inventory destinations',async()=>{
+test('stock details keep counts in accounting while the overview exposes stock and recovery',async()=>{
  const {render}=await bundle(),r=hookRuntime();r.session={role:'admin',principalRole:'warehouse_manager',allowedModules:['inventory','inventory_adjustments','manufacturing']};r.query='section=stock&area=delivery&warehouse=cold';r.lazy=[];globalThis.__inventoryFlow=r;
  const paint=()=>{r.beforeRender();r.lazy=[];return render();};
  try{
   let html=paint();assert.doesNotMatch(html,/All stock|Production stock|Out for delivery|Manage storage locations|Production count requests|Adjust quantity/);assert.match(html,/Move stock/);
   r.session={role:'admin',principalRole:'admin'};assert.doesNotMatch(paint(),/Adjust quantity|Correct existing stock/);
   r.session={role:'admin',principalRole:'warehouse_manager'};paint();assert.equal(r.lazy.some(v=>v.props.warehouseId==='cold'),false);
-  r.query='';html=paint();assert.match(html,/Storage locations/);assert.doesNotMatch(html,/Production count requests|Stock on Hand|Movements|Recovered packaging|Inventory count review/);
+  r.query='';html=paint();assert.match(html,/Storage locations/);assert.doesNotMatch(html,/Production count requests|Movements|Inventory count review/);
   r.buttons.find(b=>b['aria-label']==='Storage locations').onClick();assert.equal(new URLSearchParams(r.query).get('section'),'locations');assert.equal(new URLSearchParams(r.query).has('area'),false);
   paint();r.buttons.find(b=>b["aria-label"]==='Inventory menu').onClick();assert.equal(r.navigation.at(-1),'/inventory');
  }finally{r.cleanup();delete globalThis.__inventoryFlow;}

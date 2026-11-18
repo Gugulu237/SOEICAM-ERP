@@ -56,27 +56,27 @@ export default function DataTable({ columns, data, searchFields = [], pageSize =
       {exportTitle && <div className="mb-3"><ReportExport disabled={exportDisabled} getReport={() => tableReport(exportTitle, exportColumns || columns, filtered, [...exportMetadata, ["Search", search || "All records"], ["Sort", sortCol ? `${sortCol} (${sortDir})` : "Default"], ["Records", filtered.length]], exportNotes)} /></div>}
       {phone ? <div data-phone-records className="space-y-3">
         {columns.some(col => col.sortable !== false && col.label) && <div className="flex min-w-0 items-center gap-2"><select aria-label={ui('Sort records')} value={sortCol || ''} className="h-11 min-w-0 flex-1 rounded-lg border bg-white px-3 text-sm" onChange={event => setView(previous => ({ ...previous, sortCol: event.target.value || null, page: 0 }))}><option value="">{ui('Default order')}</option>{columns.filter(col => col.sortable !== false && col.label).map(col => <option key={col.key} value={col.key}>{col.label}</option>)}</select><Button variant="outline" disabled={!sortCol} aria-label={ui('Reverse sort order')} onClick={() => setView(previous => ({ ...previous, sortDir: previous.sortDir === 'asc' ? 'desc' : 'asc' }))}>{sortDir === 'asc' ? '↑' : '↓'}</Button></div>}
-        {!paged.length && <p className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">{emptyMessage}</p>}
+        {!paged.length && <p className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">{search?ui("No matching records. Clear your search to see all records."):emptyMessage}{search&&<Button variant="outline" className="ml-2 mt-2" onClick={()=>setSearch('')}>{ui("Clear search")}</Button>}</p>}
         {paged.map((row, index) => mobileRow ? <React.Fragment key={row.id || index}>{mobileRow(row, onRowClick ? () => onRowClick(row) : undefined)}</React.Fragment> : <MobileRecord key={row.id || index} row={row} index={index} primary={primary} columns={columns} cell={cell} onRowClick={onRowClick}/>)}
       </div> : <div className="max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
+            <tr className="bg-muted border-b border-border">
               {columns.map(col => (
                 <th
                   key={col.key}
-                  onClick={() => col.sortable !== false && handleSort(col.key)}
+                  scope="col"
+                  aria-sort={col.sortable===false?undefined:sortCol===col.key?(sortDir==='asc'?'ascending':'descending'):'none'}
                   className={`px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap ${col.sortable !== false ? "cursor-pointer hover:text-slate-900" : ""} ${col.className || ""}`}
                 >
-                  {col.label}
-                  {sortCol === col.key && (sortDir === "asc" ? " ↑" : " ↓")}
+                  {col.sortable===false?col.label:<button type="button" onClick={()=>handleSort(col.key)}>{col.label}{sortCol===col.key&&<span aria-hidden="true">{sortDir==='asc'?' ↑':' ↓'}</span>}</button>}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {paged.length === 0 ? (
-              <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-slate-400">{emptyMessage}</td></tr>
+              <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-slate-400">{search?ui("No matching records. Clear your search to see all records."):emptyMessage}{search&&<Button variant="outline" className="ml-2" onClick={()=>setSearch('')}>{ui("Clear search")}</Button>}</td></tr>
             ) : paged.map((row, i) => (
               <tr
                 key={row.id || i}
@@ -95,7 +95,7 @@ export default function DataTable({ columns, data, searchFields = [], pageSize =
       </div>}
       {totalPages > 1 && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-          <span>{filtered.length}{ui(" record")}{filtered.length !== 1 ? "s" : ""}</span>
+          <span role="status">{ui("{0} records",filtered.length)}</span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" aria-label={ui("Previous records")} disabled={currentPage === 0} onClick={() => setView(previous => ({ ...previous, page: currentPage - 1 }))}>
               <ChevronLeft size={14} />

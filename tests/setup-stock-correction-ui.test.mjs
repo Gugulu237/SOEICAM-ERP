@@ -69,7 +69,7 @@ test('setup correction starts with no selection, shows blocked entries and requi
     change(r,'Accounting start date','2026-10-01');draw();
     await button(r,'Preview correction').onClick();const html=draw();
     assert.deepEqual(r.calls[1].body,{action:'preview',journalIds:['setup-1'],accountingStartDate:'2026-10-01',offsetAccountId:'equity',reference:'Signed opening count',confirmSetup:true});
-    assert.match(html,/Change in inventory/);assert.match(html,/Change in cash/);assert.match(html,/-300 XAF/);assert.match(html,/3990 Opening equity/);
+    assert.match(html,/Change in inventory/);assert.match(html,/Change in cash/);assert.match(html,/-300 FCFA/);assert.match(html,/3990 Opening equity/);
     assert.equal(button(r,'Confirm and post correction').disabled,true);
     await button(r,'Confirm and post correction').onClick();assert.equal(r.calls.length,2);
     change(r,'Setup evidence reference','Different evidence');assert.doesNotMatch(draw(),/Review the correction before posting/);
@@ -132,8 +132,8 @@ test('supplier mismatch review exposes source journals and exact proposed accoun
   try{
     await button(r,'Check accounting').onClick();const html=draw();
     assert.match(html,/Supplier payable account review/);assert.match(html,/href="\/accounting\/journals\/receipt-journal"/);assert.match(html,/href="\/accounting\/journals\/payment-journal"/);
-    assert.match(html,/2100 Supplier Payables<\/td><td[^>]*>400 XAF<\/td><td[^>]*>0 XAF/);
-    assert.match(html,/2200 Accounts payable - suppliers<\/td><td[^>]*>0 XAF<\/td><td[^>]*>400 XAF/);
+    assert.match(html,/2100 Supplier Payables<\/td><td[^>]*>400 FCFA<\/td><td[^>]*>0 FCFA/);
+    assert.match(html,/2200 Accounts payable - suppliers<\/td><td[^>]*>0 FCFA<\/td><td[^>]*>400 FCFA/);
     assert.match(html,/Proposed correcting entry - review only/);assert.match(html,/The payment journal is missing/);assert.match(html,/Supplier advances excluded from this comparison: 3/);
     assert.equal(button(r,'Confirm and post correction'),undefined);assert.equal(r.calls.length,1);
   }finally{f.close();}
