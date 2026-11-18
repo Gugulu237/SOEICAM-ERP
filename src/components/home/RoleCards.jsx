@@ -22,7 +22,7 @@ export function RoleIllustration({ role, template }) {
     <div className="absolute h-28 w-40 rounded-[50%] bg-green-100/70 transition-transform duration-200 group-hover:scale-105" />
     <svg viewBox="0 0 224 144" className="absolute inset-0 h-full w-full fill-none text-green-300"><path d="M42 81H182M112 28V116" stroke="currentColor" strokeWidth="2" strokeDasharray="4 5" /><circle cx="112" cy="28" r="4" fill="currentColor" /><circle cx="112" cy="116" r="4" fill="currentColor" /></svg>
     <span className="absolute left-2 top-14 -rotate-6 rounded-2xl border border-green-100 bg-white p-3 text-green-600 shadow-sm"><Left size={24} strokeWidth={1.6} /></span>
-    <span className="relative rounded-3xl border border-green-200 bg-white p-5 text-[#347623] shadow-sm"><Main size={48} strokeWidth={1.5} /></span>
+    <span className="relative rounded-3xl border border-green-200 bg-white p-5 text-primary shadow-sm"><Main size={48} strokeWidth={1.5} /></span>
     <span className="absolute right-2 top-14 rotate-6 rounded-2xl border border-green-100 bg-white p-3 text-green-600 shadow-sm"><Right size={24} strokeWidth={1.6} /></span>
   </div>;
 }

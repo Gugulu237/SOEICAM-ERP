@@ -35,7 +35,7 @@ export default function PwaProvider({children}) {
           <p><strong>{ui('Desktop')}</strong><br/>{ui('Open SOEICAM in Chrome or Edge and use the install icon in the address bar or browser menu.')}</p>
           <p className="text-slate-500">{ui('Already installed? Open SOEICAM from your app list. Installation availability depends on your browser.')}</p>
         </div>
-        {state.canPrompt && <button type="button" onClick={install} disabled={state.installing} className="min-h-12 rounded-xl bg-[#347623] px-4 font-semibold text-white">{ui('Install app')}</button>}
+        {state.canPrompt && <button type="button" onClick={install} disabled={state.installing} className="min-h-12 rounded-xl bg-primary px-4 font-semibold text-primary-foreground">{ui('Install app')}</button>}
       </DialogContent>
     </Dialog>
   </PwaContext.Provider>;
@@ -45,7 +45,7 @@ export function InstallAppButton({compact = false}) {
   useLocaleRender();
   const pwa = useContext(PwaContext);
   if (!pwa?.ready || pwa.installed) return null;
-  return <button type="button" onClick={pwa.install} disabled={pwa.installing} aria-label={ui('Install app')} title={ui('Install app')} className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-[#245719] hover:bg-green-50 disabled:opacity-60 ${compact ? 'justify-center' : ''}`}>
+  return <button type="button" onClick={pwa.install} disabled={pwa.installing} aria-label={ui('Install app')} title={ui('Install app')} className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-primary hover:bg-green-50 disabled:opacity-60 ${compact ? 'justify-center' : ''}`}>
     <Download size={18} className="shrink-0"/>{!compact && <span>{ui(pwa.installing ? 'Installing...' : 'Install app')}</span>}
   </button>;
 }

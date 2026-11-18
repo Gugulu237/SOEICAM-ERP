@@ -24,6 +24,31 @@
       }
     ]
   },
+  "/products/yola/brasse-fraise-250g.png": {
+    "originalBytes": 1372814,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-fraise-250g.13907286c0b4.96.webp",
+        "bytes": 4316
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-fraise-250g.13907286c0b4.256.webp",
+        "bytes": 16878
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-fraise-250g.13907286c0b4.512.webp",
+        "bytes": 43674
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-fraise-250g.13907286c0b4.960.webp",
+        "bytes": 90638
+      }
+    ]
+  },
   "/products/yola/brasse-fraise-500g.jpg": {
     "originalBytes": 259385,
     "variants": [
@@ -46,6 +71,31 @@
         "width": 960,
         "src": "/products/optimized/yola-brasse-fraise-500g.36b7ffa7d58d.960.webp",
         "bytes": 66906
+      }
+    ]
+  },
+  "/products/yola/brasse-nature-250g.png": {
+    "originalBytes": 1181588,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-nature-250g.0b8e5ab9df5f.96.webp",
+        "bytes": 4152
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-nature-250g.0b8e5ab9df5f.256.webp",
+        "bytes": 16750
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-nature-250g.0b8e5ab9df5f.512.webp",
+        "bytes": 43826
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-nature-250g.0b8e5ab9df5f.960.webp",
+        "bytes": 91002
       }
     ]
   },
@@ -96,6 +146,31 @@
         "width": 960,
         "src": "/products/optimized/yola-brasse-non-sucre-500g.d7743db6cba6.960.webp",
         "bytes": 62158
+      }
+    ]
+  },
+  "/products/yola/brasse-vanille-250g.png": {
+    "originalBytes": 1521840,
+    "variants": [
+      {
+        "width": 96,
+        "src": "/products/optimized/yola-brasse-vanille-250g.4523a36034fe.96.webp",
+        "bytes": 3744
+      },
+      {
+        "width": 256,
+        "src": "/products/optimized/yola-brasse-vanille-250g.4523a36034fe.256.webp",
+        "bytes": 15418
+      },
+      {
+        "width": 512,
+        "src": "/products/optimized/yola-brasse-vanille-250g.4523a36034fe.512.webp",
+        "bytes": 40278
+      },
+      {
+        "width": 960,
+        "src": "/products/optimized/yola-brasse-vanille-250g.4523a36034fe.960.webp",
+        "bytes": 83200
       }
     ]
   },

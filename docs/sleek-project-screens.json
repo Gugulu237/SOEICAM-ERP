@@ -1,0 +1,249 @@
+{
+  "projectId": "UXViqxJgxPf",
+  "projectUrl": "https://sleek.design/project/UXViqxJgxPf",
+  "reviewedAt": "2026-11-18",
+  "sourceCommit": "44559c1160909354ee7dfe64a08c21a0dfb19813",
+  "styling": "Existing Tailwind 3, theme CSS variables and React components",
+  "screens": [
+    {
+      "componentId": "hSRIYmF24Vc",
+      "screenId": "aKJTGc8ItEL",
+      "name": "Plus",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "M0NVWkLVQs6",
+      "screenId": "qgiQb7fO4Qq",
+      "name": "Paie",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "yDGZpmopAhY",
+      "screenId": "Az3YnzySsEo",
+      "name": "Équipe et profil",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "OyohksqabQ8",
+      "screenId": "oOoD2wUoqLg",
+      "name": "Caisse",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "pmyFS1jij1c",
+      "screenId": "kndbsQElnHp",
+      "name": "Fournisseur et règlement",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "xpyukiCAylL",
+      "screenId": "wP6HhPySqGX",
+      "name": "Commande fournisseur",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "cvfChl6jIFA",
+      "screenId": "OMlDB0OE8YA",
+      "name": "Achats",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "HsJTqGNcDOA",
+      "screenId": "UiwWvzCN3oR",
+      "name": "Immobilisations",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "iIz7LjCLYzW",
+      "screenId": "F39ZT0miF5i",
+      "name": "Rapports financiers",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "GGK3f5vMskU",
+      "screenId": "tKNuKKNWgzS",
+      "name": "Journal comptable",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "FLV0lSbifKB",
+      "screenId": "x2yLiBgzn10",
+      "name": "Plan comptable",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "IupfzcaFd9o",
+      "screenId": "mUMhmbGFVO2",
+      "name": "Charges récurrentes",
+      "activeVersion": 4
+    },
+    {
+      "componentId": "a78M0KnlWoP",
+      "screenId": "v8t6EvHENd8",
+      "name": "Nouvelle dépense",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "ECsbDoBHQxu",
+      "screenId": "sbw18s0Rw3J",
+      "name": "Comptabilité",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "gAyuaIJ7ydY",
+      "screenId": "Aq9OOnUgAtu",
+      "name": "Lot production",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "0YK5dS4gVvA",
+      "screenId": "lisVUQG6jzO",
+      "name": "Enregistrer production",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "vqNDETwOYEj",
+      "screenId": "5hwh5wMLT7O",
+      "name": "Fiche assemblage",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "cypd2lJUSQx",
+      "screenId": "cAjWGMVQcre",
+      "name": "Assemblages",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "Z3t2NfycKxc",
+      "screenId": "QGIccxDF4eN",
+      "name": "Alertes péremption",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "ADNgoZUrngz",
+      "screenId": "TViPM7wOdou",
+      "name": "Inventaire et ajustement",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "7sKEehEmknf",
+      "screenId": "bjNUOGgiMZb",
+      "name": "Réception stock",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "da9a8WPBrLP",
+      "screenId": "zHG4csK24GG",
+      "name": "Fiche article",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "RPmUcfeSHDw",
+      "screenId": "GfSrirpeARl",
+      "name": "Dégustations et échanges",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "WTk2AUxtlgn",
+      "screenId": "88948zxMyMV",
+      "name": "Carte clients",
+      "activeVersion": 3
+    },
+    {
+      "componentId": "rcENUXY14dW",
+      "screenId": "wO7tTdb6VKh",
+      "name": "Nouveau client",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "ClUypg1hpLY",
+      "screenId": "rePZVxNMj48",
+      "name": "Fiche client",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "jrGcer9IrQ3",
+      "screenId": "11V3S0Yk5Tl",
+      "name": "Clients",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "PbXc5VTeH7A",
+      "screenId": "iHIZCr4NnMv",
+      "name": "Détail vente",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "6HpC4XhEpER",
+      "screenId": "ArZZYkP5Mis",
+      "name": "Nouvelle vente 3/3",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "aF8fyobuO7N",
+      "screenId": "4jRAPd9MD1Y",
+      "name": "Nouvelle vente 2/3",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "7OMaFnG9Gfb",
+      "screenId": "pFOZVptVWgK",
+      "name": "Accueil Hôtesse",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "bNCWSklp7Ti",
+      "screenId": "RicFCDU0m7B",
+      "name": "Accueil Caissier",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "trel5HtjKCC",
+      "screenId": "wugjsaFGTYv",
+      "name": "Accueil Production",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "HoT9YhVZ7TD",
+      "screenId": "GavhhvVyGQs",
+      "name": "Accueil Comptable",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "fk6wGbxCcp0",
+      "screenId": "nH8DcdZiLCN",
+      "name": "Accueil Commercial",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "Gv5zGjhh6ht",
+      "screenId": "CrG6jdn3C4j",
+      "name": "Connexion",
+      "activeVersion": 1
+    },
+    {
+      "componentId": "QdPSfXOAl6y",
+      "screenId": "ZDxKNWfxjH4",
+      "name": "Stock",
+      "activeVersion": 3
+    },
+    {
+      "componentId": "BRyo2jv9dhk",
+      "screenId": "3RFJTtIBOol",
+      "name": "Nouvelle vente 1/3",
+      "activeVersion": 2
+    },
+    {
+      "componentId": "K3NCy1FAqfn",
+      "screenId": "dmLVo3Te2rU",
+      "name": "Ventes",
+      "activeVersion": 3
+    },
+    {
+      "componentId": "TlRK3WoUJXR",
+      "screenId": "FZS1pWdLL65",
+      "name": "Accueil GM",
+      "activeVersion": 3
+    }
+  ]
+}

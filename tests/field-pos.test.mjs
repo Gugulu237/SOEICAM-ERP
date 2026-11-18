@@ -8,9 +8,9 @@ import { availableCustody, readAll, saleIsLocked, saleTotals, validateSale } fro
 const product = { id: 'p1', product_id: 'p1', name: 'YOLA Natural Yogurt 500ml', inventory_type: 'assembly', quantity: 4, selling_price: 1000, tax_rate: 19.25 };
 const form = () => ({ customer_id: 'test-customer', transaction_date: '2026-10-17', payment_type: 'cash', amount_collected: '', payment_terms_days: '', receipt_reference: '', receipt_file_uris: [], lines: [{ product_id: 'p1', quantity: 2, unit_price: 1000 }] });
 
-test('all 19 product assets exist and have distinct public paths', () => {
-  assert.equal(PRODUCT_PHOTOS.length, 19);
-  assert.equal(new Set(PRODUCT_PHOTOS.map((p) => p.src)).size, 19);
+test('all 22 product assets exist and have distinct public paths', () => {
+  assert.equal(PRODUCT_PHOTOS.length, 22);
+  assert.equal(new Set(PRODUCT_PHOTOS.map((p) => p.src)).size, 22);
   for (const photo of PRODUCT_PHOTOS) assert.ok(existsSync(new URL(`../public${photo.src}`, import.meta.url)), photo.src);
 });
 

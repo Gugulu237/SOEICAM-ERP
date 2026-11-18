@@ -699,5 +699,9 @@
   "Unpaid invoice balance": "Solde des factures non réglées",
   "No orders yet.": "Aucune commande pour le moment.",
   "No invoices yet.": "Aucune facture pour le moment.",
-  "Nothing delivered to this partner yet.": "Aucune livraison à ce client pour le moment."
+  "Nothing delivered to this partner yet.": "Aucune livraison à ce client pour le moment.",
+  "Recurring expense summary": "Résumé des charges récurrentes",
+  "Expiry date required": "Date de péremption requise",
+  "Awaiting confirmation": "À confirmer",
+  "This payment clears the existing bill. Inventory was recorded on receipt.": "Ce règlement solde la facture existante. Le stock a été comptabilisé à la réception."
 }

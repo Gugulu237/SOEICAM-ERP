@@ -1,10 +1,10 @@
 # SOEICAM mobile screens
 
-See the [layout audit and remaining differences](SLEEK-MOBILE-FIDELITY-AUDIT.md). This route map identifies screen destinations; it is not a claim of exact visual synchronization.
+See the [18 November implementation and verification](SLEEK-IMPLEMENTATION-2026-11-18.md) and the [original layout audit](SLEEK-MOBILE-FIDELITY-AUDIT.md). This route map identifies working screen destinations and their intentional business-rule adaptations.
 
-Implementation reference: the 40 components in `export-react.zip`, exported from [SOEICAM ERP Mobile](https://sleek.design/project/UXViqxJgxPf).
+Implementation reference: all 40 active components fetched on 18 November from the existing [SOEICAM ERP Mobile](https://sleek.design/project/UXViqxJgxPf). The [version manifest](sleek-project-screens.json) records the exact component and version identifiers.
 
-The exported screen structures are connected to existing ERP records and checked operations. The later approved white SOEICAM theme and company logo take precedence over the cream palette and YOLA text in the export. These are phone layouts; desktop tools remain available.
+The screen structures are connected to existing ERP records and checked operations. The current white, dark green and pale green design theme is shared across the phone screens, with local Nunito fonts and the approved SOEICAM company logo. Desktop tools remain available.
 
 `<id>` means select a real record in the preceding list. Screens shown as steps, dialogs or details are states of the same workflow, rather than independent duplicate pages.
 

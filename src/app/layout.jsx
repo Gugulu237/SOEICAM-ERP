@@ -15,7 +15,7 @@ export const metadata = {
   icons: {icon: '/pwa/icon-192.png', apple: '/pwa/apple-touch-icon.png'},
   robots: { index: false, follow: false },
 };
-export const viewport = {width: 'device-width', initialScale: 1, themeColor: '#347623'};
+export const viewport = {width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#6cb845'};
 export default function RootLayout({ children }) {
   return <html lang="en"><body><Providers>{children}</Providers></body></html>;
 }

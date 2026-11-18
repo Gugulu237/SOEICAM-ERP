@@ -19,8 +19,8 @@ export function StaffWelcome({date,force=false}) {
 }
 export function StaffMetrics({metrics,ready=true,columns=2,grouped=false}) {
   const visible=metrics.filter(Boolean);
-  return <section className={'grid gap-3 '+(columns===3?'grid-cols-3':'grid-cols-2')+(grouped?' rounded-[22px] border bg-white p-4':'')}>
-    {visible.map((metric,index)=><div key={metric.label} className={grouped?'min-w-0'+(index>=columns?' border-t pt-3':''):'min-w-0 rounded-[22px] border bg-white p-3'}><p className="text-xs leading-4 text-muted-foreground">{ui(metric.label)}</p><p className={'mt-1 break-words font-bold leading-6 tabular-nums '+(metric.prominent?'text-xl ':'text-lg ')+(metric.positive?'text-primary':'text-foreground')}>{ready?metric.value:'—'}</p>{metric.note&&<p className="mt-1 text-[10px] leading-4 text-muted-foreground">{ui(metric.note)}</p>}</div>)}
+  return <section data-staff-metrics className={'grid gap-3 '+(columns===3?'grid-cols-3':'grid-cols-2')+(grouped?' rounded-[22px] border bg-secondary p-4':'')}>
+    {visible.map((metric,index)=><div key={metric.label} className={grouped?'min-w-0'+(index>=columns?' border-t pt-3':''):'min-w-0 rounded-[22px] border p-3 '+(metric.highlight?'bg-secondary':'bg-white')}><p className="text-xs leading-4 text-muted-foreground">{ui(metric.label)}</p><p className={'mt-1 break-words font-heading font-bold leading-6 tabular-nums '+(metric.prominent?'text-xl ':'text-lg ')+(metric.positive?'text-primary':metric.warning?'text-amber-600':'text-foreground')}>{ready?metric.value:'-'}</p>{metric.note&&<p className="mt-1 text-[10px] leading-4 text-muted-foreground">{ui(metric.note)}</p>}</div>)}
   </section>;
 }
 export function StaffSection({title,action,children}) {

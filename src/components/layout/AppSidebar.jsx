@@ -2,14 +2,14 @@
 /* localized-interface */
 import { ui } from '@/lib/i18n';
 import { useLocaleRender as useInterfaceLanguage } from '@/lib/localization';
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Link, useLocation } from "@/lib/router";
 import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   Receipt, UserCheck, Truck, Wallet, BarChart3,
   Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
-  ShoppingBag, Loader2, MoreHorizontal
+  ShoppingBag, Loader2, MoreHorizontal, Plus
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -48,11 +48,17 @@ export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingHref,setPendingHref] = useState('');
+  const mobileTrigger = useRef(null);
   useEffect(()=>{try{setCollapsed(window.localStorage.getItem('soeicam:sidebar-collapsed')==='1');}catch{/* Optional preference storage. */}},[]);
   const toggleCollapsed=()=>setCollapsed(previous=>{const next=!previous;try{window.localStorage.setItem('soeicam:sidebar-collapsed',next?'1':'0');}catch{/* Keep navigation usable without storage. */}return next;});
   const location = useLocation();
   const { user, role, principalRole, assignedRole, allowedModules } = useCurrentUser();
   const { logout } = useAuth();
+
+  const openMobileMenu = event => {
+    mobileTrigger.current = event?.currentTarget || null;
+    setMobileOpen(true);
+  };
 
   useEffect(()=>{if(typeof window==='undefined')return;const open=()=>setMobileOpen(true);window.addEventListener('soeicam:open-navigation',open);return()=>window.removeEventListener('soeicam:open-navigation',open);},[]);
 
@@ -118,24 +124,24 @@ export default function AppSidebar() {
             aria-current={isActive(item.path) ? 'page' : undefined}
             className={`mx-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               isActive(item.path)
-                ? "bg-secondary text-primary"
-                : "text-slate-700 hover:bg-sidebar-accent hover:text-[#245719]"
+                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                : "text-slate-700 hover:bg-sidebar-accent hover:text-primary"
             } ${compact ? "justify-center px-2" : ""}`}
           >
             <item.icon size={18} className="shrink-0" />
             {!compact && <span>{item.label}</span>}
           </Link>
           }
-          {(item.children || []).filter(child => child.path !== targetPath(item.path) && (hasRoleAccess(role, child.roles)||hasWorkspaceGrant(role,child.path,allowedModules)) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (compact ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-[#347623] text-white shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-[#245719]')}><Receipt size={15} />{!compact && child.label}</Link>)}
+          {(item.children || []).filter(child => child.path !== targetPath(item.path) && (hasRoleAccess(role, child.roles)||hasWorkspaceGrant(role,child.path,allowedModules)) && permits(child.path)).map(child => <Link key={child.path} to={child.path} aria-current={isActive(child.path) ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={'mx-2 flex min-h-10 items-center rounded-lg py-2 text-sm font-medium ' + (compact ? 'justify-center px-2' : 'gap-2 pl-10 pr-3') + (isActive(child.path) ? ' bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : ' text-slate-600 hover:bg-sidebar-accent hover:text-primary')}><Receipt size={15} />{!compact && child.label}</Link>)}
           </React.Fragment>
         ))}
       </nav>
       <div className="border-t border-sidebar-border p-3">
         <InstallAppButton compact={compact}/>
-        <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} aria-current={isActive('/profile') ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={`mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${compact ? 'justify-center' : ''}`}><Settings size={18}/>{!compact && <span>{ui('My profile')}</span>}</Link>
+        <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} aria-current={isActive('/profile') ? 'page' : undefined} replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} className={`mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-primary ${compact ? 'justify-center' : ''}`}><Settings size={18}/>{!compact && <span>{ui('My profile')}</span>}</Link>
         <button
           onClick={() => logout()}
-          className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-[#245719] ${compact ? "justify-center" : ""}`}
+          className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-sidebar-accent hover:text-primary ${compact ? "justify-center" : ""}`}
         >
           <LogOut size={18} />
           {!compact && <span>{ui("Sign Out")}</span>}
@@ -146,12 +152,13 @@ export default function AppSidebar() {
 
   return (
     <>
-      <button aria-label={ui("Open navigation")} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)} className="fixed left-2 top-2 z-40 hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-[#347623] text-white shadow-sm xl:hidden"><Menu size={21}/></button>
+      <button type="button" aria-label={ui("Open navigation")} aria-haspopup="dialog" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={openMobileMenu} className="fixed left-2 top-2 z-40 hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-sm xl:hidden"><Menu size={21}/></button>
+      <button type="button" data-mobile-module-menu aria-label={ui('Open navigation')} title={ui('Choose a workspace')} aria-haspopup="dialog" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={openMobileMenu} className="sleek-module-menu sm:hidden"><Plus size={25} aria-hidden="true"/></button>
       <nav aria-label={ui('Navigation')} className="sleek-bottom-nav sm:hidden">
         {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={true} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path===INVENTORY_PATH?ui('Stock'):item.path==='/commercial'?ui('Sales'):role==='cashier'&&item.path==='/team-workspaces'?ui('Payroll'):role==='hotesse'&&item.path==='/sales'?ui('Reports'):item.path==='/manufacturing'?ui('Production'):item.path==='/sales-reports'?ui('Reports'):item.label}</span></Link>)}
-        <Link to="/profile?section=more" resume={false} aria-current={location.pathname==='/profile'&&new URLSearchParams(location.search).get('section')==='more'?'page':undefined} className="sleek-bottom-item"><MoreHorizontal size={23}/><span>{ui('More')}</span></Link>
+        <button type="button" aria-haspopup="dialog" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={openMobileMenu} className="sleek-bottom-item"><MoreHorizontal size={23}/><span>{ui('More')}</span></button>
       </nav>
-      <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
+      <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" onCloseAutoFocus={event=>{if(mobileTrigger.current?.isConnected){event.preventDefault();mobileTrigger.current.focus({preventScroll:true});}}} className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>
       <div className="sticky top-0 hidden h-dvh xl:block">{sidebar()}</div>
     </>
   );

@@ -39,7 +39,8 @@ export default function SalesInvoice({fromCustomer=false}) {
   const invoiceList=role==='cashier'?'/cashier?section=invoices':phone&&params.get('from')==='sales'?'/sales?tab=all':'/sales?tab=invoices';
   const customerTab=params.get('from')==='sales'?'&tab=sales':'';
   const backToCustomer=useMenuBack('/customers?view=list&customer='+encodeURIComponent(customerId)+customerTab);
-  const back=fromCustomer?backToCustomer:()=>navigate(invoiceList);
+  const backToInvoices=useMenuBack(invoiceList);
+  const back=fromCustomer?backToCustomer:backToInvoices;
   const original=params.get('version')==='original',editable=!fromCustomer&&!original,startEditing=editable&&params.get('edit')==='1';
   const [data,setData]=useState(null),[options,setOptions]=useState(null),[due,setDue]=useState(''),[defaults,setDefaults]=useState(false),[edit,setEdit]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[reload,setReload]=useState(0);
   useEffect(()=>{

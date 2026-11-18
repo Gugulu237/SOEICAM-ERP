@@ -10,25 +10,49 @@ async function renderer(){
   const mocks={
     '@/lib/router':"import React from 'react';export const useLocation=()=>globalThis.__drawerNavigation.location;export function Link(props){globalThis.__drawerNavigation.links.push(props);return React.createElement('a',{href:props.to},props.children);}",
     '@/lib/localization':"export const useLocaleRender=()=> 'en';",
-    '@/hooks/useCurrentUser':"export const useCurrentUser=()=>({role:'admin',assignedRole:'general_manager'});",
+    '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__drawerNavigation.user||({role:'admin',assignedRole:'general_manager'});",
     '@/lib/AuthContext':"export const useAuth=()=>({logout(){}});",
     '@/components/ui/sheet':"import React from 'react';export function Sheet(props){globalThis.__drawerNavigation.sheet=props;return props.open?React.createElement('section',null,props.children):null;}export const SheetContent=({children})=>React.createElement('div',null,children),SheetTitle=SheetContent,SheetDescription=SheetContent;",
   };
   const out=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import AppSidebar from './src/components/layout/AppSidebar.jsx';export const render=()=>renderToStaticMarkup(React.createElement(AppSidebar));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'sidebar-navigation',setup(b){
     b.onResolve({filter:/^react$/},a=>a.importer.endsWith('AppSidebar.jsx')?{path:'sidebar-hooks',namespace:'fixture'}:undefined);
-    b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__drawerNavigation.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=value=>globalThis.__drawerNavigation.state('sidebar',value),useEffect=(fn,deps)=>globalThis.__drawerNavigation.effect('sidebar',fn,deps);",resolveDir:process.cwd()}));
+    b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"import React from "+JSON.stringify(require.resolve('react'))+";export default {...React,createElement:(tag,props,...children)=>{globalThis.__drawerNavigation.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=value=>globalThis.__drawerNavigation.state('sidebar',value),useRef=value=>globalThis.__drawerNavigation.ref('sidebar',value),useEffect=(fn,deps)=>globalThis.__drawerNavigation.effect('sidebar',fn,deps);",resolveDir:process.cwd()}));
     b.onResolve({filter:/^@\//},a=>Object.hasOwn(mocks,a.path)?{path:a.path,namespace:'leaf'}:undefined);
     b.onLoad({filter:/.*/,namespace:'leaf'},a=>({contents:mocks[a.path],resolveDir:process.cwd()}));
   }}]});
   const module={exports:{}};new Function('require','module','exports',out.outputFiles[0].text)(require,module,module.exports);render=module.exports.render;return render;
 }
-async function drawer(){
+async function drawer(user,opener='tablet'){
   const draw=await renderer(),state=hookRuntime();state.location={pathname:'/inventory',search:'?section=items',hash:''};
   const paint=()=>{globalThis.__drawerNavigation=state;state.links=[];state.beforeRender();return draw();};
-  paint();await state.flush();paint();state.buttons.find(b=>b['aria-label']==='Open navigation').onClick();paint();await state.flush();paint();
+  state.user=user;
+  paint();await state.flush();paint();state.buttons.find(b=>opener==='floating'?b['data-mobile-module-menu']:opener==='more'?b.className==='sleek-bottom-item':b['aria-label']==='Open navigation').onClick();paint();await state.flush();paint();
   const click=(href,extra={})=>({button:0,currentTarget:{getAttribute:()=>href},...extra});
   return {state,paint,click,link:to=>state.links.find(link=>link.to===to&&!link.className?.includes('sleek-bottom-item')),cleanup(){state.cleanup();delete globalThis.__drawerNavigation;}};
 }
+
+test('phone plus opens the full module drawer without navigating or needing create permissions',async()=>{
+  for(const user of [{role:'admin',assignedRole:'general_manager'},{role:'hotesse',assignedRole:'hotesse',allowedModules:['sales_reports']}]){
+    const f=await drawer(user,'floating');try{
+      assert.equal(f.state.sheet.open,true);
+      const trigger=f.state.buttons.find(button=>button['data-mobile-module-menu']);
+      assert.equal(trigger['aria-expanded'],true);
+      assert.equal(trigger['aria-controls'],'mobile-navigation');
+      assert.equal(trigger['aria-haspopup'],'dialog');
+      assert.equal(f.state.location.pathname,'/inventory');
+      if(user.role==='admin')for(const path of ['/accounting','/inventory','/manufacturing','/customers','/admin'])assert.ok(f.link(path),path);
+      else {assert.ok(f.link('/sales-reports'));assert.equal(f.link('/admin'),undefined);assert.equal(f.link('/accounting'),undefined);}
+    }finally{f.cleanup();}
+  }
+});
+
+test('phone More opens the same module drawer instead of changing to the profile page',async()=>{
+  const f=await drawer(undefined,'more');try{
+    assert.equal(f.state.sheet.open,true);
+    assert.equal(f.link('/profile?section=more'),undefined);
+    assert.ok(f.link('/profile'),'personal settings remain available inside the drawer');
+  }finally{f.cleanup();}
+});
 test('phone navigation waits for a delayed route commit and replaces only the drawer entry',async()=>{
   const f=await drawer();try{
     assert.equal(f.state.sheet.open,true);for(const root of ['/sales','/cashier','/purchases','/customers','/distribution','/inventory'])assert.equal(f.link(root).resume,false);
@@ -58,7 +82,7 @@ test('consuming the drawer entry keeps the previous page available in navigation
       'next/link':"import React from 'react';export default function NextLink(props){globalThis.__linkDelivery.props=props;return React.createElement('a',{href:props.href},props.children);}",
       'next/navigation':"export const useRouter=()=>({}),usePathname=()=>'/inventory',useSearchParams=()=>new URLSearchParams(),useParams=()=>({});",
       './navigation-context':"export const useNavigationHistory=()=>({}),useNavigationSession=()=>null;",
-      './navigation-session':"export const announceNavigation=(href,options)=>globalThis.__linkDelivery.navigation.push({href,options});",
+      './navigation-session':"export const menuReturnTarget=()=>({}),nativeTraversalAllowed=()=>false,NAVIGATION_MARKER='soeicamNavigation';export const announceNavigation=(href,options)=>globalThis.__linkDelivery.navigation.push({href,options});",
     };
     b.onResolve({filter:/^(next\/|\.\/navigation-)/},a=>Object.hasOwn(fixtures,a.path)?{path:a.path,namespace:'router-fixture'}:undefined);
     b.onLoad({filter:/.*/,namespace:'router-fixture'},a=>({contents:fixtures[a.path],resolveDir:process.cwd()}));

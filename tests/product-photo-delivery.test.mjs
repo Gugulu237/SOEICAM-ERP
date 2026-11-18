@@ -5,15 +5,15 @@ import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 let renderer;
-async function renderPhoto(src, size, priority = false) {
+async function renderPhoto(src, size, priority = false, product) {
   renderer ||= build({
     stdin: { contents: `
       import React from 'react';
       import { renderToStaticMarkup } from 'react-dom/server';
       import ProductThumb, { ProductPhoto } from './src/components/shared/ProductThumb.jsx';
-      export function render(src, size, priority) {
+      export function render(src, size, priority, product) {
         return renderToStaticMarkup(React.createElement(size ? ProductThumb : ProductPhoto,
-          {src, size, priority, name:'Yola yogurt', className:'aspect-square'}));
+          {src, size, priority, product, name:product?.name || 'Yola yogurt', className:'aspect-square'}));
       }
     `, resolveDir: process.cwd(), loader: 'jsx' },
     alias: { '@': process.cwd() + '/src' },
@@ -32,8 +32,30 @@ async function renderPhoto(src, size, priority = false) {
     new Function('require', 'module', 'exports', output.outputFiles[0].text)(require, module, module.exports);
     return module.exports.render;
   });
-  return (await renderer)(src, size, priority);
+  return (await renderer)(src, size, priority, product);
 }
+
+test('shared catalogue and sale thumbnails automatically deliver the supplied 250 g AVIF packshots', async () => {
+  for (const flavor of ['Nature', 'Fraise', 'Vanille']) {
+    const product = { name: `YOLA Yaourt Brassé ${flavor} 250g`, inventory_type: 'assembly' };
+    const markup = await renderPhoto(undefined, 56, false, product);
+    assert.ok(markup.includes(`src="/products/yola/brasse-${flavor.toLowerCase()}-250g.avif"`));
+    assert.doesNotMatch(markup, /srcSet=|data-nimg=/);
+    assert.ok(markup.includes(`alt="${product.name}"`));
+  }
+});
+
+test('supplied product files decode with transparency', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const sharp = (await import('sharp')).default;
+  for (const flavor of ['nature', 'fraise', 'vanille']) {
+    const file = new URL(`../public/products/yola/brasse-${flavor}-250g.avif`, import.meta.url);
+    const metadata = await sharp(await readFile(file)).metadata();
+    assert.equal(metadata.format, 'heif');
+    assert.equal(metadata.hasAlpha, true);
+    assert.ok(metadata.width >= 300 && metadata.height >= 300);
+  }
+});
 
 test('storefront PNGs use responsive Next thumbnails sized for cards and small table images', async () => {
   const source = '/products/soeicam/yola-125g.png';
@@ -67,7 +89,7 @@ test('uploaded, remote and unknown packshots retain their original delivery path
 
 
 test('known packshots use ready-to-display WebP sizes without a browser mask', async () => {
-  for (const source of ['/products/yola/brasse-nature-500g.jpg', ...['nature','strawberry','vanilla'].map(flavor => '/products/soeicam/stirred-'+flavor+'-2.5kg.png')]) {
+  for (const source of ['/products/yola/brasse-nature-500g.jpg', ...['nature','fraise','vanille'].map(flavor => '/products/yola/brasse-'+flavor+'-250g.png'), ...['nature','strawberry','vanilla'].map(flavor => '/products/soeicam/stirred-'+flavor+'-2.5kg.png')]) {
     const thumb = await renderPhoto(source, 40);
     assert.match(thumb, /srcSet="[^" ]+\.96\.webp 96w, [^" ]+\.256\.webp 256w, [^" ]+\.512\.webp 512w, [^" ]+\.960\.webp 960w"/);
     assert.match(thumb, /sizes="40px"/);
@@ -84,7 +106,7 @@ test('prepared photos exist at their advertised dimensions and card payload is b
   const sharp = (await import('sharp')).default;
   const assets = JSON.parse(await readFile(new URL('../src/lib/generated/product-photo-assets.json', import.meta.url), 'utf8'));
   let originals = 0, cards = 0;
-  assert.equal(Object.keys(assets).length, 31);
+  assert.equal(Object.keys(assets).length, 34);
   for (const [source, asset] of Object.entries(assets)) {
     originals += (await stat(new URL('../public'+source, import.meta.url))).size;
     assert.deepEqual(asset.variants.map(variant=>variant.width), [96,256,512,960]);

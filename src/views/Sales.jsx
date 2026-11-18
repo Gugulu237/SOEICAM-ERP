@@ -51,7 +51,7 @@ function SalesWorkspace({readOnly=false}) {
   const selected=choices.find(choice=>choice.key===tab);
   const menuChoices=choices.filter(choice=>choice.key!=='field');
   return <div className="min-w-0 space-y-5">
-    {!(phone&&['all','promotions'].includes(tab))&&<PageHeader back={tab!=='home'?{onClick:()=>phone?setParams({tab:'home'}):backToMenu(),label:ui('Sales menu')}:undefined} title={phone&&tab==='all'?ui('Sales'):selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>}
+    {!(phone&&['all','promotions'].includes(tab))&&<PageHeader back={tab!=='home'?{onClick:backToMenu,label:ui('Sales menu')}:undefined} title={phone&&tab==='all'?ui('Sales'):selected?.label||ui('Sales')} actions={tab!=='home'&&!readOnly&&<Button onClick={()=>navigate('/sales/new')}><Plus size={16} className="mr-1"/>{ui('New sale')}</Button>}/>}
     {tab==='home'?<nav aria-label={ui('Sales sections')} className={'mx-auto grid max-w-5xl grid-cols-2 gap-3 sm:gap-5 '+(menuChoices.length>4?'lg:grid-cols-3':'lg:grid-cols-4')}>
       {menuChoices.map(({key,label,Icon})=><button key={key} type="button" aria-label={label} onClick={()=>key==='new'?navigate('/sales/new'):setParams({tab:key})} className="flex min-h-40 min-w-0 flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white px-3 py-6 text-center shadow-sm transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:min-h-48">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Icon size={28} strokeWidth={1.7} aria-hidden="true"/></span>
@@ -60,7 +60,7 @@ function SalesWorkspace({readOnly=false}) {
     </nav>:<section aria-label={selected?.label}>
       {tab==='all'&&<CompanySalesRegister readOnly={readOnly} onMenu={()=>setParams({tab:'home'})} onPromotions={()=>setParams({tab:'promotions'})}/>}
       {tab==='orders'&&<SalesOrders/>}
-      {tab==='promotions'&&<PromotionExchangeHistory readOnly={readOnly} onBack={()=>setParams({tab:'all'})}/>}
+      {tab==='promotions'&&<PromotionExchangeHistory readOnly={readOnly} onBack={backToMenu}/>}
       {tab==='invoices'&&<InvoiceWorkspace/>}
       {tab==='field'&&<FieldSalesPanel/>}
       {tab==='outlets'&&<OutletReports embedded/>}

@@ -166,7 +166,7 @@ export default function CustomerGeoMap({points=[],zones=[],selectedId='',onSelec
       </div>}
       {zoneFilters&&<div className="shrink-0 border-b bg-white">{zoneFilters}</div>}
       {!inlinePage&&mapControls&&<details className="max-h-[40dvh] shrink-0 overflow-y-auto overscroll-contain border-b"><summary className="min-h-11 cursor-pointer px-3 py-3 text-xs font-medium">{ui('Filters and zones')}</summary><div className="p-3 pt-0">{mapControls}</div></details>}
-      <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':inlinePage?'mt-3 h-[min(58dvh,470px)] min-h-[320px] rounded-2xl border':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
+      <div className={'relative isolate min-w-0 overflow-hidden bg-slate-100 '+(full?'min-h-24 flex-1':inlinePage?'mt-3 h-[min(54dvh,470px)] min-h-[320px] rounded-2xl border':'h-[52svh] min-h-[280px] sm:h-[560px]')}>
         <div ref={full?setFullHost:element} className="h-full w-full" role="region" data-swipe-back="ignore" aria-label={ui('Customer delivery map')}/>
         {status==='loading'&&<p role="status" className="pointer-events-none absolute left-3 top-3 z-[500] rounded bg-white p-2 text-xs shadow">{ui('Loading map...')}</p>}
       </div>

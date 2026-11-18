@@ -27,13 +27,15 @@ test('real browser Back/Forward, list state, sidebar resume, reload and scrollin
     import {NavigationProvider} from './src/lib/navigation-context';
     import {Link,useNavigate,useSearchParams,useBack,useLocation} from './src/lib/router';
     import NavigationHistory from './src/components/layout/NavigationHistory';
+    import {useMenuBack} from './src/hooks/useMenuBack';
+    import {Sheet,SheetContent,SheetTitle} from './src/components/ui/sheet';
     import DataTable from './src/components/shared/DataTable';
-    function Page(){const {pathname}=useLocation(),navigate=useNavigate(),back=useBack('/inventory'),[params,setParams]=useSearchParams();const [ready,setReady]=useState(false);
+    function Page(){const {pathname}=useLocation(),navigate=useNavigate(),back=useBack('/inventory'),menuBack=useMenuBack('/inventory'),[params,setParams]=useSearchParams();const [ready,setReady]=useState(false);
       useEffect(()=>{setReady(false);const timer=setTimeout(()=>setReady(true),200);return()=>clearTimeout(timer)},[pathname]);
       if(pathname==='/commercial')return <h1>Commercial workspace</h1>;
       if(pathname.startsWith('/items/'))return <><h1>Item detail</h1><button id="detail-back" onClick={back}>Back</button></>;
-      return <><h1>Warehouse</h1><button id="choose-items" onClick={()=>setParams(q=>{q.set('section','items');return q})}>Items</button><p id="section">{params.get('section')||'warehouses'}</p>{ready?<DataTable columns={[{key:'name',label:'Name'}]} searchFields={['name']} pageSize={5} data={Array.from({length:20},(_,i)=>({id:String(i),name:'Product '+String(i).padStart(2,'0')}))} onRowClick={row=>navigate('/items/'+row.id)}/>:<p>Loading inventory</p>}<div style={{height:ready?2200:0}}>End of list</div></>}
-    function App(){const {pathname}=useLocation();return <NavigationProvider identity="browser-test"><NavigationHistory/><Link id="warehouse-link" to="/inventory" resume>Warehouse</Link><Link id="commercial-link" to="/commercial">Commercial</Link><Page key={pathname}/></NavigationProvider>}
+      return <><h1>Warehouse</h1><button id="workspace-back" onClick={menuBack}>Back</button><button id="choose-alerts" onClick={()=>setParams(q=>{q.set('section','alerts');return q})}>Alerts</button><button id="choose-items" onClick={()=>setParams(q=>{q.set('section','items');return q})}>Items</button><p id="section">{params.get('section')||'warehouses'}</p>{ready?<DataTable columns={[{key:'name',label:'Name'}]} searchFields={['name']} pageSize={5} data={Array.from({length:20},(_,i)=>({id:String(i),name:'Product '+String(i).padStart(2,'0')}))} onRowClick={row=>navigate('/items/'+row.id)}/>:<p>Loading inventory</p>}<div style={{height:ready?2200:0}}>End of list</div></>}
+    function App(){const {pathname}=useLocation();const [drawer,setDrawer]=useState(false);useEffect(()=>{setDrawer(false)},[pathname]);return <NavigationProvider identity="browser-test"><NavigationHistory/><button id="modules" onClick={()=>setDrawer(true)}>Modules</button><Sheet open={drawer} onOpenChange={setDrawer}><SheetContent><SheetTitle>Modules</SheetTitle><Link id="drawer-commercial" to="/commercial" replaceOverlay>Commercial from drawer</Link></SheetContent></Sheet><Link id="warehouse-link" to="/inventory" resume>Warehouse</Link><Link id="commercial-link" to="/commercial">Commercial</Link><Page key={pathname}/></NavigationProvider>}
     createRoot(document.getElementById('root')).render(<App/>);`;
   const compiled = await build({ stdin: { contents: entry, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', write: false, define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'navigation-fixtures', setup(builder) {
     builder.onResolve({ filter: /^next\/(navigation|link)$/ }, args => ({ path: args.path, namespace: 'fixture' }));
@@ -77,6 +79,12 @@ test('real browser Back/Forward, list state, sidebar resume, reload and scrollin
     await evaluate("document.getElementById('choose-items').click()");
     await until("location.search==='?section=items'");
     await assertHistoryDisabled('Previous page', false);
+    await evaluate("document.getElementById('choose-alerts').click()");
+    await until("location.search==='?section=alerts'");
+    await evaluate("document.getElementById('workspace-back').click()");
+    await until("location.search==='?section=items'");
+    await evaluate("history.forward()");await until("location.search==='?section=alerts'");
+    await evaluate("history.back()");await until("location.search==='?section=items'");
     await evaluate(`const input=document.querySelector('[aria-label="Search records"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Product');input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[aria-label="Next records"]').click();`);
     await until("document.body.textContent.includes('Page 2 of 4')");
     await evaluate("dispatchEvent(new WheelEvent('wheel'));window.scrollTo(0,700)"); await until("scrollY>=690");
@@ -100,6 +108,17 @@ test('real browser Back/Forward, list state, sidebar resume, reload and scrollin
     const marker = await evaluate('history.state.soeicamNavigation.id');
     await evaluate("document.getElementById('warehouse-link').click()");
     assert.equal(await evaluate('history.state.soeicamNavigation.id'), marker);
+    // A module selected from the off-canvas drawer replaces only its transient
+    // entry: Back returns directly to the prior list and Forward reopens the module.
+    await evaluate("document.getElementById('modules').click()");
+    await until("document.getElementById('drawer-commercial') && history.state?.soeicamOverlay?.ids?.length===1");
+    await evaluate("document.getElementById('drawer-commercial').click()");
+    await until("location.pathname==='/commercial' && !document.querySelector('[role=dialog]')");
+    await evaluate("history.back()");
+    await until("location.pathname==='/inventory' && location.search==='?section=items' && document.body.textContent.includes('Page 2 of 4')");
+    assert.equal(await evaluate("Boolean(document.querySelector('[role=dialog]'))"), false);
+    await evaluate("history.forward()");await until("location.pathname==='/commercial'");
+    await evaluate("history.back()");await until("location.pathname==='/inventory' && location.search==='?section=items'");
     assert.deepEqual(errors, []);
   } finally {
     socket?.close(); browser?.kill();

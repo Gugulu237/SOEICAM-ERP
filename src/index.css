@@ -13,6 +13,7 @@
     --card-foreground: 138 15% 14%;
     --popover: 0 0% 100%;
     --popover-foreground: 138 15% 14%;
+    --brand-ink: 140 48% 23%;
     --primary: 140 48% 23%;
     --primary-foreground: 0 0% 100%;
     --secondary: 125 27% 94%;
@@ -47,6 +48,7 @@
   }
 
   .dark {
+    --brand-ink: 100 50% 70%;
     --background: 209 79% 11%;
     --foreground: 200 60% 98%;
     --card: 209 70% 15%;
@@ -92,6 +94,11 @@
   body {
     @apply bg-background text-foreground font-body;
   }
+}
+
+@layer utilities {
+  /* Keep green text legible on white while solid actions use the logo leaf. */
+  :root:not(.dark) .text-primary { color: hsl(var(--brand-ink)); }
 }
 
 /* Mobile ERP layout: constrain content, retain intentional table scrolling,

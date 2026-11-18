@@ -15,7 +15,7 @@ async function renderer() {
     const mocks={
       '@/hooks/usePhoneLayout':'export const usePhoneLayout=()=>Boolean(globalThis.__payrollUI.phone);',
       '@/api/erpClient':'export const erp={accounting:{payroll:input=>globalThis.__payrollUI.save(input)}};',
-      '@/lib/router':`export const useSearchParams=()=>[new URLSearchParams(),update=>{const q=typeof update==='function'?update(new URLSearchParams()):update;globalThis.__payrollUI.selectedRun=q.get('run');}];`,
+      '@/lib/router':`export const useBack=()=>()=>{};export const useSearchParams=()=>[new URLSearchParams(),update=>{const q=typeof update==='function'?update(new URLSearchParams()):update;globalThis.__payrollUI.selectedRun=q.get('run');}];`,
       '@/components/shared/DataTable':'export default props=>{globalThis.__payrollUI.table=props;return null;};',
       '@/components/ui/button':`import React from 'react';export const Button=({children,...props})=>{globalThis.__payrollUI.capture('button',props,children);return React.createElement('button',props,children);};`,
       '@/components/ui/input':`import React from 'react';export const Input=props=>{globalThis.__payrollUI.inputs.push(props);return React.createElement('input',props);};`,

@@ -58,7 +58,7 @@ export function invoiceHtml(document, {formalCorrection=false}={}) {
   const number=correction?.number??invoice.invoice_number;
   const language=documentLanguage(company,options),t=(source,...values)=>translate(source,language,...values),money=n=>moneyText(n,language);
   const taxLabel=invoiceVatLabel(invoice,lines,language);
-  const esc = escape, accent = { amber:'#347623',blue:'#1d4ed8',slate:'#334155' }[options.accent] || '#347623';
+  const esc = escape, accent = { amber:'#3c7a27',blue:'#1d4ed8',slate:'#334155' }[options.accent] || '#3c7a27';
   const logo = safeInvoiceLogo(company.logo_url), legal = [company.legal_form,company.share_capital && t('Capital: ')+company.share_capital,company.registration_number && t('Registration / RCCM: ')+company.registration_number,company.tax_id && t('Tax ID / NIU: ')+company.tax_id].filter(Boolean);
   const mixedUnitPrices = !invoice.price_includes_vat && lines.some(line => line.price_includes_vat === true);
   const unitPrice = line => money(line.unit_price) + (mixedUnitPrices ? ' · ' + t(line.price_includes_vat === true ? 'VAT included' : 'Before VAT') : '');

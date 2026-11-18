@@ -7,6 +7,10 @@ export const PRODUCT_PHOTOS = [
   ['drink-non-sucre-330ml', 'À boire · Non sucré', '330 ml', 'Bottles', 'Non sucré'],
   ['drink-vanille-330ml', 'À boire · Vanille', '330 ml', 'Bottles', 'Vanille'],
   ['drink-nature-500ml', 'À boire · Nature', '500 ml', 'Bottles', 'Nature'],
+  // Supplied 250 g brassé packshots; preserve their printed labels.
+  ['brasse-nature-250g', 'Brassé · Nature', '250 g', 'Cups', 'Nature', 'avif'],
+  ['brasse-fraise-250g', 'Brassé · Fraise', '250 g', 'Cups', 'Fraise', 'avif'],
+  ['brasse-vanille-250g', 'Brassé · Vanille', '250 g', 'Cups', 'Vanille', 'avif'],
   ['brasse-chocolat-500g', 'Brassé · Chocolat', '500 g', 'Cups', 'Chocolat'],
   ['brasse-fraise-500g', 'Brassé · Fraise', '500 g', 'Cups', 'Fraise'],
   ['brasse-nature-500g', 'Brassé · Nature', '500 g', 'Cups', 'Nature'],
@@ -19,8 +23,8 @@ export const PRODUCT_PHOTOS = [
   ['tub-non-sucre-1kg', 'Non sucré', '1 kg', 'Tubs', 'Non sucré'],
   ['tub-vanille-1kg', 'Vanille', '1 kg', 'Tubs', 'Vanille'],
   ['tub-vanille-2-5kg', 'Vanille', '2.5 kg', 'Tubs', 'Vanille'],
-].map(([id, name, size, family, flavor]) => ({
-  id, name: `YOLA ${name}`, size, family, flavor, src: `/products/yola/${id}.jpg`,
+].map(([id, name, size, family, flavor, extension = 'jpg']) => ({
+  id, name: `YOLA ${name}`, size, family, flavor, src: `/products/yola/${id}.${extension}`,
   // Unsweetened bottle label reads 220 g, unlike its filename: explicit selection only.
   manualOnly: id === 'drink-non-sucre-330ml',
 }));
@@ -33,6 +37,10 @@ export function matchingProductPhoto(product = {}) {
   if (product.inventory_type && !isFinishedProduct(product)) return null;
   const name = normalizeProductText(product.name || product.product_name);
   if (!/\byola\b/.test(name)) return null;
+  const familyText = normalizeProductText([product.product_family, product.category, name].filter(Boolean).join(' '));
+  const drinkable = /\b(boire|drink|drinkable|bottles?)\b/.test(familyText);
+  const stirred = /\b(brasse|stirred|cups?|tubs?)\b/.test(familyText);
+  if (drinkable && stirred) return null;
   const text = `${name} ${normalizeProductText(product.flavor)} ${normalizeProductText(product.size)}`;
   const sizes = [...text.matchAll(/\b(\d+(?:\.\d+)?)\s*(kg|ml|cl|g|l)\b/g)].map((m) => {
     const n = Number(m[1]);
@@ -52,16 +60,19 @@ export function matchingProductPhoto(product = {}) {
   if (flavors.length !== 1) return null;
   const matches = PRODUCT_PHOTOS.filter((photo) => {
     const size = photo.size.replace(/\s/g, '').replace(/([\d.]+)kg/, (_, n) => `${Number(n) * 1000}g`);
-    return !photo.manualOnly && size === sizes[0] && photo.flavor === flavors[0];
+    return !photo.manualOnly && size === sizes[0] && photo.flavor === flavors[0]
+      && (!drinkable || photo.family === 'Bottles') && (!stirred || photo.family !== 'Bottles');
   });
   return matches.length === 1 ? matches[0] : null;
 }
 
 export function productPresentation(product = {}) {
-  const explicit = PRODUCT_PHOTOS.find((photo) => photo.src === product.image_url);
+  const previousPackshot = PRODUCT_PHOTOS.find((photo) => photo.src.endsWith('.avif')
+    && photo.src.replace(/\.avif$/, '.png') === product.image_url);
+  const explicit = PRODUCT_PHOTOS.find((photo) => photo.src === product.image_url) || previousPackshot;
   const photo = explicit || matchingProductPhoto(product);
   return {
-    src: product.image_url || photo?.src || '', size: product.size || photo?.size || '',
+    src: previousPackshot?.src || product.image_url || photo?.src || '', size: product.size || photo?.size || '',
     flavor: product.flavor || photo?.flavor || '',
     family: photo?.family || (product.inventory_type === 'assembly' ? 'Assemblies' : 'Other products'),
   };

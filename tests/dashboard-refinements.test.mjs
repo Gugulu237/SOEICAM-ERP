@@ -17,7 +17,7 @@ async function buildScreens(){
  export const renderEmployee=()=>renderToStaticMarkup(React.createElement(Employee));
  export const renderSidebar=()=>renderToStaticMarkup(React.createElement(Sidebar));export {PayrollPage};`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'dashboard-fixtures',setup(b){
    const mocks={
-    '@/lib/router':`import React from 'react';export const useLocation=()=>({pathname:'/team-workspaces',search:'?'+globalThis.__dashboardParams});export const useSearchParams=()=>[new URLSearchParams(globalThis.__dashboardParams),()=>{}];export const useNavigate=()=>()=>{};export const Navigate=()=>null;export const Link=({to,resume,children,...props})=>React.createElement('a',{href:to,...props},children);`,
+    '@/lib/router':`import React from 'react';export const useBack=()=>()=>{};export const useLocation=()=>({pathname:'/team-workspaces',search:'?'+globalThis.__dashboardParams});export const useSearchParams=()=>[new URLSearchParams(globalThis.__dashboardParams),()=>{}];export const useNavigate=()=>()=>{};export const Navigate=()=>null;export const Link=({to,resume,children,...props})=>React.createElement('a',{href:to,...props},children);`,
     '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__dashboardSession;`,
     '@/lib/AuthContext':`export const useAuth=()=>({logout(){}});`,
     '@/lib/field-ops':`export const invokeFieldOps=async()=>({data:{}});export const errorMessage=e=>e.message;`,

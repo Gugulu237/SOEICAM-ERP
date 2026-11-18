@@ -44,7 +44,7 @@ export default function DeviceNotificationSettings() {
     {!supported && <p className="text-xs text-slate-500">{ui('On iPhone or iPad, install SOEICAM on the home screen first. Allow notifications in your browser or phone settings.')}</p>}
     {status?.configured && !status.topics.length && <p className="text-xs text-slate-500">{ui('No automatic alerts are configured for your role yet. You can still test this device.')}</p>}
     <div className="flex flex-wrap gap-2">
-      {!device?<button type="button" className={button+' bg-[#347623] text-white'} disabled={busy||!supported||!status?.configured} onClick={()=>action(async()=>{
+      {!device?<button type="button" className={button+' bg-primary text-primary-foreground'} disabled={busy||!supported||!status?.configured} onClick={()=>action(async()=>{
         const owner=user.id;void unlockNotificationAudio();
         const binding=await enableDeviceNotifications({userId:owner,publicKey:status.publicKey,sound:prefs.enabled,language,isCurrent:()=>identity.current===owner});
         saveSoundPreferences(owner,prefs);setDevice(binding);return 'Device notifications enabled.';

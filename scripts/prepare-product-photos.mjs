@@ -16,7 +16,7 @@ for(const family of ['yola','soeicam']){
     const original=await readFile(path.join(directory,name));
     // Hash the processing recipe too, so long-lived browser caches stay valid
     // when either the photo or its preparation changes.
-    const hash=createHash('sha256').update(original).update('webp-76-square-v1'+productBackdropMask.toString()).digest('hex').slice(0,12);
+    const hash=createHash('sha256').update(original).update('webp-76-square-v1'+productBackdropMask.toString().replace(/\r\n/g,'\n')).digest('hex').slice(0,12);
     const prefix=`${family}-${name.replace(/\.(jpg|png)$/,'')}.${hash}`;
     const files=widths.map(width=>({width,name:`${prefix}.${width}.webp`}));
     const existing=await Promise.all(files.map(async file=>{try{return(await stat(path.join(output,file.name))).size>0;}catch{return false;}}));

@@ -48,6 +48,7 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
   const navigate = useNavigate(),phone=usePhoneLayout();
   const { role,principalRole,employee,allowedModules } = useCurrentUser();
   const canAdjust=canAdjustInventory(principalRole||role,employee,allowedModules);
+  const canProduce=['admin','production_manager'].includes(role)&&(!allowedModules||allowedModules.includes('manufacturing'));
   const canTrace = ['admin','production_manager','warehouse_manager'].includes(role);
   const trace = row => row.lot_number && row.product_id && (onTrace ? onTrace(row) : navigate(qualityPath('traceability',{batch:row.lot_number,product:row.product_id})));
   const [days, setDays] = useState(30);
@@ -138,7 +139,7 @@ export default function ExpiryRisk({embedded=false,onTrace}) {
       {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
       {loading
         ? <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin" /></div>
-        : phone ? <MobileExpiryAlerts rows={rows} onTrace={canTrace?trace:undefined} canAdjust={canAdjust}/> : view === "board"
+        : phone ? <MobileExpiryAlerts rows={rows} onTrace={canTrace?trace:undefined} canAdjust={canAdjust} canProduce={canProduce}/> : view === "board"
         ? <ExpiryTriage rows={rows} onTrace={canTrace ? trace : undefined} />
         : <DataTable columns={cols} data={rows} onRowClick={canTrace ? trace : undefined} searchFields={["product_name", "lot_number", "warehouse_name"]} emptyMessage={ui("No stock at risk — every batch is in date and released.")} />
       }

@@ -26,20 +26,21 @@ export function navigationScreenKey(href) {
   return url.pathname+(selectors.size?'?'+selectors:'');
 }
 
-// Return through the current workspace's history, keeping Forward usable.
-// Direct links and cross-workspace visits replace the screen with its menu.
+// A Back control returns one screen at a time. Searching for an older menu
+// skipped customer tabs, invoices and other screens visited in between.
+// A direct entry has no known ERP predecessor, so use its explicit parent.
 export function menuReturnTarget(history,parentHref) {
   const parent=workspaceHref(parentHref);
   if(!parent)return {href:'/',replace:true};
-  const root=new URL(parent,'https://workspace.local').pathname;
-  for(let i=(history?.cursor??0)-1;i>=0;i--){
-    const href=history.entries[i]?.href;
-    if(!href)break;
-    const path=new URL(href,'https://workspace.local').pathname;
-    if(path!==root&&!path.startsWith(root+'/'))break;
-    if(pageMemoryKey(href)===pageMemoryKey(parent))return {delta:i-history.cursor};
-  }
+  if(history?.canBack || history?.cursor>0)return {delta:-1};
   return {href:parent,replace:true};
+}
+
+// Browser history can contain another site, sign-in redirects or entries from a
+// prior account. Only traverse when its current marker matches this ERP session.
+export function nativeTraversalAllowed(session,href,marker,direction=-1) {
+  const history=session?.getSnapshot(),entry=history?.entries[history.cursor];
+  return !!(entry && entry.href===workspaceHref(href) && marker?.owner===session.key && marker.id===entry.id && (direction<0?history.canBack:history.canForward));
 }
 
 export function navigationLabel(href) {

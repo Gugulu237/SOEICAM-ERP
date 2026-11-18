@@ -32,7 +32,7 @@ export default function TopBar() {
         </div>
         <LanguageSelector />
         <ProductionNotifications />
-        <div className="sleek-quick-actions"><QuickActions /></div>
+        <div className="hidden sm:block"><QuickActions /></div>
         <div className="hidden sm:block"><NavigationHistory /></div>
         {!clerk && <Link to="/profile" aria-label={ui('My profile')} title={ui('My profile')} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-green-100 text-slate-600 hover:bg-green-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-700"><UserRound size={18}/></Link>}
         <div data-account-menu className={`${clerk ? 'flex' : 'hidden sm:flex'} shrink-0 items-center gap-2 sm:border-l sm:border-green-100 sm:pl-2`}>

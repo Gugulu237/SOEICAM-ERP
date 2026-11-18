@@ -1,6 +1,8 @@
-# Sleek mobile layout audit — 10 November 2026
+# Sleek mobile layout audit - 10 November 2026 (historical)
 
-Reference: [SOEICAM ERP Mobile](https://sleek.design/project/UXViqxJgxPf). All 40 active screen versions were checked; no versions changed since the supplied React export.
+Current implementation: [18 November update and verification](SLEEK-IMPLEMENTATION-2026-11-18.md). Active versions have changed since this initial audit; the current [version manifest](sleek-project-screens.json) supersedes its version assertions.
+
+Original reference: [SOEICAM ERP Mobile](https://sleek.design/project/UXViqxJgxPf). This historical audit reviewed all 40 versions active on 10 November against the supplied React export.
 
 This audit checks the actual route and its surrounding page layout, including headers, navigation, tables, dialogs and mobile gates. A component existing in the repository is not evidence that the intended screen is reachable or rendered as designed.
 

@@ -13,6 +13,7 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import DeviceNotificationSettings from '@/components/pwa/DeviceNotificationSettings';
+import PasswordSettingsAction from '@/components/shared/PasswordSettingsAction';
 
 async function profileRequest(options={}){
   const response=await fetch('/api/profile',{credentials:'same-origin',cache:'no-store',...options});
@@ -70,10 +71,11 @@ export default function MyProfile({embedded=false,identity}){
           <div className="space-y-2"><Label htmlFor="profile-phone">{ui(identity?'Phone':'Contact phone')}</Label><Input id="profile-phone" type="tel" autoComplete="tel" value={form.phone} maxLength={40} disabled={saving || !profile.can_edit_phone} onChange={e=>{setSaved(false);setForm(f=>({...f,phone:e.target.value}));}}/>{!profile.can_edit_phone && <p className="text-xs text-slate-500">{ui('Contact your manager to link your employee record.')}</p>}</div>
           </div>
           <div className="space-y-2"><Label htmlFor="profile-email">{ui('Sign-in email')}</Label><Input id="profile-email" value={profile.email} readOnly className="bg-slate-50 text-slate-500"/></div>
+          {identity&&<PasswordSettingsAction/>}
           {identity&&<details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">{ui('About your profile')}</summary><p className="leading-5">{ui('Shown in your workspace. Your employment name is managed by the General Manager.')}</p></details>}
           {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{uiMessage(error)}</p>}
           {saved && <p role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{ui('Your profile has been updated.')}</p>}
-          <div className={identity?'grid gap-2':'flex flex-wrap gap-2'}><Button type="submit" disabled={saving} className={identity?'min-h-12 w-full rounded-xl':undefined}><Save size={16} className="mr-2"/>{saving?ui('Saving...'):ui(identity?'Save profile':'Save changes')}</Button><Button type="button" variant="outline" disabled={saving} onClick={()=>load()}>{ui('Reload profile')}</Button></div>
+          <div className={identity?'grid gap-2':'flex flex-wrap gap-2'}><Button type="submit" disabled={saving} className={identity?'min-h-12 w-full rounded-xl':undefined}><Save size={16} className="mr-2"/>{saving?ui('Saving...'):ui(identity?'Save profile':'Save changes')}</Button>{!identity&&<Button type="button" variant="outline" disabled={saving} onClick={()=>load()}>{ui('Reload profile')}</Button>}</div>
         </form>
         {!embedded&&<div className="space-y-6">
           <DeviceNotificationSettings/>

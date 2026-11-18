@@ -3,7 +3,7 @@ import React, { useCallback, useEffect } from 'react';
 import NextLink from 'next/link';
 import { useRouter, usePathname, useSearchParams as useNextSearchParams, useParams as useNextParams } from 'next/navigation';
 import { useNavigationHistory, useNavigationSession } from './navigation-context';
-import { announceNavigation } from './navigation-session';
+import { announceNavigation, menuReturnTarget, nativeTraversalAllowed, NAVIGATION_MARKER } from './navigation-session';
 import {canLeaveForms} from './form-navigation-guard';
 
 const hrefFor = to => typeof to === 'string' ? to : `${to?.pathname || ''}${to?.search || ''}${to?.hash || ''}`;
@@ -22,19 +22,30 @@ export const Link = React.forwardRef(function Link({ to, replace, replaceOverlay
   }} />;
 });
 export function useNavigate() {
-  const router = useRouter();
+  const router = useRouter(), session = useNavigationSession();
   return useCallback((to, options = {}) => {
-    if (typeof to === 'number') { if(!canLeaveForms())return;if (to === -1) router.back(); else if (to === 1) router.forward(); return; }
+    if (typeof to === 'number') {
+      if (typeof window !== 'undefined' && nativeTraversalAllowed(session,window.location.pathname+window.location.search,window.history.state?.[NAVIGATION_MARKER],to) && canLeaveForms()) {
+        if (to === -1) router.back(); else if (to === 1) router.forward();
+      }
+      return;
+    }
     const href = hrefFor(to);
     if (typeof window !== 'undefined' && href === window.location.pathname + window.location.search + window.location.hash) return;
     if(!canLeaveForms())return;
     announceNavigation(href, options);
     (options.replace ? router.replace : router.push)(href, { scroll: options.preventScrollReset !== true });
-  }, [router]);
+  }, [router, session]);
 }
 export function useBack(fallback = '/') {
   const router = useRouter(), session = useNavigationSession(), navigate = useNavigate();
-  return useCallback(() => { if (session?.getSnapshot().canBack) {if(canLeaveForms())router.back();} else navigate(session?.lastPage(fallback) || fallback); }, [router, session, navigate, fallback]);
+  return useCallback(() => {
+    const target=menuReturnTarget(session?.getSnapshot(),fallback);
+    if (target.delta && typeof window !== 'undefined' && nativeTraversalAllowed(session,window.location.pathname+window.location.search,window.history.state?.[NAVIGATION_MARKER])) {
+      if (canLeaveForms()) router.back();
+    }
+    else navigate(target.href || fallback,{replace:true});
+  }, [router, session, navigate, fallback]);
 }
 export function useLocation() {
   const pathname = usePathname(), search = useNextSearchParams().toString();

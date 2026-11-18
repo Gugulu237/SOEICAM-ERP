@@ -15,7 +15,7 @@ const output = await build({stdin:{contents:`import React from 'react';import {r
   const mocks={
     '@/hooks/useCurrentUser':"export const useCurrentUser=()=>globalThis.__stockDashboard.session;",
     '@/lib/localization':"export const useLocaleRender=()=> 'en';",
-    '@/lib/router':"import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);export const Navigate=()=>null;export const useNavigate=()=>()=>{};export const useLocation=()=>({pathname:globalThis.__stockDashboard.pathname,search:''});export const useSearchParams=()=>[new URLSearchParams(globalThis.__stockDashboard.query),()=>{}];",
+    '@/lib/router':"import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{href:to,...props},children);export const Navigate=()=>null;export const useNavigate=()=>()=>{};export const useBack=()=>()=>{};export const useLocation=()=>({pathname:globalThis.__stockDashboard.pathname,search:''});export const useSearchParams=()=>[new URLSearchParams(globalThis.__stockDashboard.query),()=>{}];",
     '@/hooks/useDashboardNavigation':"export const useDashboardNavigation=()=>({activeTab:new URLSearchParams(globalThis.__stockDashboard.query).get('view')||'home',onTabChange(){},onBackToMenu(){}});",
     '@/lib/role-permission-sync':"export const subscribeRoleChanges=()=>()=>{};",
     '@/lib/field-ops':"export const invokeFieldOps=async()=>({data:{}});export const errorMessage=error=>error.message;export const HANDOVER_STATUS={};export const uploadReceipt=async()=>'',receiptUrl=async()=>'';",
