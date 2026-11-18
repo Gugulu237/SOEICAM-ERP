@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {fixture,functionRoute,request,date,user as cashier} from './helpers/cashier.mjs';
 import {customerActivityAction,confirmCustomerCollection} from '../src/server/domain/customer-activity.js';
-import {approveReceipt,validateAllocations} from '../src/server/domain/customer-receipts.js';
+import {approveReceipt,recordDirectCustomerReceipt,validateAllocations} from '../src/server/domain/customer-receipts.js';
 import {cashierAction} from '../src/server/domain/cashier-workspace.js';
 import {cashDepositors} from '../src/lib/cashier-receipts.js';
 import {dailyCashSettlements} from '../src/lib/cash-settlement.js';
@@ -386,4 +386,80 @@ test('verified earlier cash invoices use the sale reference once and generate st
     assert.equal((await s.Account.get(clearing.id)).balance,0);
     assert.equal((await s.TreasuryTransaction.list()).length,2);
   } finally {delete globalThis.__cashierClient;delete globalThis.__cashierTransaction;}
+});
+
+test('a customer deposit clears the posted cash reclassification for its current owner once per installment',async()=>{
+  const f=await setup(),s=f.entities,svc=f.client.asServiceRole,oldParty='former-customer',current='customer-a';
+  const invoice=await s.Invoice.create({customer_id:current,invoice_number:'INV-TRANSFER',receipt_reference:'SHOP-ORIGINAL',
+    invoice_date:date,payment_type:'cash',status:'posted',total:700,balance:700,amount_paid:0});
+  const [clearing]=await s.Account.filter({account_number:'1050'});
+  await s.Account.update(clearing.id,{balance:700});
+  const original=await s.JournalEntry.create({source_module:'sales',source_document_type:'Invoice',source_document_id:invoice.id,status:'posted',entry_date:date});
+  await s.JournalLine.create({journal_id:original.id,account_id:clearing.id,party_type:'customer',party_id:oldParty,status:'posted',debit:700,credit:0});
+  const transferHeader={source_module:'accounting',source_document_type:'CashSaleCustomerCorrection',source_document_id:invoice.id,
+    journal_number:'JV-TRANSFER',entry_date:date,original_journal_id:original.id,correction_id:'customer-change',status:'posted',
+    cash_pending:700,previous_customer_id:oldParty,customer_id:current,total_debit:700,total_credit:700};
+  const correction=await s.JournalEntry.create(transferHeader);
+  const line={journal_id:correction.id,account_id:clearing.id,party_type:'customer',status:'posted'};
+  await s.JournalLine.create({...line,party_id:oldParty,debit:0,credit:700});
+  const transferred=await s.JournalLine.create({...line,party_id:current,debit:700,credit:0});
+  const marker={date,journal_id:correction.id,journal_number:correction.journal_number,original_journal_id:original.id,
+    correction_id:correction.correction_id,previous_customer_id:oldParty,customer_id:current,cash_pending:700};
+  await s.Invoice.update(invoice.id,{journal_id:original.id,cash_customer_correction:marker});
+  const body={customerId:current,date,treasuryAccountId:'till',amount:300,allocations:[{invoice_id:invoice.id,amount:300}],requestKey:crypto.randomUUID()};
+  const receive=(changes={})=>recordDirectCustomerReceipt(svc,cashier,{...body,...changes});
+  const invalid=/original cash invoice journal/;
+
+  await s.JournalLine.update(transferred.id,{party_id:'unrelated'});
+  await assert.rejects(receive(),invalid);
+  await assert.rejects(receive({reference:'TYPED'}),invalid);
+  await s.JournalLine.update(transferred.id,{party_id:current,debit:699});
+  await assert.rejects(receive(),invalid);
+  await s.JournalLine.update(transferred.id,{debit:700});
+  await s.JournalEntry.update(correction.id,{reversed_by_journal:'reversal'});
+  await assert.rejects(receive(),invalid);
+  await s.JournalEntry.update(correction.id,{reversed_by_journal:''});
+  const duplicate=await s.JournalEntry.create(transferHeader);
+  await assert.rejects(receive(),invalid);
+  await s.JournalEntry.update(duplicate.id,{reversed_by_journal:'superseded'});
+  const yesterday=new Date(date+'T12:00:00Z');
+  yesterday.setUTCDate(yesterday.getUTCDate()-1);
+  await assert.rejects(receive({date:yesterday.toISOString().slice(0,10)}),/cannot precede the invoice customer correction/);
+  assert.equal((await s.Payment.list()).length,0);
+  assert.equal((await s.TreasuryTransaction.list()).length,0);
+
+  const first=await receive();
+  assert.equal(first.payment.reference,'SHOP-ORIGINAL');
+  assert.equal((await receive()).reused,true);
+  const balance=await s.Invoice.get(invoice.id);
+  assert.equal(balance.balance,400);
+  assert.equal(balance.amount_paid,300);
+  await assert.rejects(receive({requestKey:crypto.randomUUID(),amount:401,allocations:[{invoice_id:invoice.id,amount:401}]}),/remains after pending/);
+  const second=await receive({reference:'SHOP-SECOND',requestKey:crypto.randomUUID(),amount:400,allocations:[{invoice_id:invoice.id,amount:400}]});
+  assert.equal((await s.Invoice.get(invoice.id)).status,'paid');
+  assert.equal((await s.TreasuryTransaction.list()).length,2);
+  assert.equal((await s.PaymentAllocation.list()).length,2);
+  assert.equal((await s.Account.get(clearing.id)).balance,0);
+  assert.equal((await s.Customer.get(current)).balance,1000);
+  for(const [receipt,amount] of [[first,300],[second,400]]){
+    const [credit]=await s.JournalLine.filter({journal_id:receipt.payment.journal_id,account_id:clearing.id});
+    assert.equal(credit.party_id,current);
+    assert.equal(credit.credit,amount);
+  }
+});
+
+test('legacy field and opening invoices retain their own receipt evidence when labeled cash',async()=>{
+  const f=await setup(),s=f.entities,customer='customer-a';
+  const invoice={customer_id:customer,invoice_date:date,status:'posted',payment_type:'cash',balance:400,total:400};
+  const sale=await s.FieldSale.create({customer_id:customer,status:'approved_posted',journal_id:'field-journal',amount_due:400});
+  const field=await s.Invoice.create({...invoice,field_sale_id:sale.id,journal_id:sale.journal_id});
+  const journal=await s.JournalEntry.create({status:'posted',source_module:'opening_balances',opening_detail_account_ids:[f.ar.id]});
+  const opening=await s.Invoice.create({...invoice,opening_account_id:f.ar.id,journal_id:journal.id});
+  const event=await s.AuditLog.create({action:'import_opening_position',opening_position_result:{receivables:[opening.id]}});
+  await s.Invoice.update(opening.id,{opening_batch_id:event.id});
+  const allocations=[field,opening].map(row=>({invoice_id:row.id,amount:100}));
+  const rows=await validateAllocations(f.client.asServiceRole,allocations,customer,'',date);
+  assert.equal(rows.length,2);
+  await s.FieldSale.update(sale.id,{amount_due:300});
+  await assert.rejects(validateAllocations(f.client.asServiceRole,allocations,customer,'',date),/supply and invoice balances/);
 });

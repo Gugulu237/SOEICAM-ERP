@@ -1,4 +1,6 @@
 {
+  "Reconcile the original cash invoice journal before receiving this deposit.": "Vérifiez l’écriture comptable d’origine de la facture au comptant avant d’enregistrer cet encaissement.",
+  "Payment cannot precede the invoice customer correction.": "La date d’encaissement doit être égale ou postérieure à la date de correction du client sur la facture.",
   "General ledger": "Grand livre",
   "Product exchanges": "Échanges de produits",
   "Choose expired products": "Choisir les produits périmés",

@@ -26,22 +26,35 @@ async function drawer(user,opener='tablet'){
   const draw=await renderer(),state=hookRuntime();state.location={pathname:'/inventory',search:'?section=items',hash:''};
   const paint=()=>{globalThis.__drawerNavigation=state;state.links=[];state.beforeRender();return draw();};
   state.user=user;
-  paint();await state.flush();paint();state.buttons.find(b=>opener==='floating'?b['data-mobile-module-menu']:opener==='more'?b.className==='sleek-bottom-item':b['aria-label']==='Open navigation').onClick();paint();await state.flush();paint();
+  paint();await state.flush();paint();state.buttons.find(b=>opener==='more'?b.className==='sleek-bottom-item':b['aria-label']==='Open navigation').onClick();paint();await state.flush();paint();
   const click=(href,extra={})=>({button:0,currentTarget:{getAttribute:()=>href},...extra});
   return {state,paint,click,link:to=>state.links.find(link=>link.to===to&&!link.className?.includes('sleek-bottom-item')),cleanup(){state.cleanup();delete globalThis.__drawerNavigation;}};
 }
 
-test('phone plus opens the full module drawer without navigating or needing create permissions',async()=>{
+test('More is the only phone module trigger and opens the permitted workspaces',async()=>{
   for(const user of [{role:'admin',assignedRole:'general_manager'},{role:'hotesse',assignedRole:'hotesse',allowedModules:['sales_reports']}]){
-    const f=await drawer(user,'floating');try{
+    const f=await drawer(user,'more');try{
       assert.equal(f.state.sheet.open,true);
-      const trigger=f.state.buttons.find(button=>button['data-mobile-module-menu']);
+      const triggers=f.state.buttons.filter(button=>button['aria-controls']==='mobile-navigation' && !button.className.includes('hidden sm:flex'));
+      assert.equal(triggers.length,1);
+      const [trigger]=triggers;
       assert.equal(trigger['aria-expanded'],true);
       assert.equal(trigger['aria-controls'],'mobile-navigation');
       assert.equal(trigger['aria-haspopup'],'dialog');
       assert.equal(f.state.location.pathname,'/inventory');
-      if(user.role==='admin')for(const path of ['/accounting','/inventory','/manufacturing','/customers','/admin'])assert.ok(f.link(path),path);
+      if(user.role==='admin')for(const path of ['/accounting','/inventory','/manufacturing','/customers?view=list','/admin'])assert.ok(f.link(path),path);
       else {assert.ok(f.link('/sales-reports'));assert.equal(f.link('/admin'),undefined);assert.equal(f.link('/accounting'),undefined);}
+    }finally{f.cleanup();}
+  }
+});
+
+test('mobile Customers always targets the directory from the bottom tab and the open module drawer',async()=>{
+  for(const role of ['admin','commercial']){
+    const f=await drawer({role},'more');try{
+      const entries=f.state.links.filter(link=>link.to==='/customers?view=list');
+      assert.ok(entries.some(link=>link.className==='sleek-bottom-item'),'bottom Customers tab');
+      assert.ok(entries.some(link=>link.replaceOverlay && link.className!=='sleek-bottom-item'),'Customers in the mobile drawer');
+      assert.ok(entries.every(link=>link.resume===false),'selecting Customers must not resume a previous map or customer detail');
     }finally{f.cleanup();}
   }
 });

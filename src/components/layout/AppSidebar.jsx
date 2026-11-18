@@ -9,7 +9,7 @@ import {
   LayoutDashboard, BookOpen, ShoppingCart, Users, Package, Factory,
   Receipt, UserCheck, Truck, Wallet, BarChart3,
   Settings, ChevronLeft, ChevronRight, LogOut, Menu, Banknote,
-  ShoppingBag, Loader2, MoreHorizontal, Plus
+  ShoppingBag, Loader2, MoreHorizontal
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -73,7 +73,10 @@ export default function AppSidebar() {
     else setPendingHref(href);
   };
 
-  const targetPath=path=>role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
+  const targetPath=(path,mobile=false)=>{
+    if (mobile && path === '/customers') return '/customers?view=list';
+    return role==='hotesse'&&path==='/sales'?'/outlet-reports':role==='cashier'&&path==='/team-workspaces'?'/team-workspaces?section=payroll':workspacePath(path,allowedModules);
+  };
   const permits = path => permitsWorkspace(targetPath(path),allowedModules);
   const visibleItems = navItems.filter(item => (!user?.centralized_inventory?.enabled || item.path!=='/distribution') && (!item.personalCommercial || role === 'commercial' || (principalRole||role)!=='admin'&&allowedModules?.includes('commercial')) && (!item.requiresGrant || role==='admin' || allowedModules?.includes(item.requiresGrant)) && (hasRoleAccess(role, item.roles) || hasWorkspaceGrant(role,targetPath(item.path),allowedModules)) && (!item.assignedRole || item.assignedRole === assignedRole) && permits(item.path));
 
@@ -96,7 +99,7 @@ export default function AppSidebar() {
   const mobileTabs = mobileNavigationItems(role,visibleItems);
   const groupedItems = groupNavigationItems(visibleItems);
   const mobilePath = path => {
-    const target=targetPath(path);
+    const target=targetPath(path,true);
     return target === '/sales' ? '/sales?tab=all' : target === INVENTORY_PATH ? '/inventory?section=items&filter=finished&area=all' : target;
   };
   const sidebar = (mobile=false) => { const compact=collapsed&&!mobile; return (
@@ -116,7 +119,7 @@ export default function AppSidebar() {
           {
           <Link
             key={item.path}
-            to={targetPath(item.path)}
+            to={targetPath(item.path,mobile)}
             title={compact?item.label:undefined}
             aria-label={compact?item.label:undefined}
             resume={!['/', '/purchases', '/sales', '/cashier', '/customers', '/distribution', '/inventory'].includes(item.path) && !item.path.includes('?')}
@@ -153,9 +156,8 @@ export default function AppSidebar() {
   return (
     <>
       <button type="button" aria-label={ui("Open navigation")} aria-haspopup="dialog" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={openMobileMenu} className="fixed left-2 top-2 z-40 hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-sm xl:hidden"><Menu size={21}/></button>
-      <button type="button" data-mobile-module-menu aria-label={ui('Open navigation')} title={ui('Choose a workspace')} aria-haspopup="dialog" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={openMobileMenu} className="sleek-module-menu sm:hidden"><Plus size={25} aria-hidden="true"/></button>
       <nav aria-label={ui('Navigation')} className="sleek-bottom-nav sm:hidden">
-        {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={true} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path===INVENTORY_PATH?ui('Stock'):item.path==='/commercial'?ui('Sales'):role==='cashier'&&item.path==='/team-workspaces'?ui('Payroll'):role==='hotesse'&&item.path==='/sales'?ui('Reports'):item.path==='/manufacturing'?ui('Production'):item.path==='/sales-reports'?ui('Reports'):item.label}</span></Link>)}
+        {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={item.path !== '/customers'} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path===INVENTORY_PATH?ui('Stock'):item.path==='/commercial'?ui('Sales'):role==='cashier'&&item.path==='/team-workspaces'?ui('Payroll'):role==='hotesse'&&item.path==='/sales'?ui('Reports'):item.path==='/manufacturing'?ui('Production'):item.path==='/sales-reports'?ui('Reports'):item.label}</span></Link>)}
         <button type="button" aria-haspopup="dialog" aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={openMobileMenu} className="sleek-bottom-item"><MoreHorizontal size={23}/><span>{ui('More')}</span></button>
       </nav>
       <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" onCloseAutoFocus={event=>{if(mobileTrigger.current?.isConnected){event.preventDefault();mobileTrigger.current.focus({preventScroll:true});}}} className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>

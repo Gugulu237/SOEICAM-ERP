@@ -107,7 +107,7 @@ export async function confirmCustomerCollection(client,user,body) {
   const recordedReference=[payment.reference,collection.receipt_reference,payment.payment_number,collection.collection_number]
     .find(value=>typeof value==='string'&&value.trim().length>0&&value.trim().length<=150);
   const reference=explicitReference||recordedReference?.trim()||'RCP-'+fingerprint(payment.id).slice(0,12).toUpperCase();
-  const rows=await validateAllocations(svc,payment.receipt_allocations,payment.party_id,payment.id);
+  const rows=await validateAllocations(svc,payment.receipt_allocations,payment.party_id,payment.id,date);
   const now=new Date().toISOString(),name=employee?.full_name||user.full_name||user.email;
   const saved=await s.Payment.update(payment.id,{payment_date:date,account_id:account.gl_account_id,treasury_account_id:account.id,treasury_account_name:account.name,cashier_confirmed_by:user.id,cashier_confirmed_name:name,cashier_confirmed_at:now,cashier_receipt_reference:reference,collection_receipt_key:key,collection_receipt_fingerprint:signature(reference)});
   await s.CashCollection.update(collection.id,{status:'received',received_amount:payment.amount,outstanding_amount:0,received_by:name,received_by_user_id:user.id,received_at:now,treasury_account_id:account.id,treasury_account_name:account.name,acknowledgement_reference:reference});

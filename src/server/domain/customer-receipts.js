@@ -7,7 +7,7 @@ import { isTransactionConflict } from '../transaction-errors.js';
 import {isConfirmedPendingCustomerReceipt} from '../../lib/customer-receipt-status.js';
 import {guardTreasuryReferences} from '../../lib/treasury-access.js';
 
-export async function validateAllocations(svc, allocations, customerId, excludePaymentId = '') {
+export async function validateAllocations(svc, allocations, customerId, excludePaymentId = '', receiptDate) {
   if (!Array.isArray(allocations) || !allocations.length || allocations.length > 50) throw new Error('Allocate the payment to between 1 and 50 invoices');
   const ids = allocations.map(a => a.invoice_id);
   if (new Set(ids).size !== ids.length) throw new Error('An invoice may only appear once');
@@ -19,7 +19,7 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
     const sale=await svc.entities.FieldSale.get(invoice.field_sale_id);
     if(!sale || sale.status!=='approved_posted' || sale.customer_id!==customerId || sale.journal_id!==invoice.journal_id || round2(sale.amount_due)!==round2(invoice.balance)) throw new Error('The Commercial supply and invoice balances need reconciliation before taking payment');
   }
-  return allocations.map(a => {
+  const rows = allocations.map(a => {
     const invoice = invoices.find(i => i.id === a.invoice_id);
     const amount = round2(a.amount);
     if (!invoice || invoice.customer_id !== customerId || ['draft', 'cancelled', 'credited'].includes(invoice.status)) throw new Error('Select a valid posted invoice belonging to this customer');
@@ -28,6 +28,12 @@ export async function validateAllocations(svc, allocations, customerId, excludeP
     if (amount > round2(invoice.balance - reserved)) throw new Error(`${invoice.invoice_number}: only ${round2(invoice.balance - reserved)} XAF remains after pending receipts`);
     return { invoice, amount };
   });
+  for (const {invoice} of rows) {
+    if (isOrderCashInvoice(invoice) || Object.hasOwn(invoice,'cash_customer_correction')) {
+      await verifyCashInvoiceDeposit(svc,invoice,receiptDate);
+    }
+  }
+  return rows;
 }
 
 export function approveReceipt(svc, payment, user, {topAdmin = false} = {}) {
@@ -78,7 +84,7 @@ async function postReceipt(svc, payment, user, {topAdmin = false, direct = false
     if (!statuses.includes(payment.status)) throw new Error('This receipt has already been processed');
     let snapshot = payment.receipt_posting_snapshot;
     if (!snapshot?.invoices) {
-      rows ||= await validateAllocations(svc, payment.receipt_allocations, payment.party_id, payment.id);
+      rows ||= await validateAllocations(svc, payment.receipt_allocations, payment.party_id, payment.id, payment.payment_date);
       const treasury = destination?.account || await svc.entities.TreasuryAccount.get(payment.treasury_account_id);
       if (!treasury?.is_active || !treasury.gl_account_id) throw new Error('The selected treasury account must be active and linked to a GL account');
       const debit = destination?.gl || await svc.entities.Account.get(treasury.gl_account_id);
@@ -184,25 +190,64 @@ export function receiptView(payment) {
 
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const validAmount = value => ['string','number'].includes(typeof value) && Number.isFinite(Number(value)) && Number(value) > 0 && round2(value) === Number(value);
+const isOrderCashInvoice = invoice => invoice.payment_type === 'cash' && !invoice.field_sale_id && !invoice.opening_batch_id;
 
-async function recordedCashInvoiceReference(svc, invoice) {
-  if (invoice.payment_type !== 'cash' || invoice.cash_sale_settlement || invoice.cash_deposited || invoice.field_sale_id ||
+const cashJournalMismatch = () => Error('Reconcile the original cash invoice journal before receiving this deposit.');
+const cashCorrectionType = 'CashSaleCustomerCorrection';
+
+async function verifyCashInvoiceDeposit(svc, invoice, receiptDate) {
+  if (!isOrderCashInvoice(invoice) || invoice.cash_sale_settlement || invoice.cash_deposited ||
       !['posted','partially_paid','overdue'].includes(invoice.status) || !validAmount(invoice.total) ||
       round2(Number(invoice.balance) + Number(invoice.amount_paid || 0)) !== Number(invoice.total)) {
-    throw Error('Enter a receipt or transaction reference of at most 150 characters.');
+    throw cashJournalMismatch();
   }
   const stores = svc.entities;
   const journal = invoice.journal_id ? await stores.JournalEntry.get(invoice.journal_id) : null;
-  if (!journal || journal.status !== 'posted' || journal.reversed_by_journal ||
+  if (!journal || journal.status !== 'posted' || journal.reversal_of || journal.reversed_by_journal ||
       journal.source_document_type !== 'Invoice' || journal.source_document_id !== invoice.id) {
-    throw Error('Reconcile the original cash invoice journal before receiving this deposit.');
+    throw cashJournalMismatch();
   }
   const clearing = await getAccountByNumber(svc,'1050');
   const lines = await readRecords(stores.JournalLine,{journal_id:journal.id,account_id:clearing.id});
-  if (!lines.length || lines.some(line => (line.party_id && line.party_id !== invoice.customer_id) || Number(line.credit || 0) !== 0) ||
+  const corrected = Object.hasOwn(invoice,'cash_customer_correction');
+  const marker = invoice.cash_customer_correction;
+  const originalParty = corrected ? marker?.previous_customer_id : invoice.customer_id;
+  if (!lines.length || lines.some(line => (line.party_id && line.party_id !== originalParty) ||
+      (corrected && (line.party_type !== 'customer' || line.party_id !== originalParty)) ||
+      (line.status && line.status !== 'posted') || !validAmount(line.debit) || Number(line.credit || 0) !== 0) ||
       round2(lines.reduce((sum,line) => sum + Number(line.debit || 0),0)) !== Number(invoice.total)) {
-    throw Error('Reconcile the original cash invoice journal before receiving this deposit.');
+    throw cashJournalMismatch();
   }
+  if (!corrected) return;
+
+  // The original invoice journal stays with the former customer. Its posted
+  // reclassification must transfer the outstanding clearing debit, in full, to the current customer.
+  const pending = Number(marker?.cash_pending);
+  if (!marker?.journal_id || !marker.correction_id || !marker.journal_number || !originalParty ||
+      originalParty === invoice.customer_id || marker.customer_id !== invoice.customer_id ||
+      marker.original_journal_id !== journal.id || !validAmount(marker.cash_pending) ||
+      pending > Number(invoice.total) || Number(invoice.balance) > pending) throw cashJournalMismatch();
+
+  const journals = await readRecords(stores.JournalEntry,{source_document_type:cashCorrectionType,source_document_id:invoice.id,status:'posted'});
+  const active = journals.filter(row => !row.reversal_of && !row.reversed_by_journal);
+  const correction = active[0];
+  if (active.length !== 1 || correction.id !== marker.journal_id || correction.source_module !== 'accounting' ||
+      correction.journal_number !== marker.journal_number ||
+      correction.original_journal_id !== journal.id || correction.correction_id !== marker.correction_id ||
+      correction.previous_customer_id !== originalParty || correction.customer_id !== invoice.customer_id ||
+      !marker.date || correction.entry_date !== marker.date || Number(correction.cash_pending) !== pending ||
+      Number(correction.total_debit) !== pending || Number(correction.total_credit) !== pending) throw cashJournalMismatch();
+  if (receiptDate && receiptDate < correction.entry_date) throw Error('Payment cannot precede the invoice customer correction.');
+
+  const transfer = await readRecords(stores.JournalLine,{journal_id:correction.id});
+  const hasLine = (party,debit,credit) => transfer.some(line => line.party_type === 'customer' && line.party_id === party &&
+    line.status === 'posted' && line.account_id === clearing.id && Number(line.debit || 0) === debit && Number(line.credit || 0) === credit);
+  if (transfer.length !== 2 || !hasLine(originalParty,0,pending) || !hasLine(invoice.customer_id,pending,0)) throw cashJournalMismatch();
+}
+
+async function recordedCashInvoiceReference(svc, invoice) {
+  if (!isOrderCashInvoice(invoice)) throw Error('Enter a receipt or transaction reference of at most 150 characters.');
+  const stores = svc.entities;
   const order = !invoice.receipt_reference && invoice.sales_order_id ? await stores.SalesOrder.get(invoice.sales_order_id) : null;
   const reference = [invoice.receipt_reference,order?.customer_id === invoice.customer_id ? order.receipt_reference : '',invoice.invoice_number]
     .find(value => typeof value === 'string' && value.trim() && value.trim().length <= 150);
@@ -246,7 +291,7 @@ export async function recordDirectCustomerReceipt(svc, user, body, {customer: sc
 
   const customer = scopedCustomer || await stores.Customer.get(customerId);
   if (!customer || customer.customer_removed_at || customer.is_active === false) throw Error('Select an active customer.');
-  const rows = await validateAllocations(svc, allocations, customerId);
+  const rows = await validateAllocations(svc, allocations, customerId, '', date);
   if (collectionEvidence && rows[0].invoice.payment_type !== 'cash') throw Error('Select an earlier cash sale for collection evidence.');
   if (staffCollection && rows.some(({invoice}) => invoice.payment_type === 'cash')) throw Error('This earlier cash sale already has a settlement workflow. Open its receipt from Treasury.');
   if (rows.some(({invoice}) => date < (invoice.opening_date || invoice.invoice_date || ''))) throw Error('Payment cannot precede its invoice date.');
