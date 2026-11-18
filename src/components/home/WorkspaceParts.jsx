@@ -15,8 +15,8 @@ export function WorkspaceHero({ eyebrow, title, description, icon: Icon, childre
   const { centralHero } = useDashboardIdentity();
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  return <section className={(centralHero && !children ? "hidden sm:block " : "") + (help?"relative overflow-hidden rounded-2xl border bg-white p-4 text-primary sm:p-5":"relative overflow-hidden rounded-3xl border border-border bg-secondary/50 p-4 text-primary sm:p-8")}>
-    <div className="relative z-10 max-w-2xl"><div className="pr-10 sm:pr-0"><MobileDashboardIdentity /></div><div className="hidden sm:block"><p className="text-xs font-semibold uppercase tracking-widest">{eyebrow}</p><h1 className={help?"mt-1 text-xl font-bold tracking-tight text-slate-900":"mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl"}>{title}</h1>{description && (help?<HelpNotice title={title}><p>{description}</p></HelpNotice>:<p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{description}</p>)}</div>{!centralHero && <MobileInfo mobileOnly title={eyebrow || title} className="absolute right-0 top-0 sm:hidden"><p>{description}</p></MobileInfo>}{children && <div className={(centralHero ? "mt-0 " : "mt-3 ") + "flex flex-wrap gap-2 sm:mt-5 sm:gap-3"}>{children}</div>}</div>
+  return <section className={(centralHero && !children ? "hidden sm:block " : "") + (help?"relative overflow-hidden rounded-2xl border bg-white p-4 text-primary sm:p-5":"relative overflow-hidden rounded-3xl border border-border bg-white p-4 text-primary sm:p-5")}>
+    <div className="relative z-10 max-w-2xl"><div className="pr-10 sm:pr-0"><MobileDashboardIdentity /></div><div className="hidden sm:block"><p className="text-xs font-semibold uppercase tracking-widest">{eyebrow}</p><h1 className={help?"mt-1 text-xl font-bold tracking-tight text-slate-900":"mt-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl"}>{title}</h1>{description && (help?<HelpNotice title={title}><p>{description}</p></HelpNotice>:<p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{description}</p>)}</div>{!centralHero && <MobileInfo mobileOnly title={eyebrow || title} className="absolute right-0 top-0 sm:hidden"><p>{description}</p></MobileInfo>}{children && <div className={(centralHero ? "mt-0 " : "mt-3 ") + "flex flex-wrap gap-2 sm:mt-5 sm:gap-3"}>{children}</div>}</div>
     {!help && Icon && <Icon className="absolute bottom-6 right-8 hidden h-32 w-32 opacity-10 xl:block" strokeWidth={1} aria-hidden="true" />}
   </section>;
 }
@@ -31,7 +31,7 @@ export function WorkspaceButton({ path, preview, children, ...props }) {
 export function WorkspaceMetrics({ metrics, ready }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
-  return <div data-workspace-metrics className="grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map(({ label, value, note }) => <div key={label} className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs text-slate-500">{label}</p><p className="my-2 break-words text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{ready ? value : '—'}</p><p className="hidden text-[11px] leading-5 text-slate-500 sm:block">{note}</p></div>)}</div>;
+  return <div data-workspace-metrics className="grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map(({ label, value, note }) => <div key={label} className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs text-slate-500">{label}</p><p className="my-2 break-words text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">{ready ? value : '—'}</p><p className="hidden text-[11px] leading-5 text-slate-500 sm:block">{note}</p></div>)}</div>;
 }
 export function WorkspaceActions({ actions, preview }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

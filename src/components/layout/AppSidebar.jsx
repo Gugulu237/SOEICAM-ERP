@@ -19,6 +19,7 @@ import { QUALITY_ROLES, isQualityPath } from '@/lib/quality-workspace';
 import { PURCHASE_ROLES } from '@/lib/purchase-workspace';
 import { permitsWorkspace,workspacePath,hasWorkspaceGrant } from '@/lib/workspace-navigation';
 import {InstallAppButton} from '@/components/pwa/PwaProvider';
+import {mobileNavigationItems,groupNavigationItems,navigationGroup} from '@/lib/ui-navigation';
 
 const navItems = [
   { get label(){return ui("Home");}, icon: LayoutDashboard, path: "/", roles: null },
@@ -47,6 +48,8 @@ export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingHref,setPendingHref] = useState('');
+  useEffect(()=>{try{setCollapsed(window.localStorage.getItem('soeicam:sidebar-collapsed')==='1');}catch{/* Optional preference storage. */}},[]);
+  const toggleCollapsed=()=>setCollapsed(previous=>{const next=!previous;try{window.localStorage.setItem('soeicam:sidebar-collapsed',next?'1':'0');}catch{/* Keep navigation usable without storage. */}return next;});
   const location = useLocation();
   const { user, role, principalRole, assignedRole, allowedModules } = useCurrentUser();
   const { logout } = useAuth();
@@ -84,8 +87,8 @@ export default function AppSidebar() {
     return location.pathname.startsWith(path);
   };
 
-  const mobileTabs = ['/', role === 'commercial' ? '/commercial' : '/sales', INVENTORY_PATH, '/customers']
-    .map(path => visibleItems.find(item => item.path === path)).filter(Boolean);
+  const mobileTabs = mobileNavigationItems(role,visibleItems);
+  const groupedItems = groupNavigationItems(visibleItems);
   const mobilePath = path => {
     const target=targetPath(path);
     return target === '/sales' ? '/sales?tab=all' : target === INVENTORY_PATH ? '/inventory?section=items&filter=finished&area=all' : target;
@@ -93,26 +96,29 @@ export default function AppSidebar() {
   const sidebar = (mobile=false) => { const compact=collapsed&&!mobile; return (
     <div className={`flex h-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ${mobile ? "w-full" : compact ? "w-16" : "w-60"}`}>
       <div className={`flex min-h-20 items-center gap-2 border-b border-sidebar-border bg-sidebar ${compact ? 'justify-center px-2 py-4' : 'justify-between px-3 py-3'}`}>
-        {compact ? <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-lg font-extrabold text-[#245719]">S</Link> :
+        {compact ? <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="flex h-10 w-10 items-center justify-center rounded-lg"><img src="/brand/soeicam-logo.png" alt="SOEICAM" width="40" height="32" className="h-8 w-10 object-contain"/></Link> :
           <Link to="/" replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick} aria-label={ui("SOEICAM home")} className="block min-w-0 rounded-xl p-1.5"><img src="/brand/soeicam-logo.png" alt={ui("SOEICAM")} className="block h-auto w-[162px]" /></Link>}
-        <button aria-label={compact ? ui("Expand navigation") : ui("Collapse navigation")} onClick={() => setCollapsed(!compact)} className="hidden rounded p-1 text-[#245719] hover:bg-sidebar-accent xl:block">
+        <button aria-label={compact ? ui("Expand navigation") : ui("Collapse navigation")} onClick={toggleCollapsed} className="hidden min-h-11 min-w-11 items-center justify-center rounded-lg text-primary hover:bg-sidebar-accent xl:flex">
           {compact ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>
       {mobile&&pendingHref&&<p role="status" className="flex items-center gap-2 border-b px-4 py-2 text-sm text-green-800"><Loader2 size={16} className="animate-spin"/>{ui('Opening section...')}</p>}
       <nav className="flex-1 space-y-0.5 overflow-y-auto py-3">
-        {visibleItems.map(item => (
+        {groupedItems.map((item,index) => (
           <React.Fragment key={item.path}>
+          {!compact&&(index===0||navigationGroup(groupedItems[index-1].path)!==navigationGroup(item.path))&&<p className="erp-nav-group">{ui(navigationGroup(item.path))}</p>}
           {
           <Link
             key={item.path}
             to={targetPath(item.path)}
+            title={compact?item.label:undefined}
+            aria-label={compact?item.label:undefined}
             resume={!['/', '/purchases', '/sales', '/cashier', '/customers', '/distribution', '/inventory'].includes(item.path) && !item.path.includes('?')}
             replaceOverlay={mobile&&mobileOpen} onClick={onMenuLinkClick}
             aria-current={isActive(item.path) ? 'page' : undefined}
             className={`mx-2 flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               isActive(item.path)
-                ? "bg-[#347623] text-white shadow-sm"
+                ? "bg-secondary text-primary"
                 : "text-slate-700 hover:bg-sidebar-accent hover:text-[#245719]"
             } ${compact ? "justify-center px-2" : ""}`}
           >
@@ -142,7 +148,7 @@ export default function AppSidebar() {
     <>
       <button aria-label={ui("Open navigation")} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={() => setMobileOpen(true)} className="fixed left-2 top-2 z-40 hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-[#347623] text-white shadow-sm xl:hidden"><Menu size={21}/></button>
       <nav aria-label={ui('Navigation')} className="sleek-bottom-nav sm:hidden">
-        {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={false} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path === INVENTORY_PATH ? ui('Stock') : item.label}</span></Link>)}
+        {mobileTabs.map(item => <Link key={item.path} to={mobilePath(item.path)} resume={true} replaceOverlay={mobileOpen} onClick={onMenuLinkClick} aria-current={!mobileOpen && isActive(item.path) ? 'page' : undefined} className="sleek-bottom-item"><item.icon size={23} strokeWidth={1.7}/><span>{item.path===INVENTORY_PATH?ui('Stock'):item.path==='/commercial'?ui('Sales'):role==='cashier'&&item.path==='/team-workspaces'?ui('Payroll'):role==='hotesse'&&item.path==='/sales'?ui('Reports'):item.path==='/manufacturing'?ui('Production'):item.path==='/sales-reports'?ui('Reports'):item.label}</span></Link>)}
         <Link to="/profile?section=more" resume={false} aria-current={location.pathname==='/profile'&&new URLSearchParams(location.search).get('section')==='more'?'page':undefined} className="sleek-bottom-item"><MoreHorizontal size={23}/><span>{ui('More')}</span></Link>
       </nav>
       <Sheet open={mobileOpen} onOpenChange={open=>{setMobileOpen(open);if(!open)setPendingHref('');}}><SheetContent id="mobile-navigation" side="left" className="w-[min(20rem,88vw)] border-0 p-0 [&>button]:h-10 [&>button]:w-10"><SheetTitle className="sr-only">{ui('Navigation')}</SheetTitle><SheetDescription className="sr-only">{ui('Choose a workspace')}</SheetDescription>{sidebar(true)}</SheetContent></Sheet>

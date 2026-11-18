@@ -17,7 +17,7 @@ import ItemAttributesEditor from './ItemAttributesEditor';
 import { PRODUCT_FAMILIES, MATERIAL_GROUPS } from '@/lib/inventory-groups';
 
 const number = value => new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 6 }).format(Number(value));
-const money = (value, missing = ui("Review cost")) => value == null ? missing : `${number(value)} XAF`;
+const money = (value, missing = ui("Review cost")) => value == null ? missing : `${number(value)} FCFA`;
 
 function Stat({ label, value, note }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;

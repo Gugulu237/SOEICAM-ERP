@@ -7,43 +7,43 @@
 @layer base {
   :root {
     /* SOEICAM logo: navy #094178, blue #0089CF, leaf green #6CB845. */
-    --background: 100 35% 98%;
-    --foreground: 209 67% 22%;
+    --background: 0 0% 100%;
+    --foreground: 138 15% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 209 67% 22%;
+    --card-foreground: 138 15% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 209 67% 22%;
-    --primary: 105 55% 28%;
+    --popover-foreground: 138 15% 14%;
+    --primary: 140 48% 23%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 100 48% 94%;
-    --secondary-foreground: 105 55% 25%;
-    --muted: 100 24% 96%;
-    --muted-foreground: 209 20% 39%;
-    --accent: 100 48% 91%;
-    --accent-foreground: 105 55% 25%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 125 27% 94%;
+    --secondary-foreground: 140 48% 23%;
+    --muted: 140 9% 96%;
+    --muted-foreground: 140 5% 40%;
+    --accent: 125 27% 94%;
+    --accent-foreground: 140 48% 23%;
+    --destructive: 4 74% 40%;
     --destructive-foreground: 0 0% 98%;
-    --border: 100 18% 87%;
-    --input: 100 18% 87%;
-    --ring: 100 45% 50%;
-    --chart-1: 105 55% 28%;
+    --border: 135 8% 88%;
+    --input: 135 8% 88%;
+    --ring: 140 48% 23%;
+    --chart-1: 140 48% 23%;
     --chart-2: 100 45% 50%;
     --chart-3: 200 100% 41%;
     --chart-4: 187 76% 39%;
     --chart-5: 208 60% 57%;
-    --radius: 0.5rem;
+    --radius: 0.75rem;
     --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 209 67% 22%;
-    --sidebar-primary: 105 55% 28%;
+    --sidebar-foreground: 138 15% 14%;
+    --sidebar-primary: 140 48% 23%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 100 48% 94%;
-    --sidebar-accent-foreground: 105 55% 25%;
-    --sidebar-border: 100 18% 87%;
-    --sidebar-ring: 100 45% 50%;
+    --sidebar-accent: 125 27% 94%;
+    --sidebar-accent-foreground: 140 48% 23%;
+    --sidebar-border: 135 8% 88%;
+    --sidebar-ring: 140 48% 23%;
   }
 
   .dark {
@@ -53,7 +53,7 @@
     --card-foreground: 200 60% 98%;
     --popover: 209 70% 15%;
     --popover-foreground: 200 60% 98%;
-    --primary: 105 55% 28%;
+    --primary: 140 48% 23%;
     --primary-foreground: 0 0% 100%;
     --secondary: 208 67% 25%;
     --secondary-foreground: 200 60% 98%;
@@ -72,12 +72,12 @@
     --chart-4: 187 76% 52%;
     --chart-5: 208 60% 70%;
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 209 67% 22%;
-    --sidebar-primary: 105 55% 28%;
+    --sidebar-foreground: 138 15% 14%;
+    --sidebar-primary: 140 48% 23%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 100 48% 94%;
-    --sidebar-accent-foreground: 105 55% 25%;
-    --sidebar-border: 100 18% 87%;
+    --sidebar-accent: 125 27% 94%;
+    --sidebar-accent-foreground: 140 48% 23%;
+    --sidebar-border: 135 8% 88%;
     --sidebar-ring: 100 45% 56%;
   }
 }

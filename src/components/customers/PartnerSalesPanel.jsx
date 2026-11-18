@@ -19,7 +19,7 @@ function Tile({ label, value, hint }) {
     <div className="bg-white border border-slate-200 rounded-xl p-3">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className="text-lg font-bold text-slate-900">{value}</p>
-      {hint && <p className="text-xs text-slate-400">{hint}</p>}
+      {hint && <p className="text-xs text-slate-400">{ui(hint)}</p>}
     </div>
   );
 }
@@ -28,14 +28,14 @@ function Table({ head, children, empty }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="max-w-full overflow-x-auto rounded-xl border bg-white">
+      <table className="w-full min-w-[32rem] text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-          <tr>{head.map((h, i) => <th key={h} className={`px-3 py-2 font-medium ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>)}</tr>
+          <tr>{head.map((h, i) => <th scope="col" key={h} className={`px-3 py-2 font-medium ${i === 0 ? "text-left" : "text-right"}`}>{ui(h)}</th>)}</tr>
         </thead>
         <tbody className="divide-y divide-slate-100">{children}</tbody>
       </table>
-      {empty && <p className="text-sm text-slate-400 bg-slate-50 p-4 text-center">{empty}</p>}
+      {empty && <p className="text-sm text-slate-400 bg-slate-50 p-4 text-center">{ui(empty)}</p>}
     </div>
   );
 }

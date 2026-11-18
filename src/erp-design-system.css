@@ -1,0 +1,43 @@
+/* Shared SOEICAM surfaces and interaction rules at every viewport. */
+body { line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; }
+:where(button,a,input,select,textarea,summary,[tabindex]):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+.erp-skip-link { position: fixed; left: 1rem; top: -6rem; z-index: 200; padding: .75rem 1rem; border-radius: .75rem; background: hsl(var(--primary)); color: white; }
+.erp-skip-link:focus { top: 1rem; }
+[data-erp-content] :where(h1,h2,h3,p,label,dd,dt) { overflow-wrap: anywhere; }
+[data-erp-content] :where(.grid,.flex) > :where(section,article,fieldset) { min-width: 0; }
+[data-erp-content] :is(.shadow,.shadow-sm) { box-shadow: none; }
+[data-erp-content] :is(.text-slate-400,.text-slate-500) { color: hsl(var(--muted-foreground)); }
+[data-erp-content] :is(.text-slate-800,.text-slate-900) { color: hsl(var(--foreground)); }
+[data-erp-content] :is(.border-slate-100,.border-slate-200,.border-green-100) { border-color: hsl(var(--border)); }
+[data-erp-content] :is(.bg-slate-50,.bg-slate-100) { background-color: hsl(var(--muted)); }
+[data-erp-content] :is(button,a).bg-\[\#347623\] { background-color: hsl(var(--primary)); }
+.erp-nav-group { margin: 1rem 1rem .4rem; color: hsl(var(--muted-foreground)); font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.erp-nav-group:first-child { margin-top: .25rem; }
+[data-sleek-sale-flow] [data-sale-steps] button { min-height: 44px; }
+[data-sleek-sale-flow] [data-sale-steps] button::after { content: ''; display: block; height: 4px; border-radius: 999px; background: hsl(var(--border)); }
+[data-sleek-sale-flow] [data-sale-steps] button[aria-current=step]::after { background: hsl(var(--primary)); }
+[data-sale-product][data-invalid=true] { border-color: #b42318; }
+[data-erp-content] table { font-variant-numeric: tabular-nums; }
+[data-erp-content] th[aria-sort] > button { display: flex; min-height: 44px; align-items: center; gap: .4rem; text-align: inherit; font: inherit; }
+.erp-empty { padding: 2rem 1rem; border: 1px dashed hsl(var(--border)); border-radius: .75rem; text-align: center; }
+.erp-empty > p { margin-top: .5rem; font-size: .875rem; color: hsl(var(--muted-foreground)); }
+@media (max-width: 639px) {
+  [data-erp-content] { padding-inline: 1rem; }
+  [data-sleek-sale-flow] { padding-bottom: 8rem; }
+  [data-mobile-action-bar] { padding-inline: 1rem; }
+  .sleek-bottom-item { font-size: .6875rem; line-height: 1.2; }
+  .sleek-quick-actions { position: static; }
+  .sleek-quick-actions > button { width: 44px; height: 44px; border-radius: .75rem; box-shadow: none; }
+  [data-customer-tabs] { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr); width: 100%; }
+  [data-customer-tabs] [role=tab] { min-width: 0; white-space: normal; padding: .5rem .35rem; font-size: .75rem; }
+  [data-customer-profile] { padding-bottom: 1rem; }
+}
+@media (max-width: 359px) {
+  [data-erp-content] { padding-inline: .75rem; }
+  [data-topbar-row] { padding-inline: .75rem; }
+  .sleek-brand-logo { width: 96px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

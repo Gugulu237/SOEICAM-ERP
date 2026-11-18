@@ -24,11 +24,11 @@ export default function TopBar() {
   const clerk = usesClerk();
 
   return (
-    <header data-erp-topbar className="sticky top-0 z-30 border-b border-green-100 bg-white/95 backdrop-blur">
+    <header data-erp-topbar className="sticky top-0 z-30 border-b border-border bg-white">
       <div data-topbar-row className="flex min-h-14 min-w-0 items-center gap-1 py-2 pl-14 pr-3 sm:gap-3 sm:pr-5 xl:px-8">
         <Link to="/" aria-label={ui("SOEICAM home")} className="sleek-brand sm:hidden"><img src="/brand/soeicam-logo.png" alt="SOEICAM" width="120" height="40" className="sleek-brand-logo" /></Link>
         <div className="hidden sm:block min-w-0 flex-1 max-w-md">
-          {!role ? <span className="text-sm text-slate-500">{ui("Loading workspace...")}</span> : ['commercial', 'driver', 'cashier', 'production_manager', 'hotesse'].includes(role) ? <span className="block truncate text-sm font-semibold text-slate-800">{({ commercial: ui("My commercial workspace"), driver: ui("My delivery workspace"), cashier: ui("Cashier workspace"), production_manager: ui("Operations / Production workspace"), hotesse: ui("My sales & stock") })[role]}</span> : <CommandSearch />}
+          {!role ? <span className="text-sm text-slate-500">{ui("Loading workspace...")}</span> : ['commercial', 'driver', 'cashier', 'production_manager', 'hotesse'].includes(role) ? <span className="block truncate text-sm font-semibold text-slate-800">{({ commercial: ui("My commercial workspace"), driver: ui("My delivery workspace"), cashier: ui("Cashier workspace"), production_manager: ui("Operations / Production workspace"), hotesse: ui("My customer visits") })[role]}</span> : <CommandSearch />}
         </div>
         <LanguageSelector />
         <ProductionNotifications />

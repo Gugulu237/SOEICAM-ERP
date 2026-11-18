@@ -27,7 +27,7 @@ async function drawer(){
   const paint=()=>{globalThis.__drawerNavigation=state;state.links=[];state.beforeRender();return draw();};
   paint();await state.flush();paint();state.buttons.find(b=>b['aria-label']==='Open navigation').onClick();paint();await state.flush();paint();
   const click=(href,extra={})=>({button:0,currentTarget:{getAttribute:()=>href},...extra});
-  return {state,paint,click,link:to=>state.links.find(link=>link.to===to),cleanup(){state.cleanup();delete globalThis.__drawerNavigation;}};
+  return {state,paint,click,link:to=>state.links.find(link=>link.to===to&&!link.className?.includes('sleek-bottom-item')),cleanup(){state.cleanup();delete globalThis.__drawerNavigation;}};
 }
 test('phone navigation waits for a delayed route commit and replaces only the drawer entry',async()=>{
   const f=await drawer();try{

@@ -1,5 +1,6 @@
 import '@/index.css';
 import '@/mobile-sleek.css';
+import '@/erp-design-system.css';
 import '@/components/accounting/mobile/accounting-mobile.css';
 import Providers from './providers';
 

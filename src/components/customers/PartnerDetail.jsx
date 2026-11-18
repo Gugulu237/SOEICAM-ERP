@@ -6,7 +6,7 @@ import { usePhoneLayout } from '@/hooks/usePhoneLayout';
 import MobileCustomerOverview from './MobileCustomerOverview';
 import CustomerBillingSummary from './CustomerBillingSummary';
 import useHeadquartersDeliveryBalances from './useHeadquartersDeliveryBalances';
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { erp } from "@/api/erpClient";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -44,25 +44,28 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
   const [locations, setLocations] = useState([]);
   const [orders, setOrders] = useState([]);
   const [spoilage, setSpoilage] = useState([]),[loadError,setLoadError]=useState('');
+  const loadSequence=useRef(0);
   const [spoilOpen, setSpoilOpen] = useState(false),[reportVersion,setReportVersion]=useState(0);
   const headquarters = parentPartner?.id === partner.parent_id && !parentPartner?.parent_id ? parentPartner : null;
   const headquartersId = headquarters?.id;
 
   const load = useCallback(async () => {
-    setLoadError('');
+    const sequence=++loadSequence.current;
+    setLocations([]);setOrders([]);setSpoilage([]);setLoadError('');
     try {
     const [locs, ords, spls] = await Promise.all([
       erp.entities.CustomerLocation.filter({ customer_id: partner.id, is_active: true }),
       erp.entities.SalesOrder.filter(customerActivityScope(partner.id,headquartersId), "-order_date", 200),
       erp.entities.SpoilageRecord.filter({ customer_id: partner.id }, "-reported_date", 200),
     ]);
+    if(sequence!==loadSequence.current)return;
     setLocations(locs);
     setOrders(ords);
     setSpoilage(spls);
-    } catch(error) { setLoadError(error.message); }
+    } catch(error) { if(sequence===loadSequence.current)setLoadError(error.message); }
   }, [partner.id,headquartersId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load();return()=>{loadSequence.current++;}; }, [load]);
 
   useEffect(()=>{
     if(!phone)return;
@@ -88,7 +91,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
 
 
   return (
-    <div className={phone?"space-y-5 pb-24":"space-y-5"}>
+    <div data-customer-profile className="space-y-5">
       {/* Header */}
       <div className="hidden flex-wrap items-start justify-between gap-3 sm:flex">
         <div>
@@ -103,7 +106,7 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </div>
       </div>
 
-      {phone ? <MobileCustomerOverview partner={partner} balanceLabel={balanceLabel} balance={balance} deliveryBalances={deliveryBalances} billingSummary={billingSummary} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/> : <div className="grid gap-3 lg:grid-cols-2">
+      {!phone&&<div className="grid gap-3 lg:grid-cols-2">
         <section className="rounded-xl border bg-white p-4">
           <h3 className="text-sm font-semibold">{ui(balanceLabel)}</h3>
           <p className="mt-1 text-lg font-bold tabular-nums">{balance === null ? '—' : formatAccountingXAF(balance)}</p>
@@ -111,29 +114,15 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </section>
         {billingSummary}
       </div>}
-      <Tools open={phone&&tab==='sales'?true:undefined} className={phone?'rounded-xl border bg-white':'space-y-5'}>
-      {phone&&<summary className="min-h-12 cursor-pointer p-3 text-sm font-semibold">{ui('Customer tools and details')}</summary>}
-      <div className={phone?'space-y-5 border-t p-3':'space-y-5'}>
-      {phone&&canReportSpoilage&&<Button variant="outline" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={15}/>{ui('Add branch')}</Button>}
-      <CustomerActionGrid onSale={phone?undefined:onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
-      {paymentSummary}
-      {loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>}
-      <section aria-label={ui("Customer delivery location")} className="hidden sm:block space-y-3 rounded-xl border bg-white p-4">
-        <h3 className="text-sm font-semibold">{ui("Customer delivery location")}</h3>
-        {(locationsByCustomer[partner.id]?.length ? locationsByCustomer[partner.id] : [partner]).map(point=><div key={point.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          {point.id!==partner.id&&<p className="w-full break-words text-sm font-medium">{point.name}</p>}
-          <CustomerMapLinks customer={point}/>
-          {onEditGps&&partner.is_active!==false&&point.is_active!==false&&<CustomerGpsButton point={point} onClick={()=>onEditGps(partner,point.id===partner.id?undefined:point)}/>}
-        </div>)}
-      </section>
       <Tabs value={tab==='sales'||tab==='stock'?tab:'overview'} onValueChange={selectTab}>
-        <TabsList>
+        <TabsList data-customer-tabs aria-label={ui("Customer details")}>
           <TabsTrigger value="overview">{ui("Overview")}</TabsTrigger>
           <TabsTrigger value="stock">{ui("Stock & Expiry")}</TabsTrigger>
           <TabsTrigger value="sales">{ui("Sales")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-5">
+      {phone&&<MobileCustomerOverview partner={partner} balanceLabel={balanceLabel} balance={balance} deliveryBalances={deliveryBalances} billingSummary={billingSummary} sales={mobileSales.invoices} monthlySales={mobileSales.total} loading={mobileSales.loading} salesError={mobileSales.error} onRetrySales={()=>setSalesReload(n=>n+1)} subPartners={subPartners} locationsByCustomer={locationsByCustomer} onSelect={onSelect} onEditGps={onEditGps} onSale={onSale}/>}
       {!partner.parent_id && subPartners.length>0 && (
         <PartnerGroupPanel partner={partner} subPartners={subPartners} deliveryBalances={deliveryBalances} locationsByCustomer={locationsByCustomer} onSelect={onSelect} />
       )}
@@ -162,16 +151,32 @@ export default function PartnerDetail({ partner, onChanged, subPartners = [], pa
         </TabsContent>
 
         <TabsContent value="stock" className="mt-4">
-          <PartnerStockPanel partner={partner} subPartners={subPartners} />
+          <PartnerStockPanel partner={partner} subPartners={subPartners} headquartersId={headquartersId} />
         </TabsContent>
 
         <TabsContent value="sales" className="mt-4">
           <PartnerSalesPanel partner={partner} subPartners={subPartners} headquartersId={headquartersId} />
         </TabsContent>
       </Tabs>
+      <Tools className={phone?'rounded-xl border bg-white':'space-y-5'}>
+      {phone&&<summary className="min-h-12 cursor-pointer p-3 text-sm font-semibold">{ui('Customer tools and details')}</summary>}
+      <div className={phone?'space-y-5 border-t p-3':'space-y-5'}>
+      {phone&&canReportSpoilage&&<Button variant="outline" onClick={()=>navigate('/customers/new?parent='+encodeURIComponent(partner.parent_id||partner.id))}><Plus size={15}/>{ui('Add branch')}</Button>}
+      <CustomerActionGrid onSale={phone?undefined:onSale} onReceive={onReceive} onSpoilage={canReportSpoilage?()=>setSpoilOpen(true):undefined} onEdit={canReportSpoilage?()=>navigate('/customers/'+partner.id):undefined} disabled={partner.is_active===false}/>
+      {paymentSummary}
+      {loadError&&<p role="alert" className="text-sm text-red-700">{uiMessage(loadError)} <button className="underline" onClick={load}>{ui('Retry')}</button></p>}
+      <section aria-label={ui("Customer delivery location")} className="hidden sm:block space-y-3 rounded-xl border bg-white p-4">
+        <h3 className="text-sm font-semibold">{ui("Customer delivery location")}</h3>
+        {(locationsByCustomer[partner.id]?.length ? locationsByCustomer[partner.id] : [partner]).map(point=><div key={point.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          {point.id!==partner.id&&<p className="w-full break-words text-sm font-medium">{point.name}</p>}
+          <CustomerMapLinks customer={point}/>
+          {onEditGps&&partner.is_active!==false&&point.is_active!==false&&<CustomerGpsButton point={point} onClick={()=>onEditGps(partner,point.id===partner.id?undefined:point)}/>}
+        </div>)}
+      </section>
+      </div></Tools>
+
 
       {canReportSpoilage&&<CustomerSpoilageReports key={partner.id} customer={partner} reload={reportVersion}/>}
-      </div></Tools>
       {spoilOpen&&<SpoilageDialog
         open={spoilOpen}
         onOpenChange={setSpoilOpen}

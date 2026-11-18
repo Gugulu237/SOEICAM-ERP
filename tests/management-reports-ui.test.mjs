@@ -56,7 +56,7 @@ test('manager launcher omits personal Commercial tools and exposes a separate Qu
     globalThis.__reportParams='';
     const overview=ui.render('manager',{data:{date:'2026-10-21'}});
     assert.doesNotMatch(overview,/aria-label="Management roles"/);
-    assert.match(overview,/View employee dashboards/);
+    assert.match(overview,/Record sale/);assert.match(overview,/Open company reports/);
     globalThis.__reportParams='section=quick-reports';
     const report=ui.render('manager',{data:{date:'2026-10-21'}});
     assert.match(report,/Employee reports/);
