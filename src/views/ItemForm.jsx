@@ -39,9 +39,11 @@ import UnitChangeDialog from '@/components/items/UnitChangeDialog';
 import { finishedItemSetupIssues,itemAvailabilityLabel } from '@/lib/item-readiness';
 import { itemFormChanges } from '@/lib/item-form-save';
 import ProductVariantFields from '@/components/items/ProductVariantFields';
-import { validateFinishedVariantChanges } from '@/lib/product-variants';
+import { validateFinishedVariantChanges, variantFamily } from '@/lib/product-variants';
+import { yogurtItemSize } from '@/lib/yogurt-product-materials';
 import ItemAttributesEditor from '@/components/items/ItemAttributesEditor';
 import { itemAttributes, attributeFacets, validateItemMetadata } from '@/lib/item-attributes';
+import { copyAssemblyBlueprint } from '@/lib/assembly-blueprint';
 
 const SUB_TYPES = [["additive", "Additive"], ["raw_material", "Raw material / Ingredient"], ["packaging", "Packaging"], ["finished_product", "Finished Product / Assembly"], ["consumable", "Consumable"], ["cleaning", "Cleaning supply"], ["spare_part", "Spare part"], ["promotional", "Promotional"], ["wip", "Work in progress"]];
 const SKU_PREFIX = { inventory_item: "ITM", service: "SRV", assembly: "ASM" };
@@ -53,6 +55,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const { id:routeId } = useParams(), navigate = useNavigate(), goBack = useBack("/inventory"), { toast } = useToast();
   const id = embedded ? itemId : routeId;
   const [params]=useSearchParams();
+  const copySourceId=!embedded&&!id?params.get('copy')||'':'';
   const requestedType=!embedded && !id && ["inventory_item","service","assembly"].includes(params.get("type"))?params.get("type"):initialType;
   const isEdit = !!id;
   const [savedItem,setSavedItem] = useState(null), [pendingSave,setPendingSave] = useState(null), [saveError,setSaveError] = useState('');
@@ -67,6 +70,7 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const [stockLoading, setStockLoading] = useState(isEdit), [stockError, setStockError] = useState(""), [stockReload, setStockReload] = useState(0);
   const [legacyUnits, setLegacyUnits] = useState(null);
   const [saving, setSaving] = useState(false), [unitBusy, setUnitBusy] = useState(false);
+  const [blueprintId,setBlueprintId]=useState(''),[blueprintName,setBlueprintName]=useState(''),[blueprintLoading,setBlueprintLoading]=useState(false);
   const [form, setForm] = useState({
     yogurt_units_per_bucket: '', yogurt_net_weight_g: '', attributes: [], product_family: "", material_group: "", image_url: "", size: "", flavor: "", sku: "", name: "", description: "", category: "",
     inventory_type: requestedType === "assembly" ? "assembly" : requestedType === "service" ? "service" : initialInventoryType,
@@ -82,7 +86,8 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     Promise.all([
       getItemCatalog({ fresh: true }),
       isEdit ? erp.entities.Product.get(id) : Promise.resolve(null),
-    ]).then(([catalog, item]) => {
+      copySourceId ? erp.entities.Product.get(copySourceId) : Promise.resolve(null),
+    ]).then(([catalog, item, source]) => {
       if (!active) return;
       setProducts(catalog.products); setAssets(catalog.assets); setAccounts(catalog.accounts); setSuppliers(catalog.suppliers); setUnits(catalog.units);
       if (isEdit && !item) throw new Error(ui("Item not found"));
@@ -100,10 +105,15 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
           attributes: itemAttributes(item), unit_of_measure: unit, purchase_price: item.purchase_price ?? Number(item.current_cost || 0) * Number(item.purchase_to_storage_factor || 1),
           ...(catalogueDraft ? { selling_price: item.selling_price ?? "" } : {}),
         }; originalForm.current = {...loaded,components:item.components || []}; return loaded; });
+      } else if (copySourceId) {
+        const blueprint=copyAssemblyBlueprint(source);
+        setItemType('assembly');setComponents(blueprint.components);
+        setForm(previous=>({...previous,...blueprint.changes}));
+        setBlueprintId(source.id);setBlueprintName(source.name);
       }
     }).catch(error => { if (active) setLoadError(error.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [id, embedded, reload]);
+  }, [id, embedded, reload,copySourceId]);
 
   // Stock is a current server total, not cached selection metadata. Let the
   // editor become usable while this independent, read-only value is loading.
@@ -157,8 +167,20 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
   const attributeOptions = useMemo(() => attributeFacets(products), [products]);
   const estimatedCost = useMemo(() => assemblyEstimate(components,productById), [components,productById]);
 
+  async function copyBlueprint() {
+    if (!blueprintId || savingRef.current || blueprintLoading) return;
+    setBlueprintLoading(true);setSaveError('');
+    try {
+      const source=await erp.entities.Product.get(blueprintId);
+      const blueprint=copyAssemblyBlueprint(source,isEdit?form:null);
+      setForm(previous=>({...previous,...blueprint.changes}));
+      setComponents(blueprint.components);setBlueprintName(source.name);
+    } catch (error) {setSaveError(error.message);}
+    finally {setBlueprintLoading(false);}
+  }
+
   async function handleSave() {
-    if (savingRef.current || unitBusy) return;
+    if (savingRef.current || unitBusy || blueprintLoading) return;
     setSaveError('');
     let payload, changes;
     try {
@@ -222,9 +244,10 @@ export default function ItemForm({ embedded = false, itemId, initialType = "inve
     {phone&&isEdit&&!embedded&&!allSettings&&saveError&&!pendingSave&&<p role="alert" className="mb-3 text-sm text-red-700">{uiMessage(saveError)}</p>}
     {phone&&isEdit&&!embedded&&!allSettings&&savedItem&&<MobileItemOverview item={savedItem} form={form} set={set} cost={itemType==='assembly'?estimatedCost:form.current_cost||form.purchase_price} quantity={quantityOnHand} stockLoading={stockLoading} stockError={stockError} saving={saving||unitBusy} onSave={handleSave} onSettings={()=>setAllSettings(true)} readOnly={!!savedItem.item_removed_at}/>}
     {phone&&allSettings&&!embedded&&<Button variant="outline" className="mb-4" onClick={()=>setAllSettings(false)}>{ui('Back to item details')}</Button>}
-    <fieldset disabled={saving || Boolean(savedItem?.item_removed_at)} className={(phone&&isEdit&&!embedded&&!allSettings?"hidden ":"")+(embedded ? "space-y-5" : "max-w-5xl space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6")}>
+    <fieldset disabled={saving || blueprintLoading || Boolean(savedItem?.item_removed_at)} className={(phone&&isEdit&&!embedded&&!allSettings?"hidden ":"")+(embedded ? "space-y-5" : "max-w-5xl space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6")}>
       {savedItem&&(savedItem.configuration_status==='draft'||savedItem.is_active===false)&&<div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900"><strong>{ui(itemAvailabilityLabel(savedItem))}</strong><p className="mt-1">{ui('Complete the required details and turn on Active item before saving.')}</p>{finishedItemSetupIssues({...form,components}).length>0&&<p className="mt-1">{ui('Still needed')}: {finishedItemSetupIssues({...form,components}).map(label=>ui(label)).join(', ')}</p>}</div>}
       <div className="flex flex-wrap items-center justify-between gap-3"><ItemTypeChooser value={itemType} onChange={changeType} /><label className="flex items-center gap-2 text-sm"><Switch aria-label={ui("Active item")} checked={form.is_active} onCheckedChange={value => set("is_active", value)} />{ui("Active item")}</label></div>
+      {itemType==='assembly'&&<section className="space-y-2 rounded-xl border bg-secondary/30 p-4"><label className="block text-sm font-semibold" htmlFor="assembly-blueprint">{ui('Copy an assembly blueprint')}</label><div className="flex flex-col gap-2 sm:flex-row"><select id="assembly-blueprint" aria-label={ui('Assembly blueprint')} value={blueprintId} onChange={event=>setBlueprintId(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-md border bg-white px-3 text-sm"><option value="">{ui('Choose an existing assembly')}</option>{products.filter(product=>product.id!==id&&isAssemblyInventoryType(product.inventory_type)&&product.components?.length&&(!isEdit||!variantFamily(form)||variantFamily(product)===variantFamily(form))&&(!isEdit||!yogurtItemSize(form)||yogurtItemSize(product)===yogurtItemSize(form))).sort((a,b)=>a.name.localeCompare(b.name)).map(product=><option key={product.id} value={product.id}>{product.name}</option>)}</select><Button type="button" variant="outline" disabled={!blueprintId||blueprintLoading} onClick={copyBlueprint}>{ui(blueprintLoading?'Loading blueprint...':'Copy blueprint')}</Button></div><p className="text-xs text-muted-foreground">{ui('Copies the components and yield into this draft. Review the flavouring and packaging before saving.')}</p>{blueprintName&&<p role="status" className="text-xs text-primary">{ui('Blueprint copied from {0}.',blueprintName)}</p>}</section>}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.5fr]">
         <label className="space-y-1.5 text-sm font-medium">{ui("Item name *")}<Input value={form.name} onChange={event => set("name", event.target.value)} placeholder={ui("e.g. YOLA Natural Yogurt 500ml")} /></label>
         <label className="space-y-1.5 text-sm font-medium">{ui("Item code / SKU")}<Input value={form.sku} onChange={event => set("sku", event.target.value)} placeholder={ui("Auto-generated")} /></label>

@@ -42,3 +42,32 @@ test('mobile product demand shows immediate net quantity/revenue, ranks units se
  const f=setup(true);try{await f.ready();f.r.buttons.find(button=>button.label==='Products and demand').onClick();let html=await f.ready();assert.equal(f.r.calls.at(-1).includeProducts,true);assert.match(html,/Ranked by net quantity within each saved unit/);const card=html.match(/<article[^>]*>[\s\S]*?<\/article>/)?.[0];assert.ok(card);assert.match(card.split('<details')[0],/Net sold quantity/);assert.match(card.split('<details')[0],/Revenue excluding tax/);assert.match(card.split('<details')[0],/6 ea/);assert.match(html,/1 kg/);assert.doesNotMatch(html,/7 (?:units|ea|kg)/);const ranking=f.r.tables.get('company-sales-product-ranking');ranking.onRowClick(ranking.data.find(row=>row.product_id==='p'));html=f.draw();assert.match(html,/330 FCFA/);assert.match(html,/accounting\/journals\/j1/);assert.match(html,/accounting\/journals\/j2/);assert.doesNotMatch(html,/accounting\/journals\/j3/);assert.equal(f.r.exports.at(-1).getReport().sections[1].rows[0][1],330);f.r.buttons.find(button=>button['aria-label']==='Back to sales').onClick();await f.ready();assert.equal(f.r.calls.at(-1).includeProducts,undefined);
  }finally{f.close();}
 });
+
+test('mobile total sales shows the selected-period revenue and opens its matching transactions',async()=>{
+ const f=setup(true);
+ try{
+  let html=await f.ready();
+  const totalCard=()=>f.r.buttons.find(button=>button['aria-label']==='View details: Total sales');
+  const totalMarkup=()=>html.match(/<button[^>]*aria-label="View details: Total sales"[\s\S]*?<\/button>/)?.[0]||'';
+  assert.ok(totalCard());
+  assert.match(totalMarkup(),/380 FCFA/);
+  assert.doesNotMatch(totalMarkup(),/260 FCFA|600 FCFA/);
+  assert.match(totalMarkup(),/Selected dates · including tax/);
+  assert.match(html,/Cash at sale/);
+  assert.match(html,/Customer balances/);
+  totalCard().onClick();
+  html=f.draw();
+  assert.match(html,/JV-1/);
+  assert.match(html,/JV-2/);
+  assert.match(html,/JV-3/);
+  assert.equal(f.r.exports.at(-1).getReport().sections[1].rows[0][1],380);
+  f.r.buttons.find(button=>button['aria-label']==='Back to sales').onClick();
+  await f.ready();
+  f.r.response={...f.r.response,rows:[rows[2]],totals:{count:1,net:50,tax:0,sales:50}};
+  f.r.buttons.find(button=>button.label==='Today').onClick();
+  html=await f.ready();
+  assert.equal(f.r.calls.at(-1).from,f.r.calls.at(-1).to);
+  assert.match(totalMarkup(),/50 FCFA/);
+  assert.doesNotMatch(totalMarkup(),/380 FCFA/);
+ }finally{f.close();}
+});

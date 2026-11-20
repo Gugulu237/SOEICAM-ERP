@@ -11,11 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function DataTable({ columns, data, searchFields = [], pageSize = 15, onRowClick, mobileRow, emptyMessage = ui("No records found"), stateKey, exportTitle, exportColumns, exportMetadata = [], exportNotes = [], exportDisabled = false }) {
+export default function DataTable({ columns, data, searchFields = [], pageSize = 15, onRowClick, mobileRow, emptyMessage = ui("No records found"), stateKey, defaultSort, exportTitle, exportColumns, exportMetadata = [], exportNotes = [], exportDisabled = false }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
   const phone = usePhoneLayout();
 
-  const [view, setView] = usePageState('table:' + (stateKey || columns.map(column => column.key).join('|')), { search: '', page: 0, sortCol: null, sortDir: 'asc' });
+  const [view, setView] = usePageState('table:' + (stateKey || columns.map(column => column.key).join('|')), { search: '', page: 0, sortCol: defaultSort?.column || null, sortDir: defaultSort?.direction || 'asc' });
   const { search, page, sortCol, sortDir } = view;
   const setSearch = search => setView(previous => ({ ...previous, search, page: 0 }));
 
@@ -26,14 +26,16 @@ export default function DataTable({ columns, data, searchFields = [], pageSize =
       result = result.filter(row => searchFields.some(f => String(row[f] || "").toLowerCase().includes(lower)));
     }
     if (sortCol) {
+      const column = columns.find(column => column.key === sortCol);
       result = [...result].sort((a, b) => {
-        const av = a[sortCol] ?? "", bv = b[sortCol] ?? "";
+        const av = column?.sortValue ? column.sortValue(a) : a[sortCol] ?? "";
+        const bv = column?.sortValue ? column.sortValue(b) : b[sortCol] ?? "";
         const cmp = typeof av === "number" ? av - bv : String(av).localeCompare(String(bv));
         return sortDir === "asc" ? cmp : -cmp;
       });
     }
     return result;
-  }, [data, search, sortCol, sortDir, searchFields]);
+  }, [data, search, sortCol, sortDir, searchFields, columns]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const currentPage = Math.min(Math.max(0, page), Math.max(0, totalPages - 1));

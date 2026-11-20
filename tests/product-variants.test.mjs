@@ -8,10 +8,14 @@ import { validateItemDefinition } from '../src/server/domain/item-settings.js';
 const brasse={inventory_type:'assembly',product_family:'Yaourt brassé',flavor:'Fraise',size:'500 g',unit_of_measure:'ea'};
 const boire={...brasse,product_family:'Yaourt à boire',size:'330 ml'};
 
-test('the five official flavours recognize English and existing French labels without creating duplicate variants',()=>{
-  assert.deepEqual(PRODUCT_FLAVOURS.map(f=>f.label),['Strawberry','Vanilla','Unsweetened','Nature','Chocolate']);
+test('registered flavours recognize English and French labels without creating duplicate variants',()=>{
+  assert.deepEqual(PRODUCT_FLAVOURS.map(f=>f.label),['Strawberry','Vanilla','Unsweetened','Nature','Chocolate','Lemon','Pineapple','Coconut']);
   for(const [input,expected] of [['Strawberr','Fraise'],['strawberry','Fraise'],['Fraise','Fraise'],['Vanilla','Vanille'],['Vanille','Vanille'],['Unsweetened','Non sucré'],['Non-sucre','Non sucré'],['Nature','Nature'],['Chocolate','Chocolat']])assert.equal(canonicalFlavour(input),expected);
   assert.deepEqual(inventoryVariants({...brasse,flavor:'Vanilla',size:'1 kg'}),{flavor:'Vanille',size:'1000 g'});
+  for(const [input,expected] of [['Lemon','Citron'],['Citron','Citron'],['Pineapple','Ananas'],['Ananas','Ananas'],['Coconut','Coco'],['Noix de coco','Coco']]){
+    assert.equal(canonicalFlavour(input),expected);
+    assert.deepEqual(validateFinishedVariantChanges({flavor:input},brasse),{flavor:expected});
+  }
 });
 test('gram sizes follow each product family and equivalent kilogram labels normalize without converting volume to mass',()=>{
   assert.deepEqual(productSizeChoices(brasse),['250 g','500 g','1000 g','2500 g','10000 g']);assert.deepEqual(productSizeChoices(boire),['250 g','330 g','500 g']);

@@ -7,6 +7,9 @@ export const PRODUCT_FLAVOURS = [
   {value:'Non sucré',label:'Unsweetened',aliases:['unsweetened','non sucre','sans sucre','sans sucres','nonsucre','non sucree','nature non sucre','non sucre nature','no sugar','sugar free','no added sugar','no added sugars']},
   {value:'Nature',label:'Nature',aliases:['nature','natural','plain']},
   {value:'Chocolat',label:'Chocolate',aliases:['chocolate','chocolat']},
+  {value:'Citron',label:'Lemon',aliases:['lemon','citron']},
+  {value:'Ananas',label:'Pineapple',aliases:['pineapple','ananas']},
+  {value:'Coco',label:'Coconut',aliases:['coconut','coco','noix de coco']},
 ];
 export const PRODUCT_SIZES = {brasse:['250 g','500 g','1000 g','2500 g','10000 g'],boire:['250 g','330 g','500 g']};
 const key = value => normalizeProductText(value || '').trim().replace(/\s+/g,' ');
@@ -33,7 +36,7 @@ export function validateFinishedVariantChanges(input, existing={}) {
   const result={}, combined={...existing,...input};
   if(Object.hasOwn(input,'flavor')) {
     const value=canonicalFlavour(input.flavor);
-    if(value && !flavourChoice(value) && value!==String(existing?.flavor || '').trim())throw Error('Choose Strawberry, Vanilla, Unsweetened, Nature or Chocolate.');
+    if(value && !flavourChoice(value) && value!==String(existing?.flavor || '').trim())throw Error('Choose Strawberry, Vanilla, Unsweetened, Nature, Chocolate, Lemon, Pineapple or Coconut.');
     result.flavor=value;
   }
   const familyChanged=Object.hasOwn(input,'product_family') && variantFamily(combined)!==variantFamily(existing);

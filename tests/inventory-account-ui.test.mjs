@@ -160,6 +160,27 @@ test('New product assembly opens the assembly editor directly; a linked BOM copi
   try{const paint=painter(r2,ui,'Recipe');paint();await r2.flush();assert.match(paint(),/copied per one output unit/);assert.ok(r2.elements.some(e=>e.tag==='input'&&e.props.value==='Yoghurt'));assert.ok(r2.elements.some(e=>e.tag==='input'&&e.props.value===100));assert.ok(r2.elements.some(e=>e.props.onValueChange&&e.props.value==='yog'));}
   finally{r2.cleanup();delete globalThis.__iaUI;}
 });
+test('copied assembly opens an editable new flavor draft and saves without changing its source',async()=>{
+  const r=runtime(),ui=await renderer(),created=[];r.search='type=assembly&copy=nature';
+  const milk={id:'milk',name:'Milk',inventory_type:'raw_material',unit_of_measure:'kg',current_cost:1000};
+  const aroma={id:'aroma',name:'Lemon flavour',inventory_type:'additive',unit_of_measure:'kg',current_cost:2000};
+  const source={id:'nature',sku:'NATURE',name:'YOLA Brassé Nature 500g',inventory_type:'assembly',product_family:'Yaourt brassé',size:'500 g',flavor:'Nature',unit_of_measure:'ea',yogurt_units_per_bucket:52,selling_price:500,cogs_account_id:'cogs',inventory_account_id:'asset',revenue_account_id:'income',components:[{component_type:'inventory_part',product_id:'milk',quantity:0.5,unit:'kg',unit_cost:1000,cost_source:'registered'}]};
+  const before=structuredClone(source);
+  r.catalogue={products:[source,milk,aroma],assets:[],suppliers:[],units:[{code:'ea',name:'Each'},{code:'kg',name:'Kilogram'}],accounts:[{id:'cogs',account_type:'cogs'},{id:'asset',account_type:'asset'},{id:'income',account_type:'revenue'}]};
+  r.client.entities.Product.get=async id=>{assert.equal(id,'nature');return source;};
+  r.client.entities.Product.create=async changes=>{created.push(changes);return {id:'lemon',...changes};};
+  try{
+    const paint=painter(r,ui,'Item');paint();await r.flush();assert.match(paint(),/Blueprint copied from/);
+    const fields=r.elements.find(e=>e.props.form&&e.props.set);assert.equal(fields.props.form.name,'');assert.equal(fields.props.form.flavor,'');assert.equal(fields.props.form.yogurt_units_per_bucket,52);
+    assert.equal(created.length,0);fields.props.set('name','YOLA Brassé Citron 500g');fields.props.set('flavor','Lemon');
+    r.assembly.setComponents(rows=>[...rows,{component_type:'inventory_part',product_id:'aroma',quantity:0.001,unit:'kg',unit_cost:2000,cost_source:'registered'}]);paint();
+    await button(r,'Save Item').onClick();paint();
+    assert.equal(created.length,1);assert.equal(created[0].flavor,'Citron');assert.equal(created[0].name,'YOLA Brassé Citron 500g');
+    assert.equal(created[0].yogurt_units_per_bucket,52);assert.equal(created[0].components.length,2);assert.match(created[0].sku,/^ASM-/);assert.equal(created[0].id,undefined);
+    assert.deepEqual(source,before);assert.deepEqual(r.navigation,['/inventory']);
+  }finally{r.cleanup();delete globalThis.__iaUI;}
+});
+
 test('account list hides inactive/hidden rows by default, restores hidden accounts, and deletes through the checked endpoint with a stable retry reference',async()=>{
   const r=runtime(),ui=await renderer(),accounts=[{id:'a',account_number:'3990',name:'Working capital',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,updated_date:'v1'},{id:'b',account_number:'3991',name:'Unused investor',account_type:'equity',normal_balance:'credit',is_active:true,is_posting:true,is_hidden:true,updated_date:'v1'}],calls=[];
   r.client.functions.invoke=async()=>({data:{accounts,balances:{},date:'2026-10-20'}});r.client.accounting={saveAccount:async body=>{calls.push(body);throw Error('Connection interrupted');}};

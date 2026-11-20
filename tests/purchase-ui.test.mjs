@@ -7,12 +7,13 @@ import {purchasePermissions} from '../src/lib/purchase-workspace.js';
 const require=createRequire(import.meta.url);
 async function ui(){
   const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Workspace,{PurchaseOrderDialog} from './src/components/purchases/PurchasesWorkspace.jsx';import SupplierWorkspace from './src/components/suppliers/SupplierWorkspace.jsx';export const render=(props,detail=false)=>renderToStaticMarkup(React.createElement(detail==='supplier'?SupplierWorkspace:detail?PurchaseOrderDialog:Workspace,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,format:'cjs',platform:'node',write:false,plugins:[{name:'purchase-ui',setup(b){
-    b.onResolve({filter:/^react$/},args=>/(?:PurchasesWorkspace|SupplierWorkspace)\.jsx$/.test(args.importer)?{path:'hooks',namespace:'fixture'}:undefined);
-    b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__purchaseUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useState=v=>globalThis.__purchaseUI.state('purchase',v);export const useRef=v=>globalThis.__purchaseUI.ref('purchase',v);export const useEffect=(fn,deps)=>globalThis.__purchaseUI.effect('purchase',fn,deps);export function useCallback(fn,deps){const slot=globalThis.__purchaseUI.ref('purchase',null);if(!slot.current || deps.some((v,i)=>!Object.is(v,slot.current.deps[i])))slot.current={fn,deps};return slot.current.fn;}`,resolveDir:process.cwd()}));
+    b.onResolve({filter:/^react$/},args=>/(?:PurchasesWorkspace|SupplierWorkspace|DataTable)\.jsx$/.test(args.importer)?{path:'hooks',namespace:'fixture'}:undefined);
+    b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default {...React,createElement:(tag,props,...children)=>{globalThis.__purchaseUI.capture(tag,props,children);return React.createElement(tag,props,...children);}};export const useMemo=fn=>fn();export const useState=v=>globalThis.__purchaseUI.state('purchase',v);export const useRef=v=>globalThis.__purchaseUI.ref('purchase',v);export const useEffect=(fn,deps)=>globalThis.__purchaseUI.effect('purchase',fn,deps);export function useCallback(fn,deps){const slot=globalThis.__purchaseUI.ref('purchase',null);if(!slot.current || deps.some((v,i)=>!Object.is(v,slot.current.deps[i])))slot.current={fn,deps};return slot.current.fn;}`,resolveDir:process.cwd()}));
     const mocks={
       'next/dynamic':`import React from 'react';export default function dynamic(){return function Lazy(){globalThis.__purchaseUI.suppliersMounted=true;return React.createElement('p',null,'Supplier management loaded');};}`,
       '@/lib/router':`import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const useNavigate=()=>path=>{globalThis.__purchaseUI.query=path.split('?')[1]||'';};export const useSearchParams=()=>[new URLSearchParams(globalThis.__purchaseUI.query || ''),value=>{const r=globalThis.__purchaseUI;const next=typeof value==='function'?value(new URLSearchParams(r.query || '')):value;r.query=next.toString();}];`,
       '@/hooks/usePhoneLayout': `export const usePhoneLayout=()=>Boolean(globalThis.__purchaseUI.phone);`,
+      '@/lib/navigation-context': `export const useNavigationSession=()=>null;export const usePageState=(name,initial)=>globalThis.__purchaseUI.state(name,initial);`,
       '@/hooks/useCurrentUser':`export const useCurrentUser=()=>globalThis.__purchaseUI.session;`,
       '@/api/erpClient':`export const invalidateERPReads=()=>{};export const erp={functions:{invoke:async(name,body)=>({data:await globalThis.__purchaseUI.request(body)})}};`,
       '@/components/ui/use-toast':`export const useToast=()=>({toast:v=>globalThis.__purchaseUI.notifications.push(v)});`,
@@ -32,6 +33,52 @@ test('the unified purchase register renders real row values and opens order and 
   try{draw();await r.flush();const html=draw();assert.match(html,/PO-TEST-01/);assert.match(html,/Dairy supplier/);assert.match(html,/Buyer/);assert.equal(r.suppliersMounted,undefined);assert.deepEqual(calls.map(c=>c.action),['purchasesWorkspace']);
     r.buttons.find(b=>b.label==='Review existing order').onClick();assert.equal(new URLSearchParams(r.query).get('order'),order.id);assert.equal(new URLSearchParams(r.query).get('section'),'orders');
     r.query='section=orders';draw();r.buttons.find(b=>b.label==='Dairy supplier').onClick();assert.equal(new URLSearchParams(r.query).get('section'),'suppliers');assert.equal(new URLSearchParams(r.query).get('supplier'),'supplier-a');draw();assert.equal(r.suppliersMounted,true);
+  }finally{r.cleanup();delete globalThis.__purchaseUI;}
+});
+
+test('purchase orders default to newest date and can sort by supplier and numeric amount on phone and desktop',async()=>{
+  const render=await ui();
+  const rows=[
+    {...order,id:'old',po_number:'PO-OLD',supplier_name:'Zebra supplier',order_date:'2026-10-01',total:'1000'},
+    {...order,id:'new',po_number:'PO-NEW',supplier_name:'Alpha supplier',order_date:'2026-10-20',total:'20'},
+    {...order,id:'middle',po_number:'PO-MIDDLE',supplier_name:'Middle supplier',order_date:'2026-10-10',total:'100'},
+  ];
+  for(const phone of [false,true]){
+    const r=runtime();r.phone=phone;r.query='section=orders';globalThis.__purchaseUI=r;
+    r.request=async()=>({permissions:purchasePermissions('admin'),orders:rows});
+    const draw=()=>{r.beforeRender();return render();};
+    const ordered=(html,ids)=>{for(let i=1;i<ids.length;i++)assert.ok(html.indexOf(ids[i-1])<html.indexOf(ids[i]),ids.join(' before '));};
+    try{
+      draw();await r.flush();ordered(draw(),['PO-NEW','PO-MIDDLE','PO-OLD']);
+      if(phone){
+        r.controls.find(c=>c['aria-label']==='Sort records').onChange({target:{value:'supplier_name'}});draw();
+        r.buttons.find(b=>b['aria-label']==='Reverse sort order').onClick();
+      }else r.buttons.find(b=>b.label==='Supplier').onClick();
+      ordered(draw(),['PO-NEW','PO-MIDDLE','PO-OLD']);
+      if(phone)r.controls.find(c=>c['aria-label']==='Sort records').onChange({target:{value:'total'}});
+      else r.buttons.find(b=>b.label==='Amount').onClick();
+      ordered(draw(),['PO-NEW','PO-MIDDLE','PO-OLD']);
+      if(phone)r.buttons.find(b=>b['aria-label']==='Reverse sort order').onClick();
+      else r.buttons.find(b=>b.label.startsWith('Amount')).onClick();
+      ordered(draw(),['PO-OLD','PO-MIDDLE','PO-NEW']);
+    }finally{r.cleanup();delete globalThis.__purchaseUI;}
+  }
+});
+
+test('unreceived credit orders appear in Bills with a receiving action without becoming payable balances',async()=>{
+  const render=await ui(),r=runtime();r.query='section=bills';globalThis.__purchaseUI=r;
+  const pending={...order,id:'credit-pending',po_number:'PO-CREDIT-PENDING',payment_terms:'credit',status:'approved',total:275000};
+  const partial={...order,id:'credit-partial',po_number:'PO-CREDIT-PARTIAL',payment_terms:'credit',status:'partially_received',total:1000};
+  const orders=[pending,partial,{...pending,id:'cash',po_number:'PO-CASH-PENDING',payment_terms:'cash'}, {...pending,id:'received',po_number:'PO-FULLY-RECEIVED',status:'received'}, {...pending,id:'settled',po_number:'PO-HISTORICAL',historical_settlement_id:'settlement'}];
+  r.request=async()=>({permissions:purchasePermissions('admin'),orders,bills:[{id:'partial-bill',bill_number:'BILL-RECEIVED',po_id:partial.id,status:'open',total:400,balance:400}],payments:[],date:'2026-10-20'});
+  const draw=()=>{r.beforeRender();return render();};
+  try{
+    draw();await r.flush();const html=draw();
+    assert.match(html,/PO-CREDIT-PENDING|PO-CREDIT-PARTIAL/);assert.match(html,/Awaiting receipt/);assert.match(html,/BILL-RECEIVED/);
+    assert.doesNotMatch(html,/PO-CASH-PENDING|PO-FULLY-RECEIVED|PO-HISTORICAL/);
+    assert.match(html,/1 registered bills/);assert.doesNotMatch(html,/2 registered bills/);
+    r.buttons.find(b=>b.label==='Receive and create bill').onClick();
+    const query=new URLSearchParams(r.query);assert.equal(query.get('section'),'receiving');assert.equal(query.get('order'),pending.id);assert.equal(query.get('compose'),'receive');
   }finally{r.cleanup();delete globalThis.__purchaseUI;}
 });
 

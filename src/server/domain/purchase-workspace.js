@@ -54,8 +54,11 @@ export async function purchaseWorkspace(client, user, body) {
     if (!availableSupplier(supplier)) return { supplier: null, products: [] };
     return { supplier: pick(supplier, supplierFields), products: await supplierProducts(s, supplier) };
   }
-  const orders = await readRecords(s.PurchaseOrder);
-  const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total price_includes_vat requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required')) };
+  const orders = (await readRecords(s.PurchaseOrder)).sort((a,b) =>
+    String(b.order_date || '').localeCompare(String(a.order_date || '')) ||
+    String(b.created_date || '').localeCompare(String(a.created_date || '')) ||
+    String(b.po_number || b.id).localeCompare(String(a.po_number || a.id),undefined,{numeric:true}));
+  const base = { permissions, date: businessDate(), orders: orders.map(po => pick(po, 'id po_number supplier_id supplier_name order_date expected_date status total subtotal tax_total price_includes_vat requested_by_name requested_department_id requested_department_name payment_terms approved_by approved_at cash_disbursed notes warehouse_id supplier_catalogue_review_required historical_settlement_id')) };
   if (body.section === 'suppliers' && !permissions.suppliers || ['bills','payments'].includes(body.section) && !permissions.finance || body.section === 'receiving' && !permissions.receive) throw forbidden('This Purchases section is reserved for authorized purchasing, warehouse or finance staff.');
   if (body.orderId || body.compose) {
     const order = body.orderId ? orders.find(po => po.id === body.orderId) : null;

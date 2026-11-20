@@ -55,6 +55,7 @@ export function matchingProductPhoto(product = {}) {
     ['Non sucré', /\b(non\s+sucre|unsweetened|sans\s+sucre|sugar\s+free)\b/],
     ['Fraise', /\b(fraise|strawberry)\b/], ['Vanille', /\b(vanille|vanilla)\b/],
     ['Chocolat', /\b(chocolat|chocolate)\b/], ['Nature', /\b(nature|natural|plain)\b/],
+    ['Citron', /\b(citron|lemon)\b/], ['Ananas', /\b(ananas|pineapple)\b/], ['Coco', /\b(coco|coconut)\b/],
   ];
   const flavors = flavorMatchers.filter(([, expression]) => expression.test(text)).map(([flavor]) => flavor);
   if (flavors.length !== 1) return null;

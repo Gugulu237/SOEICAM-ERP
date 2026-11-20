@@ -30,6 +30,13 @@ test('Purchases combines all administrator destinations and retains deep links',
   assert.ok(!link.includes('role='));
 });
 
+test('purchase workspaces list orders by order date newest first before applying a register sort',async()=>{
+  const f=await setup(),s=f.entities;
+  for(const [label,order_date] of [['newest','2026-10-20'],['oldest','2026-10-01'],['middle','2026-10-10']])await s.PurchaseOrder.create({po_number:'SORT-'+label,order_date,supplier_id:'supplier',status:'approved'});
+  const result=await purchaseWorkspace(f.client,user,{section:'orders'});
+  assert.deepEqual(result.orders.filter(row=>row.po_number?.startsWith('SORT-')).map(row=>row.po_number),['SORT-newest','SORT-middle','SORT-oldest']);
+});
+
 test('only administrators can read, save or receive purchases',async()=>{
   const f=await setup(),s=f.entities,{order}=await f.run(f.body);
   for(const role of ['cashier','procurement','production_manager','employee','warehouse_manager','driver']){
