@@ -49,6 +49,20 @@ test('company giveaways retain all residual cents even when a rounded unit-cost 
  const result=await f.run({action:'centralDegustationWorkspace'},gm);assert.equal(result.history[0].cost,0.10);
 });
 
+test('a giveaway without any recipient uses the issued lots production cost and retains employee attribution',async()=>{
+ const f=await setup();
+ await f.s.Product.update('product-a',{selling_price:1500,cost_price:900});
+ await f.s.StockBalance.update(f.stock.id,{quantity:3,total_value:450,unit_cost:150});
+ const second=await f.s.StockBalance.create({product_id:'product-a',product_name:'YOLA',warehouse_id:f.warehouse.id,quantity:4,total_value:1000,unit_cost:250,lot_number:'LATER-BATCH',expiry_date:'2099-02-01',qc_status:'approved'});
+ const {customerId,...body}=f.body;void customerId;
+ const before=await state(f.s),result=await f.run({...body,lines:[{product_id:'product-a',quantity:5}]},gm);
+ assert.equal(result.record.customer_id,'');assert.equal(result.record.customer_name,'');assert.equal(result.record.recorded_by,gm.id);assert.ok(result.record.employee_id);assert.equal(result.record.cost,950);
+ assert.equal((await f.s.StockBalance.get(f.stock.id)).quantity,0);assert.equal((await f.s.StockBalance.get(second.id)).quantity,2);assert.equal((await f.s.StockBalance.get(second.id)).total_value,500);
+ const journal=(await f.s.JournalEntry.list())[0],lines=await f.s.JournalLine.filter({journal_id:journal.id});assert.equal(lines.find(row=>row.account_id==='expense').debit,950);assert.equal(lines.find(row=>row.account_id===f.inventory).credit,950);
+ for(const name of ['Invoice','SalesOrder','CashCollection','TreasuryTransaction','Customer'])assert.deepEqual(await f.s[name].list(),before[name]);
+ const after=await state(f.s);assert.equal((await f.run({...body,lines:[{product_id:'product-a',quantity:5}]},gm)).reused,true);assert.deepEqual(await state(f.s),after);
+});
+
 test('authorized profiles may give company products to any active customer without changing acquisition; inactive customers and actor overrides are rejected',async()=>{
  const changes=[
   async f=>({...f.body,employeeId:'other'}),
