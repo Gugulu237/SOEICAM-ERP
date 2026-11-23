@@ -150,7 +150,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
       const unitCost=itemUnitCost(product);
       if(!Number.isFinite(unitCost) || unitCost<=0)throw Error('Establish the item carrying cost before recording newly counted stock.');
       if(Number(input.unit_cost)!==unitCost)throw Error('The item carrying cost changed. Reload quantities before recording new stock.');
-      row={product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:lot,expiry_date:expiry,qc_status:'quarantine',configured_unit_cost:unitCost,book_quantity:0,book_value:0,unit_cost:unitCost};
+      row={product_id:product.id,product_name:product.name,unit:stockUnit(product),warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:lot,expiry_date:expiry,qc_status:isAssemblyInventoryType(product.inventory_type)?'quarantine':'approved',configured_unit_cost:unitCost,book_quantity:0,book_value:0,unit_cost:unitCost};
     }
     if(!inGroup(product))throw Error('Count only items in the selected group. Reload quantities.');
     const key=row.balance_id || row.product_id+':'+row.lot_number.toLowerCase();
@@ -160,11 +160,18 @@ export async function warehouseAdjustmentAction(client,user,body) {
     if(input.use_current_cost===true && !access.can_reconcile_value)throw Error('Accounting or the General Manager must approve changing the stock valuation basis.');
     const variance=warehouseCountVariance(row,input.counted_quantity,{verifiedCost:input.verified_unit_cost,confirmed:input.confirm_reconciliation===true,useCurrentCost:input.use_current_cost===true});
     if(neutral&&(input.use_current_cost===true||input.confirm_reconciliation===true||!variance.difference&&variance.value_difference))throw Error('Opening stock count corrections cannot revalue existing stock. Use the reviewed valuation correction workflow separately.');
-    const finished=isAssemblyInventoryType(product.inventory_type),saleRelease=input.ready_for_sale===true,useRelease=input.ready_for_use===true;
+    const finished=isAssemblyInventoryType(product.inventory_type),saleRelease=input.ready_for_sale===true;
     if(saleRelease&&!finished)throw Error('Only finished products can be marked ready for sale. Materials and packaging are for production use.');
-    if(useRelease&&finished)throw Error('Finished products use Ready for sale, not Ready for production use.');
+    if(input.ready_for_use===true&&finished)throw Error('Finished products use Ready for sale, not Ready for production use.');
     const existing= row.balance_id ? balances.find(b=>b.id===row.balance_id) : null;
     const adjustedStock=!existing || counted(existing);
+    // Counts receive usable ingredients and packaging directly. Also release
+    // legacy adjustment layers when recounted, without another quality step.
+    const automaticUseRelease=!finished && (!existing || stockOrigin(existing,adjustmentMovements)==='adjustment') &&
+      !existing?.production_order_id && !existing?.inventory_recovery_id && !existing?.exchange_return_record_id &&
+      ['approved','quarantine','quarantined'].includes(row.qc_status) && variance.counted_quantity>0 &&
+      (!row.expiry_date || validDate(row.expiry_date) && row.expiry_date>=businessDate());
+    const useRelease=input.ready_for_use===true || automaticUseRelease;
     const requestedRelease=saleRelease||useRelease;
     if(requestedRelease && existing?.inventory_recovery_id)throw Error('Release recovered packaging through the checked inspection workflow.');
     if(requestedRelease && (!adjustedStock || variance.counted_quantity<=0))throw Error('Only verified counted stock can be released here. Production batches use their quality-release workflow.');
@@ -196,7 +203,7 @@ export async function warehouseAdjustmentAction(client,user,body) {
   if(lines.size){const posted=await postJournal({entities:s},{entryDate:date,description:`Warehouse quantity adjustment: ${warehouse.name} / ${reference}`,sourceModule:'inventory_adjustment',sourceDocumentType:'WarehouseAdjustment',sourceDocumentId:eventId,userId:user.id,lines:[...lines.values()]});if(posted.reused)throw Error('Reconcile the existing adjustment journal before retrying.');journal=posted.journal;}
   for(const row of rows) {
     const stock={quantity:row.counted_quantity,total_value:row.value_after,unit_cost:row.counted_quantity>0?row.value_after/row.counted_quantity:Number.isFinite(row.unit_cost) && row.unit_cost>0?row.unit_cost:0};
-    if(row.release_for_sale||row.release_for_use)Object.assign(stock,{qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:'Explicit counted-stock quality verification: '+reference+' - '+reason+(row.missing_expiry_confirmed?' — No expiry date available; saleability explicitly confirmed.':'')});
+    if(row.release_for_sale||row.release_for_use)Object.assign(stock,{qc_status:'approved',qc_released_by_user_id:user.id,qc_released_at:new Date().toISOString(),qc_notes:(row.release_for_use?'Counted materials available for production: ':'Explicit counted-stock quality verification: ')+reference+' - '+reason+(row.missing_expiry_confirmed?' — No expiry date available; saleability explicitly confirmed.':'')});
     if(row.balance_id)await s.StockBalance.update(row.balance_id,stock);
     else row.balance_id=(await s.StockBalance.create({...stock,product_id:row.product_id,product_name:row.product_name,warehouse_id:warehouse.id,warehouse_name:warehouse.name,lot_number:row.lot_number,expiry_date:row.expiry_date,qc_status:row.qc_status,stock_origin:'adjustment'})).id;
     if(row.difference || row.value_difference)await s.StockMovement.create({product_id:row.product_id,product_name:row.product_name,quantity:Math.abs(row.difference),source_warehouse_id:row.difference<0 || !row.difference && row.value_difference<0?warehouse.id:'',destination_warehouse_id:row.difference>0 || !row.difference && row.value_difference>0?warehouse.id:'',movement_type:'stock_count_variance',movement_date:date,status:'approved',lot_number:row.lot_number,batch_number:row.batch_number || '',expiry_date:row.expiry_date || undefined,production_order_id:row.production_order_id || '',unit_cost:row.use_current_cost?row.applied_unit_cost:row.reconciliation_confirmed?Number(row.verified_unit_cost || 0):row.book_quantity>0?row.book_value/row.book_quantity:row.unit_cost,total_value:Math.abs(row.value_difference),document_type:'WarehouseAdjustment',document_id:eventId,journal_id:journal?.id || '',warehouse_adjustment_balance_id:row.balance_id,reason:reference+' — '+reason,created_by:user.id});

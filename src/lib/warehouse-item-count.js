@@ -2,6 +2,7 @@ import {countedQuantity,roundMoney,roundQuantity} from './inventory-audit.js';
 import {normalizeRecordedQuantity,warehouseCountState,warehouseCountVariance} from './warehouse-count.js';
 import {isPackagingItem} from './inventory-packaging.js';
 import {stockQuantityTotal} from './stock-balance.js';
+import {isAssemblyInventoryType} from './item-types.js';
 
 // A shortage reduces existing valuation layers in the same FEFO order as stock
 // issues. This is an allocation of an item count, not a claim that each lot was
@@ -24,7 +25,7 @@ export function physicalItemCount(item,stockRows,value,batchCounts={},found={}) 
     if(!packaging&&!found.lot_number?.trim())return {...base,needs_lot:true};
     const cost=Number(item.unit_cost);
     if(!(cost>0)||!Number.isFinite(cost))throw Error('Establish the item carrying cost before recording newly counted stock.');
-    const row={product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:0,book_value:0,unit_cost:cost,lot_number:found.lot_number?.trim()||'',expiry_date:packaging?'':found.expiry_date||'',qc_status:'quarantine'};
+    const row={product_id:item.id,product_name:item.name,unit:item.unit,book_quantity:0,book_value:0,unit_cost:cost,lot_number:found.lot_number?.trim()||'',expiry_date:packaging?'':found.expiry_date||'',qc_status:isAssemblyInventoryType(item.inventory_type)?'quarantine':'approved'};
     const variance=warehouseCountVariance(row,quantity);
     return {...base,rows:[{...row,...variance}],value_difference:variance.value_difference};
   }
