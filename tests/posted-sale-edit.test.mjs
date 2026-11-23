@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {postedSaleFixture,postedFieldFixture} from './helpers/posted-sale-edit-fixture.mjs';
 import {postedSaleEditAction} from '../src/server/domain/posted-sale-edits.js';
+import {saleReversalAction} from '../src/server/domain/sale-reversals.js';
 const call=(f,body)=>postedSaleEditAction(f.client,f.user,{invoiceId:'invoice',...body});
 async function edit(f,patch={}){
  const workspace=await call(f,{action:'postedSaleEditWorkspace'});
@@ -144,4 +145,11 @@ test('a Commercial cash billing-branch edit keeps its held collection attributed
  assert.equal(f.rows.CashCollection[0].customer_id,'branch');assert.equal(f.rows.CashCollection[0].amount_collected,2000);assert.equal(f.rows.CashCollection[0].outstanding_amount,2000-received);
  assert.equal(f.rows.CashCollection[0].status,received?'received':'held_by_commercial');assert.equal(f.rows.TreasuryAccount[0].balance,100000);
  }
+});
+
+test('a later reversal reviews only the corrected quantities and costs while preserving the original stock issue',async()=>{
+ const f=postedSaleFixture();await (await edit(f,{lines:line(2)})).post();
+ const review=await saleReversalAction(f.client,f.user,{action:'previewSaleReversal',invoiceId:'invoice'});
+ assert.equal(review.can_restore_stock,true);assert.equal(review.items[0].quantity,2);assert.equal(review.retained_cost_review.amount,400);
+ assert.equal(f.rows.StockMovement[0].quantity,4);assert.equal(f.rows.Invoice[0].posted_sale_stock_layers[0].quantity,2);
 });
