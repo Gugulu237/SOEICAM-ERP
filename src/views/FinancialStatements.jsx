@@ -34,13 +34,16 @@ async function loadStatementLedger() {
   // filter the ledger and never authorize a future depreciation posting.
   const depreciation = await syncAssetDepreciation();
   invalidateERPReads();
-  const [accounts, journals, lines] = await Promise.all([
+  const [accounts, journals, lines, postingRules] = await Promise.all([
     readAll(erp.entities.Account, {}, "account_number"),
     readAll(erp.entities.JournalEntry, { status: {$in: ledgerStatuses} }, "-entry_date"),
     readAll(erp.entities.JournalLine, {}, "-created_date"),
+    // Mapping access must not prevent an existing reader opening book reports.
+    // A failed lookup disables only the VAT-inclusive presentation.
+    readAll(erp.entities.PostingRule, {rule_key:'tax_payable'}, "id").catch(()=>null),
   ]);
   accounts.sort((a, b) => String(a.account_number || '').localeCompare(String(b.account_number || ''), undefined, {numeric:true}));
-  return {accounts, journalsById:Object.fromEntries(journals.map(j => [j.id,j])), lines, depreciation};
+  return {accounts, journalsById:Object.fromEntries(journals.map(j => [j.id,j])), lines, postingRules, depreciation};
 }
 
 export default function FinancialStatements() {
@@ -53,6 +56,7 @@ export default function FinancialStatements() {
   const [accounts, setAccounts] = useState([]);
   const [journalsById, setJournalsById] = useState({});
   const [lines, setLines] = useState([]);
+  const [postingRules, setPostingRules] = useState([]);
   const [error, setError] = useState('');
   const {isAdmin,principalRole}=useCurrentUser();
   const [depreciation,setDepreciation]=useState(null),[version,setVersion]=useState(0);
@@ -71,6 +75,7 @@ export default function FinancialStatements() {
       setAccounts(snapshot.accounts);
       setJournalsById(snapshot.journalsById);
       setLines(snapshot.lines);
+      setPostingRules(snapshot.postingRules);
       setDepreciation(snapshot.depreciation);
       setLoading(false);
     }).catch(e => { if (active) setError(e.message || sourceMessage("Could not load statements")); }).finally(() => { if (active) setLoading(false); });
@@ -89,7 +94,7 @@ export default function FinancialStatements() {
     if (!validStatementRange(selectedFrom,selectedTo)) throw Error(sourceMessage('Choose a valid date range.'));
     const snapshot = await loadStatementLedger();
     const freshActivity = computeActivity({...snapshot, fromDate:selectedFrom, toDate:selectedTo});
-    return {accounts:snapshot.accounts, activity:freshActivity, depreciation:snapshot.depreciation};
+    return {...snapshot, activity:freshActivity};
   };
   const openAccount=selection=>{
     // Opening a detail is a local read of the exact rendered snapshot. Do not
@@ -138,7 +143,7 @@ export default function FinancialStatements() {
           <TabsTrigger value="cashflow">{ui("Cash Flow")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pnl" className="mt-4">
-          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} journalsById={journalsById} lines={lines} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} canCorrectSetup={principalRole==='admin'} onAccountOpen={openAccount} />}
+          {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <IncomeStatement depreciation={depreciation} accounts={accounts} activity={activity} postingRules={postingRules} journalsById={journalsById} lines={lines} fromDate={fromDate} toDate={toDate} refreshStatement={refreshStatement} canCorrectSetup={principalRole==='admin'} onAccountOpen={openAccount} />}
         </TabsContent>
         <TabsContent value="balance" className="mt-4">
           {loading ? <p role="status">{ui("Loading statements...")}</p> : reportError ? <p role="alert">{uiMessage(reportError)}</p> : !validStatementRange(fromDate,toDate) ? <p role="alert">{ui("Choose a valid date range.")}</p> : <BalanceSheet accounts={accounts} activity={activity} date={toDate} onAccountOpen={openAccount} />}

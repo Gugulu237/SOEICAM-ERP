@@ -1,4 +1,4 @@
-name: Inventory margins and degustation checks
+name: Inventory promotions and income statement checks
 on:
   pull_request:
     paths:
@@ -6,13 +6,21 @@ on:
       - 'src/components/sales/PromotionExchangeHistory.jsx'
       - 'src/components/inventory/**'
       - 'src/components/items/FinishedGoodsMargin.jsx'
+      - 'src/components/accounting/IncomeStatement.jsx'
+      - 'src/components/accounting/StatementSection.jsx'
+      - 'src/components/accounting/mobile/MobileIncomeStatementBody.jsx'
+      - 'src/views/FinancialStatements.jsx'
       - 'src/lib/finished-goods-margin.js'
+      - 'src/lib/income-statement-basis.js'
       - 'src/server/domain/inventory-overview.js'
       - 'src/server/domain/central-degustation.js'
       - 'tests/finished-goods-margin*.test.mjs'
       - 'tests/central-degustation*.test.mjs'
       - 'tests/promotion-history-ui.test.mjs'
       - 'tests/inventory-workspace.test.mjs'
+      - 'tests/income-statement*.test.mjs'
+      - 'tests/statement-account-drilldown*.test.mjs'
+      - 'tests/financial-statements-ledger.test.mjs'
       - 'package*.json'
       - '.github/workflows/inventory-promotions-checks.yml'
 permissions:
@@ -34,7 +42,9 @@ jobs:
       - run: npm ci
       - name: Verify inventory costs, margins and promotional issues
         run: node --test --test-concurrency=2 tests/finished-goods-margin.test.mjs tests/finished-goods-margin-ui.test.mjs tests/inventory-workspace.test.mjs tests/inventory-streamlined-ui.test.mjs tests/current-stock-ui.test.mjs tests/promotion-history-ui.test.mjs tests/central-degustation.test.mjs tests/central-degustation-ui.test.mjs tests/degustation.test.mjs tests/degustation-appropriation.test.mjs tests/assembly-pricing.test.mjs
+      - name: Verify VAT-inclusive P&L, ledger reconciliation and exports
+        run: node --test --test-concurrency=2 tests/income-statement-basis.test.mjs tests/income-statement-basis-ui.test.mjs tests/income-statement-sources.test.mjs tests/income-statement-sources-ui.test.mjs tests/financial-statements-ledger.test.mjs tests/statement-account-drilldown.test.mjs tests/statement-account-drilldown-ui.test.mjs
       - name: Lint changed interfaces
-        run: npx eslint src/components/distribution/CentralDegustationForm.jsx src/components/sales/PromotionExchangeHistory.jsx src/components/inventory/GroupedItems.jsx src/components/inventory/MobileStockList.jsx src/components/items/FinishedGoodsMargin.jsx --quiet
+        run: npx eslint src/components/distribution/CentralDegustationForm.jsx src/components/sales/PromotionExchangeHistory.jsx src/components/inventory/GroupedItems.jsx src/components/inventory/MobileStockList.jsx src/components/items/FinishedGoodsMargin.jsx src/components/accounting/IncomeStatement.jsx src/components/accounting/StatementSection.jsx src/components/accounting/mobile/MobileIncomeStatementBody.jsx src/views/FinancialStatements.jsx --quiet
       - name: Build application
         run: npm run build
