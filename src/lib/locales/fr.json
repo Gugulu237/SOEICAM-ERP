@@ -1,4 +1,5 @@
 {
+  "Ingredients and packaging are available for production immediately after saving a quantity adjustment. Recorded expiry dates are preserved.": "Les ingrédients et emballages sont disponibles pour la production dès l’enregistrement d’un ajustement de quantité. Les dates de péremption enregistrées sont conservées.",
   "Reconcile the original cash invoice journal before receiving this deposit.": "Vérifiez l’écriture comptable d’origine de la facture au comptant avant d’enregistrer cet encaissement.",
   "Payment cannot precede the invoice customer correction.": "La date d’encaissement doit être égale ou postérieure à la date de correction du client sur la facture.",
   "General ledger": "Grand livre",
