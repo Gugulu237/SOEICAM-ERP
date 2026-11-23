@@ -135,3 +135,13 @@ test('an earlier fully reversed cash receipt is retained as history and is not c
  assert.equal(f.rows.TreasuryAccount[0].balance,102000);assert.equal(f.rows.TreasuryTransaction.find(t=>t.id==='old-receipt').amount,2000);
  assert.equal(f.rows.TreasuryTransaction.filter(t=>t.source==='cash_sale'&&!t.reversed_by_sale_edit).length,1);
 });
+
+test('a Commercial cash billing-branch edit keeps its held collection attributed to the corrected customer',async()=>{
+ for(const received of [0,2000]){
+ const f=postedFieldFixture({cash:true});Object.assign(f.rows.CashCollection[0],{received_amount:received,outstanding_amount:2000-received,status:received?'received':'held_by_commercial'});
+ await f.stores.Customer.create({id:'branch',business_name:'Customer A Jouvence',parent_id:'c1',is_active:true,balance:0});
+ const e=await edit(f,{invoiceId:undefined,fieldSaleId:'field',customerId:'branch',locationId:'branch'});await e.post();
+ assert.equal(f.rows.CashCollection[0].customer_id,'branch');assert.equal(f.rows.CashCollection[0].amount_collected,2000);assert.equal(f.rows.CashCollection[0].outstanding_amount,2000-received);
+ assert.equal(f.rows.CashCollection[0].status,received?'received':'held_by_commercial');assert.equal(f.rows.TreasuryAccount[0].balance,100000);
+ }
+});

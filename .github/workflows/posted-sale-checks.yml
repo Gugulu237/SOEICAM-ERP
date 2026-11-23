@@ -34,7 +34,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Test posted sales, invoices, reversals and transaction rollback
-        run: node --test --test-concurrency=2 tests/posted-sale-edit.test.mjs tests/posted-sale-edit-route.test.mjs tests/sales-invoices.test.mjs tests/sale-reversals.test.mjs tests/sales-invoices-ui.test.mjs tests/sale-reversal-ui.test.mjs
+        run: node --test --test-concurrency=2 tests/posted-sale-edit.test.mjs tests/posted-sale-edit-route.test.mjs tests/posted-sale-edit-ui.test.mjs tests/sales-invoices.test.mjs tests/sale-reversals.test.mjs tests/sales-invoices-ui.test.mjs tests/sale-reversal-ui.test.mjs
       - name: Lint changed interfaces and route
         run: npx eslint src/components/sales/PostedSaleEditDialog.jsx src/views/SalesInvoice.jsx src/views/FieldSaleReview.jsx 'src/app/api/functions/[name]/route.js' --quiet
       - name: Build application

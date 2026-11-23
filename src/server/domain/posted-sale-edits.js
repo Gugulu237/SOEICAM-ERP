@@ -4,7 +4,6 @@ import {postedSaleQuote,planPostedSaleStock,ledgerBalanceChanges} from '../../li
 import {saleItemPostings} from '../../lib/item-posting.js';
 import {checkedJournalLines,journalPayload} from './journal-validation.js';
 import {postedInvoiceStatuses} from '../../lib/company-sales.js';
-import {companySalesWarehouse} from '../../lib/sales-stock.js';
 import {readRecords} from './commercial-workspace.js';
 import {requireStaff,getRuleAccount,getAccountByNumber,round2,today} from './field-ops.js';
 import {cashSaleOptions,cashSaleDestination} from './sale-treasury.js';
@@ -141,8 +140,8 @@ export async function postedSaleEditAction(client,user,body){
    const transaction=ctx.oldReceipt?await s.TreasuryTransaction.update(ctx.oldReceipt.id,values):await s.TreasuryTransaction.create({...values,created_by:user.id});
    settlement={treasury_account_id:p.destination.account.id,ledger_account_id:p.destination.gl.id,transaction_id:transaction.id,journal_id:ctx.journal.id,amount:p.newCash};
   }
- }else if(ctx.oldCash!==p.newCash){
-  const old=ctx.collections[0],value={amount_due:p.balance,amount_collected:p.newCash,outstanding_amount:p.newCash,customer_id:p.customer.id,customer_name:p.customer.business_name,payment_type:p.payload.paymentType,status:p.newCash?'held_by_commercial':'cancelled',posted_sale_edit_id:eventId};
+ }else if(ctx.oldCash!==p.newCash||ctx.collections.length){
+  const old=ctx.collections[0],value={amount_due:p.balance,amount_collected:p.newCash,outstanding_amount:ctx.oldCash===p.newCash?number(ctx.collections[0]?.outstanding_amount):p.newCash,customer_id:p.customer.id,customer_name:p.customer.business_name,payment_type:p.payload.paymentType,reference:p.reference,receipt_reference:p.reference,status:ctx.oldCash===p.newCash?ctx.collections[0]?.status||'held_by_commercial':p.newCash?'held_by_commercial':'cancelled',posted_sale_edit_id:eventId};
   if(old)await s.CashCollection.update(old.id,value);else if(p.newCash)await s.CashCollection.create({...value,collection_number:'EDIT-'+field.sale_number,field_sale_id:field.id,sale_number:field.sale_number,commercial_id:field.commercial_id,commercial_name:field.commercial_name,collection_date:field.transaction_date,handed_over_amount:0,received_amount:0,reference:p.reference,receipt_reference:p.reference,idempotency_key:eventId,created_by:user.id});
  }
  const oldDue=number(invoice?.balance??field.amount_due);
