@@ -36,49 +36,56 @@ function fixture(input=source(),phone=false){
  const r=hookRuntime();r.phone=phone;r.charges=[];r.opened=[];globalThis.__incomeBasisUI=r;
  const props={...input,onAccountOpen:row=>r.opened.push(row)};
  const draw=()=>{r.beforeRender();return mod.exports.render(props);};
- const basis=()=>r.controls.find(c=>c['aria-label']==='Revenue basis');
- return {r,props,draw,basis,close:()=>{r.cleanup();delete globalThis.__incomeBasisUI;}};
+ return {r,props,draw,close:()=>{r.cleanup();delete globalThis.__incomeBasisUI;}};
 }
 
-for(const phone of [false,true])test(`the ${phone?'phone':'desktop'} P&L defaults to clearly labelled VAT-inclusive sales, profit and margin`,()=>{
+const noTaxPresentation=(html,report)=>{
+ assert.doesNotMatch(html,/VAT|TVA|Revenue basis|Accounting revenue|Accounting net profit|Result including/i);
+ assert.doesNotMatch(JSON.stringify(report??{}),/VAT|TVA|Accounting revenue|Accounting net profit|Sales including/i);
+};
+
+for(const phone of [false,true])test(`the ${phone?'phone':'desktop'} P&L presents clean sales, profit and margin without changing the approved totals`,()=>{
  const input=source(),before=structuredClone(input),f=fixture(input,phone);
  try{
   const html=f.draw(),report=f.r.export.report;
-  assert.equal(f.basis().value,'vat_included');assert.match(html,/VAT-inclusive management P/);assert.match(html,/Sales including VAT/);assert.match(html,/VAT on sales/);assert.match(html,/Gross Profit \(VAT included\)/);assert.match(html,/Result including VAT/);assert.match(html,/49\.7%/);
-  assert.equal(revenue(report),1192.5);assert.equal(profit(report,'Gross profit'),592.5);assert.equal(profit(report,'Operating profit'),492.5);assert.equal(profit(report,'Net profit / loss'),492.5);assert.equal(profit(report,'Accounting net profit / loss'),300);
-  assert.deepEqual(section(report,'Revenue').rows.find(r=>r[1]==='VAT on sales'),['','VAT on sales',192.5]);assert.equal(f.r.export.disabled,false);assert.deepEqual(input,before);
+  assert.match(html,/Total Sales Revenue/);assert.match(html,/Gross Profit/);assert.match(html,/Net profit \/ loss/);assert.match(html,/49\.7%/);assert.equal(f.r.controls.some(control=>control.tag==='select'),false);noTaxPresentation(html,report);
+  assert.equal(report.title,'Profit and loss');assert.equal(revenue(report),1192.5);assert.equal(profit(report,'Gross profit'),592.5);assert.equal(profit(report,'Operating profit'),492.5);assert.equal(profit(report,'Net profit / loss'),492.5);
+  assert.deepEqual(section(report,'Revenue').rows,[['','Total Sales Revenue',1192.5]]);assert.deepEqual(section(report,'Revenue').totals,[['','Total Sales Revenue',1192.5]]);assert.equal(section(report,'Revenue').rows.reduce((sum,row)=>sum+row[2],0),revenue(report));assert.equal(f.r.export.disabled,false);assert.deepEqual(input,before);
+  assert.deepEqual(section(report,'Profit and loss').rows.map(row=>row[0]),['Gross profit','Operating profit','Net profit / loss']);assert.deepEqual(report.metadata.find(row=>row[0]==='Basis'),['Basis','Recorded sales and expenses']);
   assert.deepEqual(report.metadata.find(row=>row[0]==='Gross margin'),['Gross margin','49.69%']);assert.ok(section(report,'Profit and loss').rows.every(row=>typeof row[1]==='number'));
  }finally{f.close();}
 });
 
-test('switching to accounting basis removes the VAT supplement while real revenue account drilldowns retain their ledger amounts',()=>{
- const f=fixture();try{
-  f.draw();const ledger=f.r.buttons.find(b=>b['aria-label']==='View journal entries for Product sales');assert.ok(ledger);ledger.onClick();assert.equal(f.r.opened[0].expectedAmount,1000);assert.deepEqual(f.r.opened[0].accountIds,['sales']);assert.equal(f.r.buttons.some(b=>b['aria-label']==='View journal entries for VAT on sales'),false);
-  f.basis().onChange({target:{value:'accounting'}});const html=f.draw(),report=f.r.export.report;
-  assert.equal(revenue(report),1000);assert.equal(profit(report,'Gross profit'),400);assert.equal(profit(report,'Net profit / loss'),300);assert.equal(section(report,'Revenue').rows.some(r=>r[1]==='VAT on sales'),false);assert.match(html,/Accounting P&amp;L \(VAT excluded\)/);assert.match(html,/40\.0%/);assert.equal(f.r.export.disabled,false);
- }finally{f.close();}
+test('the fixed sales presentation keeps real revenue account drilldowns in separate collapsed ledger details',()=>{
+ for(const phone of [false,true]){
+  const f=fixture(source(),phone);try{
+   const html=f.draw();assert.match(html,/<details\b(?![^>]*\bopen(?:=|\s|>))[^>]*>\s*<summary[^>]*>Ledger account details<\/summary>/);assert.equal(f.r.controls.some(control=>control.tag==='select'),false);
+   const ledger=f.r.buttons.find(button=>button['aria-label']==='View journal entries for Product sales');assert.ok(ledger);ledger.onClick();assert.equal(f.r.opened[0].expectedAmount,1000);assert.deepEqual(f.r.opened[0].accountIds,['sales']);
+   assert.equal(f.r.buttons.some(button=>button['aria-label']==='View journal entries for Total Sales Revenue'),false);assert.equal(revenue(f.r.export.report),1192.5);assert.equal(profit(f.r.export.report,'Net profit / loss'),492.5);noTaxPresentation(html,f.r.export.report);
+  }finally{f.close();}
+ }
 });
 
-test('an export captures basis and dates before awaiting a fresh ledger and recomputes VAT from that fresh snapshot',async()=>{
+test('an export captures dates before awaiting a fresh ledger and recomputes the approved sales totals from that snapshot',async()=>{
  const f=fixture();let complete,captured;
  f.props.refreshStatement=range=>{captured=range;return new Promise(resolve=>{complete=resolve;});};
  try{
   f.draw();const pending=f.r.export.getReport();assert.deepEqual(captured,{fromDate:'2026-11-01',toDate:'2026-11-30'});
-  f.basis().onChange({target:{value:'accounting'}});f.props.fromDate='2026-12-01';f.props.toDate='2026-12-31';f.draw();complete(source(2000,1200));
-  const report=await pending;assert.deepEqual(report.metadata.slice(0,3),[['From','2026-11-01'],['To','2026-11-30'],['Basis','VAT-inclusive management view']]);assert.equal(revenue(report),2385);assert.equal(profit(report,'Gross profit'),1185);assert.equal(profit(report,'Net profit / loss'),1085);assert.deepEqual(f.r.charges,[{from:'2026-11-01',to:'2026-11-30',summary:'1'}]);
+  f.props.fromDate='2026-12-01';f.props.toDate='2026-12-31';f.draw();complete(source(2000,1200));
+  const report=await pending;assert.deepEqual(report.metadata.slice(0,3),[['From','2026-11-01'],['To','2026-11-30'],['Basis','Recorded sales and expenses']]);assert.equal(revenue(report),2385);assert.equal(profit(report,'Gross profit'),1185);assert.equal(profit(report,'Net profit / loss'),1085);assert.deepEqual(f.r.charges,[{from:'2026-11-01',to:'2026-11-30',summary:'1'}]);noTaxPresentation('',report);
  }finally{f.close();}
 });
 
-test('missing VAT evidence displays unavailable results and disables VAT-inclusive export while allowing the accounting view',()=>{
+test('missing sales evidence displays unavailable results and blocks export without exposing tax details or fake zero totals',()=>{
  const input=source();input.postingRules=[];const f=fixture(input);
  try{
-  const html=f.draw();assert.match(html,/role="alert"/);assert.match(html,/unmapped liability/);assert.equal(f.r.export.report,undefined);assert.equal(f.r.export.disabled,true);
-  f.basis().onChange({target:{value:'accounting'}});f.draw();assert.equal(f.r.export.disabled,false);assert.equal(revenue(f.r.export.report),1000);assert.equal(profit(f.r.export.report,'Net profit / loss'),300);
+  const html=f.draw(),text=html.replace(/<[^>]*>/g,'');assert.match(html,/role="alert"/);assert.match(html,/Sales totals are unavailable\. Refresh the report before exporting\./);assert.equal(f.r.export.report,undefined);assert.equal(f.r.export.disabled,true);assert.equal(f.r.controls.some(control=>control.tag==='select'),false);noTaxPresentation(html,undefined);
+  assert.match(text,/Total Sales Revenue\s*[-−–—]/);assert.match(text,/Gross Profit\s*[-−–—]/);assert.match(text,/Net profit \/ loss\s*[-−–—]/);assert.doesNotMatch(html,/NaN|unmapped liability/);
  }finally{f.close();}
 });
 
-test('a refreshed export rejects missing VAT evidence instead of silently reusing the displayed supplement',async()=>{
+test('a refreshed export rejects unavailable sales evidence instead of silently reusing the displayed totals',async()=>{
  const f=fixture();const invalid=source(2000,1200);invalid.postingRules=[];f.props.refreshStatement=async()=>invalid;
- try{f.draw();await assert.rejects(f.r.export.getReport(),/unmapped liability/);}
+ try{f.draw();await assert.rejects(f.r.export.getReport(),/^Error: Sales totals are unavailable\. Refresh the report before exporting\.$/);}
  finally{f.close();}
 });

@@ -758,5 +758,9 @@
   "Recurring expense summary": "Résumé des charges récurrentes",
   "Expiry date required": "Date de péremption requise",
   "Awaiting confirmation": "À confirmer",
-  "This payment clears the existing bill. Inventory was recorded on receipt.": "Ce règlement solde la facture existante. Le stock a été comptabilisé à la réception."
+  "This payment clears the existing bill. Inventory was recorded on receipt.": "Ce règlement solde la facture existante. Le stock a été comptabilisé à la réception.",
+  "Total Sales Revenue": "Chiffre d’affaires total",
+  "Ledger account details": "Détail des comptes du grand livre",
+  "Recorded sales and expenses": "Ventes et charges enregistrées",
+  "Sales totals are unavailable. Refresh the report before exporting.": "Le total des ventes est indisponible. Actualisez le rapport avant de l’exporter."
 }
