@@ -100,6 +100,7 @@ export function guardMutation(context, entity, operation, payload, existing) {
   const role = assertEntityAccess(context,entity,operation);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key=>key.startsWith('$'))) throw forbidden('Only direct field changes are accepted.');
   const value = payload;
+  if(Object.keys(value).some(key=>key.startsWith('posted_sale_'))||entity==='AuditLog'&&[value,existing].some(row=>row&&(row.action==='edit_posted_sale'||String(row.id||'').startsWith('PSE-'))))throw forbidden('Posted sale corrections use the checked sale editor; their audit evidence is immutable.');
   if('invoice_payment_type_correction' in value||entity==='AuditLog'&&[value,existing].some(row=>row&&(
     row.action==='correct_invoice_payment_type'||'invoice_payment_type_correction' in row||String(row.id||'').startsWith('IPTC-')
   )))throw forbidden('Invoice payment type corrections are managed by Accounting.');

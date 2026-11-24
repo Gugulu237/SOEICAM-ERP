@@ -2,6 +2,7 @@
 // actions are treated as writes; session data is never cached here.
 const fieldReads = new Set([
   'centralDegustationWorkspace','centralDegustationHistory','customerCommissions',
+  'postedSaleEditWorkspace','previewPostedSaleEdit',
   'previewSaleReversal','assemblyBuildWorkspace','previewAssemblyBuild',
   'customerCollectionWorkspace','customerSpoilageWorkspace','customerAcquisitionOptions', 'warehouseAdjustmentWorkspace', 'warehouseAdjustmentHistory', 'existingStockWorkspace',
   'fieldStockInventory', 'driverReturnsWorkspace',

@@ -1,0 +1,11 @@
+# Editing a posted sale
+
+Open the posted invoice from Sales or a customer’s invoice history and choose **Edit posted sale**. A posted Commercial supply also provides this action. Select Cash or Credit, correct the quantities and billing customer/branch, enter the physical receipt reference and a reason, then review and confirm.
+
+The invoice number and sale date remain. Each save stores a complete before/after audit version with the authenticated recorder. The editor updates invoice/source lines, the original open-period journal and its ledger balances, the actual cash-sale receipt, customer receivables, and stock together inside the existing serializable API transaction. The current invoice and journal IDs remain available to receipts, reports and printing. Existing journal versions remain in the protected correction audit rather than becoming a second sale.
+
+Stock increases consume only the extra units at current recorded lot carrying values. Reductions restore the original lot quantities and carrying values through separate correction movements. Effective issue layers are retained for another edit or a later full reversal. Original stock movements and separate exchange/replacement records are retained. Commercial cash that has not entered a handover can be corrected with its source collection.
+
+Managers can edit any sale; other sales staff can edit their own. The server validates ownership, modules, open accounting periods, active accounts, stock availability, unchanged preview fingerprints and retry keys. Allocated payments remain intact. A total below allocated receipts, a pending payment, a completed cash handover, an issued delivery load requiring stock reconciliation, or a separate Accounting correction requires reconciliation before the affected edit. Cancelling every product uses the existing Reverse sale workflow.
+
+Validation is defined in `.github/workflows/posted-sale-checks.yml`: domain/planning scenarios, editor UI confirmation and retry tests, an API transaction rollback test, existing invoice/reversal regressions, interface/route lint, and a production build on Node 24. Tests use in-memory entities and mocked transport/authentication boundaries; CI does not use production database credentials. See the pull request checks for results on the current commit.

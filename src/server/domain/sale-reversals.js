@@ -87,7 +87,7 @@ async function plan(ctx){
   const cash=sum(cashLines,'debit');
   let receipt;
   if(settlement){
-    const receipts=await readRecords(s.TreasuryTransaction,{source:'cash_sale',source_document_id:invoice.id});
+    const receipts=(await readRecords(s.TreasuryTransaction,{source:'cash_sale',source_document_id:invoice.id})).filter(row=>!row.reversed_by_sale_edit);
     receipt=receipts[0];
     if(invoice.payment_type!=='cash'||!invoice.cash_deposited||cash!==total||cashLines.length!==1||cashLines[0].party_id!==source.customer_id||
        !cashAccount||settlement.amount!==total||settlement.journal_id!==journal.id||invoice.deposit_journal_id!==journal.id||
@@ -108,7 +108,7 @@ async function plan(ctx){
   if(sum(costLines,'debit')!==cost||sum(costLines,'credit')!==cost)throw Error('The original item cost postings need reconciliation before reversal.');
   let cogsLines=costLines.filter(line=>line.description==='Cost of goods sold');const inventoryLines=costLines.filter(line=>line.description==='Inventory released');
   if(cogsLines.some(line=>Number(line.credit)!==0||postingAccounts.get(line.account_id)?.account_type!=='cogs'||postingAccounts.get(line.account_id)?.normal_balance!=='debit')||inventoryLines.some(line=>Number(line.debit)!==0||postingAccounts.get(line.account_id)?.account_type!=='asset'||postingAccounts.get(line.account_id)?.normal_balance!=='debit')||sum(cogsLines,'debit')!==cost||sum(inventoryLines,'credit')!==cost)throw Error('The original item cost postings need reconciliation before reversal.');
-  let issues=moves.filter(m=>m.source_warehouse_id&&!m.destination_warehouse_id&&Number(m.quantity)>0),openingBasis=null;
+  let issues=record.posted_sale_stock_layers||source.posted_sale_stock_layers||moves.filter(m=>m.source_warehouse_id&&!m.destination_warehouse_id&&Number(m.quantity)>0),openingBasis=null;
   if(!field)openingBasis=await openingSaleCostBasis(s,{invoice,order:ctx.order,journal,invoiceLines:lines,issues,originalLines:original.lines,accounts});
   else if([source,invoice,journal,...issues].some(row=>row&&Object.hasOwn(row,OPENING_COST_MARKER)))throw Error('Reconcile the confirmed opening-stock cost correction before reversing this sale.');
   if(openingBasis){cost=openingBasis.cost;issues=openingBasis.issues;cogsLines=openingBasis.effectiveCogsLines;}

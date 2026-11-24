@@ -1,0 +1,41 @@
+name: Posted sale correction checks
+on:
+  pull_request:
+    paths:
+      - 'src/lib/posted-sale-edit.js'
+      - 'src/server/domain/posted-sale-edits.js'
+      - 'src/server/domain/sales-invoices.js'
+      - 'src/server/domain/sale-reversals.js'
+      - 'src/server/functions/fieldOps.js'
+      - 'src/server/access.js'
+      - 'src/components/sales/**'
+      - 'src/views/SalesInvoice.jsx'
+      - 'src/views/FieldSaleReview.jsx'
+      - 'src/app/api/functions/**'
+      - 'tests/posted-sale-edit*.test.mjs'
+      - 'tests/helpers/posted-sale-edit-fixture.mjs'
+      - 'package*.json'
+      - '.github/workflows/posted-sale-checks.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Test posted sales, invoices, reversals and transaction rollback
+        run: node --test --test-concurrency=2 tests/posted-sale-edit.test.mjs tests/posted-sale-edit-route.test.mjs tests/posted-sale-edit-ui.test.mjs tests/sales-invoices.test.mjs tests/sale-reversals.test.mjs tests/sales-invoices-ui.test.mjs tests/sale-reversal-ui.test.mjs
+      - name: Lint changed interfaces and route
+        run: npx eslint src/components/sales/PostedSaleEditDialog.jsx src/views/SalesInvoice.jsx src/views/FieldSaleReview.jsx 'src/app/api/functions/[name]/route.js' --quiet
+      - name: Build application
+        run: npm run build

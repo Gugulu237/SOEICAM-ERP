@@ -127,6 +127,7 @@ export async function loadInvoiceDocument(stores,id,invoice=undefined,{original=
   const accountingVerified=journal?.status==='posted' && !journal.reversed_by_journal && journal.source_document_id===(invoice.field_sale_id || invoice.id) && journal.source_document_type===(invoice.field_sale_id?'FieldSale':'Invoice');
   return {
     replacements,
+    ...(invoice.posted_sale_edit?{sale_edit:{revision:invoice.posted_sale_edit.revision,recorded_at:invoice.posted_sale_edit.recorded_at,reference:invoice.posted_sale_edit.reference,reason:invoice.posted_sale_edit.reason}}:{}),
     invoice:{...receipt,...pick(invoice,'id sale_reversal price_includes_vat invoice_number customer_id customer_name location_name bill_to_location_name invoice_date due_date payment_type status subtotal tax_total total amount_paid balance sales_order_id field_sale_id source_number'),...(correction?{subtotal:correction.subtotal,tax_total:correction.taxTotal}:{}),customer_balance:customerBalance,customer_paid:customerPaid},
     lines:lines.map(line=>({...pick(line,'id product_id product_name quantity unit unit_price discount_amount tax_rate tax_amount total price_includes_vat'),...(correction?{tax_rate:STANDARD_VAT_RATE,tax_amount:correction.taxes.get(line.id)}:{}),image_url:saleProductMetadata(line,products.get(line.product_id)).image_url})),
     company,options,accounting_verified:Boolean(accountingVerified),has_letterhead_snapshot:Boolean(invoice.invoice_document?.company),revision:Number(invoice.document_revision || 0),customer_defaults:customer?.invoice_defaults || null,
