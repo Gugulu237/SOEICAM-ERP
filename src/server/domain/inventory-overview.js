@@ -5,6 +5,8 @@ import { readRecords } from './commercial-workspace.js';
 import {centralInventoryMode} from './centralized-inventory-policy.js';
 import {companySalesWarehouse} from '../../lib/sales-stock.js';
 import {principalRole} from './roles.js';
+import {canReadManagementAccounting} from '../../lib/management-access.js';
+import {finishedGoodsMargins} from '../../lib/finished-goods-margin.js';
 export async function inventoryReadScopes(context, stores, names) {
   const scopes=await Promise.all(names.map(name=>recordScope(context,name,'filter',stores)));
   const central=await centralInventoryMode(stores),commercial=principalRole(context.user,context.employee)==='commercial';
@@ -33,9 +35,13 @@ export async function inventoryOverview(context, stores, {compact=false,includeR
   try{assertModule(context,'inventory');assertEntityAccess(context,'Product','update');canManageItems=true;}catch(error){if(error.status!==403)throw error;}
   const visibleProductIds=new Set(records[0].map(row=>row.id));
   const balanceRows=central&&commercial?records[1].filter(row=>visibleProductIds.has(row.product_id)).map(row=>Object.fromEntries(['id','product_id','product_name','warehouse_id','warehouse_name','quantity','qc_status','lot_number','batch_number','expiry_date'].filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]]))):records[1];
-  const products=pricedAssemblyProducts(records[0]).filter(p=>!p.item_removed_at);
+  const canReadCosts=canReadManagementAccounting(principalRole(context.user,context.employee),context.employee);
+  const margins=canReadCosts?finishedGoodsMargins(records[0],balanceRows,records[2]):null;
+  // Never trust a similarly named persisted/custom product field or expose a
+  // derived cost through the margin to a reader without cost authority.
+  const products=pricedAssemblyProducts(records[0]).filter(p=>!p.item_removed_at).map(({finished_goods_margin:ignored,...row})=>margins?.has(row.id)?{...row,finished_goods_margin:margins.get(row.id)}:row);
   const visibleProducts=central&&commercial?products.map(row=>Object.fromEntries(['id','name','sku','category','inventory_type','flavor','size','product_family','image_url','storage_unit','sales_unit','unit_of_measure','selling_price','tax_rate','is_active','configuration_status','reorder_level','min_stock'].filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]]))):products;
-  return { products:visibleProducts, removedProducts:canManageItems&&includeRemoved?records[0].filter(p=>p.item_removed_at):[], balances:compact?compactStockBalances(balanceRows):balanceRows, warehouses:records[2], vehicles:records[3]||[],centralized_inventory:central||{enabled:false} };
+  return { products:visibleProducts, removedProducts:canManageItems&&includeRemoved?records[0].filter(p=>p.item_removed_at).map(({finished_goods_margin:ignored,...row})=>row):[], balances:compact?compactStockBalances(balanceRows):balanceRows, warehouses:records[2], vehicles:records[3]||[],centralized_inventory:central||{enabled:false} };
 }
 
 const BALANCE_FIELDS=['id','product_id','product_name','warehouse_id','warehouse_name','quantity','unit_cost','total_value','qc_status','lot_number','batch_number','expiry_date','production_order_id','opening_batch_id','stock_origin','inventory_recovery_id','inventory_recovery_disposition','created_date','updated_date'];

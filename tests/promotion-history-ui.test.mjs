@@ -41,10 +41,11 @@ test('GM all-employee history uses only the checked history reader, filters both
  const f=fixture();try{
   const html=await f.settle();assert.deepEqual(f.state.calls,[{action:'centralDegustationHistory',from:'2026-11-01',to:'2026-11-10',allEmployees:true}]);
   assert.deepEqual(f.state.entityCalls,[{store:'SpoilageRecord',query:{status:'replaced',replacement_date:{$gte:'2026-11-01',$lte:'2026-11-10'}},sort:'-replacement_date'}]);
-  assert.match(html,/All employees/);assert.match(html,/Employee not recorded/);assert.match(html,/Customer a/);assert.match(html,/Customer b/);assert.match(html,/Exchange customer A/);assert.match(html,/Exchange customer B/);assert.match(html,/1,025 FCFA/);assert.match(html,/150 FCFA/);assert.doesNotMatch(html,/data-mobile-action-bar/);
+  assert.match(html,/All employees/);assert.match(html,/Employee not recorded/);assert.match(html,/Customer a/);assert.match(html,/Customer b/);assert.match(html,/Exchange customer A/);assert.match(html,/Exchange customer B/);assert.match(html,/1,025 FCFA/);assert.match(html,/150 FCFA/);assert.match(html,/data-mobile-action-bar/);
+  button(f.state,'Issue Dégustation').onClick();f.draw();assert.deepEqual(Object.keys(f.state.form).sort(),['onClose','onSaved']);f.state.form.onClose();f.draw();assert.equal(f.state.form,null);
   control(f.state,'History employee').onChange({target:{value:'agent-a'}});let selected=f.draw();assert.match(selected,/Customer a/);assert.doesNotMatch((selected.match(/<article\b[\s\S]*?<\/article>/g)||[]).join(''),/Customer b|Exchange customer B/);assert.match(selected,/400 FCFA/);assert.match(selected,/70 FCFA/);assert.match(selected,/selection filters history only/);assert.equal(f.state.calls.length,1);
-  button(f.state,'Dégustation').onClick();selected=f.draw();assert.match(selected,/data-single-employee-form/);assert.deepEqual(Object.keys(f.state.form).sort(),['onClose','onSaved']);assert.equal(f.state.calls.length,1);
-  control(f.state,'History employee').onChange({target:{value:''}});assert.doesNotMatch(f.draw(),/data-single-employee-form|data-mobile-action-bar/);
+  button(f.state,'Issue Dégustation').onClick();selected=f.draw();assert.match(selected,/data-single-employee-form/);assert.deepEqual(Object.keys(f.state.form).sort(),['onClose','onSaved']);assert.equal(f.state.calls.length,1);
+  control(f.state,'History employee').onChange({target:{value:''}});assert.match(f.draw(),/data-single-employee-form/);assert.deepEqual(Object.keys(f.state.form).sort(),['onClose','onSaved']);
  }finally{f.close();}
 });
 

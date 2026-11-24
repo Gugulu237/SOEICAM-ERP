@@ -6,7 +6,7 @@ import React from "react";
 import { formatAccountingXAF as formatXAF } from "@/lib/formatters";
 
 // Reusable statement block: titled list of account rows with a subtotal line.
-export default function StatementSection({ title, rows, total, totalLabel, bold,onAccountOpen }) {
+export default function StatementSection({ title, rows, total, totalLabel, bold,onAccountOpen,extraRows=[] }) {
   const interfaceLanguage = useInterfaceLanguage(); void interfaceLanguage;
 
   return (
@@ -19,9 +19,10 @@ export default function StatementSection({ title, rows, total, totalLabel, bold,
         </Row>
       );})}
       {rows.length === 0 && <p className="text-sm text-slate-400 py-1">—</p>}
+      {extraRows.map(row=><div key={row.id} className="flex justify-between gap-3 py-2 text-sm"><span className="min-w-0 break-words text-slate-600">{row.label}</span><span className="shrink-0 text-right tabular-nums">{row.amount==null?'—':formatXAF(row.amount)}</span></div>)}
       <div className={`flex justify-between py-2 border-t border-slate-200 text-sm ${bold ? "font-bold" : "font-semibold"}`}>
         <span>{totalLabel || ui("Total {0}", title)}</span>
-        <span>{formatXAF(total)}</span>
+        <span>{total==null?'—':formatXAF(total)}</span>
       </div>
     </div>
   );

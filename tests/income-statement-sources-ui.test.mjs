@@ -12,7 +12,7 @@ async function renderer() {
     '@/lib/posting': 'export const round2=value=>Math.round(Number(value||0)*100)/100;',
     '@/lib/router': "import React from 'react';export const Link=({to,children,...props})=>React.createElement('a',{...props,href:to},children);export const useNavigate=()=>()=>{};export const useSearchParams=()=>[new URLSearchParams(),()=>{}];",
     '@/hooks/useCurrentUser': 'export const useCurrentUser=()=>globalThis.__incomeSourcesUI.user;',
-    '@/api/erpClient': 'export const erp={entities:{Account:"Account",JournalEntry:"JournalEntry",JournalLine:"JournalLine"}};export const invalidateERPReads=()=>{};',
+    '@/api/erpClient': 'export const erp={entities:{Account:"Account",JournalEntry:"JournalEntry",JournalLine:"JournalLine",PostingRule:"PostingRule"}};export const invalidateERPReads=()=>{};',
     '@/lib/field-pos': 'export const readAll=async(entity,query)=>{globalThis.__incomeSourcesUI.reads.push({entity,query});return structuredClone(globalThis.__incomeSourcesUI.tables[entity]);};',
     '@/lib/asset-depreciation-client': 'export const syncAssetDepreciation=async()=>({through:"2026-11",pending_total:0,issues:[]});',
     '@/lib/recurring-expense-client': 'export const recurringExpenseRequest=async(_body,query)=>{globalThis.__incomeSourcesUI.charges.push(query);return {pending_total:0};};',
@@ -84,13 +84,13 @@ test('the loaded statement page passes the same dated ledger to the drilldown an
   input.journalsById.sale.status = 'reversed'; input.journalsById.sale.reversed_by_journal = 'correction';
   input.journalsById.correction = { id: 'correction', journal_number: 'JV-REVERSAL', status: 'posted', entry_date: '2026-11-06', source_module: 'sales', source_document_type: 'SaleReversal', source_document_id: 'sale', reversal_of: 'sale', description: 'Dated sale correction' };
   input.lines.push(...input.lines.filter(line => line.journal_id === 'sale').map(line => ({ ...line, id: 'reverse-' + line.id, journal_id: 'correction', debit: line.credit, credit: line.debit })));
-  runtime.tables = { Account: input.accounts, JournalEntry: Object.values(input.journalsById), JournalLine: input.lines };
+  runtime.tables = { Account: input.accounts, JournalEntry: Object.values(input.journalsById), JournalLine: input.lines, PostingRule: [] };
   const paint = () => { runtime.beforeRender(); return render.page(); };
   try {
     paint(); runtime.inputs[0].onChange({ target: { value: input.fromDate } }); runtime.inputs[1].onChange({ target: { value: input.toDate } }); await runtime.flush();
     let html = paint(); assert.match(html, /JV-REVERSAL/); assert.match(html, /Reversal journal/); assert.match(html, /Original journal with reversal/); assert.equal(amount(runtime.export.report, 'Cost of goods sold'), 0);
-    assert.match(html, /Correct setup inventory entries/); assert.equal(runtime.reads.length, 3);
-    runtime.inputs[0].onChange({ target: { value: '2026-11-06' } }); html = paint(); assert.match(html, /JV-REVERSAL/); assert.doesNotMatch(html, /href="\/accounting\/journals\/sale"/); assert.doesNotMatch(html, /JV-SETUP/); assert.equal(amount(runtime.export.report, 'Cost of goods sold'), -400); assert.equal(runtime.reads.length, 3);
+    assert.match(html, /Correct setup inventory entries/); assert.equal(runtime.reads.length, 4);
+    runtime.inputs[0].onChange({ target: { value: '2026-11-06' } }); html = paint(); assert.match(html, /JV-REVERSAL/); assert.doesNotMatch(html, /href="\/accounting\/journals\/sale"/); assert.doesNotMatch(html, /JV-SETUP/); assert.equal(amount(runtime.export.report, 'Cost of goods sold'), -400); assert.equal(runtime.reads.length, 4);
     runtime.user = { isAdmin: true, principalRole: 'commercial' }; html = paint(); assert.doesNotMatch(html, /Correct setup inventory entries/); assert.match(html, /href="\/accounting\/journals\/correction"/);
     const exported = await runtime.export.getReport(); assert.equal(amount(exported, 'Cost of goods sold'), -400); assert.deepEqual(exported.metadata.slice(0, 2), [['From', '2026-11-06'], ['To', input.toDate]]); assert.equal(exported.sections.some(section => section.title.includes('journal inspection')), false);
   } finally { runtime.dispose(); }

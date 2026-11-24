@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { attributeFacets, itemSearchText, matchesAttributes } from '@/lib/item-attributes';
 import { PRODUCT_FLAVOURS, flavourChoice, productSizeChoices } from '@/lib/product-variants';
 import ItemAttributeFilters from '@/components/items/ItemAttributeFilters';
+import FinishedGoodsMargin from '@/components/items/FinishedGoodsMargin';
 
 const normalize = value => normalizeProductText(value).trim().replace(/\s+/g,' ');
 // Resolve photo-derived labels and searchable metadata once per catalogue update.
@@ -72,6 +73,7 @@ export default function GroupedItems({ products, filter, quantities, balances, o
               <span className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">{variant.size&&<span className="rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700">{variant.size}</span>}</span>
             </span>
             {item.inventory_type!=='service'?<span aria-label={ui('Quantity for {0}',item.name)} className={'block min-w-0 '+(table?'mt-2':'mt-auto')}><span className="block text-xs text-slate-500">{ui('On hand')}</span><span className="block break-words text-lg font-bold leading-6 tabular-nums text-primary">{formatQuantity(quantities.get(item.id)||0)} <span className="text-xs font-normal text-slate-500">{stockUnit(item)}</span></span></span>:!table&&<span/>}
+            <FinishedGoodsMargin value={item.finished_goods_margin} compact/>
 
           </span>
         </button>
@@ -83,6 +85,7 @@ export default function GroupedItems({ products, filter, quantities, balances, o
         <dt className="text-slate-500">{ui('Code')}</dt><dd className="break-words text-right">{selected.sku||ui('Not recorded')}</dd>
         {Number(selected.selling_price)>0&&<><dt className="text-slate-500">{ui('Sales price')}</dt><dd className="text-right font-semibold">{formatXAF(selected.selling_price)}</dd></>}
       </dl>
+      <FinishedGoodsMargin value={selected.finished_goods_margin}/>
       {(selected.configuration_status==='draft'||selected.is_active===false)&&<p className="text-xs text-slate-700">{ui(itemAvailabilityLabel(selected))}</p>}
       {renderDetails?.(selected)}
       {(actions||onEdit)&&<div aria-label={ui('Actions for {0}',selected.name)} className={'grid gap-2 [&_button]:min-h-11 [&_button]:w-full '+(actions&&onEdit?'grid-cols-2':'grid-cols-1')}>

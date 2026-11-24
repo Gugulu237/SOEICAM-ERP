@@ -9,6 +9,7 @@ import { businessDate } from '@/lib/business-date';
 import { stockExpirySummary } from '@/lib/stock-expiry-summary';
 import { isPackagingItem } from '@/lib/inventory-packaging';
 import { isAssemblyInventoryType } from '@/lib/item-types';
+import FinishedGoodsMargin from '@/components/items/FinishedGoodsMargin';
 
 // Small photos and a single, tappable row keep the stock list easy to scan.
 // Quantity remains the catalogue's checked on-hand figure, including zero stock.
@@ -24,7 +25,8 @@ export default function MobileStockList({ rows, quantities, balances=[], expande
           <span className="flex items-start justify-between gap-2"><span className="min-w-0 break-words text-sm font-semibold leading-5 text-foreground">{inventoryDisplayName(item,{includeSize:false})}</span>{Number(item.selling_price)>0&&<span className="shrink-0 text-right text-xs font-bold leading-5 tabular-nums">{formatXAF(item.selling_price)}</span>}</span>
           <span className="mt-1 block text-xs leading-4 text-muted-foreground">{variant.size || item.sku || stockUnit(item)}</span>
           {item.inventory_type!=='service'&&<span aria-label={ui('Quantity for {0}',item.name)} className="mt-2 block text-xs font-bold tabular-nums text-foreground">{formatQuantity(quantities.get(item.id)||0)} {ui(stockUnit(item))} <span className="font-normal text-muted-foreground">{ui('On hand')}</span></span>}
-          {Number(item.current_cost||item.purchase_price)>0&&<span className="mt-1 block text-[10px] leading-4 text-muted-foreground">{ui('Cost')}: {formatXAF(item.current_cost||item.purchase_price)}</span>}
+          {item.finished_goods_margin?item.finished_goods_margin.production_unit_cost>0&&<span className="mt-1 block text-[10px] leading-4 text-muted-foreground">{ui('Production cost / unit')}: {formatXAF(item.finished_goods_margin.production_unit_cost)}</span>:Number(item.current_cost||item.purchase_price)>0&&<span className="mt-1 block text-[10px] leading-4 text-muted-foreground">{ui('Cost')}: {formatXAF(item.current_cost||item.purchase_price)}</span>}
+          <FinishedGoodsMargin value={item.finished_goods_margin} compact/>
           {item.inventory_type!=='service'&&showExpiry&&<span className={'mt-1.5 block text-[10px] leading-4 '+(!packaging&&expiry?.expired?'font-semibold text-red-700':'text-muted-foreground')}>
             {packaging?ui('No expiry required'):expiry?.date?<>{ui(expiry.expired?'Expired':'Nearest recorded expiry')}: <time dateTime={expiry.date}>{formatDate(expiry.date)}</time></>:expiry?ui('Expiry unknown'):ui('No current batch expiry')}
             {!packaging&&finished&&expiry?.date&&(expiry.invalidDates>0||expiry.missingDates>0)&&<span className="block font-normal text-muted-foreground">{ui('Some batch expiry dates are unknown.')}</span>}
