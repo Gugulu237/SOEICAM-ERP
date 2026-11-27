@@ -10,6 +10,7 @@ import {salesOrderAction} from '../src/server/domain/sales-orders.js';
 import {stockOnHandGroups} from '../src/lib/stock-on-hand.js';
 import {inventoryStockIndex} from '../src/lib/inventory-workspace.js';
 import {guardMutation} from '../src/server/access.js';
+import {isAssemblyPackaging} from '../src/lib/assembly-materials.js';
 
 async function setup(db){
   const f=await fixture(db),s=f.entities;
@@ -39,14 +40,14 @@ async function setup(db){
     store.bulkCreate=async values=>{const result=[];for(const value of values)result.push(await store.create(value));return result;};
     store.bulkUpdate=async values=>{const result=[];for(const {id,...value} of values){const {record,extra}=splitRecord(value,catalog[name]);result.push(await store.update(id,{...record,...extra}));}return result;};
   }
-  const body={date,warehouseId:cold.id,rows:[{product_id:product.id,quantity:100}]};
+  const body={date,warehouseId:cold.id,actualMaterials:[{product_id:milk.id,quantity:50,unit:'kg'}],rows:[{product_id:product.id,quantity:100}]};
   const call=value=>assemblyBuildAction(f.client,user,value);
   const preview=()=>call({...body,action:'previewAssemblyBuild'});
   const post=async()=>({...body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:(await preview()).fingerprint});
   return {...f,milk,cup,product,milkLot,cupLot,raw,cold,fg,body,call,preview,post};
 }
 
-test('100 finished units use the saved assembly, convert grams to kg and expose a read-only shortage check',async()=>{
+test('100 finished units use explicit actual materials, calculate saved packaging and expose a read-only shortage check',async()=>{
   const f=await setup(),before=structuredClone(f.rows),p=await f.preview();
   assert.equal(p.materials.find(m=>m.product_id===f.milk.id).required,50);assert.equal(p.materials.find(m=>m.product_id===f.cup.id).required,100);
   assert.equal(p.can_build,true);assert.equal(p.total_cost,52000);assert.ok(p.outputs[0].expiry_date>date);assert.deepEqual(f.rows,before);
@@ -82,8 +83,8 @@ test('build consumes real carrying costs, posts a balanced asset transfer and re
 
 test('shared components are aggregated across products before allowing any stock movement',async()=>{
   const f=await setup(),s=f.entities,second=await s.Product.create({...f.product,id:undefined,name:'Nature small',components:[{component_type:'inventory_part',product_id:f.milk.id,quantity:0.25,unit:'kg',unit_cost:1000}]});
-  const rows=[...f.body.rows,{product_id:second.id,quantity:100}],p=await f.call({...f.body,rows,action:'previewAssemblyBuild'});assert.equal(p.can_build,false);assert.equal(p.materials.find(m=>m.product_id===f.milk.id).missing,15);
-  const before=structuredClone(f.rows);await assert.rejects(f.call({...f.body,rows,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint}),/short/);assert.deepEqual(f.rows,before);
+  const rows=[...f.body.rows,{product_id:second.id,quantity:100}],actualMaterials=[{product_id:f.milk.id,quantity:75,unit:'kg'}],p=await f.call({...f.body,rows,actualMaterials,action:'previewAssemblyBuild'});assert.equal(p.can_build,false);assert.equal(p.materials.find(m=>m.product_id===f.milk.id).missing,15);
+  const before=structuredClone(f.rows);await assert.rejects(f.call({...f.body,rows,actualMaterials,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint}),/short/);assert.deepEqual(f.rows,before);
 });
 
 test('held, rejected, expired and delivery stock cannot satisfy an assembly build',async()=>{
@@ -122,7 +123,7 @@ test('manufacturing roles, active staff and the checked feature grant are enforc
 test('shared carrying-value cents are retained when multiple products consume a partial lot',async()=>{
   const f=await setup(),s=f.entities;await s.StockBalance.update(f.milkLot.id,{quantity:3,total_value:1,unit_cost:1/3});
   const second=await s.Product.create({...f.product,id:undefined,name:'Another size'});const rows=[{product_id:f.product.id,quantity:1},{product_id:second.id,quantity:2}];
-  const p=await f.call({...f.body,rows,action:'previewAssemblyBuild'});await f.call({...f.body,rows,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});
+  const actualMaterials=[{product_id:f.milk.id,quantity:1.5,unit:'kg'}],p=await f.call({...f.body,rows,actualMaterials,action:'previewAssemblyBuild'});await f.call({...f.body,rows,actualMaterials,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});
   assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,1.5);assert.equal((await s.StockBalance.get(f.milkLot.id)).total_value,0.5);
   const orders=await s.ProductionOrder.list();assert.equal(orders.reduce((n,o)=>n+o.total_material_cost,0),60.5);const lines=await s.JournalLine.list();assert.equal(lines.reduce((n,l)=>n+l.debit-l.credit,0),0);
 });
@@ -218,4 +219,77 @@ test('crossing the Cameroon business-date boundary expires stock and invalidates
  const before=await f.preview(),workspace=await f.call({action:'assemblyBuildWorkspace'});assert.equal(before.materials.find(m=>m.product_id===f.milk.id).available,140);
  t.mock.timers.tick(120000);const after=await f.preview();assert.equal(after.materials.find(m=>m.product_id===f.milk.id).available,80);assert.equal(after.can_build,true);assert.notEqual(after.fingerprint,before.fingerprint);assert.notEqual((await f.call({action:'assemblyBuildWorkspace'})).inventory_revision,workspace.inventory_revision);
  await assert.rejects(f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:before.fingerprint}),/changed/);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,60);
+});
+
+test('30 finished products consume the actual 12 kg of milk and automatic 30 cups and 30 stickers, leaving unused sugar untouched',async()=>{
+ const f=await setup(),s=f.entities;
+ const sticker=await s.Product.create({sku:'ACTUAL-STICKER',name:'Nature label',inventory_type:'raw_material',material_group:'Packaging',configuration_status:'ready',unit_of_measure:'ea',purchase_price:5,inventory_account_id:'inventory',is_active:true});
+ const sugar=await s.Product.create({sku:'ACTUAL-SUGAR',name:'Sugar',inventory_type:'raw_material',configuration_status:'ready',unit_of_measure:'kg',purchase_price:500,inventory_account_id:'inventory',is_active:true});
+ const stickerLot=await s.StockBalance.create({product_id:sticker.id,warehouse_id:f.raw.id,quantity:100,total_value:500,unit_cost:5,qc_status:'approved'});
+ const sugarLot=await s.StockBalance.create({product_id:sugar.id,warehouse_id:f.raw.id,quantity:20,total_value:10000,unit_cost:500,qc_status:'approved'});
+ await s.Product.update(f.product.id,{components:[...f.product.components,{component_type:'inventory_part',product_id:sticker.id,quantity:1,unit:'ea',unit_cost:5,cost_source:'registered',recover_on_exchange:false},{component_type:'inventory_part',product_id:sugar.id,quantity:0.05,unit:'kg',unit_cost:500,cost_source:'registered'}]});
+ const input={...f.body,rows:[{product_id:f.product.id,quantity:30}],actualMaterials:[{product_id:f.milk.id,quantity:12000,unit:'g'}]};
+ const p=await f.call({...input,action:'previewAssemblyBuild'});
+ assert.equal(p.can_build,true);assert.equal(p.materials.find(m=>m.product_id===f.milk.id).required,12);assert.equal(p.materials.find(m=>m.product_id===f.milk.id).consumption_method,'actual');
+ assert.equal(p.materials.find(m=>m.product_id===f.cup.id).required,30);assert.equal(p.materials.find(m=>m.product_id===sticker.id).required,30);assert.equal(p.materials.find(m=>m.product_id===sticker.id).consumption_method,'automatic_packaging');assert.equal(p.materials.some(m=>m.product_id===sugar.id),false);
+ const saved=await f.call({...input,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});
+ assert.equal(saved.total_cost,12750);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,48);assert.equal((await s.StockBalance.get(f.cupLot.id)).quantity,90);assert.equal((await s.StockBalance.get(stickerLot.id)).quantity,70);assert.equal((await s.StockBalance.get(sugarLot.id)).quantity,20);
+ const order=await s.ProductionOrder.get(saved.orders[0].id),materials=await s.ProductionMaterial.filter({production_order_id:order.id}),milk=materials.find(m=>m.material_id===f.milk.id);
+ assert.deepEqual([milk.standard_quantity,milk.consumed_quantity,milk.total_cost],[15,12,12000]);assert.equal(order.actual_cost_per_unit,425);assert.equal(order.assembly_build_consumption_mode,'actual_materials');assert.equal(order.assembly_build_components.find(c=>c.product_id===f.milk.id).quantity,0.4);assert.equal(order.assembly_build_components.find(c=>c.product_id===sticker.id).recover_on_exchange,false);assert.ok(order.assembly_build_template_components.some(c=>c.product_id===sugar.id));assert.equal(order.assembly_build_components.some(c=>c.product_id===sugar.id),false);
+ const workspace=await f.call({action:'assemblyBuildWorkspace'});assert.ok(workspace.materials.some(m=>m.id===sugar.id));assert.equal(workspace.materials.some(m=>m.id===sticker.id||m.id===f.cup.id),false);
+ const journal=await s.JournalLine.filter({journal_id:saved.journal_id});assert.equal(journal.reduce((n,l)=>n+l.debit,0),12750);assert.equal(journal.reduce((n,l)=>n+l.credit,0),12750);
+});
+
+test('mixed output sizes share actual quantities and every carrying-value cent while flavor goes only to its mapped finished product',async()=>{
+ const f=await setup(),s=f.entities;
+ await s.StockBalance.update(f.milkLot.id,{total_value:1,unit_cost:1/60});
+ const flavor=await s.Product.create({sku:'ACTUAL-FLAVOR',name:'Pineapple flavor',inventory_type:'additive',configuration_status:'ready',unit_of_measure:'l',purchase_price:100,inventory_account_id:'inventory',is_active:true});
+ await s.StockBalance.create({product_id:flavor.id,warehouse_id:f.raw.id,quantity:1,total_value:100,unit_cost:100,qc_status:'approved'});
+ const second=await s.Product.create({...f.product,id:undefined,name:'Pineapple 250g',components:[{...f.product.components[0],quantity:250},f.product.components[1],{component_type:'inventory_part',product_id:flavor.id,quantity:10,unit:'ml',unit_cost:0.1,cost_source:'registered'}]});
+ const input={...f.body,rows:[{product_id:f.product.id,quantity:30},{product_id:second.id,quantity:20}],actualMaterials:[{product_id:f.milk.id,quantity:12.001,unit:'kg'},{product_id:flavor.id,quantity:200,unit:'ml'}]};
+ const p=await f.call({...input,action:'previewAssemblyBuild'}),saved=await f.call({...input,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});
+ const materials=await s.ProductionMaterial.list(),made=await s.ProductionOrder.list(),large=made.find(o=>o.product_id===f.product.id),small=made.find(o=>o.product_id===second.id);
+ assert.equal(saved.total_cost,1020.2);assert.equal(materials.filter(m=>m.material_id===f.milk.id).reduce((n,m)=>Math.round((n+m.consumed_quantity)*1000)/1000,0),12.001);
+ assert.equal(materials.find(m=>m.production_order_id===large.id&&m.material_id===f.milk.id).consumed_quantity,9.001);assert.equal(materials.find(m=>m.production_order_id===small.id&&m.material_id===f.milk.id).consumed_quantity,3);
+ assert.equal(materials.filter(m=>m.material_id===flavor.id).length,1);assert.equal(materials.find(m=>m.material_id===flavor.id).production_order_id,small.id);assert.equal(large.total_material_cost,600.15);assert.equal(small.total_material_cost,420.05);
+ assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,47.999);assert.equal((await s.StockBalance.get(f.milkLot.id)).total_value,0.8);assert.equal((await s.JournalLine.list()).reduce((n,l)=>Math.round((n+l.debit-l.credit)*100)/100,0),0);
+});
+
+test('a material with no mapped output cannot be silently charged to a different flavor or product',async()=>{
+ const f=await setup(),s=f.entities,flavor=await s.Product.create({sku:'UNMAPPED-FLAVOR',name:'Pineapple',inventory_type:'raw_material',configuration_status:'ready',unit_of_measure:'l',inventory_account_id:'inventory',purchase_price:100,is_active:true});
+ const input={...f.body,actualMaterials:[...f.body.actualMaterials,{product_id:flavor.id,quantity:0.1,unit:'l'}]};
+ await assert.rejects(f.call({...input,action:'previewAssemblyBuild'}),/Add Pineapple to a selected assembly/);assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('new builds require deliberate valid actual material input and cannot inject packaging, inactive items or duplicate materials',async()=>{
+ const f=await setup(),s=f.entities;
+ for(const actualMaterials of [undefined,[],null,[{product_id:f.milk.id,quantity:0,unit:'kg'}],[{product_id:f.milk.id,quantity:true,unit:'kg'}],[{product_id:f.milk.id,quantity:1.2345,unit:'kg'}],[{product_id:f.milk.id,quantity:0.5,unit:'g'}],[{product_id:f.milk.id,quantity:50,unit:'l'}],[{product_id:f.milk.id,quantity:50}],[...f.body.actualMaterials,...f.body.actualMaterials],[{product_id:f.cup.id,quantity:30,unit:'ea'}],[{product_id:'missing',quantity:50,unit:'kg'}]]){
+  await assert.rejects(f.call({...f.body,actualMaterials,action:'previewAssemblyBuild'}));
+ }
+ await s.Product.update(f.milk.id,{is_active:false});await assert.rejects(f.preview(),/active raw material/);assert.equal((await s.JournalEntry.list()).length,0);
+});
+
+test('changing the actual quantity or input unit after review requires a fresh fingerprint and post retry consumes once',async()=>{
+ const f=await setup(),body=await f.post();
+ await assert.rejects(f.call({...body,actualMaterials:[{product_id:f.milk.id,quantity:49,unit:'kg'}]}),/changed/);
+ await assert.rejects(f.call({...body,actualMaterials:[{product_id:f.milk.id,quantity:50000,unit:'g'}]}),/changed/);
+ assert.equal((await f.entities.StockBalance.get(f.milkLot.id)).quantity,60);
+ await f.call(body);assert.equal((await f.call(body)).reused,true);assert.equal((await f.entities.StockBalance.get(f.milkLot.id)).quantity,10);
+});
+
+test('automatic packaging is based on explicit classification and never an ingredient name',()=>{
+ assert.equal(isAssemblyPackaging({inventory_type:'raw_material',name:'Milk stickers flavor'}),false);
+ for(const record of [{inventory_type:'packaging'},{inventory_type:'raw_material',material_group:'Packaging'},{inventory_type:'raw_material',category:'Emballages'},{inventory_type:'raw_material',category:'Stickers'},{inventory_type:'raw_material',attributes:[{name:'Packaging type',value:'Yogurt cups'}]}])assert.equal(isAssemblyPackaging(record),true);
+ assert.equal(isAssemblyPackaging({inventory_type:'assembly',category:'Packaging'}),false);
+});
+
+test('actual quantities validate precision after conversion and enforce whole units for counted materials',async()=>{
+ const f=await setup(),s=f.entities;
+ await s.Product.update(f.milk.id,{unit_of_measure:'g'});
+ const p=await f.call({...f.body,actualMaterials:[{product_id:f.milk.id,quantity:0.0005,unit:'kg'}],action:'previewAssemblyBuild'});
+ assert.equal(p.materials.find(m=>m.product_id===f.milk.id).required,0.5);
+ await s.Product.update(f.milk.id,{unit_of_measure:'ea'});
+ await s.Product.update(f.product.id,{components:[{...f.product.components[0],quantity:1,unit:'ea'},f.product.components[1]]});
+ await assert.rejects(f.call({...f.body,actualMaterials:[{product_id:f.milk.id,quantity:0.5,unit:'ea'}],action:'previewAssemblyBuild'}),/whole units/);
+ await assert.rejects(f.call({...f.body,actualMaterials:[{product_id:f.milk.id,quantity:1e-12,unit:'ea'}],action:'previewAssemblyBuild'}),/three decimal places/);
 });

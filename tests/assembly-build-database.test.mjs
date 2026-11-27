@@ -61,7 +61,7 @@ async function fixture(role='production_manager',{openingStock=true}={}){
     const response=await app.POST(new Request('http://localhost/api/functions/fieldOps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),{params:Promise.resolve({name:'fieldOps'})});
     return {status:response.status,data:await response.json()};
   };
-  const body={date,warehouseId:'finished',rows:[{product_id:'nature',quantity:100,expiry_date:''}]};
+  const body={date,warehouseId:'finished',actualMaterials:[{product_id:'milk',quantity:50,unit:'kg'}],rows:[{product_id:'nature',quantity:100,expiry_date:''}]};
   return {db,s,state,body,invoke};
 }
 
@@ -84,11 +84,51 @@ for(const role of ['production_manager','checked_operator'])test(role+' builds t
 });
 
 
+test('actual milk and output-based cups and stickers reconcile SQL stock, costs, audit and retries',async()=>{
+ const f=await fixture();try{
+  const template=await f.s.Product.get('nature');
+  await f.s.Product.create({id:'stickers',sku:'STICKERS',name:'Plain 500g label',inventory_type:'raw_material',material_group:'Packaging',configuration_status:'ready',unit_of_measure:'ea',purchase_price:3,inventory_account_id:'raw-inventory',is_active:true});
+  await f.s.StockBalance.create({id:'sticker-lot',product_id:'stickers',warehouse_id:'materials',quantity:100,total_value:300,unit_cost:3,qc_status:'approved'});
+  await f.s.Account.update('raw-inventory',{balance:62700});
+  await f.s.Product.update('nature',{components:[...template.components,{component_type:'inventory_part',product_id:'stickers',quantity:1,unit:'ea',unit_cost:3,cost_source:'registered'}]});
+  const workspace=await f.invoke({action:'assemblyBuildWorkspace'});assert.equal(workspace.status,200,JSON.stringify(workspace.data));assert.equal(workspace.data.materials.some(row=>row.id==='stickers'),false);
+  const input={...f.body,rows:[{product_id:'nature',quantity:30}],actualMaterials:[{product_id:'milk',quantity:12000,unit:'g'}]};
+  const preview=await f.invoke({...input,action:'previewAssemblyBuild'});assert.equal(preview.status,200,JSON.stringify(preview.data));assert.equal(preview.data.can_build,true);
+  const byId=new Map(preview.data.materials.map(row=>[row.product_id,row]));
+  assert.equal(byId.get('milk').required,12);assert.equal(byId.get('milk').consumption_method,'actual');
+  for(const id of ['cups','stickers']){assert.equal(byId.get(id).required,30);assert.equal(byId.get(id).consumption_method,'automatic_packaging');}
+  assert.equal(preview.data.total_cost,12690);
+  const post={...input,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:preview.data.fingerprint};
+  const stale=await f.invoke({...post,actualMaterials:[{product_id:'milk',quantity:13,unit:'kg'}]});assert.equal(stale.status,400);assert.match(stale.data.error,/changed/);assert.equal((await f.s.JournalEntry.list()).length,0);assert.equal((await f.s.StockBalance.get('milk-lot')).quantity,60);
+  const saved=await f.invoke(post);assert.equal(saved.status,200,JSON.stringify(saved.data));
+  assert.deepEqual([(await f.s.StockBalance.get('milk-lot')).quantity,(await f.s.StockBalance.get('cup-lot')).quantity,(await f.s.StockBalance.get('sticker-lot')).quantity],[48,90,70]);
+  const order=await f.s.ProductionOrder.get(saved.data.orders[0].id),materials=await f.s.ProductionMaterial.filter({production_order_id:order.id});
+  const milk=materials.find(row=>row.material_id==='milk');assert.equal(milk.standard_quantity,15);assert.equal(milk.consumed_quantity,12);assert.equal(milk.total_cost,12000);assert.equal(milk.assembly_build_consumption_method,'actual');
+  assert.equal(order.assembly_build_components.find(row=>row.product_id==='milk').quantity,0.4);assert.equal(order.assembly_build_template_components.find(row=>row.product_id==='milk').quantity,500);
+  const [lot]=await f.s.StockBalance.filter({production_order_id:order.id});assert.deepEqual([lot.quantity,lot.total_value,lot.unit_cost],[30,12690,423]);
+  assert.deepEqual([(await f.s.Account.get('raw-inventory')).balance,(await f.s.Account.get('finished-inventory')).balance],[50010,12690]);
+  const journalLines=await f.s.JournalLine.filter({journal_id:saved.data.journal_id});assert.equal(journalLines.reduce((total,row)=>total+row.debit-row.credit,0),0);
+  const audit=await f.s.AuditLog.get(saved.data.id);assert.equal(audit.assembly_build_actual_materials[0].quantity,12);assert.equal(audit.assembly_build_actual_materials[0].entered_quantity,12000);
+  const movementsBefore=await f.s.StockMovement.list(),balancesBefore=await f.s.StockBalance.list();
+  const retried=await f.invoke(post);assert.equal(retried.status,200,JSON.stringify(retried.data));assert.equal(retried.data.reused,true);assert.deepEqual(await f.s.StockMovement.list(),movementsBefore);assert.deepEqual(await f.s.StockBalance.list(),balancesBefore);
+ }finally{delete globalThis.__assemblyDatabase;await f.db.close();}
+});
+
+test('old assembly requests without actual materials cannot post or move SQL inventory',async()=>{
+ const f=await fixture();try{
+  const {actualMaterials:_actual,...body}=f.body;void _actual;
+  for(const action of ['previewAssemblyBuild','postAssemblyBuild']){
+   const response=await f.invoke({...body,action,requestKey:crypto.randomUUID(),fingerprint:'old-review'});assert.equal(response.status,400);assert.match(response.data.error,/actual materials/);
+  }
+  assert.equal((await f.s.StockBalance.get('milk-lot')).quantity,60);assert.equal((await f.s.JournalEntry.list()).length,0);assert.equal((await f.s.ProductionOrder.list()).length,0);
+ }finally{delete globalThis.__assemblyDatabase;await f.db.close();}
+});
+
 test('a twelve-product assembly build batches database work while preserving the full result',async t=>{
  const f=await fixture();try{
   const template=await f.s.Product.get('nature'),rows=[];
   for(let index=0;index<12;index++){const product=await f.s.Product.create({...template,id:'nature-'+index,sku:'NATURE-'+index,name:'Nature size '+index});rows.push({product_id:product.id,quantity:5,expiry_date:''});}
-  const body={...f.body,rows},checked=await f.invoke({...body,action:'previewAssemblyBuild'});assert.equal(checked.status,200,JSON.stringify(checked.data));assert.equal(checked.data.can_build,true);
+  const body={...f.body,actualMaterials:[{product_id:'milk',quantity:30,unit:'kg'}],rows},checked=await f.invoke({...body,action:'previewAssemblyBuild'});assert.equal(checked.status,200,JSON.stringify(checked.data));assert.equal(checked.data.can_build,true);
   f.state.queries=[];
   const result=await f.invoke({...body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:checked.data.fingerprint});assert.equal(result.status,200,JSON.stringify(result.data));
   const queries=f.state.queries.length;t.diagnostic('Twelve-product build database statements: '+queries);
@@ -251,7 +291,7 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
     await s.Product.create({ ...large, id: 'small', sku: 'NATURE-250', name: 'Nature 250g', components: [{ ...components[0], quantity: 250 }, components[1]] });
     const build = async rows => {
       state.context = production;
-      const request = { date, warehouseId: 'finished', rows };
+      const request = { date, warehouseId: 'finished', rows, actualMaterials: [{ product_id: milk.id, quantity: rows.reduce((quantity, row) => quantity + row.quantity * (row.product_id === 'small' ? 0.25 : 0.5), 0), unit: 'kg' }] };
       const preview = await invoke({ ...request, action: 'previewAssemblyBuild' });
       const saved = await invoke({ ...request, action: 'postAssemblyBuild', requestKey: crypto.randomUUID(), fingerprint: preview.fingerprint });
       state.context = admin;
@@ -405,7 +445,7 @@ test('audited inventory and accounting reconcile across purchasing, physical cou
     const autoRelease = { ...release, balanceId: autoCup.id };
     assert.equal((await recoveryRequest(autoRelease)).status, 400);
     state.context = production;
-    const heldPreview = await invoke({ ...f.body, action: 'previewAssemblyBuild', rows: [{ product_id: 'nature', quantity: 2 }] });
+    const heldPreview = await invoke({ ...f.body, actualMaterials: [{ product_id: milk.id, quantity: 1, unit: 'kg' }], action: 'previewAssemblyBuild', rows: [{ product_id: 'nature', quantity: 2 }] });
     state.context = admin;
     assert.equal(heldPreview.can_build, false);
     const heldCups = heldPreview.materials.find(row => row.product_id === cups.id);

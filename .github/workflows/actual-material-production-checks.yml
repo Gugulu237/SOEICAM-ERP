@@ -1,0 +1,37 @@
+name: Actual material production checks
+on:
+  pull_request:
+    paths:
+      - 'src/components/manufacturing/**'
+      - 'src/server/domain/assembly-build.js'
+      - 'src/lib/assembly-materials.js'
+      - 'src/lib/inventory-packaging.js'
+      - 'src/lib/item-units.js'
+      - 'src/lib/locales/mobile-fr.json'
+      - 'tests/assembly-build*.test.mjs'
+      - 'tests/actual-material*.test.mjs'
+      - 'package*.json'
+      - '.github/workflows/actual-material-production-checks.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify actual consumption, packaging, transactions and production entry
+        run: node --test --test-concurrency=2 tests/assembly-build.test.mjs tests/assembly-build-database.test.mjs tests/assembly-build-ui.test.mjs tests/manufacturing-simplified-ui.test.mjs tests/exchange-packaging.test.mjs tests/inventory-packaging.test.mjs tests/assembly-components.test.mjs tests/assembly-pricing.test.mjs tests/assembly-yield.test.mjs
+      - name: Lint manufacturing changes
+        run: npx eslint src/components/manufacturing/ActualMaterialsEntry.jsx src/components/manufacturing/AssemblyBuildPanel.jsx src/components/manufacturing/AssemblyBuildDetails.jsx src/components/manufacturing/MobileBuildMaterials.jsx src/server/domain/assembly-build.js src/lib/assembly-materials.js --quiet
+      - name: Build application
+        run: npm run build
