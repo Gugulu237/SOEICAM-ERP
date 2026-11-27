@@ -43,7 +43,7 @@ async function renderer(){
     '@/components/shared/DataTable':'export default ()=>null;',
   };
   const out=await build({stdin:{contents:'import React from "react";import {renderToStaticMarkup} from "react-dom/server";import Screen from "./src/views/Manufacturing.jsx";export const render=()=>renderToStaticMarkup(React.createElement(Screen));',resolveDir:process.cwd(),loader:'jsx'},bundle:true,platform:'node',format:'cjs',write:false,plugins:[{name:'simplified-ui',setup(b){
-    b.onResolve({filter:/^react$/},args=>args.importer.endsWith('/views/Manufacturing.jsx')?{path:'hooks',namespace:'hooks'}:undefined);
+    b.onResolve({filter:/^react$/},args=>/[\\/]views[\\/]Manufacturing\.jsx$/.test(args.importer)?{path:'hooks',namespace:'hooks'}:undefined);
     b.onLoad({filter:/.*/,namespace:'hooks'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;export const useState=v=>globalThis.__simpleManufacturing.state('screen',v),useEffect=(f,d)=>globalThis.__simpleManufacturing.effect('screen',f,d);`,resolveDir:process.cwd()}));
     b.onResolve({filter:/^(?:@\/|next\/dynamic$)/},args=>Object.hasOwn(mocks,args.path)?{path:args.path,namespace:'leaf'}:undefined);
     b.onLoad({filter:/.*/,namespace:'leaf'},args=>({contents:mocks[args.path],resolveDir:process.cwd()}));

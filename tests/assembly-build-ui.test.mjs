@@ -8,6 +8,7 @@ let compiled;
 async function renderer(){
   if(compiled)return compiled;
   const mocks={
+    '@/api/erpClient':'export const erp={entities:{Product:{get:async id=>({id})}}};',
     '@/components/shared/ProductThumb':'import React from "react";export const ProductPhoto=({product})=>React.createElement("img",{src:product.image_url||"/product.png",alt:product.name});',
     '@/lib/field-ops':'export const invokeFieldOps=body=>globalThis.__assemblyUI.invoke(body);',
     '@/lib/item-catalogue-sync':'export const watchItemCatalogue=refresh=>{globalThis.__assemblyUI.refreshCatalogue=refresh;return ()=>{};};export const notifyItemCatalogue=()=>{globalThis.__assemblyUI.inventoryNotices=(globalThis.__assemblyUI.inventoryNotices||0)+1;};',
@@ -16,30 +17,39 @@ async function renderer(){
     '@/components/ui/input':'import React from "react";export const Input=props=>{globalThis.__assemblyUI.capture("input",props,[]);return React.createElement("input",props);};',
     '@/components/ui/button':'import React from "react";export const Button=({children,asChild,variant,...props})=>{globalThis.__assemblyUI.capture("button",props,children);return React.createElement("button",props,children);};',
   };
-  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Panel from './src/components/manufacturing/AssemblyBuildPanel.jsx';export const render=()=>renderToStaticMarkup(React.createElement(Panel));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',format:'cjs',platform:'node',write:false,plugins:[{name:'assembly-ui',setup(b){
+  const output=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Panel from './src/components/manufacturing/AssemblyBuildPanel.jsx';export const render=props=>renderToStaticMarkup(React.createElement(Panel,props));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',format:'cjs',platform:'node',write:false,plugins:[{name:'assembly-ui',setup(b){
     b.onResolve({filter:/^react$/},a=>a.importer.endsWith('AssemblyBuildPanel.jsx')?{path:'hooks',namespace:'mock'}:undefined);
     b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;export const useState=v=>globalThis.__assemblyUI.state('panel',v),useRef=v=>globalThis.__assemblyUI.ref('panel',v),useEffect=(f,d)=>globalThis.__assemblyUI.effect('panel',f,d);`,resolveDir:process.cwd()}));
-    b.onResolve({filter:/^react\/jsx-runtime$/},a=>a.importer.endsWith('AssemblyBuildPanel.jsx')?{path:'jsx',namespace:'capture'}:undefined);
+    b.onResolve({filter:/^react\/jsx-runtime$/},a=>/(AssemblyBuildPanel|ActualMaterialsEntry|MobileAssemblyEntry)\.jsx$/.test(a.importer)?{path:'jsx',namespace:'capture'}:undefined);
     b.onLoad({filter:/.*/,namespace:'capture'},()=>({contents:`import {jsx as base,jsxs as bases,Fragment} from ${JSON.stringify(require.resolve('react/jsx-runtime'))};export {Fragment};export const jsx=(tag,props,key)=>{if(typeof tag==='string')globalThis.__assemblyUI.capture(tag,props,props?.children);return base(tag,props,key);};export const jsxs=(tag,props,key)=>{if(typeof tag==='string')globalThis.__assemblyUI.capture(tag,props,props?.children);return bases(tag,props,key);};`,resolveDir:process.cwd()}));
     b.onResolve({filter:/^@\//},a=>Object.hasOwn(mocks,a.path)?{path:a.path,namespace:'leaf'}:undefined);
     b.onLoad({filter:/.*/,namespace:'leaf'},a=>({contents:mocks[a.path],resolveDir:process.cwd()}));
   }}]});
   const m={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(require,m,m.exports);compiled=m.exports.render;return compiled;
 }
-const workspace={inventory_revision:'stock-revision-1',can_build:true,products:[{id:'nature',name:'Nature 500g',unit:'ea',shelf_life_days:14,image_url:'/nature.png'},{id:'strawberry',name:'Strawberry 500g',unit:'ea',shelf_life_days:14,image_url:'/strawberry.png'}],warehouses:[{id:'cold',name:'Cold Room'}],overhead_accounts:[]};
+const workspace={inventory_revision:'stock-revision-1',can_build:true,materials:[{id:'milk',name:'Milk',unit:'kg',on_hand:70,available:60,inventory_type:'raw_material'},{id:'sugar',name:'Sugar',unit:'kg',on_hand:10,available:10,inventory_type:'raw_material'}],products:[{id:'nature',name:'Nature 500g',unit:'ea',shelf_life_days:14,image_url:'/nature.png'},{id:'strawberry',name:'Strawberry 500g',unit:'ea',shelf_life_days:14,image_url:'/strawberry.png'}],warehouses:[{id:'cold',name:'Cold Room'}],overhead_accounts:[]};
 const preview={inventory_revision:'stock-revision-1',fingerprint:'checked-stock',can_build:true,reasons:[],overhead:0,total_cost:52000,materials:[{product_id:'milk',product_name:'Milk',required:50,on_hand:70,available:60,on_hand_after:20,excluded:10,missing:0,unit:'kg',lots:[{id:'milk-main',warehouse_name:'Material store',lot_number:'MILK-A',quantity:60,available:60,status:'Available'},{id:'milk-held',warehouse_name:'Material store',lot_number:'MILK-B',quantity:10,available:0,status:'On quality hold'}]},{product_id:'cups',product_name:'Cups',required:100,on_hand:120,available:120,on_hand_after:20,excluded:0,missing:0,unit:'ea'}],outputs:[{product_id:'nature',product_name:'Nature 500g',quantity:100,unit:'ea',expiry_date:'2099-12-31'}]};
 const result={orders:[{id:'built',product_name:'Nature 500g',quantity:100,unit:'ea',batch_number:'B-001',expiry_date:'2099-12-31',total_cost:52000}],journal_number:'JV-BUILD'};
 function runtime(){const r=hookRuntime(),before=r.beforeRender.bind(r);r.elements=[];const capture=r.capture.bind(r);r.capture=(tag,props,children)=>{r.elements.push({tag,props,children});capture(tag,props,children);};r.beforeRender=()=>{before();r.elements=[];};return r;}
 const field=(r,label)=>r.elements.find(e=>e.props?.['aria-label']===label)?.props;
 const button=(r,label)=>r.buttons.find(b=>b.label===label);
+const actualMilk=quantity=>[{product_id:'milk',quantity,unit:'kg'}];
+async function loaded(r,render,props){
+  const draw=()=>{r.beforeRender();return render(props);};draw();await r.flush();draw();await r.flush();draw();return draw;
+}
+function enterMaterials(r,draw,quantity='50'){
+  field(r,'Choose material').onChange({target:{value:'milk'}});draw();
+  field(r,'Actual quantity for Milk').onChange({target:{value:quantity}});draw();
+  button(r,'Continue to finished products').onClick();draw();
+}
 async function selected(r,render){
-  const draw=()=>{r.beforeRender();return render();};draw();await r.flush();draw();
+  const draw=await loaded(r,render);enterMaterials(r,draw);
   field(r,'Select Nature 500g').onClick();draw();field(r,'Quantity for Nature 500g').onChange({target:{value:'100'}});draw();return {draw,html:draw()};
 }
 
 test('image selection waits for the complete plan before checking components, then receives finished inventory',async()=>{
   const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;r.invoke=async body=>{calls.push(body);return {data:body.action==='assemblyBuildWorkspace'?workspace:body.action==='previewAssemblyBuild'?preview:result};};
-  try{const {draw,html}=await selected(r,render);assert.match(html,/nature.png/);assert.match(html,/strawberry.png/);assert.equal(calls.some(c=>c.action==='previewAssemblyBuild'),false);assert.doesNotMatch(html,/Total components required/);await button(r,'Review total components').onClick();const reviewed=draw();assert.match(reviewed,/50 kg/);assert.match(reviewed,/100 ea/);assert.equal(button(r,'Build and release for sale').disabled,false);await button(r,'Build and release for sale').onClick();const receipt=draw();assert.match(receipt,/ready for sale/);assert.match(receipt,/filter=finished/);assert.match(receipt,/JV-BUILD/);assert.equal(calls.filter(c=>c.action==='postAssemblyBuild').length,1);assert.deepEqual(calls.find(c=>c.action==='postAssemblyBuild').rows,[{product_id:'nature',quantity:'100',expiry_date:''}]);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+  try{const {draw,html}=await selected(r,render);assert.match(html,/nature.png/);assert.match(html,/strawberry.png/);assert.equal(calls.some(c=>c.action==='previewAssemblyBuild'),false);assert.doesNotMatch(html,/Total components required/);await button(r,'Review total components').onClick();const reviewed=draw();assert.match(reviewed,/50 kg/);assert.match(reviewed,/100 ea/);assert.equal(button(r,'Build and release for sale').disabled,false);await button(r,'Build and release for sale').onClick();const receipt=draw();assert.match(receipt,/ready for sale/);assert.match(receipt,/filter=finished/);assert.match(receipt,/JV-BUILD/);assert.equal(calls.filter(c=>c.action==='postAssemblyBuild').length,1);assert.deepEqual(calls.find(c=>c.action==='previewAssemblyBuild').actualMaterials,actualMilk('50'));assert.deepEqual(calls.find(c=>c.action==='postAssemblyBuild').actualMaterials,actualMilk('50'));assert.deepEqual(calls.find(c=>c.action==='postAssemblyBuild').rows,[{product_id:'nature',quantity:'100',expiry_date:''}]);}finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
 test('insufficient components block the build and expose required, available and short quantities',async()=>{
@@ -55,7 +65,7 @@ test('all selected image cards remain in the combined review even when search hi
 test('rapid clicks send one write and a lost response retries the identical database build',async()=>{
   const render=await renderer(),r=runtime(),writes=[];let reject,fail=true;globalThis.__assemblyUI=r;
   r.invoke=async body=>{if(body.action==='assemblyBuildWorkspace')return {data:workspace};if(body.action==='previewAssemblyBuild')return {data:preview};writes.push(structuredClone(body));if(fail)return new Promise((_,no)=>{reject=no;});return {data:{...result,reused:true}};};
-  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();const first=button(r,'Build and release for sale').onClick();await button(r,'Build and release for sale').onClick();assert.equal(writes.length,1);reject(Error('Connection interrupted'));await first;draw();assert.ok(button(r,'Retry build'));fail=false;await button(r,'Retry build').onClick();assert.deepEqual(writes[1],writes[0]);assert.match(draw(),/ready for sale/);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();const submit=button(r,'Build and release for sale').onClick,first=submit();draw();assert.equal(button(r,'Edit materials').disabled,true);await submit();assert.equal(writes.length,1);assert.deepEqual(writes[0].actualMaterials,actualMilk('50'));reject(Error('Connection interrupted'));await first;draw();assert.ok(button(r,'Retry build'));assert.equal(button(r,'Edit materials').disabled,true);fail=false;await button(r,'Retry build').onClick();assert.deepEqual(writes[1],writes[0]);assert.match(draw(),/ready for sale/);}finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
 
@@ -100,8 +110,8 @@ test('build catalogue groups every product by yogurt type then ascending compara
   {id:'unset',name:'Custom finished product'},
  ].map(p=>({...p,unit:'ea',shelf_life_days:14,assembly_ready:true}));
  r.invoke=async()=>({data:{...workspace,products}});
- const draw=()=>{r.beforeRender();return render();};
- try{draw();await r.flush();var html=draw();
+ const draw=await loaded(r,render);
+ try{enterMaterials(r,draw);var html=draw();
   const shown=html=>[...html.matchAll(/aria-label="Select ([^"]+)"/g)].map(m=>m[1]);
   assert.deepEqual(shown(html),['YOLA Brassé Nature 250 g','YOLA Brassé Fraise 500 g','YOLA Brassé Vanille 1KG','YOLA Brassé Nature 2.5KG','YOLA à boire Nature 250 g','YOLA drinkable Vanille 330 g','YOLA À boire Fraise 500 g','Custom finished product']);
   assert.ok(html.includes('>Yaourt brassé</h3>'));assert.ok(html.includes('>Yaourt à boire</h3>'));assert.ok(html.includes('>1000 g</h4>'));assert.ok(html.includes('>2500 g</h4>'));assert.match(html,/Size not assigned/);
@@ -115,8 +125,8 @@ test('build catalogue groups every product by yogurt type then ascending compara
 test('unfinished assemblies remain visible and become selectable after their setup is saved',async()=>{
  const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;let available=false;
  r.invoke=async()=>({data:{...workspace,products:[{...workspace.products[0],assembly_ready:available}]}});
- const draw=()=>{r.beforeRender();return render();};
- try{draw();await r.flush();assert.match(draw(),/Complete assembly setup in Inventory before building/);assert.equal(field(r,'Select Nature 500g').disabled,true);
+ const draw=await loaded(r,render);
+ try{enterMaterials(r,draw);assert.match(draw(),/Complete assembly setup in Inventory before building/);assert.equal(field(r,'Select Nature 500g').disabled,true);
   field(r,'Select Nature 500g').onClick();draw();assert.equal(field(r,'Quantity for Nature 500g'),undefined);
   available=true;await r.refreshCatalogue();await r.flush();draw();assert.equal(field(r,'Select Nature 500g').disabled,false);
   field(r,'Select Nature 500g').onClick();draw();assert.ok(field(r,'Quantity for Nature 500g'));
@@ -136,11 +146,61 @@ test('fresh stock automatically replaces a shortage and posting notifies open in
  r.invoke=async body=>{calls.push(body);return {data:body.action==='assemblyBuildWorkspace'?{...workspace,inventory_revision:revision}:body.action==='previewAssemblyBuild'?{...preview,inventory_revision:revision,fingerprint:'checked-'+available,can_build:available>=50,reasons:available<50?['Some components are short.']:[],materials:[{...preview.materials[0],on_hand:available,available,missing:Math.max(0,50-available),on_hand_after:available>=50?available-50:null}]}:result};};
  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();assert.match(draw(),/40 kg/);assert.equal(button(r,'Build and release for sale').disabled,true);
  available=80;revision='stock-revision-2';await r.refreshCatalogue({type:'focus'});const html=draw();assert.match(html,/80 kg/);assert.match(html,/30 kg/);assert.equal(button(r,'Build and release for sale').disabled,false);assert.equal(calls.filter(c=>c.action==='previewAssemblyBuild').length,2);
- await button(r,'Build and release for sale').onClick();assert.equal(calls.find(c=>c.action==='postAssemblyBuild').fingerprint,'checked-80');assert.equal(r.inventoryNotices,1);
+ await button(r,'Build and release for sale').onClick();assert.equal(calls.find(c=>c.action==='postAssemblyBuild').fingerprint,'checked-80');assert.equal(r.inventoryNotices,1);assert.ok(calls.filter(c=>c.action==='previewAssemblyBuild'||c.action==='postAssemblyBuild').every(c=>JSON.stringify(c.actualMaterials)===JSON.stringify(actualMilk('50'))));
  }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
 
 test('failed background stock refresh disables the old build until an up-to-date component check succeeds',async()=>{
  const render=await renderer(),r=runtime();let fail=false;globalThis.__assemblyUI=r;r.invoke=async body=>{if(fail)throw Error('Inventory could not refresh');return {data:body.action==='assemblyBuildWorkspace'?workspace:preview};};
  try{const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();fail=true;await r.refreshCatalogue();assert.match(draw(),/Inventory could not refresh/);assert.equal(button(r,'Build and release for sale').disabled,true);fail=false;await r.refreshCatalogue();assert.doesNotMatch(draw(),/Inventory could not refresh/);assert.equal(button(r,'Build and release for sale').disabled,false);}finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+for(const mobile of [false,true])test(`the ${mobile?'phone':'desktop'} build starts with explicit actual materials and prevents skipping invalid quantities`,async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;
+ r.invoke=async body=>{calls.push(body);return {data:workspace};};
+ try{
+  const draw=await loaded(r,render,{mobile,initialProductId:'nature'});let html=draw();
+  assert.ok(field(r,'Choose material'));assert.equal(field(r,'Quantity for Nature 500g'),undefined);assert.equal(button(r,'Continue to finished products').disabled,true);assert.equal(calls.length,1);
+  field(r,'Choose material').onChange({target:{value:'milk'}});draw();
+  for(const value of ['',0,-1,'0.0001','1e-12','not-a-quantity','1000000001']){field(r,'Actual quantity for Milk').onChange({target:{value}});draw();assert.equal(button(r,'Continue to finished products').disabled,true,String(value));}
+  field(r,'Actual quantity for Milk').onChange({target:{value:'47.25'}});draw();assert.equal(button(r,'Continue to finished products').disabled,false);
+  button(r,'Continue to finished products').onClick();html=draw();assert.ok(mobile?field(r,'Quantity for Nature 500g'):field(r,'Select Nature 500g'));assert.ok(button(r,'Edit materials'));assert.equal(calls.some(c=>c.action==='previewAssemblyBuild'||c.action==='postAssemblyBuild'),false);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('editing actual batch inputs preserves outputs and sends entered quantities and units unchanged to review and posting',async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;
+ r.invoke=async body=>{calls.push(structuredClone(body));return {data:body.action==='assemblyBuildWorkspace'?workspace:body.action==='previewAssemblyBuild'?preview:result};};
+ try{
+  const {draw}=await selected(r,render);button(r,'Edit materials').onClick();draw();assert.equal(field(r,'Actual quantity for Milk').value,'50');
+  field(r,'Actual quantity for Milk').onChange({target:{value:'47250'}});draw();field(r,'Unit for Milk').onChange({target:{value:'g'}});draw();
+  field(r,'Choose material').onChange({target:{value:'sugar'}});draw();field(r,'Actual quantity for Sugar').onChange({target:{value:'1.5'}});draw();
+  button(r,'Continue to finished products').onClick();draw();assert.equal(field(r,'Quantity for Nature 500g').value,'100');
+  await button(r,'Review total components').onClick();draw();const entered=[{product_id:'milk',quantity:'47250',unit:'g'},{product_id:'sugar',quantity:'1.5',unit:'kg'}];assert.deepEqual(calls.find(c=>c.action==='previewAssemblyBuild').actualMaterials,entered);
+  button(r,'Edit materials').onClick();draw();assert.equal(field(r,'Actual quantity for Milk').value,'47250');assert.equal(field(r,'Unit for Milk').value,'g');assert.equal(field(r,'Actual quantity for Sugar').value,'1.5');button(r,'Continue to finished products').onClick();draw();await button(r,'Review total components').onClick();draw();
+  await button(r,'Build and release for sale').onClick();draw();assert.deepEqual(calls.find(c=>c.action==='postAssemblyBuild').actualMaterials,entered);assert.equal(calls.filter(c=>c.action==='postAssemblyBuild').length,1);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('a new build clears actual consumption and output quantities after the saved receipt',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;r.invoke=async body=>({data:body.action==='assemblyBuildWorkspace'?workspace:body.action==='previewAssemblyBuild'?preview:result});
+ try{
+  const {draw}=await selected(r,render);await button(r,'Review total components').onClick();draw();await button(r,'Build and release for sale').onClick();draw();button(r,'Start another build').onClick();draw();await r.flush();const html=draw();
+  assert.ok(field(r,'Choose material'));assert.equal(field(r,'Actual quantity for Milk'),undefined);assert.equal(field(r,'Quantity for Nature 500g'),undefined);assert.equal(button(r,'Continue to finished products').disabled,true);assert.doesNotMatch(html,/JV-BUILD/);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
+
+test('material entry validates converted stock precision and whole units before permitting finished output',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__assemblyUI=r;
+ const next={...workspace,materials:[...workspace.materials,{id:'culture',name:'Culture',unit:'ea',on_hand:10,available:10,inventory_type:'additive'}]};
+ r.invoke=async()=>({data:next});
+ try{
+  const draw=await loaded(r,render);field(r,'Choose material').onChange({target:{value:'milk'}});draw();
+  field(r,'Unit for Milk').onChange({target:{value:'g'}});draw();
+  for(const [value,reason] of [['0.1','0.1g is below the kg stock precision'],['1e12','entered grams above the input limit remain invalid even when the converted kg quantity is within range']]){field(r,'Actual quantity for Milk').onChange({target:{value}});draw();assert.equal(button(r,'Continue to finished products').disabled,true,reason);}
+  field(r,'Actual quantity for Milk').onChange({target:{value:'1'}});draw();assert.equal(button(r,'Continue to finished products').disabled,false,'1g converts exactly to 0.001kg');
+  field(r,'Choose material').onChange({target:{value:'culture'}});draw();field(r,'Actual quantity for Culture').onChange({target:{value:'0.5'}});draw();assert.equal(button(r,'Continue to finished products').disabled,true,'fractional each quantity cannot enter inventory');
+  field(r,'Actual quantity for Culture').onChange({target:{value:'1'}});draw();assert.equal(button(r,'Continue to finished products').disabled,false);
+  field(r,'Unit for Milk').onChange({target:{value:'l'}});draw();assert.equal(button(r,'Continue to finished products').disabled,true,'incompatible volume units cannot be sent as mass');
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
