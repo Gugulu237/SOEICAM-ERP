@@ -124,6 +124,35 @@ test('old assembly requests without actual materials cannot post or move SQL inv
  }finally{delete globalThis.__assemblyDatabase;await f.db.close();}
 });
 
+test('the SQL manufacturing workspace lists raw ingredients only and rejects forged non-raw consumption without writes',async()=>{
+ const f=await fixture();try{
+  const template={inventory_type:'raw_material',configuration_status:'ready',unit_of_measure:'kg',purchase_price:10,inventory_account_id:'raw-inventory',is_active:true};
+  const permitted=['milk'];
+  for(const [id,inventory_type] of [['sugar','raw_material'],['flavor','raw_material'],['culture','additive'],['preservative','additive']]){
+   await f.s.Product.create({...template,id,sku:id.toUpperCase(),name:id,inventory_type});permitted.push(id);
+  }
+  const excluded=['nature','cups'];
+  for(const inventory_type of ['finished_product','assembly','wip','cleaning','spare_part','consumable','promotional','returned','damaged','expired','service']){
+   const id='not-raw-'+inventory_type;await f.s.Product.create({...template,id,sku:id,name:'Milk '+inventory_type,inventory_type});
+   await f.s.StockBalance.create({id:id+'-lot',product_id:id,warehouse_id:'materials',quantity:10,total_value:100,unit_cost:10,qc_status:'approved'});excluded.push(id);
+  }
+  await f.s.Product.create({...template,id:'legacy-labels',sku:'LEGACY-LABELS',name:'Milk labels',material_group:'Packaging'});excluded.push('legacy-labels');
+  await f.s.Product.create({...template,id:'raw-service-metadata',sku:'RAW-SERVICE',name:'Milk service',item_type:'service'});excluded.push('raw-service-metadata');
+  const workspace=await f.invoke({action:'assemblyBuildWorkspace'});assert.equal(workspace.status,200,JSON.stringify(workspace.data));
+  assert.deepEqual(workspace.data.materials.map(material=>material.id).sort(),permitted.sort());
+  const checked=await f.invoke({...f.body,action:'previewAssemblyBuild'});assert.equal(checked.status,200,JSON.stringify(checked.data));
+  const snapshot=async()=>({balances:await f.s.StockBalance.list(),accounts:await f.s.Account.list(),settings:await f.s.CompanySettings.list(),journals:await f.s.JournalEntry.list(),orders:await f.s.ProductionOrder.list(),movements:await f.s.StockMovement.list(),audits:await f.s.AuditLog.list()});
+  const before=await snapshot();
+  for(const id of excluded){
+   const product=await f.s.Product.get(id),actualMaterials=[...f.body.actualMaterials,{product_id:id,quantity:1,unit:product.unit_of_measure}];
+   for(const action of ['previewAssemblyBuild','postAssemblyBuild']){
+    const result=await f.invoke({...f.body,actualMaterials,action,requestKey:crypto.randomUUID(),fingerprint:checked.data.fingerprint});assert.equal(result.status,400,id+': '+JSON.stringify(result.data));assert.match(result.data.error,/raw material/i);
+   }
+  }
+  assert.deepEqual(await snapshot(),before);
+ }finally{delete globalThis.__assemblyDatabase;await f.db.close();}
+});
+
 test('a twelve-product assembly build batches database work while preserving the full result',async t=>{
  const f=await fixture();try{
   const template=await f.s.Product.get('nature'),rows=[];

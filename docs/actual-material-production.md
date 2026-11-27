@@ -2,7 +2,7 @@
 
 Open **Manufacturing → Build assemblies**. Production managers and administrators record a batch in three steps:
 
-1. **Materials used:** add the milk, sugar, flavours, preservatives and other stocked inputs actually used. Enter measured quantities and compatible units. Packaging is excluded from this entry. Existing on-hand subassemblies may also be consumed.
+1. **Materials used:** add the milk, sugar, flavours, preservatives and other raw materials actually used. Enter measured quantities and compatible units. The selector includes only active raw materials and additives. Finished goods, subassemblies, packaging, cleaning supplies, spare parts and other inventory are excluded.
 2. **Finished output:** select each finished product and enter the quantity actually produced. Saved assembly components determine the automatic packaging requirement. For example, an assembly with one cup and one sticker per product consumes 30 cups and 30 stickers for 30 finished units.
 3. **Review and complete:** review actual ingredient deductions, automatic packaging, remaining quantities, output expiry and carrying costs. Confirm to deduct the inputs and packaging and receive the finished stock together.
 

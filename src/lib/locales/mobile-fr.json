@@ -797,5 +797,10 @@
   "Actual material quantities must match stock units with at most three decimal places.": "Les quantités réelles doivent correspondre aux unités de stock, avec trois décimales au maximum.",
   "Add {0} to a selected assembly before recording its actual use.": "Ajoutez {0} à un assemblage sélectionné avant d’enregistrer sa consommation réelle.",
   "Enter a positive actual material quantity.": "Saisissez une quantité réelle de matière positive.",
-  "Enter a positive actual material quantity within the supported limit.": "Saisissez une quantité réelle positive dans la limite autorisée."
+  "Enter a positive actual material quantity within the supported limit.": "Saisissez une quantité réelle positive dans la limite autorisée.",
+  "Select the raw materials consumed and enter their actual quantities.": "Sélectionnez les matières premières consommées et saisissez leurs quantités réelles.",
+  "Add a raw material used": "Ajouter une matière première utilisée",
+  "Choose a raw material...": "Choisissez une matière première...",
+  "No active raw materials are available. Check the inventory item setup.": "Aucune matière première active n’est disponible. Vérifiez la configuration des articles en stock.",
+  "Choose an active raw material or additive for actual consumption.": "Choisissez une matière première ou un additif actif pour la consommation réelle."
 }

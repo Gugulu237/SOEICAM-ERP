@@ -3,6 +3,7 @@ import {ArrowRight,Trash2} from 'lucide-react';
 import {ui} from '@/lib/i18n';
 import {formatQuantity} from '@/lib/formatters';
 import {DEFAULT_ITEM_UNITS,compatibleUnits} from '@/lib/item-units';
+import {isActualAssemblyMaterial} from '@/lib/assembly-materials';
 import {businessDate} from '@/lib/business-date';
 import {Input} from '@/components/ui/input';
 import {Button} from '@/components/ui/button';
@@ -10,14 +11,15 @@ import {Button} from '@/components/ui/button';
 // Controlled by the production draft so back/forward and stock refreshes never
 // replace the manager's measurements with assembly blueprint quantities.
 export default function ActualMaterialsEntry({materials=[],rows,date,setDate,notes,setNotes,locked,ready,onAdd,onChange,onRemove,onContinue,responsible}){
-  const byId=new Map(materials.map(material=>[material.id,material]));
+  const ingredients=materials.filter(isActualAssemblyMaterial);
+  const byId=new Map(ingredients.map(material=>[material.id,material]));
   return <div className="space-y-5">
     <section className="rounded-2xl border bg-white p-4 sm:p-5">
       <h3 className="text-lg font-semibold">{ui('Materials used in this batch')}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{ui('Enter the actual milk, sugar, flavours and preservatives used. Cups and stickers are calculated from the finished quantities in the next step.')}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{ui('Select the raw materials consumed and enter their actual quantities.')}</p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-xs font-medium text-slate-500">{ui('Production date')}<Input aria-label={ui('Build date')} type="date" max={businessDate()} value={date} disabled={locked} onChange={event=>setDate(event.target.value)} className="mt-1"/></label>{responsible&&<div className="text-xs text-slate-500">{ui('Responsible')}<p className="mt-3 text-sm font-semibold text-slate-900">{responsible}</p></div>}</div>
-      <label className="mt-4 block text-sm font-medium">{ui('Add a material used')}<select aria-label={ui('Choose material')} value="" disabled={locked||rows.length>=100} onChange={event=>{if(event.target.value)onAdd(event.target.value);}} className="mt-2 h-12 w-full rounded-xl border bg-white px-3 text-sm"><option value="">{ui('Choose a material...')}</option>{[['material','Raw materials and additives'],['subassembly','On-hand subassemblies']].map(([kind,label])=>{const items=materials.filter(material=>(material.kind||'material')===kind&&!rows.some(row=>row.product_id===material.id)).sort((a,b)=>a.name.localeCompare(b.name));return items.length>0&&<optgroup key={kind} label={ui(label)}>{items.map(material=><option key={material.id} value={material.id}>{material.name} ({material.unit})</option>)}</optgroup>;})}</select></label>
-      {!materials.length&&<p role="alert" className="mt-3 text-sm text-amber-900">{ui('No active materials are available. Check the inventory item setup.')}</p>}
+      <label className="mt-4 block text-sm font-medium">{ui('Add a raw material used')}<select aria-label={ui('Choose material')} value="" disabled={locked||rows.length>=100} onChange={event=>{if(event.target.value)onAdd(event.target.value);}} className="mt-2 h-12 w-full rounded-xl border bg-white px-3 text-sm"><option value="">{ui('Choose a raw material...')}</option>{ingredients.filter(material=>!rows.some(row=>row.product_id===material.id)).sort((a,b)=>a.name.localeCompare(b.name)).map(material=><option key={material.id} value={material.id}>{material.name} ({material.unit})</option>)}</select></label>
+      {!ingredients.length&&<p role="alert" className="mt-3 text-sm text-amber-900">{ui('No active raw materials are available. Check the inventory item setup.')}</p>}
     </section>
     {!rows.length&&<p className="rounded-2xl border border-dashed bg-white p-5 text-sm text-slate-500">{ui('Add each material used and enter its measured quantity. Do not enter cups or stickers here.')}</p>}
     <div className="space-y-3">{rows.map(row=>{const material=byId.get(row.product_id),units=compatibleUnits([...DEFAULT_ITEM_UNITS,...(material?.unit&&!DEFAULT_ITEM_UNITS.some(unit=>unit.code===material.unit)?[{code:material.unit,name:material.unit}]:[])],material?.unit||row.unit);return <section key={row.product_id} className="rounded-2xl border bg-white p-4">
