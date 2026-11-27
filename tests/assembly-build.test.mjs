@@ -192,10 +192,14 @@ test('all stock pages contribute to the assembly check and the completed deducti
  await f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:p.fingerprint});const remaining=(await s.StockBalance.list()).filter(b=>b.product_id===f.milk.id);assert.equal(Math.round(remaining.reduce((n,b)=>n+b.quantity,0)*1000)/1000,32.5);assert.equal(remaining.reduce((n,b)=>n+b.total_value,0),32500);
 });
 
-test('approved on-hand subassembly stock can be consumed even when its future manufacturing setup is incomplete',async()=>{
+test('on-hand subassemblies cannot appear in or bypass the raw-material consumption picker',async()=>{
  const f=await setup(),s=f.entities;await s.Product.update(f.milk.id,{inventory_type:'assembly',configuration_status:'draft',components:[],shelf_life_days:14});
  await s.Product.update(f.product.id,{components:[{...f.product.components[0],component_type:'assembly'},f.product.components[1]]});
- const p=await f.preview();assert.equal(p.can_build,true);assert.equal(p.materials.find(m=>m.product_id===f.milk.id).available,60);await f.call(await f.post());assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,10);
+ const workspace=await f.call({action:'assemblyBuildWorkspace'});assert.equal(workspace.materials.some(material=>material.id===f.milk.id),false);
+ const before=structuredClone(f.rows);
+ await assert.rejects(f.preview(),/raw material/i);
+ await assert.rejects(f.call({...f.body,action:'postAssemblyBuild',requestKey:crypto.randomUUID(),fingerprint:'forged-review'}),/raw material/i);
+ assert.deepEqual(f.rows,before);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,60);
 });
 
 test('invalid expiry dates and count anomalies cannot inflate available assembly stock or be repaired by a build',async()=>{
@@ -292,4 +296,33 @@ test('actual quantities validate precision after conversion and enforce whole un
  await s.Product.update(f.product.id,{components:[{...f.product.components[0],quantity:1,unit:'ea'},f.product.components[1]]});
  await assert.rejects(f.call({...f.body,actualMaterials:[{product_id:f.milk.id,quantity:0.5,unit:'ea'}],action:'previewAssemblyBuild'}),/whole units/);
  await assert.rejects(f.call({...f.body,actualMaterials:[{product_id:f.milk.id,quantity:1e-12,unit:'ea'}],action:'previewAssemblyBuild'}),/three decimal places/);
+});
+
+test('the actual materials catalog contains only active raw materials and additives, including flavors, cultures and preservatives',async()=>{
+ const f=await setup(),s=f.entities;
+ const create=(id,props)=>s.Product.create({sku:id,name:id,inventory_type:'raw_material',configuration_status:'ready',unit_of_measure:'kg',purchase_price:10,inventory_account_id:'inventory',is_active:true,...props});
+ const permitted=[f.milk];
+ for(const [id,props] of [['Sugar',{}],['Pineapple flavor',{}],['Culture',{inventory_type:'additive'}],['Potassium sorbate',{inventory_type:'additive'}],['Milk flavored cleaner',{material_group:'Raw Material'}]])permitted.push(await create(id,props));
+ const excluded=[f.product,f.cup];
+ for(const type of ['assembly','finished_product','wip','consumable','cleaning','spare_part','promotional','returned','damaged','expired','service','inventory_item','unknown'])excluded.push(await create('excluded-'+type,{inventory_type:type,name:'Milk '+type}));
+ for(const [id,props] of [['legacy-packaging',{material_group:'Packaging'}],['legacy-stickers',{category:'Stickers'}],['legacy-cups',{attributes:[{name:'Packaging type',value:'Yogurt cups'}]}],['service-metadata',{item_type:'service'}],['inactive-raw',{is_active:false}],['removed-raw',{item_removed_at:'2026-11-05'}],['draft-raw',{configuration_status:'draft'}]])excluded.push(await create(id,props));
+ const before=structuredClone(f.rows),workspace=await f.call({action:'assemblyBuildWorkspace'}),ids=new Set(workspace.materials.map(material=>material.id));
+ assert.deepEqual([...ids].sort(),permitted.map(material=>material.id).sort());
+ for(const material of excluded)assert.equal(ids.has(material.id),false,material.name);
+ assert.ok(workspace.materials.every(material=>['raw_material','additive'].includes(material.inventory_type)));
+ assert.deepEqual(f.rows,before);
+});
+
+test('forged non-raw actual inputs are rejected before any inventory, accounting or audit write',async()=>{
+ const f=await setup(),s=f.entities,body=await f.post();
+ const candidates=[f.cup,f.product];
+ for(const type of ['finished_product','wip','consumable','cleaning','spare_part','promotional','returned','damaged','expired','service','inventory_item','unknown'])candidates.push(await s.Product.create({sku:'forged-'+type,name:'Milk '+type,inventory_type:type,configuration_status:'ready',unit_of_measure:'kg',purchase_price:10,inventory_account_id:'inventory',is_active:true}));
+ candidates.push(await s.Product.create({sku:'forged-legacy-packaging',name:'Milk powder label',inventory_type:'raw_material',material_group:'Packaging',configuration_status:'ready',unit_of_measure:'kg',purchase_price:10,inventory_account_id:'inventory',is_active:true}));
+ const before=structuredClone(f.rows);
+ for(const material of candidates){
+  const input={...body,actualMaterials:[...f.body.actualMaterials,{product_id:material.id,quantity:1,unit:material.unit_of_measure}]};
+  await assert.rejects(f.call({...input,action:'previewAssemblyBuild'}),/raw material/i);
+  await assert.rejects(f.call(input),/raw material/i);
+ }
+ assert.deepEqual(f.rows,before);assert.equal((await s.StockBalance.get(f.milkLot.id)).quantity,60);assert.equal((await s.JournalEntry.list()).length,0);
 });

@@ -7,8 +7,8 @@ export function isAssemblyPackaging(product){
   return isPackagingItem({...product,name:''});
 }
 
-// Existing on-hand subassemblies can be entered as actual inputs too. Their
-// future assembly setup is independent of consuming an already produced lot.
+// Production entry is limited to ingredients. Finished goods, subassemblies,
+// cleaning supplies and other inventory are not raw material consumption.
 export function isActualAssemblyMaterial(product){
-  return !!product&&product.inventory_type!=='service'&&product.item_type!=='service'&&!isAssemblyPackaging(product);
+  return !!product&&['raw_material','additive'].includes(product.inventory_type)&&product.item_type!=='service'&&!isAssemblyPackaging(product);
 }

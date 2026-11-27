@@ -204,3 +204,30 @@ test('material entry validates converted stock precision and whole units before 
   field(r,'Unit for Milk').onChange({target:{value:'l'}});draw();assert.equal(button(r,'Continue to finished products').disabled,true,'incompatible volume units cannot be sent as mass');
  }finally{r.cleanup();delete globalThis.__assemblyUI;}
 });
+
+for(const mobile of [false,true])test(`the ${mobile?'phone':'desktop'} material picker exposes only raw materials and additives from a mixed inventory response`,async()=>{
+ const render=await renderer(),r=runtime(),calls=[];globalThis.__assemblyUI=r;
+ const allowed=[...workspace.materials,{id:'flavour',name:'Citron flavour',unit:'l',inventory_type:'additive'},{id:'preservative',name:'Preservative',unit:'kg',inventory_type:'additive'},{id:'culture',name:'Culture',unit:'ea',inventory_type:'additive'}];
+ const excluded=[
+  {id:'finished',name:'Finished yogurt',inventory_type:'finished_product'},
+  {id:'assembly',name:'On-hand subassembly',inventory_type:'assembly',kind:'subassembly'},
+  {id:'cleaner',name:'Cleaning supply',inventory_type:'cleaning_supply'},
+  {id:'wip',name:'Work in progress',inventory_type:'work_in_progress'},
+  {id:'consumable',name:'Consumable supply',inventory_type:'consumable'},
+  {id:'service',name:'Labour service',inventory_type:'service'},
+  {id:'raw-service',name:'Service with raw-material type',inventory_type:'raw_material',item_type:'service'},
+  {id:'cups',name:'Cups',inventory_type:'packaging'},
+  {id:'legacy-packaging',name:'Legacy stickers',inventory_type:'raw_material',material_group:'Packaging'},
+  {id:'legacy-emballage',name:'Legacy bottles',inventory_type:'raw_material',category:'Emballages'},
+  {id:'unclassified',name:'Unclassified inventory'},
+ ].map(item=>({unit:'ea',on_hand:100,available:100,...item}));
+ const inventory={...workspace,materials:[...allowed,...excluded]};
+ r.invoke=async body=>{calls.push(body);return {data:inventory};};
+ try{
+  const draw=await loaded(r,render,{mobile});let html=draw();const select=html.match(/<select\b[^>]*aria-label="Choose material"[^>]*>([\s\S]*?)<\/select>/)?.[1];assert.ok(select,'the measured-material picker is rendered');
+  const ids=[...select.matchAll(/<option\b[^>]*value="([^"]*)"[^>]*>/g)].map(match=>match[1]).filter(Boolean);
+  assert.deepEqual(ids,allowed.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(item=>item.id));assert.doesNotMatch(select,/optgroup|On-hand subassemblies/);
+  for(const item of excluded){field(r,'Choose material').onChange({target:{value:item.id}});draw();assert.equal(field(r,'Actual quantity for '+item.name),undefined,item.name+' cannot be added through a forged picker value');assert.equal(button(r,'Continue to finished products').disabled,true);}
+  field(r,'Choose material').onChange({target:{value:'milk'}});draw();field(r,'Actual quantity for Milk').onChange({target:{value:'47.25'}});draw();assert.equal(button(r,'Continue to finished products').disabled,false);button(r,'Continue to finished products').onClick();html=draw();assert.ok(button(r,'Edit materials'));assert.equal(calls.some(call=>call.action==='previewAssemblyBuild'||call.action==='postAssemblyBuild'),false);
+ }finally{r.cleanup();delete globalThis.__assemblyUI;}
+});
