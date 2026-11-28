@@ -1,0 +1,46 @@
+name: Cash flow reporting checks
+on:
+  pull_request:
+    paths:
+      - 'src/lib/cash-flow*.js'
+      - 'src/components/accounting/CashFlow*.jsx'
+      - 'src/components/accounting/AccountFormDialog.jsx'
+      - 'src/views/FinancialStatements.jsx'
+      - 'src/lib/report-document.js'
+      - 'src/server/domain/account-definitions.js'
+      - 'src/server/domain/cash-flow*.js'
+      - 'tests/cash-flow*.test.mjs'
+      - '.github/workflows/cash-flow-checks.yml'
+      - 'package*.json'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify cash flow, GL, financial statements, source workflows and exports
+        run: >-
+          node --test --test-concurrency=2 tests/cash-flow*.test.mjs
+          tests/financial-statements-ledger.test.mjs tests/statement-account-drilldown*.test.mjs
+          tests/income-statement-basis*.test.mjs tests/report-export-ui.test.mjs tests/report-documents.test.mjs
+          tests/accounting-controls.test.mjs tests/account-opening*.test.mjs
+          tests/sale-vat.test.mjs tests/purchase-workspace.test.mjs tests/payroll-settlement.test.mjs tests/inventory-workspace.test.mjs
+      - name: Verify permissions for confidential reports
+        run: node --test --test-name-pattern="authorized management runs" tests/management-access.test.mjs
+      - name: Lint cash flow source
+        run: >-
+          npx eslint src/lib/cash-flow*.js src/server/domain/cash-flow*.js src/components/accounting/CashFlow*.jsx
+          src/components/accounting/AccountFormDialog.jsx src/server/domain/account-definitions.js src/views/FinancialStatements.jsx
+          src/lib/report-document.js --quiet
+      - run: npm run build

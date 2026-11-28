@@ -7,8 +7,9 @@ import {prepareRecurringExpense} from './recurring-expenses.js';
 import {recurringExpenseAccount} from '../../lib/recurring-expense-schedule.js';
 import {createHash} from 'node:crypto';
 import {requireOpeningAccess,saveAccountOpening} from './opening-balances.js';
+import {validCashFlowRole} from '../../lib/cash-flow-roles.js';
 
-const fields = ['account_number','name','account_type','normal_balance','parent_id','is_posting','is_control_account','allow_manual_journal','is_active','is_hidden','description','financial_statement','cash_flow_category','is_treasury'];
+const fields = ['account_number','name','account_type','normal_balance','parent_id','is_posting','is_control_account','allow_manual_journal','is_active','is_hidden','description','financial_statement','cash_flow_category','cash_flow_role','is_treasury'];
 export function requireAccountant(context) {
   const role = requireActiveContext(context);
   if (!['admin','cashier'].includes(role)) throw forbidden('Only authorized accounting staff may manage accounts and manual journals.');
@@ -17,12 +18,14 @@ export function requireAccountant(context) {
 export async function prepareAccountDefinition(stores, input, existing = null) {
   if(existing?.consolidated_into_account_id)throw Error('This account was consolidated. Manage the destination account and retain this account for history.');
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k=>!fields.includes(k))) throw Error('Only editable account fields may be supplied.');
-  const form = {is_posting:true,is_control_account:false,allow_manual_journal:true,is_active:true,is_hidden:false,is_treasury:false,cash_flow_category:'none',parent_id:'',description:'',...existing,...input};
+  const form = {is_posting:true,is_control_account:false,allow_manual_journal:true,is_active:true,is_hidden:false,is_treasury:false,cash_flow_category:'none',cash_flow_role:'',parent_id:'',description:'',...existing,...input};
   form.parent_id=String(form.parent_id || '');
   form.account_number = String(form.account_number || '').trim(); form.name = String(form.name || '').trim();
   if (!ACCOUNT_TYPES.some(t=>t.value===form.account_type)) throw Error('Choose a valid account type.');
   if (!['debit','credit'].includes(form.normal_balance)) throw Error('Choose a valid normal balance.');
   if (!['none','operating','investing','financing'].includes(form.cash_flow_category)) throw Error('Choose a valid cash-flow activity.');
+  if (typeof form.cash_flow_role !== 'string' || !validCashFlowRole(form)) throw Error('Choose a cash-flow mapping compatible with this account.');
+  if (form.is_treasury && !(form.is_posting !== false && ((form.account_type==='asset' && form.normal_balance==='debit') || (form.account_type==='liability' && form.normal_balance==='credit')))) throw Error('Choose a posting cash asset or treasury liability.');
   if (form.account_number.length > 40 || form.name.length > 200 || String(form.description).length > 2000) throw Error('Account number, name or description is too long.');
   for (const key of ['is_posting','is_control_account','allow_manual_journal','is_active','is_hidden','is_treasury']) if (typeof form[key]!=='boolean') throw Error('Account settings must be checked or unchecked.');
   if (existing?.is_system && ['account_number','account_type','normal_balance','is_posting','is_control_account','allow_manual_journal','is_active','parent_id'].some(k=>form[k]!== (existing[k] ?? (k==='parent_id'?'':k==='is_posting'||k==='allow_manual_journal'||k==='is_active'?true:false)))) throw Error('The structure and posting controls of a system account are protected.');
@@ -72,6 +75,11 @@ export async function saveAccountDefinition(stores, context, body) {
     await stores.AuditLog.create({id:eventId,action:'import_account_opening_balance',module:'accounting',entity_type:'Account',entity_id:saved.id,user_id:context.user.id,description:'Recorded one-time opening balance for '+saved.name,opening_account_payload:fingerprint,opening_account_id:saved.id});
   }
   if(recurrence!==undefined)await stores.AuditLog.create({action:'configure_recurring_expense',module:'accounting',entity_type:'Account',entity_id:saved.id,user_id:context.user.id,description:'Updated monthly schedule for '+saved.name,recurring_account_id:saved.id,recurring_before:existing?.recurring_expense||null,recurring_after:recurrence});
+  const cashSettings = row=>({role:row?.cash_flow_role || '',activity:row?.cash_flow_category || 'none',treasury:row?.is_treasury === true});
+  if (JSON.stringify(cashSettings(existing))!==JSON.stringify(cashSettings(saved))) await stores.AuditLog.create({
+    action:'configure_cash_flow_mapping',module:'accounting',entity_type:'Account',entity_id:saved.id,user_id:context.user.id,
+    description:'Changed cash-flow reporting settings for '+saved.account_number,previous_value:cashSettings(existing),new_value:cashSettings(saved)
+  });
   await audit({entities:stores},{action:existing?'update_account':'create_account',module:'accounting',entityType:'Account',entityId:saved.id,userId:context.user.id,description:`${existing?'Updated':'Created'} account ${saved.account_number}: ${saved.name}`});
   return saved;
 }

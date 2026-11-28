@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {createRequire} from 'node:module';
 import {hookRuntime} from './helpers/commercial-ui.mjs';
-import {buildCashFlow} from '../src/lib/cash-flow.js';
+import {buildCashFlowReport} from '../src/lib/cash-flow-report.js';
 const require=createRequire(import.meta.url);
 let compiled;
 async function renderer(){
  if(compiled)return compiled;
  const out=await build({stdin:{contents:"import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import Statements from './src/views/FinancialStatements.jsx';import Cash from './src/components/accounting/CashFlowStatement.jsx';export const render=kind=>renderToStaticMarkup(React.createElement(kind==='cash'?Cash:Statements));",resolveDir:process.cwd(),loader:'jsx'},bundle:true,jsx:'automatic',platform:'node',format:'cjs',write:false,plugins:[{name:'statement-account-ui',setup(b){
- const owned=/(FinancialStatements|IncomeStatement|CashFlowStatement|StatementAccountDrilldown|StatementSection|MobileIncomeStatementBody|AccountPosition)\.jsx$/;
+ const owned=/(FinancialStatements|IncomeStatement|CashFlowStatement|CashFlowTraceDialog|StatementAccountDrilldown|StatementSection|MobileIncomeStatementBody|AccountPosition)\.jsx$/;
  b.onResolve({filter:/^react$/},a=>owned.test(a.importer)?{path:a.importer,namespace:'hooks'}:undefined);
  b.onLoad({filter:/.*/,namespace:'hooks'},({path:key})=>({contents:`import React from ${JSON.stringify(require.resolve('react'))};export default React;const key=${JSON.stringify(key)};export const useState=v=>globalThis.__statementAccountUI.state(key,v),useRef=v=>globalThis.__statementAccountUI.ref(key,v),useEffect=(f,d)=>globalThis.__statementAccountUI.effect(key,f,d);export const useMemo=(f,d)=>{const slot=useRef();if(!slot.current||d.some((v,i)=>!Object.is(v,slot.current.deps[i])))slot.current={value:f(),deps:d};return slot.current.value;};export const useCallback=(f,d)=>useMemo(()=>f,d);`,resolveDir:process.cwd()}));
  b.onResolve({filter:/^react\/jsx-runtime$/},a=>owned.test(a.importer)?{path:'jsx',namespace:'capture'}:undefined);
@@ -40,7 +40,7 @@ function runtime(){
  Object.assign(r,{postingRules:[],phone:false,params:'tab=pnl',overlayLinks:[],reads:[],requests:[],syncs:0,accounts:[{id:'cash',account_number:'1000',name:'Cash',account_type:'asset',normal_balance:'debit',is_treasury:true,balance:1040},{id:'equity',account_number:'3000',name:'Capital',account_type:'equity',normal_balance:'credit'},{id:'fuel',account_number:'6260',name:'Vehicle fuel',account_type:'expense',normal_balance:'debit'},{id:'child',parent_id:'fuel',account_number:'6261',name:'Fuel child',account_type:'expense',normal_balance:'debit'},{id:'sales',account_number:'7010',name:'Sales',account_type:'revenue',normal_balance:'credit'}],journals:[],lines:[]});
  const add=(id,date,debit,credit,amount,extra={})=>{r.journals.push({id,entry_date:date,journal_number:'JV-'+id,status:'posted',description:'Actual '+id,total_debit:amount,total_credit:amount,private_notes:'SECRET',...extra});r.lines.push({journal_id:id,account_id:debit,debit:amount,credit:0},{journal_id:id,account_id:credit,debit:0,credit:amount});};
  add('opening','2026-09-01','cash','equity',1000,{source_module:'opening_balances'});add('old-fuel','2026-09-05','fuel','cash',20);add('fuel','2026-10-03','fuel','cash',100);add('child','2026-10-04','child','cash',40);add('sales','2026-10-06','cash','sales',200);
- r.cashReport=body=>buildCashFlow({accounts:r.accounts,journals:r.journals,cashLines:r.lines.filter(l=>l.account_id==='cash'),periodLines:r.lines,from:body.from,to:body.to});return r;
+ r.cashReport=body=>buildCashFlowReport({accounts:r.accounts.map(a=>({...a,cash_flow_role:({fuel:'distribution',child:'marketing',sales:'sales',equity:'capital'})[a.id]})),journals:r.journals,cashLines:r.lines.filter(l=>l.account_id==='cash'),periodLines:r.lines,...body});return r;
 }
 const accountButton=(r,name)=>r.elements.find(e=>e.tag==='button'&&e.props['aria-label']==='View journal entries for '+name)?.props;
 const paint=(r,render,kind)=>{r.beforeRender();r.elements=[];return render(kind);};
@@ -63,7 +63,7 @@ test('Balance Sheet account and cumulative earnings details show opening history
 
 test('Cash Flow drill-down uses applied report dates even after unapplied date edits and needs no new request',async()=>{
  const render=await renderer(),r=runtime();globalThis.__statementAccountUI=r;
- try{paint(r,render,'cash');await r.flush();paint(r,render,'cash');r.controls.find(p=>p.id==='cashflow-from').onChange({target:{value:'2026-10-01'}});paint(r,render,'cash');await r.elements.find(e=>e.tag==='form').props.onSubmit({preventDefault(){}});await r.flush();paint(r,render,'cash');r.controls.find(p=>p.id==='cashflow-from').onChange({target:{value:'2026-10-15'}});paint(r,render,'cash');const calls=r.requests.length;accountButton(r,'Vehicle fuel').onClick();paint(r,render,'cash');assert.equal(r.drilldown.detail.fromDate,'2026-10-01');assert.equal(r.drilldown.detail.toDate,'2026-10-31');assert.equal(r.drilldown.detail.periodTotal,-100);assert.deepEqual(r.drilldown.detail.rows.map(row=>row.journalId),['fuel']);assert.equal(r.requests.length,calls);
+ try{paint(r,render,'cash');await r.flush();paint(r,render,'cash');r.controls.find(p=>p.id==='cashflow-preset').onChange({target:{value:'custom'}});paint(r,render,'cash');r.controls.find(p=>p.id==='cashflow-from').onChange({target:{value:'2026-10-15'}});paint(r,render,'cash');const calls=r.requests.length;accountButton(r,'Distribution and logistics').onClick();const html=paint(r,render,'cash');assert.equal(r.drilldown.detail.from,'2026-10-01');assert.equal(r.drilldown.detail.to,'2026-10-31');assert.equal(r.drilldown.detail.amount,-100);assert.deepEqual(r.drilldown.detail.traces.map(row=>row.journalId),['fuel']);assert.match(html,/href="\/accounting\/journals\/fuel"/);assert.ok(r.overlayLinks.every(Boolean));assert.doesNotMatch(html,/SECRET/);assert.equal(r.requests.length,calls);
  }finally{r.cleanup();delete globalThis.__statementAccountUI;}
 });
 
@@ -71,6 +71,22 @@ test('a denied statement reader exposes no account drill-down controls or journa
  const render=await renderer(),r=runtime(),previousWindow=globalThis.window;globalThis.__statementAccountUI=r;globalThis.window={addEventListener(){},removeEventListener(){}};r.denied=true;
  try{paint(r,render);await r.flush();const html=paint(r,render);assert.match(html,/Accounting access denied/);assert.equal(accountButton(r,'Vehicle fuel'),undefined);assert.doesNotMatch(html,/JV-fuel|SECRET|href="\/accounting\/journals/);assert.equal(r.requests.length,0);
  }finally{r.cleanup();globalThis.window=previousWindow;delete globalThis.__statementAccountUI;}
+});
+
+test('unclassified closing difference drills down to the exact journal in each view',async()=>{
+ const render=await renderer(),r=runtime();globalThis.__statementAccountUI=r;
+ r.accounts.push({id:'unknown',account_type:'asset',account_number:'ZZ99',name:'Pending mapping',normal_balance:'debit'});
+ r.journals.push({id:'unmapped',entry_date:'2026-10-22',journal_number:'JV-review',status:'posted',total_debit:35.25,total_credit:35.25});
+ r.lines.push({journal_id:'unmapped',account_id:'unknown',debit:35.25,credit:0},{journal_id:'unmapped',account_id:'cash',debit:0,credit:35.25});
+ try{
+  paint(r,render,'cash');await r.flush();const html=paint(r,render,'cash');assert.match(html,/Reconciliation requires review/);
+  for(const method of ['Management','SYSCOHADA']){
+   accountButton(r,'Difference · '+method).onClick();const detail=paint(r,render,'cash');assert.equal(r.drilldown.detail.amount,-35.25);
+   assert.deepEqual(r.drilldown.detail.traces.map(t=>[t.journalId,t.amount]),[['unmapped',-35.25]]);assert.match(detail,/href="\/accounting\/journals\/unmapped"/);
+   r.drilldown.onClose();paint(r,render,'cash');
+  }
+  assert.equal(r.requests.length,1);
+ }finally{r.cleanup();delete globalThis.__statementAccountUI;}
 });
 
 test('statement account rows and journal detail display exact fractional FCFA rather than independently rounded totals',async()=>{

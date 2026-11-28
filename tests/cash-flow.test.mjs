@@ -135,7 +135,12 @@ test('HTTP report authorizes management, rejects cashier bank access, reads ever
   const call = async () => { const response = await route(request({ action: 'cashFlowReport', from: '2026-10-01', to: '2026-10-31' }), { params: Promise.resolve({ name: 'fieldOps' }) }); return { status: response.status, ...await response.json() }; };
   try {
     const before = JSON.stringify(env.rows), result = await call();
-    assert.equal(result.status, 200, result.error); assert.equal(result.history.length, 405); assert.equal(result.inflow, 405); assert.equal(result.closing, 405); assert.equal(JSON.stringify(env.rows), before); assert.equal(snapshots, 1); assert.equal(isReadOnlyFunction('fieldOps', 'cashFlowReport'), true);
+    assert.equal(result.status, 200, result.error);
+    assert.equal(result.current.direct.closingTraces.length, 405);
+    assert.equal(result.current.direct.sections.find(s=>s.key==='operating').inflow, 405);
+    assert.equal(result.current.direct.closing, 405);
+    assert.equal(result.current.official.lines.find(l=>l.code==='ZH').amount, 405);
+    assert.equal(JSON.stringify(env.rows), before); assert.equal(snapshots, 1); assert.equal(isReadOnlyFunction('fieldOps', 'cashFlowReport'), true);
     env.client.auth.me=async()=>({id:'cashier-login',role:'user'}); env.rows.Employee[0].status = 'inactive'; assert.equal((await call()).status, 400);
     env.rows.Employee[0].status = 'active'; env.client.auth.me=async()=>({id:'cashier-login',role:'user'}); assert.equal((await call()).status,400);
     env.rows.Employee[0].role = 'commercial'; assert.equal((await call()).status, 400);

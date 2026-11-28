@@ -19,6 +19,7 @@ import RecurringExpenseSettings,{initialRecurringSettings} from './RecurringExpe
 import {recurringExpenseAccount} from '@/lib/recurring-expense-schedule';
 import AccountOpeningFields,{useAccountOpening,accountOpeningPayload} from './AccountOpeningFields';
 import AccountAssetDialog from './AccountAssetDialog';
+import {cashFlowRoleOptions} from '@/lib/cash-flow-roles';
 
 const NO_PARENT = "__none__";
 
@@ -55,6 +56,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
     description: account?.description || "",
     is_system: account?.is_system || false,
     cash_flow_category: account?.cash_flow_category || 'none',
+    cash_flow_role: account?.cash_flow_role || '',
     is_treasury: account?.is_treasury || false,
   });
 
@@ -65,6 +67,8 @@ export default function AccountFormDialog({ account, accounts, balances, default
     setForm((f) => ({
       ...f,
       account_type: value,
+      cash_flow_role: '',
+      is_treasury: false,
       parent_id: "",
       normal_balance: typeMeta(value).normal,
       account_number: !isEdit && !numberTouched ? suggestAccountNumber(accounts, value, null) : f.account_number,
@@ -108,6 +112,7 @@ export default function AccountFormDialog({ account, accounts, balances, default
         description: form.description,
         financial_statement: typeMeta(form.account_type).statement,
         cash_flow_category: form.cash_flow_category,
+        cash_flow_role: form.cash_flow_role,
         is_treasury: form.is_treasury,
       };
       const openingPayload = canSetOpening ? accountOpeningPayload(opening, form) : undefined;
@@ -211,8 +216,17 @@ export default function AccountFormDialog({ account, accounts, balances, default
               </SelectContent>
             </Select>
             <p className="mt-1 text-xs text-slate-500">{ui("Used when this account is the counterpart of a cash receipt or payment. Changes apply when reports are rerun. Use separate payable accounts for operating suppliers and fixed asset purchases.")}</p>
+            <label className="mt-3 block text-sm font-medium">
+              {interfaceLanguage==='fr'?'Classement détaillé des flux SYSCOHADA':'Detailed SYSCOHADA cash-flow mapping'}
+              <select className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm" value={form.cash_flow_role}
+                onChange={e=>set('cash_flow_role',e.target.value)}>
+                <option value="">{ui('Automatic classification')}</option>
+                {cashFlowRoleOptions.filter(role=>role.types.includes(form.account_type) && (role.key!=='treasury' || form.is_posting && form.normal_balance===(form.account_type==='asset'?'debit':'credit'))).map(role=>
+                  <option key={role.key} value={role.key}>{interfaceLanguage==='fr'?role.fr:role.en}</option>)}
+              </select>
+            </label>
           </div>
-          {form.account_type === 'asset' && form.normal_balance === 'debit' && form.is_posting && <ToggleRow label={ui("Cash account in cash-flow reports")} hint="For cash, bank or mobile money GL accounts. Treasury-linked accounts and commercial cash in transit (1050) are included automatically." checked={form.is_treasury} onChange={v => set('is_treasury', v)} />}
+          {((form.account_type==='asset'&&form.normal_balance==='debit')||(form.account_type==='liability'&&form.normal_balance==='credit'))&&form.is_posting&&<ToggleRow label={interfaceLanguage==='fr'?'Inclure dans la trésorerie nette':'Include in net treasury'} hint={interfaceLanguage==='fr'?'Caisse, banque, mobile money, équivalent de trésorerie ou découvert bancaire.':'Cash, bank, mobile money, qualifying cash equivalent or bank overdraft.'} checked={form.is_treasury || form.cash_flow_role==='treasury'} disabled={form.cash_flow_role==='treasury'} onChange={v => set('is_treasury', v)} />}
           <ToggleRow
             label={ui("Posting account")}
             hint="Posting accounts receive journal lines. Turn this off for a header that only groups sub-accounts."

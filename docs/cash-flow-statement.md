@@ -1,0 +1,20 @@
+# Cash flow in SOEICAM ERP
+
+Open **Accounting → Cash Flow**. Choose a period or enter inclusive dates. Weeks begin on Monday; the current date is taken in Africa/Douala. **Compare with prior year** adds the equivalent dates one year earlier. Run the report again after posting a backdated correction.
+
+The **Management** view answers: what did we start with, what came in, what went out and what is left? Expand an activity for receipts, payments and net cash. Financing separates equity from debt. Select an amount to see its contributing entries and open the journals. The closing management card is the posted ledger figure; the reconciliation also displays the closing figure calculated from classified flows.
+
+The **SYSCOHADA** view starts with accounting profit and adjustments to arrive at global self-financing capacity (FA). FB–FE convert this to cash from operations using the signed changes in operating working capital. For example, an unpaid invoiced sale creates profit and a receivable, but no cash. A later collection releases the receivable. Manufacturing moves value between stocks without creating a cash payment. Depreciation and investment disposal gains do not generate CAFG. FF–FQ report actual investing, equity and borrowing settlements. ZG is ZB + ZC + ZF and ZH is ZA + ZG. The report checks ZH against the independent treasury closing balance.
+
+The reference is the [revised SYSCOHADA Guide d'application, §4.2–4.3](https://www.ohada.com/uploads/actualite/3504/Guide-d-application-du-SYSCOHADA.pdf); see also the [Cameroon DGI normal-system reporting forms](https://www.impots.cm/fr/dsf-non-professionnel). An interim period uses the same classifications with its actual dates. An unresolved review warning is not an attestation of compliance or a filed DSF.
+
+## Source and controls
+
+- A single read-only report operation uses the posted general ledger in the same database snapshot for both views and comparative periods. Business documents and Treasury register entries identify and check movements; they never add cash to the ledger.
+- Opening cash is debit less credit on the qualifying treasury accounts **strictly before** the start date; closing includes entries through the end date. Credit treasury liabilities therefore reduce net treasury. Inactive accounts with historical activity are included. Internal transfers cancel on consolidation.
+- Do not infer VAT from a rate or from invoiced revenue. Cash rows use the amount actually paid; the indirect view uses booked income, receivables, payables and actual VAT entries.
+- An original posting and its dated reversal preserve the balance at each date. A correcting entry must not become a second physical payment. A cash opening import entered inside a reporting period is not ordinary income or financing: check its date and supporting records.
+- To review a difference, start with the journal or register reference shown in **Reconciliation**. Check its effective date, treasury link, source bill and debit/credit accounts. A return of capital, loan repayment, interest payment and dividend are different transactions and need appropriate supporting accounts.
+- In **Chart of Accounts → Edit account**, use the detailed SYSCOHADA mapping when the purpose of a new account cannot be established from its posting rule or chart role. Mark only qualifying cash equivalents or treasury overdrafts as treasury. Use dedicated asset creditors when fixed assets are acquired on credit. Mapping edits are audited and apply on the next report, including historical periods. They create no journals.
+- Unclassified cash remains in the actual closing GL figure. It is never plugged into operating cash to make the report look balanced. Correct the underlying classification or source through the normal authorized workflow, then rerun the report. Foreign-currency treasury without an XAF carrying basis requires separate accounting review.
+- **Print / save PDF** and **Excel** use the displayed report snapshot, dates, language, comparative column and warnings. An open PDF or saved Excel file remains a snapshot of the time it was generated.

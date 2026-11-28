@@ -1,6 +1,7 @@
 /* localized-metadata */
 import {ui} from './i18n.js';
-// Direct method. Money is kept in integer cents until the report is serialized.
+// Legacy schedule/export compatibility. The Accounting screen and report API
+// use cash-flow-report.js for all current management and SYSCOHADA reporting.
 const cents = value => {
   const number = Number(value ?? 0);
   if (!Number.isFinite(number) || Math.abs(number) > Number.MAX_SAFE_INTEGER / 100) throw Error('A cash-flow amount is invalid');
