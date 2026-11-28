@@ -52,7 +52,7 @@ test('authorized management runs account position, cash-flow and company sales r
   for(const [role,assigned_role] of [['production_manager','production_manager'],['warehouse_manager','supply_chain_manager']]){
     await s.Employee.update('cashier',{role,assigned_role,allowed_modules:['sales','accounting','expenses']});
     assert.ok((await accountPosition(f.client,user)).accounts.length>0);
-    const cash=await cashFlowReport(f.client,user,{from:date,to:date});assert.ok(Array.isArray(cash.history));
+    const cash=await cashFlowReport(f.client,user,{from:date,to:date});assert.ok(Array.isArray(cash.current.direct.closingTraces));
     const sales=await companySalesAction(f.client,user,{from:date,to:date});assert.equal(sales.totals.count,0);
     await s.Employee.update('cashier',{allowed_modules:['expenses']});await assert.rejects(accountPosition(f.client,user),/restricted/);
   }
